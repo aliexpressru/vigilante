@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vigilante
+  labels:
+    app: vigilante
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vigilante
+  template:
+    metadata:
+      labels:
+        app: vigilante
+    spec:
+      serviceAccountName: vigilante-sa
+      containers:
+      - name: vigilante
+        image: aercis/vigilante:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http-metrics
+          containerPort: 8080
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          value: "Development"
+        - name: ASPNETCORE_URLS
+          value: "http://+:8080"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/appsettings.json
+          subPath: appsettings.json
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: config-volume
+        configMap:
+          name: vigilante-config

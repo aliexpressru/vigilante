@@ -1,0 +1,20 @@
+using Aer.QdrantClient.Http;
+using System.Collections.Concurrent;
+using Aer.QdrantClient.Http.Abstractions;
+using Vigilante.Services.Interfaces;
+
+namespace Vigilante.Services;
+
+public class DefaultQdrantClientFactory : IQdrantClientFactory
+{
+    private readonly ConcurrentDictionary<string, IQdrantHttpClient> _clientCache = new();
+
+    public IQdrantHttpClient CreateClient(string host, int port, string? apiKey = null)
+    {
+        var key = $"{host}:{port}:{apiKey ?? "no-key"}";
+        
+        return _clientCache.GetOrAdd(key, string.IsNullOrEmpty(apiKey) 
+            ? new QdrantHttpClient(host, port)
+            : new QdrantHttpClient(host, port, apiKey: apiKey));
+    }
+}

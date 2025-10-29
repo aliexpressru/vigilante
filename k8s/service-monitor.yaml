@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vigilante-metrics
+  labels:
+    app: vigilante
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: vigilante
+  endpoints:
+  - port: http-metrics
+    interval: 15s
+    path: /metrics
+

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🛡️ Vigilante - Qdrant Cluster Guardian</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-shield-alt"></i> Vigilante Dashboard</h1>
+            <p>Qdrant Cluster Guardian</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Overall Status Card -->
+            <div class="status-card" id="overallStatus">
+                <div class="status-header">
+                    <div class="status-header-left">
+                        <h2><i class="fas fa-heartbeat"></i> Cluster Status</h2>
+                        <div class="refresh-controls">
+                            <span>Auto-refresh:</span>
+                            <select id="refreshInterval" class="refresh-select">
+                                <option value="5000">5s</option>
+                                <option value="15000">15s</option>
+                                <option value="30000">30s</option>
+                                <option value="60000">1m</option>
+                                <option value="0" selected>Off</option>
+                            </select>
+                            <button id="manualRefresh" class="refresh-button" title="Refresh now">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="refresh-indicator" id="refreshIndicator">
+                        <i class="fas fa-sync-alt"></i>
+                    </div>
+                </div>
+                <div class="status-content">
+                    <div class="status-badge" id="statusBadge">
+                        <span id="statusText">Loading...</span>
+                    </div>
+                    <div class="health-metrics">
+                        <div class="metric">
+                            <span class="metric-label">Healthy Nodes</span>
+                            <span class="metric-value" id="healthyNodes">-/-</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Health Percentage</span>
+                            <span class="metric-value" id="healthPercentage">-%</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Leader</span>
+                            <span class="metric-value" id="leaderNode">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Issues Section -->
+            <div class="issues-card" id="issuesCard" style="display: none;">
+                <h3><i class="fas fa-exclamation-triangle"></i> Issues</h3>
+                <ul id="issuesList"></ul>
+            </div>
+
+            <!-- Nodes Grid -->
+            <div class="nodes-section">
+                <h3><i class="fas fa-server"></i> Cluster Nodes</h3>
+                <div class="nodes-grid" id="nodesGrid">
+                    <!-- Nodes will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <!-- Collections Overview -->
+            <div class="collections-overview">
+                <div class="collections-header">
+                    <h3><i class="fas fa-database"></i> Collections Overview</h3>
+                    <div class="total-size" id="totalCollectionsSize"></div>
+                </div>
+                <div class="collections-table" id="collectionsTable">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>

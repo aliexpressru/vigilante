@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vigilante-config
+  labels:
+    app: vigilante
+data:
+  appsettings.json: |
+    {
+      "Qdrant": {
+        "MonitoringIntervalSeconds": 10,
+        "HealthCheckTimeoutSeconds": 5,
+        "HttpTimeoutSeconds": 3,
+        "EnableAutoRecovery": true,
+        "ApiKey": "test"
+      }
+    }
+
