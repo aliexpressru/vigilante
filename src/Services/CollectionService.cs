@@ -553,23 +553,42 @@ public class CollectionService : ICollectionService
                 return (false, $"Failed to list collections: {errorDetails}");
             }
             
-            // If there are collections, also try to get info about the first one
+            // If there are collections, check each one in parallel
             if (collectionsResponse.Result?.Collections != null && collectionsResponse.Result.Collections.Any())
             {
-                var firstCollection = collectionsResponse.Result.Collections.First();
-                var collectionName = firstCollection.Name;
+                var collections = collectionsResponse.Result.Collections;
+                _logger.LogDebug("Checking health for {CollectionCount} collections in parallel", collections.Length);
                 
-                _logger.LogDebug("Checking collection info for {CollectionName}", collectionName);
-                var collectionInfo = await client.GetCollectionInfo(collectionName, cancellationToken);
-                
-                if (!collectionInfo.Status.IsSuccess)
+                // Create tasks for all collection health checks
+                var checkTasks = collections.Select(async collection =>
                 {
-                    var errorDetails = collectionInfo.Status?.Error ?? "Unknown error";
-                    _logger.LogWarning("Collections health check failed for {CollectionName}: {Error}", collectionName, errorDetails);
-                    return (false, $"Failed to get info for collection '{collectionName}': {errorDetails}");
+                    var collectionName = collection.Name;
+                    
+                    _logger.LogDebug("Checking collection info for {CollectionName}", collectionName);
+                    var collectionInfo = await client.GetCollectionInfo(collectionName, cancellationToken);
+                    
+                    if (!collectionInfo.Status.IsSuccess)
+                    {
+                        var errorDetails = collectionInfo.Status?.Error ?? "Unknown error";
+                        _logger.LogWarning("Collections health check failed for {CollectionName}: {Error}", collectionName, errorDetails);
+                        return (IsHealthy: false, CollectionName: collectionName, Error: errorDetails);
+                    }
+                    
+                    _logger.LogDebug("Collection {CollectionName} is healthy", collectionName);
+                    return (IsHealthy: true, CollectionName: collectionName, Error: (string?)null);
+                }).ToArray();
+                
+                // Wait for all checks to complete
+                var results = await Task.WhenAll(checkTasks);
+                
+                // Check if any collection failed
+                var failedCollection = results.FirstOrDefault(r => !r.IsHealthy);
+                if (failedCollection.CollectionName != null)
+                {
+                    return (false, $"Failed to get info for collection '{failedCollection.CollectionName}': {failedCollection.Error}");
                 }
                 
-                _logger.LogDebug("Collections health check passed including collection info for {CollectionName}", collectionName);
+                _logger.LogDebug("Collections health check passed for all {CollectionCount} collections", collections.Length);
             }
             else
             {
