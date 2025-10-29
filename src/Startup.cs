@@ -14,7 +14,6 @@ public class Startup(IConfiguration configuration)
     public void ConfigureServices(IServiceCollection services)
     {
         // Configuration
-        services.AddMemoryCache();
         services.Configure<QdrantOptions>(configuration.GetSection("Qdrant"));
         services.AddSingleton<IQdrantNodesProvider, QdrantNodesProvider>();
         services.AddSingleton<IQdrantClientFactory, DefaultQdrantClientFactory>();

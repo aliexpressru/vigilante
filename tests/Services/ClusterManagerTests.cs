@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -17,7 +16,6 @@ namespace Aer.Vigilante.Tests.Services;
 [TestFixture]
 public class ClusterManagerTests
 {
-    private IMemoryCache _cache = null!;
     private IQdrantNodesProvider _nodesProvider = null!;
     private IOptions<QdrantOptions> _options = null!;
     private ILogger<ClusterManager> _logger = null!;
@@ -29,7 +27,6 @@ public class ClusterManagerTests
     [SetUp]
     public void Setup()
     {
-        _cache = new MemoryCache(new MemoryCacheOptions());
         _nodesProvider = Substitute.For<IQdrantNodesProvider>();
         _options = Substitute.For<IOptions<QdrantOptions>>();
         _logger = Substitute.For<ILogger<ClusterManager>>();
@@ -51,18 +48,11 @@ public class ClusterManagerTests
             });
         
         _clusterManager = new ClusterManager(
-            _cache,
             _nodesProvider,
             _clientFactory,
             _options,
             _logger,
             _meterService);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _cache.Dispose();
     }
 
     [Test]
@@ -238,9 +228,6 @@ public class ClusterManagerTests
         var firstResult = await _clusterManager.GetClusterStateAsync();
         Assert.That(firstResult.Nodes.Count(n => n.IsHealthy), Is.EqualTo(3));
 
-        // Clear the cache to force a new call
-        _cache.Remove("qdrant_cluster_status");
-
         // Now simulate a split: Group 1 (pod1, pod2) vs Group 2 (pod3 isolated)
         mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new GetClusterInfoResponse
@@ -365,9 +352,6 @@ public class ClusterManagerTests
         // First call establishes the baseline
         var firstResult = await _clusterManager.GetClusterStateAsync();
         Assert.That(firstResult.Nodes.Count(n => n.IsHealthy), Is.EqualTo(2));
-
-        // Clear the cache to force a new call
-        _cache.Remove("qdrant_cluster_status");
 
         // Second call: Node 1 sees node 2 but has message send failures, node 2 doesn't see node 1
         node1Client.GetClusterInfo(Arg.Any<CancellationToken>())
@@ -507,49 +491,6 @@ public class ClusterManagerTests
     }
 
     [Test]
-    public async Task GetClusterStateAsync_UsesCachedResult_WhenCacheNotExpired()
-    {
-        // Arrange
-        var nodes = new[]
-        {
-            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
-        };
-
-        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
-
-        var pod1Id = 1001UL;
-        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
-        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new GetClusterInfoResponse
-            {
-                Result = new GetClusterInfoResponse.ClusterInfo
-                {
-                    PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
-                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                    { 
-                        Leader = pod1Id,
-                        Term = 1,
-                        Commit = 1
-                    }
-                },
-                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
-            }));
-
-        // Act - First call
-        var result1 = await _clusterManager.GetClusterStateAsync();
-        var firstCallTime = result1.LastUpdated;
-
-        // Act - Second call (should use cache)
-        var result2 = await _clusterManager.GetClusterStateAsync();
-
-        // Assert
-        Assert.That(result2.LastUpdated, Is.EqualTo(firstCallTime));
-        Assert.That(result1.Nodes, Is.EqualTo(result2.Nodes));
-    }
-
-    [Test]
     public async Task GetClusterStateAsync_WhenNodesHaveDifferentLeaders_DetectsSplit()
     {
         // Arrange
@@ -623,8 +564,6 @@ public class ClusterManagerTests
         var firstResult = await _clusterManager.GetClusterStateAsync();
         Assert.That(firstResult.Nodes.Count(n => n.IsHealthy), Is.EqualTo(3));
 
-        // Clear cache
-        _cache.Remove("qdrant_cluster_status");
 
         // Now pod1 and pod2 have leader=pod1, pod3 has leader=pod3
         mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())

@@ -1,6 +1,3 @@
-using Aer.QdrantClient.Http.Models.Responses;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
 using Vigilante.Models;
@@ -10,7 +7,6 @@ using Vigilante.Services.Interfaces;
 namespace Vigilante.Services;
 
 public class ClusterManager(
-    IMemoryCache cache,
     IQdrantNodesProvider nodesProvider,
     IQdrantClientFactory clientFactory,
     IOptions<QdrantOptions> options,
@@ -20,23 +16,13 @@ public class ClusterManager(
     private readonly QdrantOptions _options = options.Value;
     private readonly ClusterPeerState _clusterState = new();
 
-    private const string CacheKey = "qdrant_cluster_status";
-    private static readonly TimeSpan CacheTimeout = TimeSpan.FromMinutes(1);
 
     public async Task<ClusterState> GetClusterStateAsync(CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Starting GetClusterStateAsync");
         
-        if (cache.TryGetValue(CacheKey, out ClusterState? cachedStatus) && cachedStatus != null)
-        {
-            logger.LogInformation("Returning cached cluster state with {NodesCount} nodes, last updated at {LastUpdated}", 
-                cachedStatus.Nodes.Count, cachedStatus.LastUpdated);
-            return cachedStatus;
-        }
-
-        logger.LogInformation("Cache miss, requesting nodes from IQdrantNodesProvider");
         var nodes = await nodesProvider.GetNodesAsync(cancellationToken);
-        logger.LogInformation("Received {NodesCount} nodes from provider", nodes.Count());
+        logger.LogInformation("Received {NodesCount} nodes from provider", nodes.Count);
 
         var tasks = nodes.Select(async node =>
         {
@@ -123,11 +109,6 @@ public class ClusterManager(
             Nodes = nodeStatuses.ToList(),
             LastUpdated = DateTime.UtcNow
         };
-
-        var cacheOptions = new MemoryCacheEntryOptions()
-            .SetAbsoluteExpiration(CacheTimeout);
-
-        cache.Set(CacheKey, state, cacheOptions);
         
         meterService.UpdateAliveNodes(state.Nodes.Count(n => n.IsHealthy));
         
@@ -136,10 +117,9 @@ public class ClusterManager(
 
     private void DetectClusterSplits(NodeInfo[] nodes)
     {
-        // Only analyze nodes that responded successfully
-        var healthyNodes = nodes.Where(n => n.IsHealthy && n.CurrentPeerIds.Any()).ToList();
+        var healthyNodes = nodes.Where(n => n.IsHealthy && n.CurrentPeerIds.Count > 0).ToList();
         
-        if (!healthyNodes.Any())
+        if (healthyNodes.Count == 0)
         {
             logger.LogInformation("No healthy nodes with peer information to analyze for splits");
             return;
