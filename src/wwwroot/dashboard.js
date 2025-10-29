@@ -280,7 +280,7 @@ class VigilanteDashboard {
         // Remember which collections were open before update
         const openCollections = new Set();
         document.querySelectorAll('.collection-details.visible').forEach(row => {
-            const nameCell = row.previousElementSibling.querySelector('.collection-name');
+            const nameCell = row.previousElementSibling.querySelector('.collection-name-container span:first-child');
             if (nameCell) {
                 openCollections.add(nameCell.textContent);
             }
@@ -320,10 +320,32 @@ class VigilanteDashboard {
                 const row = document.createElement('tr');
                 row.className = 'collection-row';
                 
+                // Calculate total size for this collection across all nodes
+                let collectionTotalSize = 0;
+                Object.values(collection.nodes).forEach(nodeInfo => {
+                    if (nodeInfo.metrics?.sizeBytes) {
+                        collectionTotalSize += nodeInfo.metrics.sizeBytes;
+                    }
+                });
+                
                 const nameCell = document.createElement('td');
                 nameCell.className = 'collection-name';
                 nameCell.colSpan = podNames.length + 1;
-                nameCell.textContent = collection.name;
+                
+                // Create a container for name and size
+                const nameContainer = document.createElement('div');
+                nameContainer.className = 'collection-name-container';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = collection.name;
+                nameContainer.appendChild(nameSpan);
+                
+                const sizeSpan = document.createElement('span');
+                sizeSpan.className = 'collection-size';
+                sizeSpan.textContent = this.formatSize(collectionTotalSize);
+                nameContainer.appendChild(sizeSpan);
+                
+                nameCell.appendChild(nameContainer);
                 row.appendChild(nameCell);
 
                 const detailsRow = document.createElement('tr');

@@ -227,7 +227,7 @@ body {
 
 .node-header {
     display: flex;
-    justify-content: between;
+    justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
     padding-bottom: 8px;
@@ -478,6 +478,24 @@ body {
     padding: 12px 16px;
     font-weight: bold;
     color: #333;
+}
+
+.collection-name-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.collection-size {
+    font-size: 0.9rem;
+    color: #666;
+    background: #e8f4f8;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    border: 1px solid #b3d9e8;
+    font-weight: normal;
+    margin-left: 1rem;
 }
 
 .collection-details {
