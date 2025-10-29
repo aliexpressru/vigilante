@@ -3,6 +3,7 @@ using Vigilante.Models;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
 using Vigilante.Services;
+using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Controllers;
 
@@ -10,7 +11,7 @@ namespace Vigilante.Controllers;
 [Route("api/v1/cluster")]
 public class ClusterController(
     ClusterManager clusterManager,
-    CollectionService collectionService,
+    ICollectionService collectionService,
     ILogger<ClusterController> logger)
     : ControllerBase
 {

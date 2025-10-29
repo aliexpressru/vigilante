@@ -21,6 +21,7 @@ public class ClusterManagerTests
     private ILogger<ClusterManager> _logger = null!;
     private IMeterService _meterService = null!;
     private IQdrantClientFactory _clientFactory = null!;
+    private ICollectionService _collectionService = null!;
     private ClusterManager _clusterManager = null!;
     private ConcurrentDictionary<string, IQdrantHttpClient> _mockClients = null!;
 
@@ -32,9 +33,15 @@ public class ClusterManagerTests
         _logger = Substitute.For<ILogger<ClusterManager>>();
         _meterService = Substitute.For<IMeterService>();
         _clientFactory = Substitute.For<IQdrantClientFactory>();
+        _collectionService = Substitute.For<ICollectionService>();
         _mockClients = new ConcurrentDictionary<string, IQdrantHttpClient>();
         
         _options.Value.Returns(new QdrantOptions { HttpTimeoutSeconds = 5 });
+        
+        // Setup collection service to always return healthy
+        _collectionService
+            .CheckCollectionsHealthAsync(Arg.Any<IQdrantHttpClient>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
         
         // Setup client factory to return mocked clients
         _clientFactory
@@ -50,6 +57,7 @@ public class ClusterManagerTests
         _clusterManager = new ClusterManager(
             _nodesProvider,
             _clientFactory,
+            _collectionService,
             _options,
             _logger,
             _meterService);

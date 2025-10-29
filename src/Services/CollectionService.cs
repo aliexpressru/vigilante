@@ -2,6 +2,7 @@ using k8s;
 using System.Text;
 using System.Net.WebSockets;
 using Aer.QdrantClient.Http;
+using Aer.QdrantClient.Http.Abstractions;
 using Vigilante.Models;
 using Vigilante.Configuration;
 using Microsoft.Extensions.Options;
@@ -9,9 +10,9 @@ using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services;
 
-public class CollectionService
+public class CollectionService : ICollectionService
 {
-    private readonly ClusterManager _clusterManager;
+    private readonly Lazy<ClusterManager> _clusterManager;
     private readonly ILogger<CollectionService> _logger;
     private readonly IMeterService _meterService;
     private readonly IKubernetes? _kubernetes;
@@ -24,7 +25,7 @@ public class CollectionService
     private const string ShardStatesKey = "shardStates";
 
     public CollectionService(
-        ClusterManager clusterManager,
+        Lazy<ClusterManager> clusterManager,
         ILogger<CollectionService> logger,
         IMeterService meterService,
         IOptions<QdrantOptions> options)
@@ -59,7 +60,7 @@ public class CollectionService
 
         var result = new List<CollectionInfo>();
         _logger.LogInformation("Requesting cluster state from ClusterManager...");
-        var state = await _clusterManager.GetClusterStateAsync(cancellationToken);
+        var state = await _clusterManager.Value.GetClusterStateAsync(cancellationToken);
         
         // Create mapping of PeerId to podName
         var peerToPodMap = state.Nodes
@@ -236,7 +237,7 @@ public class CollectionService
             "Shards: {ShardIds}, Move: {IsMove}",
             sourcePeerId, targetPeerId, collectionName, string.Join(", ", shardIds), isMove);
 
-        var state = await _clusterManager.GetClusterStateAsync(cancellationToken);
+        var state = await _clusterManager.Value.GetClusterStateAsync(cancellationToken);
         var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
         
         if (healthyNode == null)
@@ -536,5 +537,49 @@ public class CollectionService
         }
 
         return testData;
+    }
+
+    public async Task<bool> CheckCollectionsHealthAsync(IQdrantHttpClient client, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _logger.LogDebug("Checking collections health");
+            var collectionsResponse = await client.ListCollections(cancellationToken);
+            
+            if (!collectionsResponse.Status.IsSuccess)
+            {
+                _logger.LogWarning("Collections health check failed: Invalid response for list collections");
+                return false;
+            }
+            
+            // If there are collections, also try to get info about the first one
+            if (collectionsResponse.Result?.Collections != null && collectionsResponse.Result.Collections.Any())
+            {
+                var firstCollection = collectionsResponse.Result.Collections.First();
+                var collectionName = firstCollection.Name;
+                
+                _logger.LogDebug("Checking collection info for {CollectionName}", collectionName);
+                var collectionInfo = await client.GetCollectionInfo(collectionName, cancellationToken);
+                
+                if (!collectionInfo.Status.IsSuccess)
+                {
+                    _logger.LogWarning("Collections health check failed: Invalid response for collection info on {CollectionName}", collectionName);
+                    return false;
+                }
+                
+                _logger.LogDebug("Collections health check passed including collection info for {CollectionName}", collectionName);
+            }
+            else
+            {
+                _logger.LogDebug("Collections health check passed (no collections to verify)");
+            }
+            
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Collections health check failed with exception");
+            return false;
+        }
     }
 }

@@ -6,6 +6,7 @@ public enum NodeErrorType
     Timeout,
     ConnectionError,
     InvalidResponse,
-    ClusterSplit
+    ClusterSplit,
+    CollectionsFetchError
 }
 

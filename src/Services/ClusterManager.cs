@@ -9,6 +9,7 @@ namespace Vigilante.Services;
 public class ClusterManager(
     IQdrantNodesProvider nodesProvider,
     IQdrantClientFactory clientFactory,
+    ICollectionService collectionService,
     IOptions<QdrantOptions> options,
     ILogger<ClusterManager> logger,
     IMeterService meterService)
@@ -66,6 +67,43 @@ public class ClusterManager(
                     
                     logger.LogInformation("Node {NodeUrl} is healthy. PeerId={PeerId}, IsLeader={IsLeader}", 
                         nodeInfo.Url, nodeInfo.PeerId, nodeInfo.IsLeader);
+                    
+                    // Also check collections availability
+                    try
+                    {
+                        logger.LogDebug("Requesting collections list from node {NodeUrl}", nodeInfo.Url);
+                        var collectionsTask = collectionService.CheckCollectionsHealthAsync(client, linkedCts.Token);
+                        var isHealthy = await collectionsTask.WaitAsync(timeoutCts.Token);
+                        
+                        if (!isHealthy)
+                        {
+                            nodeInfo.IsHealthy = false;
+                            nodeInfo.Error = "Failed to fetch collections: Invalid response";
+                            nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
+                            logger.LogWarning("Node {NodeUrl} returned invalid collections response", nodeInfo.Url);
+                        }
+                        else
+                        {
+                            logger.LogDebug("Node {NodeUrl} successfully returned collections list", nodeInfo.Url);
+                        }
+                    }
+                    catch (OperationCanceledException ex)
+                    {
+                        if (cancellationToken.IsCancellationRequested)
+                            throw;
+
+                        logger.LogWarning(ex, "Collections request timed out for node {NodeUrl}", nodeInfo.Url);
+                        nodeInfo.IsHealthy = false;
+                        nodeInfo.Error = "Collections request timed out";
+                        nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to fetch collections for node {NodeUrl}", nodeInfo.Url);
+                        nodeInfo.IsHealthy = false;
+                        nodeInfo.Error = $"Failed to fetch collections: {ex.Message}";
+                        nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
+                    }
                 }
                 else
                 {

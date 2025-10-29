@@ -21,13 +21,17 @@ public class Startup(IConfiguration configuration)
         // Add health checks
         services.AddHealthChecks();
 
-        // Core services
-        services.AddSingleton<ClusterManager>();
-        services.AddHostedService<QdrantMonitorService>();
-        services.AddSingleton<CollectionService>();
-        
         // Metrics service
         services.AddSingleton<IMeterService, MeterService>();
+        
+        // Core services - order matters due to dependencies
+        // Register Lazy<ClusterManager> to break circular dependency
+        services.AddSingleton<Lazy<ClusterManager>>(serviceProvider => 
+            new Lazy<ClusterManager>(() => serviceProvider.GetRequiredService<ClusterManager>()));
+        
+        services.AddSingleton<ICollectionService, CollectionService>();
+        services.AddSingleton<ClusterManager>();
+        services.AddHostedService<QdrantMonitorService>();
 
         // OpenTelemetry with Prometheus exporter
         services.AddOpenTelemetry()

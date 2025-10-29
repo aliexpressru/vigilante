@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
+using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services;
 
@@ -7,7 +8,7 @@ public class QdrantMonitorService(
     ClusterManager clusterManager,
     IOptions<QdrantOptions> options,
     ILogger<QdrantMonitorService> logger,
-    CollectionService collectionsSizeService)
+    ICollectionService collectionsSizeService)
     : BackgroundService
 {
     private readonly QdrantOptions _options = options.Value;
