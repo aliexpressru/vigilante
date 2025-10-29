@@ -539,7 +539,7 @@ public class CollectionService : ICollectionService
         return testData;
     }
 
-    public async Task<bool> CheckCollectionsHealthAsync(IQdrantHttpClient client, CancellationToken cancellationToken = default)
+    public async Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -548,8 +548,9 @@ public class CollectionService : ICollectionService
             
             if (!collectionsResponse.Status.IsSuccess)
             {
-                _logger.LogWarning("Collections health check failed: Invalid response for list collections");
-                return false;
+                var errorDetails = collectionsResponse.Status?.Error ?? "Unknown error";
+                _logger.LogWarning("Collections health check failed: {Error}", errorDetails);
+                return (false, $"Failed to list collections: {errorDetails}");
             }
             
             // If there are collections, also try to get info about the first one
@@ -563,8 +564,9 @@ public class CollectionService : ICollectionService
                 
                 if (!collectionInfo.Status.IsSuccess)
                 {
-                    _logger.LogWarning("Collections health check failed: Invalid response for collection info on {CollectionName}", collectionName);
-                    return false;
+                    var errorDetails = collectionInfo.Status?.Error ?? "Unknown error";
+                    _logger.LogWarning("Collections health check failed for {CollectionName}: {Error}", collectionName, errorDetails);
+                    return (false, $"Failed to get info for collection '{collectionName}': {errorDetails}");
                 }
                 
                 _logger.LogDebug("Collections health check passed including collection info for {CollectionName}", collectionName);
@@ -574,12 +576,12 @@ public class CollectionService : ICollectionService
                 _logger.LogDebug("Collections health check passed (no collections to verify)");
             }
             
-            return true;
+            return (true, null);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Collections health check failed with exception");
-            return false;
+            return (false, $"Exception during collections check: {ex.Message}");
         }
     }
 }

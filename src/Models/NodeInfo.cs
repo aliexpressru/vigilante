@@ -16,7 +16,15 @@ public class NodeInfo
 
     public DateTime LastSeen { get; set; }
 
-    public string? Error { get; set; } 
+    /// <summary>
+    /// Detailed error message for Issues section
+    /// </summary>
+    public string? Error { get; set; }
+    
+    /// <summary>
+    /// Short error message for cluster nodes UI display
+    /// </summary>
+    public string? ShortError { get; set; }
     
     public NodeErrorType ErrorType { get; set; } = NodeErrorType.None;
     

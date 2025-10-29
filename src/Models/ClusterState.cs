@@ -45,7 +45,16 @@ public class ClusterState
 
         if (health.HealthyNodes < health.TotalNodes)
         {
-            issues.Add($"{health.TotalNodes - health.HealthyNodes} nodes are unhealthy");
+            // Add detailed error information for each unhealthy node
+            var unhealthyNodes = Nodes.Where(n => !n.IsHealthy);
+            foreach (var node in unhealthyNodes)
+            {
+                var nodeName = !string.IsNullOrEmpty(node.PodName) ? node.PodName : node.Url;
+                var errorInfo = !string.IsNullOrEmpty(node.Error) 
+                    ? $"{nodeName}: {node.Error}" 
+                    : $"{nodeName}: Unknown error ({node.ErrorType})";
+                issues.Add(errorInfo);
+            }
         }
 
         if (string.IsNullOrEmpty(health.Leader))

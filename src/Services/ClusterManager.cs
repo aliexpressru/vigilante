@@ -73,14 +73,15 @@ public class ClusterManager(
                     {
                         logger.LogDebug("Requesting collections list from node {NodeUrl}", nodeInfo.Url);
                         var collectionsTask = collectionService.CheckCollectionsHealthAsync(client, linkedCts.Token);
-                        var isHealthy = await collectionsTask.WaitAsync(timeoutCts.Token);
+                        var (isHealthy, errorMessage) = await collectionsTask.WaitAsync(timeoutCts.Token);
                         
                         if (!isHealthy)
                         {
                             nodeInfo.IsHealthy = false;
-                            nodeInfo.Error = "Failed to fetch collections: Invalid response";
+                            nodeInfo.Error = errorMessage ?? "Failed to fetch collections";
+                            nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.CollectionsFetchError);
                             nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
-                            logger.LogWarning("Node {NodeUrl} returned invalid collections response", nodeInfo.Url);
+                            logger.LogWarning("Node {NodeUrl} collections check failed: {Error}", nodeInfo.Url, errorMessage);
                         }
                         else
                         {
@@ -95,6 +96,7 @@ public class ClusterManager(
                         logger.LogWarning(ex, "Collections request timed out for node {NodeUrl}", nodeInfo.Url);
                         nodeInfo.IsHealthy = false;
                         nodeInfo.Error = "Collections request timed out";
+                        nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.CollectionsFetchError);
                         nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
                     }
                     catch (Exception ex)
@@ -102,6 +104,7 @@ public class ClusterManager(
                         logger.LogWarning(ex, "Failed to fetch collections for node {NodeUrl}", nodeInfo.Url);
                         nodeInfo.IsHealthy = false;
                         nodeInfo.Error = $"Failed to fetch collections: {ex.Message}";
+                        nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.CollectionsFetchError);
                         nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
                     }
                 }
@@ -109,9 +112,14 @@ public class ClusterManager(
                 {
                     nodeInfo.PeerId = $"{node.Host}:{node.Port}";
                     nodeInfo.IsHealthy = false;
-                    nodeInfo.Error = "Failed to get cluster info: Invalid response";
+                    
+                    // Extract detailed error from Qdrant Status
+                    var errorDetails = clusterInfo.Status?.Error ?? "Invalid response";
+                    nodeInfo.Error = $"Failed to get cluster info: {errorDetails}";
+                    nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.InvalidResponse);
                     nodeInfo.ErrorType = NodeErrorType.InvalidResponse;
-                    logger.LogWarning("Node {NodeUrl} returned invalid cluster info response", nodeInfo.Url);
+                    logger.LogWarning("Node {NodeUrl} returned invalid cluster info response. Error: {Error}", 
+                        nodeInfo.Url, errorDetails);
                 }
             }
             catch (OperationCanceledException ex)
@@ -123,6 +131,7 @@ public class ClusterManager(
                 nodeInfo.PeerId = $"{node.Host}:{node.Port}";
                 nodeInfo.IsHealthy = false;
                 nodeInfo.Error = "Request timed out";
+                nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.Timeout);
                 nodeInfo.ErrorType = NodeErrorType.Timeout;
             }
             catch (Exception ex)
@@ -131,6 +140,7 @@ public class ClusterManager(
                 nodeInfo.PeerId = $"{node.Host}:{node.Port}";
                 nodeInfo.IsHealthy = false;
                 nodeInfo.Error = ex.Message;
+                nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.ConnectionError);
                 nodeInfo.ErrorType = NodeErrorType.ConnectionError;
             }
 
@@ -180,6 +190,7 @@ public class ClusterManager(
             {
                 node.IsHealthy = false;
                 node.Error = $"Potential cluster split detected: {inconsistencyReason}";
+                node.ShortError = GetShortErrorMessage(NodeErrorType.ClusterSplit);
                 node.ErrorType = NodeErrorType.ClusterSplit;
                 
                 logger.LogWarning(
@@ -203,4 +214,14 @@ public class ClusterManager(
         logger.LogInformation("💡 Manual intervention may be required for cluster issues");
         await Task.CompletedTask;
     }
+
+    private static string GetShortErrorMessage(NodeErrorType errorType) => errorType switch
+    {
+        NodeErrorType.Timeout => "Timeout",
+        NodeErrorType.ConnectionError => "Connection Error",
+        NodeErrorType.InvalidResponse => "Invalid Response",
+        NodeErrorType.ClusterSplit => "Cluster Split",
+        NodeErrorType.CollectionsFetchError => "Collections Error",
+        _ => "Unknown Error"
+    };
 }

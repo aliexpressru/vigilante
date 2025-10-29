@@ -26,7 +26,7 @@ public interface ICollectionService
     /// </summary>
     /// <param name="client">Qdrant HTTP client</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if collections are accessible, false otherwise</returns>
-    Task<bool> CheckCollectionsHealthAsync(IQdrantHttpClient client, CancellationToken cancellationToken = default);
+    /// <returns>Tuple with success status and error message if failed</returns>
+    Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client, CancellationToken cancellationToken = default);
 }
 

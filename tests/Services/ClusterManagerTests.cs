@@ -41,7 +41,7 @@ public class ClusterManagerTests
         // Setup collection service to always return healthy
         _collectionService
             .CheckCollectionsHealthAsync(Arg.Any<IQdrantHttpClient>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(true));
+            .Returns(Task.FromResult((true, (string?)null)));
         
         // Setup client factory to return mocked clients
         _clientFactory

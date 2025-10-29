@@ -713,11 +713,11 @@ class VigilanteDashboard {
         card.appendChild(header);
         card.appendChild(details);
 
-        // Error message (if any)
-        if (node.error) {
+        // Error message (if any) - show short error in node card
+        if (node.shortError) {
             const errorDiv = document.createElement('div');
             errorDiv.className = 'node-error';
-            errorDiv.textContent = `Error: ${node.error}`;
+            errorDiv.textContent = `Error: ${node.shortError}`;
             card.appendChild(errorDiv);
         }
 
