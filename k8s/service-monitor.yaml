@@ -4,11 +4,17 @@ metadata:
   name: vigilante-metrics
   labels:
     app: vigilante
+    app.kubernetes.io/name: vigilante
+    app.kubernetes.io/instance: vigilante
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: qdrant-cluster
     release: prometheus
 spec:
   selector:
     matchLabels:
       app: vigilante
+      app.kubernetes.io/name: vigilante
+      app.kubernetes.io/instance: vigilante
   endpoints:
   - port: http-metrics
     interval: 15s

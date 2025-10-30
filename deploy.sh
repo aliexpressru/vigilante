@@ -5,6 +5,14 @@
 
 set -e
 
+# Set custom label for resource ownership/team tracking
+export OWNER_LABEL_NAME="owner"  # Label name (e.g., "owner", "team", "managed-by")
+export OWNER_LABEL_VALUE="YOUR_NAME_HERE"  # Replace with actual owner/team name
+
+# Set cluster domain for ingress access
+export CLUSTER_DOMAIN="your-cluster-domain.com"  # Replace with actual cluster domain
+# =======================================================
+
 echo "🚀 Starting Vigilante deployment..."
 
 # Get current kubernetes context and namespace
@@ -79,6 +87,16 @@ cp ../deployment.yaml "$TEMP_DEPLOYMENT"
 
 # Update deployment with environment-specific settings
 sed -i '' "s/value: \"Development\"/value: \"$ENV\"/" "$TEMP_DEPLOYMENT" || true
+
+# Replace owner label placeholder with actual values if set
+if [ ! -z "$OWNER_LABEL_NAME" ] && [ ! -z "$OWNER_LABEL_VALUE" ] && [ "$OWNER_LABEL_VALUE" != "YOUR_NAME_HERE" ]; then
+    echo "🏷️  Setting owner label: $OWNER_LABEL_NAME=$OWNER_LABEL_VALUE"
+    # Replace the placeholder label name and value (using | as delimiter to avoid conflicts with /)
+    sed -i '' "s|owner: \"OWNER_PLACEHOLDER\"|$OWNER_LABEL_NAME: \"$OWNER_LABEL_VALUE\"|g" "$TEMP_DEPLOYMENT"
+else
+    # Remove the owner label placeholder if not set
+    sed -i '' "/owner: \"OWNER_PLACEHOLDER\"/d" "$TEMP_DEPLOYMENT"
+fi
 
 # For production, update resources and add security context
 if [ "$ENV_NAME" = "prod" ]; then

@@ -4,9 +4,14 @@ metadata:
   name: vigilante-service
   labels:
     app: vigilante
+    app.kubernetes.io/name: vigilante
+    app.kubernetes.io/instance: vigilante
+    app.kubernetes.io/component: monitoring
 spec:
   selector:
     app: vigilante
+    app.kubernetes.io/name: vigilante
+    app.kubernetes.io/instance: vigilante
   ports:
     - name: http
       port: 80

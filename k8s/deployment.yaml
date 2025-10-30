@@ -4,15 +4,25 @@ metadata:
   name: vigilante
   labels:
     app: vigilante
+    app.kubernetes.io/name: vigilante
+    app.kubernetes.io/instance: vigilante
+    app.kubernetes.io/component: monitoring
+    owner: "OWNER_PLACEHOLDER"
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: vigilante
+      app.kubernetes.io/name: vigilante
+      app.kubernetes.io/instance: vigilante
   template:
     metadata:
       labels:
         app: vigilante
+        app.kubernetes.io/name: vigilante
+        app.kubernetes.io/instance: vigilante
+        owner: "OWNER_PLACEHOLDER"
+        app.kubernetes.io/component: monitoring
     spec:
       serviceAccountName: vigilante-sa
       containers:

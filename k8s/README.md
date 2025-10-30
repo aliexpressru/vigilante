@@ -20,58 +20,108 @@ k8s/
 
 ## 🚀 Quick Start
 
-### 1. Switch kubectl context
+### 1. Configure deployment script (optional)
+Before deploying, you can customize the deployment by editing `deploy.sh`:
+
+```bash
+# Edit these variables at the top of deploy.sh
+export OWNER_LABEL_NAME="owner"                     # Custom label name for resource tracking
+export OWNER_LABEL_VALUE="YOUR_NAME_HERE"           # Your team/owner name
+export CLUSTER_DOMAIN="your-cluster-domain.com"     # Your cluster domain for Ingress
+```
+
+### 2. Switch kubectl context
 ```bash
 kubectl config use-context <context-name>
 ```
 
-### 2. Choose access method and deploy
+### 3. Deploy to your environment
 The deploy.sh script performs a complete redeployment of the application:
 - Removes existing deployment
 - Recreates all resources from scratch
 - Ensures clean state for each deployment
 
-You have two options to access Vigilante after deployment:
-
-#### Option 1: Direct Pod IP access (default)
-Just run the deployment script without any additional parameters:
+Simply run:
 ```bash
 cd k8s/dev  # or k8s/prod
 ../../deploy.sh
 ```
-The script will output Pod IP addresses that you can use to access Vigilante directly.
 
-#### Option 2: Ingress access
-If you want to access Vigilante through Ingress, provide your cluster domain:
-```bash
-cd k8s/dev  # or k8s/prod
-CLUSTER_DOMAIN=your-cluster-domain.com ../../deploy.sh
+The script will:
+- 🏷️  Apply custom owner labels (if configured)
+- 🌐 Create Ingress (if CLUSTER_DOMAIN is set)
+- 📦 Deploy with environment-specific settings
+- ⏳ Wait for pods to be ready
+- 🔗 Display access URLs
+
+### 4. Access the application
+Depending on your deployment configuration, Vigilante will be accessible:
+- **Via Ingress** (if CLUSTER_DOMAIN is set): `http://vigilante-<namespace>.<context>.<cluster-domain>`
+- **Via Pod IP** (if CLUSTER_DOMAIN is not set): `http://<pod-ip>:8080`
+
+The script automatically displays the appropriate URL after deployment.
+
+## 🏷️ Kubernetes Labels
+
+All deployed resources include standard Kubernetes labels for better tracking and monitoring:
+
+### Standard Labels
+```yaml
+app: vigilante
+app.kubernetes.io/name: vigilante
+app.kubernetes.io/instance: vigilante
+app.kubernetes.io/component: monitoring
 ```
-This will create an Ingress resource and make Vigilante available at:
-`http://vigilante-<namespace>.<context>.<your-cluster-domain>`
 
-Example:
+### Custom Owner Label
+You can add a custom label for resource ownership tracking by configuring `deploy.sh`:
+
 ```bash
-CLUSTER_DOMAIN=k8s.company.com ./deploy.sh
-# Will be available at: http://vigilante-qdrant.dev1.k8s.company.com
-#                                    ^      ^    ^
-#                                namespace ctx  domain
+export OWNER_LABEL_NAME="team"              # Your label name
+export OWNER_LABEL_VALUE="platform-team"    # Your team/owner
 ```
 
-### 3. Access the application
-Depending on your deployment method, Vigilante will be accessible either:
-- Via Pod IP: `http://<pod-ip>:8080` (when deployed without CLUSTER_DOMAIN)
-- Via Ingress: `http://vigilante-<namespace>.<context>.<cluster-domain>` (when deployed with CLUSTER_DOMAIN)
+This label will be added to:
+- Deployment metadata
+- Pod template metadata
+
+**Use case**: Track resources by team/owner in Prometheus metrics via `kube_pod_labels`
+
+### Prometheus Metrics
+After deployment, your pods will be visible in Prometheus with labels:
+```promql
+kube_pod_labels{
+  label_app="vigilante",
+  label_app_kubernetes_io_name="vigilante",
+  label_app_kubernetes_io_instance="vigilante",
+  label_app_kubernetes_io_component="monitoring",
+  label_team="platform_team"  # Your custom label (if configured)
+}
+```
+
+**Note**: Dots and slashes in label names are converted to underscores in Prometheus.
 
 ## 🎯 How It Works
 
 ### Deployment Process
 The `deploy.sh` script performs these steps:
-1. **Clean up**: Removes existing deployment to ensure clean state
-2. **Configure**: Prepares environment-specific settings
-3. **Deploy**: Creates new resources (deployment, service, etc.)
-4. **Wait**: Ensures new pods are ready
-5. **Access**: Provides appropriate URL based on access method
+1. **Load configuration**: Reads OWNER_LABEL_NAME, OWNER_LABEL_VALUE, and CLUSTER_DOMAIN from script variables
+2. **Clean up**: Removes existing deployment to ensure clean state
+3. **Configure**: Prepares environment-specific settings and replaces label placeholders
+4. **Deploy**: Creates new resources (deployment, service, ingress if needed)
+5. **Wait**: Ensures new pods are ready
+6. **Access**: Provides appropriate URL based on access method
+
+### Label Configuration
+The deployment.yaml contains a placeholder for the owner label:
+```yaml
+owner: "OWNER_PLACEHOLDER"
+```
+
+During deployment:
+- If `OWNER_LABEL_NAME` and `OWNER_LABEL_VALUE` are set → placeholder is replaced with your values
+- If not set → placeholder is removed from the manifest
+- This allows committing the deployment.yaml to Git with a generic placeholder
 
 ### Unified System
 - **Single script** (`deploy.sh`) for all environments
@@ -80,7 +130,8 @@ The `deploy.sh` script performs these steps:
 - **Context-aware** - uses current kubectl context
 - **Smart configuration** - automatically adapts for prod (more resources, replicas)
 - **Flexible access** - supports both direct Pod IP and Ingress access methods
-- **Auto domain detection** - can detect cluster domain from existing ingresses
+- **Customizable labels** - add custom owner/team labels for resource tracking
+- **Git-friendly** - uses placeholders to avoid committing sensitive values
 
 ### Deployment script determines:
 - Environment by folder: `k8s/dev` → Development, `k8s/prod` → Production
@@ -126,7 +177,7 @@ kubectl describe deployment vigilante
 ### No access to URL
 ```bash
 # Get current pod IP
-./get-url.sh
+kubectl get pods -l app=vigilante -o wide
 
 # Test accessibility via port-forward
 kubectl port-forward svc/vigilante-service 8080:80
@@ -163,7 +214,7 @@ Open `http://POD_IP:8080` in browser for web monitoring interface.
 If you need to completely recreate the deployment (e.g., for major changes):
 ```bash
 # Delete existing deployment
-kubectl delete deployment vigilante -n qdrant
+kubectl delete deployment vigilante
 
 # Then redeploy
 cd k8s/dev  # or k8s/prod
@@ -199,3 +250,4 @@ kubectl rollout restart deployment/vigilante
 - **ClusterIP**: Secure access without exposed ports on nodes
 - **Direct IP**: Pod IP access for simple integration
 - **RBAC**: Minimal permissions for pod read-only access
+
