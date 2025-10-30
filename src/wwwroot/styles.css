@@ -391,7 +391,6 @@ body {
     padding: 25px;
     box-shadow: 0 8px 25px rgba(0,0,0,0.1);
     margin-bottom: 20px;
-    overflow-x: auto;
 }
 
 .collections-overview h3 {
@@ -485,6 +484,16 @@ body {
     justify-content: space-between;
     align-items: center;
     width: 100%;
+    gap: 1rem;
+    min-width: 0; /* Allow flex items to shrink below content size */
+}
+
+.collection-name-container > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0; /* Allow shrinking */
+    flex: 1; /* Take available space */
 }
 
 .collection-size {
@@ -495,7 +504,8 @@ body {
     border-radius: 4px;
     border: 1px solid #b3d9e8;
     font-weight: normal;
-    margin-left: 1rem;
+    white-space: nowrap; /* Prevent wrapping */
+    flex-shrink: 0; /* Don't shrink the size badge */
 }
 
 .collection-details {

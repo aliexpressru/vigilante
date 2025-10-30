@@ -470,7 +470,15 @@ public class CollectionService : ICollectionService
     private IReadOnlyList<CollectionInfo> GenerateTestCollectionData()
     {
         var testData = new List<CollectionInfo>();
-        var testCollections = new[] { "test_collection", "products", "embeddings" };
+        var testCollections = new[] 
+        { 
+            "test_collection", 
+            "products", 
+            "embeddings",
+            // Long collection names to test UI overflow handling
+            "super_long_collection_name_with_multiple_underscores_and_segments_to_test_horizontal_overflow_behavior",
+            "analytics_data_warehouse_user_behavior_tracking_embeddings_v2_production_quantized_optimized_2024"
+        };
         var testPeers = new[]
         {
             ("peer1", "pod-1", "http://localhost:6333"),
@@ -478,8 +486,20 @@ public class CollectionService : ICollectionService
             ("peer3", "pod-3", "http://localhost:6335")
         };
 
+        // Define different sizes for different collections to make it more realistic
+        var collectionSizes = new Dictionary<string, (string prettySize, long sizeBytes)>
+        {
+            { "test_collection", ("1.2 GB", 1288490188L) },
+            { "products", ("850.5 MB", 891873484L) },
+            { "embeddings", ("3.7 GB", 3971891200L) },
+            { "super_long_collection_name_with_multiple_underscores_and_segments_to_test_horizontal_overflow_behavior", ("7.3 GB", 7836344320L) },
+            { "analytics_data_warehouse_user_behavior_tracking_embeddings_v2_production_quantized_optimized_2024", ("22.1 GB", 23735685734L) }
+        };
+
         foreach (var collection in testCollections)
         {
+            var (prettySize, sizeBytes) = collectionSizes.GetValueOrDefault(collection, ("1.0 GB", 1073741824L));
+            
             foreach (var (peerId, podName, url) in testPeers)
             {
                 var shards = new List<int>();
@@ -519,8 +539,8 @@ public class CollectionService : ICollectionService
 
                 var metrics = new Dictionary<string, object>
                 {
-                    { PrettySizeMetricKey, "1.2GB" },
-                    { SizeBytesMetricKey, 1288490188L }, // 1.2GB в байтах
+                    { PrettySizeMetricKey, prettySize },
+                    { SizeBytesMetricKey, sizeBytes },
                     { ShardsMetricKey, shards },
                     { OutgoingTransfersKey, transfers },
                     { ShardStatesKey, shardStates }

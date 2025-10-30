@@ -338,6 +338,7 @@ class VigilanteDashboard {
                 
                 const nameSpan = document.createElement('span');
                 nameSpan.textContent = collection.name;
+                nameSpan.title = collection.name; // Show full name on hover
                 nameContainer.appendChild(nameSpan);
                 
                 const sizeSpan = document.createElement('span');
