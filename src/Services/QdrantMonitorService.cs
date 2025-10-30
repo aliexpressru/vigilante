@@ -7,8 +7,7 @@ namespace Vigilante.Services;
 public class QdrantMonitorService(
     ClusterManager clusterManager,
     IOptions<QdrantOptions> options,
-    ILogger<QdrantMonitorService> logger,
-    ICollectionService collectionsSizeService)
+    ILogger<QdrantMonitorService> logger)
     : BackgroundService
 {
     private readonly QdrantOptions _options = options.Value;
@@ -39,7 +38,7 @@ public class QdrantMonitorService(
                     if (state.Health.IsHealthy)
                     {
                         logger.LogDebug("Collecting size information for collections");
-                        var sizes = await collectionsSizeService.GetCollectionsInfoAsync(stoppingToken);
+                        var sizes = await clusterManager.GetCollectionsInfoAsync(stoppingToken);
                         logger.LogInformation("📊 Collection sizes updated. Found {Count} collections across all nodes", 
                             sizes.Count);
                     }

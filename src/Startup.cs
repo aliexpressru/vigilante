@@ -24,11 +24,7 @@ public class Startup(IConfiguration configuration)
         // Metrics service
         services.AddSingleton<IMeterService, MeterService>();
         
-        // Core services - order matters due to dependencies
-        // Register Lazy<ClusterManager> to break circular dependency
-        services.AddSingleton<Lazy<ClusterManager>>(serviceProvider => 
-            new Lazy<ClusterManager>(() => serviceProvider.GetRequiredService<ClusterManager>()));
-        
+        // Core services - CollectionService has no dependencies on ClusterManager anymore
         services.AddSingleton<ICollectionService, CollectionService>();
         services.AddSingleton<ClusterManager>();
         services.AddHostedService<QdrantMonitorService>();

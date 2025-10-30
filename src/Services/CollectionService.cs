@@ -1,7 +1,6 @@
 using k8s;
 using System.Text;
 using System.Net.WebSockets;
-using Aer.QdrantClient.Http;
 using Aer.QdrantClient.Http.Abstractions;
 using Vigilante.Models;
 using Vigilante.Configuration;
@@ -12,11 +11,11 @@ namespace Vigilante.Services;
 
 public class CollectionService : ICollectionService
 {
-    private readonly Lazy<ClusterManager> _clusterManager;
     private readonly ILogger<CollectionService> _logger;
     private readonly IMeterService _meterService;
     private readonly IKubernetes? _kubernetes;
     private readonly QdrantOptions _options;
+    private readonly IQdrantClientFactory _clientFactory;
 
     private const string PrettySizeMetricKey = "prettySize";
     private const string SizeBytesMetricKey = "sizeBytes";
@@ -25,14 +24,14 @@ public class CollectionService : ICollectionService
     private const string ShardStatesKey = "shardStates";
 
     public CollectionService(
-        Lazy<ClusterManager> clusterManager,
         ILogger<CollectionService> logger,
         IMeterService meterService,
+        IQdrantClientFactory clientFactory,
         IOptions<QdrantOptions> options)
     {
-        _clusterManager = clusterManager;
         _logger = logger;
         _meterService = meterService;
+        _clientFactory = clientFactory;
         _options = options.Value;
 
         // Try to initialize Kubernetes client only if we're running in a cluster
@@ -48,183 +47,21 @@ public class CollectionService : ICollectionService
         }
     }
 
-    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(CancellationToken cancellationToken)
+    public Task<bool> ReplicateShardsAsync(
+        ulong sourcePeerId,
+        ulong targetPeerId,
+        string collectionName,
+        uint[] shardIds,
+        bool isMove,
+        CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Starting GetCollectionsSizesAsync");
-
-        if (_kubernetes == null)
-        {
-            _logger.LogDebug("Running in local mode, returning test data");
-            return GenerateTestCollectionData();
-        }
-
-        var result = new List<CollectionInfo>();
-        _logger.LogInformation("Requesting cluster state from ClusterManager...");
-        var state = await _clusterManager.Value.GetClusterStateAsync(cancellationToken);
-        
-        // Create mapping of PeerId to podName
-        var peerToPodMap = state.Nodes
-            .Where(n => !string.IsNullOrEmpty(n.PeerId) && !string.IsNullOrEmpty(n.PodName))
-            .ToDictionary(n => n.PeerId, n => n.PodName);
-            
-        var nodes = state.Nodes;
-        _logger.LogInformation("Found {NodesCount} nodes to process. Healthy nodes: {HealthyCount}", 
-            nodes.Count, nodes.Count(n => n.IsHealthy));
-            
-        // First, get all collections and their sizes from all nodes
-        foreach (var node in nodes)
-        {
-            _logger.LogInformation(
-                "Processing node: URL={NodeUrl}, PeerId={PeerId}, IsHealthy={IsHealthy}, Namespace={Namespace}", 
-                node.Url, node.PeerId, node.IsHealthy, node.Namespace);
-            try
-            {
-                var podName = await GetPodNameFromIpAsync(node.Url, node.Namespace ?? "", cancellationToken);
-                if (string.IsNullOrEmpty(podName))
-                {
-                    _logger.LogWarning("Could not find pod for IP {NodeUrl} in namespace {Namespace}", node.Url,
-                        node.Namespace);
-                    continue;
-                }
-
-                _logger.LogInformation("Found pod {PodName} for IP {NodeUrl}", podName, node.Url);
-                
-                var collectionSizes =
-                    await GetCollectionsSizesForPodAsync(podName, node.Namespace ?? "", node.Url, node.PeerId, cancellationToken);
-                var sizesList = collectionSizes.ToList();
-                _logger.LogInformation("Retrieved {SizesCount} collection sizes from pod {PodName}", sizesList.Count,
-                    podName);
-
-                foreach (var size in sizesList)
-                {
-                    var metrics = new Dictionary<string, object>
-                    {
-                        { PrettySizeMetricKey, size.PrettySize },
-                        { SizeBytesMetricKey, size.SizeBytes }
-                    };
-
-                    result.Add(new CollectionInfo
-                    {
-                        CollectionName = size.CollectionName,
-                        NodeUrl = size.NodeUrl,
-                        PodName = size.PodName,
-                        PeerId = size.PeerId,
-                        Metrics = metrics
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to get collection sizes for node {nodeUrl}", node.Url);
-            }
-        }
-        
-        // Then, get sharding information from a healthy node
-        var healthyNode = nodes.FirstOrDefault(n => n.IsHealthy);
-        if (healthyNode != null)
-        {
-            try
-            {
-                var uri = new Uri(healthyNode.Url);
-                var qdrantClient = string.IsNullOrEmpty(_options.ApiKey)
-                    ? new QdrantHttpClient(uri.Host, uri.Port)
-                    : new QdrantHttpClient(uri.Host, uri.Port, apiKey: _options.ApiKey);
-
-                // Group collections by name to avoid duplicates
-                var collections = result
-                    .Select(r => r.CollectionName)
-                    .Distinct();
-
-                foreach (var collectionName in collections)
-                {
-                    try
-                    {
-                        var clusteringInfo = await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
-                        if (clusteringInfo?.Status?.IsSuccess == true && clusteringInfo.Result != null)
-                        {
-                            // Update metrics for each node's collection
-                            var collectionInfos = result.Where(r => r.CollectionName == collectionName);
-                            foreach (var info in collectionInfos)
-                            {
-                                var shards = new List<ulong>();
-                                var shardStates = new Dictionary<string, string>();
-
-                                // If this is the node we made request from, use local shards
-                                if (healthyNode.PeerId == info.PeerId)
-                                {
-                                    if (clusteringInfo.Result.LocalShards != null)
-                                    {
-                                        foreach (var shard in clusteringInfo.Result.LocalShards)
-                                        {
-                                            shards.Add(shard.ShardId);
-                                            shardStates[shard.ShardId.ToString()] = shard.State.ToString();
-                                        }
-                                    }
-                                }
-                                else if (clusteringInfo.Result.RemoteShards != null)
-                                {
-                                    // Find shards for this node in remote shards
-                                    foreach (var remoteShard in clusteringInfo.Result.RemoteShards)
-                                    {
-                                        if (remoteShard.PeerId.ToString() == info.PeerId)
-                                        {
-                                            shards.Add(remoteShard.ShardId);
-                                            shardStates[remoteShard.ShardId.ToString()] = remoteShard.State.ToString();
-                                        }
-                                    }
-                                }
-
-                                if (shards.Any())
-                                {
-                                    info.Metrics[ShardsMetricKey] = shards;
-                                    info.Metrics[ShardStatesKey] = shardStates;
-                                }
-
-                                // Add outgoing transfers information with pod names instead of PeerIds
-                                if (clusteringInfo.Result.ShardTransfers != null)
-                                {
-                                    var outgoingTransfers = clusteringInfo.Result.ShardTransfers
-                                        .Where(t => t.From.ToString() == info.PeerId)
-                                        .Select(t => new
-                                        {
-                                            ShardId = t.ShardId,
-                                            To = peerToPodMap.TryGetValue(t.To.ToString(), out var podName) ? podName : t.To.ToString(),
-                                            IsSync = t.Sync
-                                        })
-                                        .ToList();
-
-                                    if (outgoingTransfers.Any())
-                                    {
-                                        info.Metrics[OutgoingTransfersKey] = outgoingTransfers;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to get clustering info for collection {Collection} from node {NodeUrl}", 
-                            collectionName, healthyNode.Url);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to setup QdrantClient for node {NodeUrl}", healthyNode.Url);
-            }
-        }
-        else
-        {
-            _logger.LogWarning("No healthy nodes found, skipping sharding information collection");
-        }
-
-        _logger.LogInformation("Completed GetCollectionsSizesAsync, found {TotalCollections} collections in total",
-            result.Count);
-
-        return result;
+        // This method is kept for backward compatibility but should be called from ClusterManager
+        _logger.LogError("ReplicateShardsAsync called directly on CollectionService. This method should be called through ClusterManager.");
+        return Task.FromResult(false);
     }
-    
-    public async Task<bool> ReplicateShardsAsync(
+
+    public async Task<bool> ReplicateShardsInternalAsync(
+        string healthyNodeUrl,
         ulong sourcePeerId,
         ulong targetPeerId,
         string collectionName,
@@ -237,21 +74,10 @@ public class CollectionService : ICollectionService
             "Shards: {ShardIds}, Move: {IsMove}",
             sourcePeerId, targetPeerId, collectionName, string.Join(", ", shardIds), isMove);
 
-        var state = await _clusterManager.Value.GetClusterStateAsync(cancellationToken);
-        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
-        
-        if (healthyNode == null)
-        {
-            _logger.LogError("No healthy nodes found to perform replication");
-            return false;
-        }
-
         try
         {
-            var uri = new Uri(healthyNode.Url);
-            var qdrantClient = string.IsNullOrEmpty(_options.ApiKey)
-                ? new QdrantHttpClient(uri.Host, uri.Port)
-                : new QdrantHttpClient(uri.Host, uri.Port, apiKey: _options.ApiKey);
+            var uri = new Uri(healthyNodeUrl);
+            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
 
             var result = await qdrantClient.ReplicateShards(
                 sourcePeerId: sourcePeerId,
@@ -281,30 +107,7 @@ public class CollectionService : ICollectionService
         }
     }
 
-    private async Task<string?> GetPodNameFromIpAsync(string podUrl, string podNamespace,
-        CancellationToken cancellationToken)
-    {
-        var uri = new Uri(podUrl);
-        var podIp = uri.Host;
-        
-        _logger.LogInformation("Getting pod name for IP {PodIp} in namespace {Namespace}", podIp, podNamespace);
-
-        if (_kubernetes == null)
-        {
-            return null;
-        }
-
-        var pods = await _kubernetes.CoreV1.ListNamespacedPodAsync(
-            namespaceParameter: podNamespace,
-            fieldSelector: $"status.podIP=={podIp}", // Fix: changed podIp= to status.podIP==
-            cancellationToken: cancellationToken);
-
-        _logger.LogInformation("Found {PodsCount} pods matching IP {PodIp}", pods.Items.Count, podIp);
-
-        return pods.Items.FirstOrDefault()?.Metadata.Name;
-    }
-
-    private async Task<IEnumerable<CollectionSize>> GetCollectionsSizesForPodAsync(
+    public async Task<IEnumerable<CollectionSize>> GetCollectionsSizesForPodAsync(
         string podName,
         string podNamespace,
         string nodeUrl,
@@ -467,7 +270,7 @@ public class CollectionService : ICollectionService
         return sizes;
     }
 
-    private IReadOnlyList<CollectionInfo> GenerateTestCollectionData()
+    public IReadOnlyList<CollectionInfo> GenerateTestCollectionData()
     {
         var testData = new List<CollectionInfo>();
         var testCollections = new[] 

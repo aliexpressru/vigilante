@@ -11,7 +11,6 @@ namespace Vigilante.Controllers;
 [Route("api/v1/cluster")]
 public class ClusterController(
     ClusterManager clusterManager,
-    ICollectionService collectionService,
     ILogger<ClusterController> logger)
     : ControllerBase
 {
@@ -40,7 +39,7 @@ public class ClusterController(
     {
         try
         {
-            var result = await collectionService.GetCollectionsInfoAsync(cancellationToken);
+            var result = await clusterManager.GetCollectionsInfoAsync(cancellationToken);
 
             return Ok(new V1GetCollectionsInfoResponse
             {
@@ -73,7 +72,7 @@ public class ClusterController(
     {
         try
         {
-            var success = await collectionService.ReplicateShardsAsync(
+            var success = await clusterManager.ReplicateShardsAsync(
                 request.SourcePeerId!.Value,
                 request.TargetPeerId!.Value,
                 request.CollectionName,
