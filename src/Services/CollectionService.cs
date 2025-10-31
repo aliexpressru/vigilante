@@ -38,11 +38,10 @@ public class CollectionService : ICollectionService
         try
         {
             _kubernetes = new Kubernetes(KubernetesClientConfiguration.InClusterConfig());
-            _logger.LogInformation("Kubernetes client initialized successfully");
         }
         catch (k8s.Exceptions.KubeConfigException)
         {
-            _logger.LogInformation("Not running in Kubernetes cluster, collection size monitoring will be disabled");
+            _logger.LogWarning("Not running in Kubernetes cluster, collection size monitoring will be disabled");
             _kubernetes = null;
         }
     }
@@ -56,11 +55,6 @@ public class CollectionService : ICollectionService
         bool isMove,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "Starting shard replication. Source: {SourcePeerId}, Target: {TargetPeerId}, Collection: {Collection}, " +
-            "Shards: {ShardIds}, Move: {IsMove}",
-            sourcePeerId, targetPeerId, collectionName, string.Join(", ", shardIds), isMove);
-
         try
         {
             var uri = new Uri(healthyNodeUrl);
@@ -76,15 +70,13 @@ public class CollectionService : ICollectionService
 
             if (result?.Status?.IsSuccess == true)
             {
-                _logger.LogInformation(
-                    "Successfully initiated shard replication for collection {Collection}", collectionName);
+                _logger.LogInformation("✅ Shard replication initiated: {Collection} [{SourcePeer}→{TargetPeer}]", 
+                    collectionName, sourcePeerId, targetPeerId);
                 return true;
             }
 
-            _logger.LogError(
-                "Failed to replicate shards. Status: {Status}, Error: {Error}",
-                result?.Status?.ToString() ?? "Unknown",
-                result?.Status?.Error ?? "No error details");
+            _logger.LogError("Failed to replicate shards for {Collection}: {Error}",
+                collectionName, result?.Status?.Error ?? "Unknown error");
             return false;
         }
         catch (Exception ex)
@@ -114,17 +106,6 @@ public class CollectionService : ICollectionService
 
         try
         {
-            _logger.LogInformation("Executing WebSocket command to list collections in pod {PodName}", podName);
-            
-            // Command breakdown: ["sh", "-c", "cd /qdrant/storage/collections && ls -1d */"]
-            // - "sh": Use the Bourne shell to execute commands
-            // - "-c": Execute the following string as a command
-            // - "cd /qdrant/storage/collections": Change directory to Qdrant collections storage
-            // - "&&": Execute the next command only if the previous one succeeds
-            // - "ls": List directory contents
-            // - "-1": List one file per line (single-column output)
-            // - "-d": List directories themselves, not their contents
-            // - "*/": Match all directories (the trailing slash ensures only directories are matched)
             using var webSocket = await _kubernetes.WebSocketNamespacedPodExecAsync(
                 podName,
                 podNamespace,
@@ -132,12 +113,9 @@ public class CollectionService : ICollectionService
                 "qdrant",
                 cancellationToken: cancellationToken);
 
-            _logger.LogDebug("WebSocket connection established for pod {PodName}", podName);
-            
-            // Pre-allocate buffers to reduce memory allocations
             var buffer = new byte[4096];
             var segment = new ArraySegment<byte>(buffer);
-            var collectionsOutput = new StringBuilder(512); // Pre-allocate reasonable size
+            var collectionsOutput = new StringBuilder(512);
 
             WebSocketReceiveResult result;
             do
@@ -145,13 +123,9 @@ public class CollectionService : ICollectionService
                 result = await webSocket.ReceiveAsync(segment, cancellationToken);
                 if (result.Count > 0)
                 {
-                    var receivedText = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    _logger.LogDebug("Received WebSocket data: {ReceivedText}", receivedText);
-                    collectionsOutput.Append(receivedText);
+                    collectionsOutput.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
                 }
             } while (!result.CloseStatus.HasValue && !cancellationToken.IsCancellationRequested);
-
-            _logger.LogDebug("Raw collections output: {RawOutput}", collectionsOutput.ToString());
 
             var collections = collectionsOutput.ToString()
                 .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
@@ -164,15 +138,10 @@ public class CollectionService : ICollectionService
                 .Where(name => !string.IsNullOrWhiteSpace(name) && !name.StartsWith("."))
                 .ToList();
 
-            _logger.LogInformation("Found {CollectionsCount} collections in pod {PodName}: {Collections}",
-                collections.Count, podName, string.Join(", ", collections));
-
             foreach (var collection in collections)
             {
                 try
                 {
-                    _logger.LogInformation("Getting size for collection {Collection} in pod {PodName}", collection,
-                        podName);
                         
                     // Command breakdown: ["sh", "-c", "cd /qdrant/storage/collections && du -sb \"collection\" | cut -f1"]
                     // - "sh": Use the Bourne shell to execute commands
@@ -227,34 +196,24 @@ public class CollectionService : ICollectionService
 
                         sizes.Add(collectionSize);
                         _meterService.UpdateCollectionSize(collectionSize);
-                        _logger.LogInformation(
-                            "Successfully got size for collection {Collection} in pod {PodName} (Node URL {NodeUrl}): {Size} bytes",
-                            collection, podName, nodeUrl, sizeBytes);
                     }
                     else
                     {
-                        _logger.LogWarning(
-                            "Failed to parse size from output for collection {Collection}. Raw output: '{Output}'",
+                        _logger.LogWarning("Failed to parse size for collection {Collection}: '{Output}'",
                             collection, output);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex,
-                        "Failed to get size for collection {Collection} in pod {PodName} (Node {NodeId})",
-                        collection, podName, nodeUrl);
+                    _logger.LogError(ex, "Failed to get size for collection {Collection} in pod {PodName}",
+                        collection, podName);
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get collection sizes for pod {PodName} (Node URL {NodeUrl})", podName,
-                nodeUrl);
+            _logger.LogError(ex, "Failed to get collection sizes for pod {PodName}", podName);
         }
-
-        _logger.LogInformation(
-            "Completed getting sizes for pod {PodName} (Node URL {NodeUrl}). Found {SizesCount} collection sizes",
-            podName, nodeUrl, sizes.Count);
 
         return sizes;
     }

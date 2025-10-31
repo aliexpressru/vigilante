@@ -21,16 +21,10 @@ public class ClusterManager(
 
     public async Task<ClusterState> GetClusterStateAsync(CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("Starting GetClusterStateAsync");
-        
         var nodes = await nodesProvider.GetNodesAsync(cancellationToken);
-        logger.LogInformation("Received {NodesCount} nodes from provider", nodes.Count);
 
         var tasks = nodes.Select(async node =>
         {
-            logger.LogInformation("Processing node: Host={Host}, Port={Port}, Namespace={Namespace}, PodName={PodName}", 
-                node.Host, node.Port, node.Namespace, node.PodName);
-            
             var nodeInfo = new NodeInfo
             {
                 Url = $"http://{node.Host}:{node.Port}",
@@ -43,7 +37,6 @@ public class ClusterManager(
             {
                 var client = clientFactory.CreateClient(node.Host, node.Port, _options.ApiKey);
                 
-                logger.LogDebug("Requesting cluster info from node {NodeUrl}", nodeInfo.Url);
                 using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_options.HttpTimeoutSeconds));
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
                 
@@ -66,13 +59,9 @@ public class ClusterManager(
                         ];
                     }
                     
-                    logger.LogInformation("Node {NodeUrl} is healthy. PeerId={PeerId}, IsLeader={IsLeader}", 
-                        nodeInfo.Url, nodeInfo.PeerId, nodeInfo.IsLeader);
-                    
                     // Also check collections availability
                     try
                     {
-                        logger.LogDebug("Requesting collections list from node {NodeUrl}", nodeInfo.Url);
                         var collectionsTask = collectionService.CheckCollectionsHealthAsync(client, linkedCts.Token);
                         var (isHealthy, errorMessage) = await collectionsTask.WaitAsync(timeoutCts.Token);
                         
@@ -83,10 +72,6 @@ public class ClusterManager(
                             nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.CollectionsFetchError);
                             nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
                             logger.LogWarning("Node {NodeUrl} collections check failed: {Error}", nodeInfo.Url, errorMessage);
-                        }
-                        else
-                        {
-                            logger.LogDebug("Node {NodeUrl} successfully returned collections list", nodeInfo.Url);
                         }
                     }
                     catch (OperationCanceledException ex)
