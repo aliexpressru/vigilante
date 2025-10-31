@@ -5,6 +5,10 @@ using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services;
 
+/// <summary>
+/// Factory for creating and caching Qdrant HTTP clients for dynamically discovered nodes.
+/// Clients are cached per node (host:port:apiKey) to avoid recreation overhead.
+/// </summary>
 public class DefaultQdrantClientFactory : IQdrantClientFactory
 {
     private readonly ConcurrentDictionary<string, IQdrantHttpClient> _clientCache = new();
@@ -13,7 +17,7 @@ public class DefaultQdrantClientFactory : IQdrantClientFactory
     {
         var key = $"{host}:{port}:{apiKey ?? "no-key"}";
         
-        return _clientCache.GetOrAdd(key, string.IsNullOrEmpty(apiKey) 
+        return _clientCache.GetOrAdd(key, string.IsNullOrEmpty(apiKey)
             ? new QdrantHttpClient(host, port)
             : new QdrantHttpClient(host, port, apiKey: apiKey));
     }
