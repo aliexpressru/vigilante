@@ -18,28 +18,27 @@ COPY . .
 WORKDIR /src/src
 RUN dotnet publish -c Release -o /app --no-restore
 
+# Install dotnet diagnostic tools in build stage
+RUN dotnet tool install --tool-path /tools dotnet-dump && \
+    dotnet tool install --tool-path /tools dotnet-gcdump && \
+    dotnet tool install --tool-path /tools dotnet-trace && \
+    dotnet tool install --tool-path /tools dotnet-counters
+
 # Build runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:9.0.1
 WORKDIR /app
 
+# Copy diagnostic tools from build stage
+COPY --from=build /tools /tools
+
+# Add tools to PATH
+ENV PATH="${PATH}:/tools"
+
 # Create non-root user
-RUN useradd -r -u 1001 -m appuser
+RUN useradd -r -u 1001 appuser
 
-# Install dotnet diagnostic tools as appuser
-# These tools are needed for memory dumps and diagnostics in production
-USER appuser
-ENV DOTNET_ROOT=/usr/share/dotnet
-ENV PATH="${PATH}:/home/appuser/.dotnet/tools"
-RUN dotnet tool install --global dotnet-dump && \
-    dotnet tool install --global dotnet-gcdump && \
-    dotnet tool install --global dotnet-trace && \
-    dotnet tool install --global dotnet-counters
-
-# Create directory for dumps
-RUN mkdir -p /app/dumps
-
-USER root
-RUN chown appuser:appuser /app/dumps
+# Create directory for dumps and set permissions
+RUN mkdir -p /app/dumps && chown appuser:appuser /app/dumps
 
 USER appuser
 
