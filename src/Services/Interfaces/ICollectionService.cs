@@ -16,20 +16,9 @@ public interface ICollectionService
         CancellationToken cancellationToken);
     
     /// <summary>
-    /// Replicates shards between nodes (deprecated - use ClusterManager.ReplicateShardsAsync instead)
-    /// </summary>
-    Task<bool> ReplicateShardsAsync(
-        ulong sourcePeerId,
-        ulong targetPeerId,
-        string collectionName,
-        uint[] shardIds,
-        bool isMove,
-        CancellationToken cancellationToken);
-    
-    /// <summary>
     /// Internal method to replicate shards (called by ClusterManager)
     /// </summary>
-    Task<bool> ReplicateShardsInternalAsync(
+    Task<bool> ReplicateShardsAsync(
         string healthyNodeUrl,
         ulong sourcePeerId,
         ulong targetPeerId,

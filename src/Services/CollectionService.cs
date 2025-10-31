@@ -47,20 +47,7 @@ public class CollectionService : ICollectionService
         }
     }
 
-    public Task<bool> ReplicateShardsAsync(
-        ulong sourcePeerId,
-        ulong targetPeerId,
-        string collectionName,
-        uint[] shardIds,
-        bool isMove,
-        CancellationToken cancellationToken)
-    {
-        // This method is kept for backward compatibility but should be called from ClusterManager
-        _logger.LogError("ReplicateShardsAsync called directly on CollectionService. This method should be called through ClusterManager.");
-        return Task.FromResult(false);
-    }
-
-    public async Task<bool> ReplicateShardsInternalAsync(
+    public async Task<bool> ReplicateShardsAsync(
         string healthyNodeUrl,
         ulong sourcePeerId,
         ulong targetPeerId,

@@ -369,7 +369,7 @@ public class ClusterManager(
             return false;
         }
 
-        return await collectionService.ReplicateShardsInternalAsync(
+        return await collectionService.ReplicateShardsAsync(
             healthyNode.Url,
             sourcePeerId,
             targetPeerId,
