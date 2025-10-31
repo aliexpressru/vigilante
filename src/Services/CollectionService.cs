@@ -133,9 +133,11 @@ public class CollectionService : ICollectionService
                 cancellationToken: cancellationToken);
 
             _logger.LogDebug("WebSocket connection established for pod {PodName}", podName);
-            var collectionsOutput = new StringBuilder();
+            
+            // Pre-allocate buffers to reduce memory allocations
             var buffer = new byte[4096];
             var segment = new ArraySegment<byte>(buffer);
+            var collectionsOutput = new StringBuilder(512); // Pre-allocate reasonable size
 
             WebSocketReceiveResult result;
             do
@@ -190,7 +192,7 @@ public class CollectionService : ICollectionService
                         "qdrant",
                         cancellationToken: cancellationToken);
 
-                    var sizeOutput = new StringBuilder();
+                    var sizeOutput = new StringBuilder(64); // Size output is typically small, pre-allocate
                     do
                     {
                         result = await sizeWebSocket.ReceiveAsync(segment, cancellationToken);

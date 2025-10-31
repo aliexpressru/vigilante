@@ -31,8 +31,6 @@ public class ClusterManager(
             logger.LogInformation("Processing node: Host={Host}, Port={Port}, Namespace={Namespace}, PodName={PodName}", 
                 node.Host, node.Port, node.Namespace, node.PodName);
             
-            var client = clientFactory.CreateClient(node.Host, node.Port, _options.ApiKey);
-
             var nodeInfo = new NodeInfo
             {
                 Url = $"http://{node.Host}:{node.Port}",
@@ -43,6 +41,8 @@ public class ClusterManager(
 
             try
             {
+                var client = clientFactory.CreateClient(node.Host, node.Port, _options.ApiKey);
+                
                 logger.LogDebug("Requesting cluster info from node {NodeUrl}", nodeInfo.Url);
                 using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_options.HttpTimeoutSeconds));
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
