@@ -498,14 +498,82 @@ body {
 
 .collection-size {
     font-size: 0.9rem;
-    color: #666;
-    background: #e8f4f8;
-    padding: 0.2rem 0.6rem;
-    border-radius: 4px;
-    border: 1px solid #b3d9e8;
-    font-weight: normal;
+    color: #1976d2;
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    padding: 0.3rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid #90caf9;
+    font-weight: 600;
     white-space: nowrap; /* Prevent wrapping */
     flex-shrink: 0; /* Don't shrink the size badge */
+    box-shadow: 0 1px 3px rgba(33, 150, 243, 0.1);
+}
+
+/* Delete buttons at collection level */
+.collection-delete-buttons {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.delete-btn {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    font-weight: 500;
+}
+
+.delete-api-all-btn,
+.delete-api-node-btn {
+    background: #ff9800;
+    color: white;
+}
+
+.delete-api-all-btn:hover,
+.delete-api-node-btn:hover {
+    background: #f57c00;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.delete-disk-all-btn,
+.delete-disk-node-btn {
+    background: #f44336;
+    color: white;
+}
+
+.delete-disk-all-btn:hover,
+.delete-disk-node-btn:hover {
+    background: #d32f2f;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.delete-btn:active {
+    transform: translateY(0);
+}
+
+/* Node header with delete buttons */
+.node-header-with-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.node-header-with-actions h4 {
+    margin: 0;
+    flex: 1;
+}
+
+.node-delete-buttons {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
 }
 
 .collection-details {
@@ -536,6 +604,19 @@ body {
     transform: translateY(-1px);
 }
 
+.node-info-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+    gap: 12px;
+}
+
+.node-info-header h4 {
+    margin: 0;
+    flex: 1;
+}
+
 .collection-node-info dl {
     display: grid;
     gap: 8px;
@@ -564,6 +645,21 @@ body {
 .collection-node-info dd:not(:first-of-type) {
     display: block;
     margin-top: 8px;
+}
+
+/* Transfers section - at the bottom */
+.transfers-section {
+    margin-top: 12px;
+}
+
+.transfers-metrics {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.other-metrics {
+    margin-top: 12px;
 }
 
 /* Transfers display */
@@ -609,30 +705,79 @@ body {
 
 /* Shard replication styles */
 .shards-container {
-    margin: 8px 0;
+    margin: 12px 0 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
-.shard-controls {
+.target-nodes-section {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 8px;
-    padding: 6px;
-    background-color: #f8f9fa;
-    border-radius: 4px;
-    border: 1px solid #e9ecef;
-    margin-bottom: 8px;
+}
+
+.target-nodes-label {
+    font-weight: 600;
+    font-size: 0.9em;
+    color: #555;
+    margin-bottom: 2px;
+}
+
+.shards-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.shards-label {
+    font-weight: 600;
+    font-size: 0.9em;
+    color: #555;
+    margin-bottom: 2px;
 }
 
 .shards-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     gap: 8px;
-    margin: 12px 0;
+    margin-top: 8px;
+}
+
+/* Size metric styling */
+.size-metric {
+    font-weight: 600;
+    color: #2196f3;
+    background: #e3f2fd;
+    padding: 2px 8px;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.size-metric-standalone {
+    font-size: 0.9rem;
+    color: #1976d2;
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    padding: 0.3rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid #90caf9;
+    font-weight: 600;
+    display: inline-block;
+    box-shadow: 0 1px 3px rgba(33, 150, 243, 0.1);
+    white-space: nowrap;
 }
 
 .shard-item {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.shard-checkbox {
+    margin-top: 10px;
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
 }
 
 .shard-label {
@@ -640,26 +785,46 @@ body {
     flex-direction: column;
     gap: 4px;
     cursor: pointer;
-    padding: 8px;
-    border-radius: 4px;
+    padding: 8px 10px;
+    border-radius: 6px;
     background: #fff;
     width: 100%;
+    border: 2px solid #e9ecef;
+    transition: all 0.2s ease;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .shard-label:hover {
-    background: #f0f0f0;
+    background: #f8f9fa;
+    border-color: #2196f3;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+}
+
+.shard-item:has(.shard-checkbox:checked) .shard-label {
+    background: #e3f2fd;
+    border-color: #2196f3;
 }
 
 .shard-id {
-    font-size: 0.9em;
+    font-size: 0.85em;
+    font-weight: 600;
     color: #333;
+    white-space: nowrap;
 }
 
 .shard-state {
-    font-size: 0.8em;
-    padding: 2px 6px;
-    border-radius: 3px;
+    font-size: 0.7em;
+    padding: 3px 6px;
+    border-radius: 4px;
     text-align: center;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    word-break: break-all;
+    line-height: 1.2;
+    overflow-wrap: break-word;
+    hyphens: auto;
 }
 
 /* Shard states colors */
@@ -721,19 +886,29 @@ body {
     align-items: center;
     justify-content: flex-end;
     gap: 12px;
-    margin-top: 12px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #e9ecef;
 }
 
 .move-shards-label {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     cursor: pointer;
+    padding: 6px 10px;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+    font-weight: 500;
+}
+
+.move-shards-label:hover {
+    background: #f8f9fa;
 }
 
 .move-shards-checkbox {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     margin: 0;
     cursor: pointer;
 }
@@ -778,26 +953,31 @@ body {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-bottom: 12px;
 }
 
 .peer-button {
-    padding: 6px 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    padding: 8px 14px;
+    border: 2px solid #ddd;
+    border-radius: 6px;
     background: white;
     cursor: pointer;
     font-size: 0.9em;
+    font-weight: 500;
+    transition: all 0.2s ease;
 }
 
 .peer-button:hover {
-    background: #f0f0f0;
+    background: #f8f9fa;
+    border-color: #2196f3;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .peer-button.selected {
-    background: #2196f3;
+    background: linear-gradient(135deg, #2196f3, #1976d2);
     color: white;
     border-color: #1976d2;
+    box-shadow: 0 2px 6px rgba(33, 150, 243, 0.3);
 }
 
 /* New styles for dashboard button */
@@ -845,6 +1025,423 @@ body {
 
 .dashboard-button i {
     font-size: 0.9rem;
+}
+
+/* Delete buttons for collections */
+.collection-delete-buttons {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.delete-all-api-button,
+.delete-all-disk-button {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.delete-all-api-button {
+    background: #ff9800;
+    color: white;
+}
+
+.delete-all-api-button:hover {
+    background: #f57c00;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.delete-all-disk-button {
+    background: #f44336;
+    color: white;
+}
+
+.delete-all-disk-button:hover {
+    background: #d32f2f;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Delete buttons for individual nodes */
+.node-deletion-controls {
+    display: flex;
+    gap: 6px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.delete-api-button,
+.delete-disk-button {
+    flex: 1;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.delete-api-button {
+    background: #ff9800;
+    color: white;
+}
+
+.delete-api-button:hover {
+    background: #f57c00;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.delete-disk-button {
+    background: #f44336;
+    color: white;
+}
+
+.delete-disk-button:hover {
+    background: #d32f2f;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.delete-api-button:active,
+.delete-disk-button:active,
+.delete-all-api-button:active,
+.delete-all-disk-button:active {
+    transform: translateY(0);
+}
+
+/* Deletion result messages */
+.deletion-message {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 20px 0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.deletion-message.success {
+    border-left: 4px solid #4caf50;
+}
+
+.deletion-message.error {
+    border-left: 4px solid #f44336;
+}
+
+.deletion-message-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.deletion-message-header strong {
+    font-size: 1rem;
+}
+
+.deletion-message.success .deletion-message-header strong {
+    color: #4caf50;
+}
+
+.deletion-message.error .deletion-message-header strong {
+    color: #f44336;
+}
+
+.close-button {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #999;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+}
+
+.close-button:hover {
+    color: #333;
+}
+
+.deletion-results {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.9rem;
+}
+
+.node-deletion-result {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 4px;
+}
+
+.node-deletion-result.success {
+    background: #e8f5e9;
+}
+
+.node-deletion-result.error {
+    background: #ffebee;
+}
+
+.result-icon {
+    font-weight: bold;
+    font-size: 1.1rem;
+}
+
+.node-deletion-result.success .result-icon {
+    color: #4caf50;
+}
+
+.node-deletion-result.error .result-icon {
+    color: #f44336;
+}
+
+.result-node {
+    font-weight: 500;
+    color: #333;
+    flex: 1;
+}
+
+.result-error {
+    color: #d32f2f;
+    font-size: 0.85rem;
+}
+
+/* Delete buttons for collections */
+.collection-delete-buttons {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.delete-all-api-button,
+.delete-all-disk-button {
+    padding: 4px 10px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.delete-all-api-button {
+    background: #ff9800;
+    color: white;
+}
+
+.delete-all-api-button:hover {
+    background: #f57c00;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.delete-all-disk-button {
+    background: #f44336;
+    color: white;
+}
+
+.delete-all-disk-button:hover {
+    background: #d32f2f;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Delete buttons for individual nodes */
+.node-deletion-controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.delete-api-button,
+.delete-disk-button {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.delete-api-button {
+    background: #ff9800;
+    color: white;
+}
+
+.delete-api-button:hover {
+    background: #f57c00;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.delete-disk-button {
+    background: #f44336;
+    color: white;
+}
+
+.delete-disk-button:hover {
+    background: #d32f2f;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.delete-api-button:active,
+.delete-disk-button:active,
+.delete-all-api-button:active,
+.delete-all-disk-button:active {
+    transform: translateY(0);
+}
+
+/* Deletion result messages */
+.deletion-message {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 20px 0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.deletion-message.success {
+    border-left: 4px solid #4caf50;
+}
+
+.deletion-message.error {
+    border-left: 4px solid #f44336;
+}
+
+.deletion-message-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.deletion-message-header strong {
+    font-size: 1rem;
+}
+
+.deletion-message.success .deletion-message-header strong {
+    color: #4caf50;
+}
+
+.deletion-message.error .deletion-message-header strong {
+    color: #f44336;
+}
+
+.close-button {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #999;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+}
+
+.close-button:hover {
+    color: #333;
+}
+
+.deletion-results {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.9rem;
+}
+
+.node-deletion-result {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 4px;
+}
+
+.node-deletion-result.success {
+    background: #e8f5e9;
+}
+
+.node-deletion-result.error {
+    background: #ffebee;
+}
+
+.result-icon {
+    font-weight: bold;
+    font-size: 1.1rem;
+}
+
+.node-deletion-result.success .result-icon {
+    color: #4caf50;
+}
+
+.node-deletion-result.error .result-icon {
+    color: #f44336;
+}
+
+.result-node {
+    font-weight: 500;
+    color: #333;
+    flex: 1;
+}
+
+.result-error {
+    color: #d32f2f;
+    font-size: 0.85rem;
 }
 
 /* Footer */

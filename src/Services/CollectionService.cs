@@ -374,4 +374,132 @@ public class CollectionService : ICollectionService
             return (false, $"Exception during collections check: {ex.Message}");
         }
     }
+
+    public async Task<bool> DeleteCollectionViaApiAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Deleting collection {CollectionName} via API on node {NodeUrl}", 
+                collectionName, nodeUrl);
+
+            var uri = new Uri(nodeUrl);
+            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+
+            var result = await qdrantClient.DeleteCollection(collectionName, cancellationToken);
+
+            if (result?.Status?.IsSuccess == true)
+            {
+                _logger.LogInformation("✅ Collection {CollectionName} deleted successfully via API on node {NodeUrl}", 
+                    collectionName, nodeUrl);
+                return true;
+            }
+
+            _logger.LogError("Failed to delete collection {CollectionName} via API: {Error}",
+                collectionName, result?.Status?.Error ?? "Unknown error");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete collection {CollectionName} via API on node {NodeUrl}", 
+                collectionName, nodeUrl);
+            return false;
+        }
+    }
+
+    public async Task<bool> DeleteCollectionFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation(
+            "Deleting collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}",
+            collectionName, podName, podNamespace);
+
+        if (_kubernetes == null)
+        {
+            _logger.LogError("Kubernetes client not available, cannot delete collection from disk");
+            return false;
+        }
+
+        try
+        {
+            // Execute rm -rf command to delete the collection directory
+            // Command: rm -rf /qdrant/storage/collections/{collectionName}
+            using var webSocket = await _kubernetes.WebSocketNamespacedPodExecAsync(
+                podName,
+                podNamespace,
+                new[] { "sh", "-c", $"rm -rf /qdrant/storage/collections/{collectionName}" },
+                "qdrant",
+                cancellationToken: cancellationToken);
+
+            var buffer = new byte[4096];
+            var segment = new ArraySegment<byte>(buffer);
+            var output = new StringBuilder();
+
+            WebSocketReceiveResult result;
+            do
+            {
+                result = await webSocket.ReceiveAsync(segment, cancellationToken);
+                if (result.Count > 0)
+                {
+                    output.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                }
+            } while (!result.CloseStatus.HasValue && !cancellationToken.IsCancellationRequested);
+
+            var outputStr = output.ToString();
+            
+            // Check if there were any errors in the output
+            if (!string.IsNullOrEmpty(outputStr) && 
+                (outputStr.Contains("error", StringComparison.OrdinalIgnoreCase) || 
+                 outputStr.Contains("permission denied", StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogError("Failed to delete collection {CollectionName} from disk: {Output}", 
+                    collectionName, outputStr);
+                return false;
+            }
+
+            // Verify deletion by checking if the directory still exists
+            using var verifyWebSocket = await _kubernetes.WebSocketNamespacedPodExecAsync(
+                podName,
+                podNamespace,
+                new[] { "sh", "-c", $"test -d /qdrant/storage/collections/{collectionName} && echo 'exists' || echo 'deleted'" },
+                "qdrant",
+                cancellationToken: cancellationToken);
+
+            var verifyOutput = new StringBuilder();
+            do
+            {
+                result = await verifyWebSocket.ReceiveAsync(segment, cancellationToken);
+                if (result.Count > 0)
+                {
+                    verifyOutput.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                }
+            } while (!result.CloseStatus.HasValue && !cancellationToken.IsCancellationRequested);
+
+            var verifyResult = verifyOutput.ToString().Trim();
+            
+            if (verifyResult.Contains("deleted"))
+            {
+                _logger.LogInformation("✅ Collection {CollectionName} deleted successfully from disk on pod {PodName}", 
+                    collectionName, podName);
+                return true;
+            }
+            else
+            {
+                _logger.LogError("Collection {CollectionName} still exists after deletion attempt on pod {PodName}", 
+                    collectionName, podName);
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete collection {CollectionName} from disk on pod {PodName}", 
+                collectionName, podName);
+            return false;
+        }
+    }
 }

@@ -39,5 +39,22 @@ public interface ICollectionService
     /// Generates test collection data for local development
     /// </summary>
     IReadOnlyList<CollectionInfo> GenerateTestCollectionData();
+    
+    /// <summary>
+    /// Deletes a collection via Qdrant API
+    /// </summary>
+    Task<bool> DeleteCollectionViaApiAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken);
+    
+    /// <summary>
+    /// Deletes a collection directly from disk on a specific pod
+    /// </summary>
+    Task<bool> DeleteCollectionFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        CancellationToken cancellationToken);
 }
 

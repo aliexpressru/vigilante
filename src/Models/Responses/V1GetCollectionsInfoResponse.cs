@@ -13,6 +13,8 @@ public class V1GetCollectionsInfoResponse
         public string CollectionName { get; set; } = string.Empty;
 
         public string PeerId { get; set; } = string.Empty;
+        
+        public string PodNamespace { get; set; } = string.Empty;
 
         public Dictionary<string, object> Metrics { get; set; } = new();
     }

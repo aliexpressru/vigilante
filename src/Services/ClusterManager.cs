@@ -219,6 +219,7 @@ public class ClusterManager(
                         NodeUrl = size.NodeUrl,
                         PodName = size.PodName,
                         PeerId = size.PeerId,
+                        PodNamespace = node.Namespace ?? "",
                         Metrics = metrics
                     });
                 }
@@ -362,6 +363,98 @@ public class ClusterManager(
             shardIds,
             isMove,
             cancellationToken);
+    }
+
+    public async Task<bool> DeleteCollectionViaApiAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Deleting collection {CollectionName} via API on node {NodeUrl}", 
+            collectionName, nodeUrl);
+
+        return await collectionService.DeleteCollectionViaApiAsync(nodeUrl, collectionName, cancellationToken);
+    }
+
+    public async Task<bool> DeleteCollectionFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Deleting collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}", 
+            collectionName, podName, podNamespace);
+
+        return await collectionService.DeleteCollectionFromDiskAsync(podName, podNamespace, collectionName, cancellationToken);
+    }
+
+    public async Task<Dictionary<string, bool>> DeleteCollectionViaApiOnAllNodesAsync(
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Deleting collection {CollectionName} via API on all nodes", collectionName);
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var results = new Dictionary<string, bool>();
+
+        var deleteTasks = state.Nodes.Select(async node =>
+        {
+            var success = await collectionService.DeleteCollectionViaApiAsync(
+                node.Url,
+                collectionName,
+                cancellationToken);
+
+            return (NodeUrl: node.Url, Success: success);
+        });
+
+        var deleteResults = await Task.WhenAll(deleteTasks);
+
+        foreach (var result in deleteResults)
+        {
+            results[result.NodeUrl] = result.Success;
+        }
+
+        var successCount = results.Values.Count(s => s);
+        logger.LogInformation("Collection {CollectionName} deleted via API: {SuccessCount}/{TotalCount} nodes", 
+            collectionName, successCount, results.Count);
+
+        return results;
+    }
+
+    public async Task<Dictionary<string, bool>> DeleteCollectionFromDiskOnAllNodesAsync(
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Deleting collection {CollectionName} from disk on all nodes", collectionName);
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var results = new Dictionary<string, bool>();
+
+        var deleteTasks = state.Nodes
+            .Where(n => !string.IsNullOrEmpty(n.PodName) && !string.IsNullOrEmpty(n.Namespace))
+            .Select(async node =>
+            {
+                var success = await collectionService.DeleteCollectionFromDiskAsync(
+                    node.PodName!,
+                    node.Namespace!,
+                    collectionName,
+                    cancellationToken);
+
+                return (PodName: node.PodName!, Success: success);
+            });
+
+        var deleteResults = await Task.WhenAll(deleteTasks);
+
+        foreach (var result in deleteResults)
+        {
+            results[result.PodName] = result.Success;
+        }
+
+        var successCount = results.Values.Count(s => s);
+        logger.LogInformation("Collection {CollectionName} deleted from disk: {SuccessCount}/{TotalCount} pods", 
+            collectionName, successCount, results.Count);
+
+        return results;
     }
 
     // Private methods

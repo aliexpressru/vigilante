@@ -3,10 +3,12 @@ class VigilanteDashboard {
         this.statusApiEndpoint = '/api/v1/cluster/status';
         this.sizesApiEndpoint = '/api/v1/cluster/collections-info';
         this.replicateShardsEndpoint = '/api/v1/cluster/replicate-shards';
+        this.deleteCollectionEndpoint = '/api/v1/cluster/collection';
         this.refreshInterval = 0;
         this.intervalId = null;
         this.openCollections = new Set();
         this.selectedState = new Map();
+        this.deletionStatus = new Map(); // Track deletion status per collection
         this.currentActiveNode = null; // Track currently active node
         this.init();
         this.setupRefreshControls();
@@ -143,13 +145,17 @@ class VigilanteDashboard {
             
             return `
                 <div class="shards-container">
-                    <div class="shard-controls">
+                    <div class="target-nodes-section">
+                        <div class="target-nodes-label">Target nodes</div>
                         <div class="peer-buttons-container">
                             <!-- Peer buttons will be added dynamically -->
                         </div>
                     </div>
-                    <div class="shards-grid">
-                        ${shardsHtml}
+                    <div class="shards-section">
+                        <div class="shards-label">Shards</div>
+                        <div class="shards-grid">
+                            ${shardsHtml}
+                        </div>
                     </div>
                     <div class="action-controls">
                         <label class="move-shards-label">
@@ -304,6 +310,8 @@ class VigilanteDashboard {
                 size: info.metrics?.size || 0,
                 podName: info.podName,
                 peerId: info.peerId || '',
+                nodeUrl: info.nodeUrl || '',
+                podNamespace: info.podNamespace || '',
                 metrics: info.metrics || {}
             };
             return acc;
@@ -346,6 +354,32 @@ class VigilanteDashboard {
                 sizeSpan.textContent = this.formatSize(collectionTotalSize);
                 nameContainer.appendChild(sizeSpan);
                 
+                // Add collection-wide delete buttons
+                const deleteButtonsContainer = document.createElement('div');
+                deleteButtonsContainer.className = 'collection-delete-buttons';
+                
+                const deleteAllApiButton = document.createElement('button');
+                deleteAllApiButton.className = 'delete-all-api-button';
+                deleteAllApiButton.innerHTML = '🗑️ API';
+                deleteAllApiButton.title = 'Delete collection via API on all nodes';
+                deleteAllApiButton.onclick = async (e) => {
+                    e.stopPropagation();
+                    await this.deleteCollection(collection.name, 'Api', false);
+                };
+                
+                const deleteAllDiskButton = document.createElement('button');
+                deleteAllDiskButton.className = 'delete-all-disk-button';
+                deleteAllDiskButton.innerHTML = '🗑️ Disk';
+                deleteAllDiskButton.title = 'Delete collection from disk on all nodes';
+                deleteAllDiskButton.onclick = async (e) => {
+                    e.stopPropagation();
+                    await this.deleteCollection(collection.name, 'Disk', false);
+                };
+                
+                deleteButtonsContainer.appendChild(deleteAllApiButton);
+                deleteButtonsContainer.appendChild(deleteAllDiskButton);
+                nameContainer.appendChild(deleteButtonsContainer);
+                
                 nameCell.appendChild(nameContainer);
                 row.appendChild(nameCell);
 
@@ -374,27 +408,40 @@ class VigilanteDashboard {
                             moveChecked: false
                         };
                         
-                        const metricsHtml = Object.entries(nodeInfo.metrics)
-                            .sort(([keyA], [keyB]) => {
-                                const order = { 'prettySize': 1, 'shards': 2, 'outgoingTransfers': 3 };
-                                return (order[keyA] || 4) - (order[keyB] || 4) || keyA.localeCompare(keyB);
-                            })
+                        // 1. Format size first (without label)
+                        let sizeHtml = '';
+                        if (nodeInfo.metrics.sizeBytes) {
+                            const formattedSize = this.formatSize(nodeInfo.metrics.sizeBytes);
+                            sizeHtml = `<div class="size-metric-standalone">${formattedSize}</div>`;
+                        }
+                        
+                        // 2. Get shards HTML (includes Target nodes, Shards, and action controls)
+                        const shardsHtml = nodeInfo.metrics.shards ? 
+                            this.formatMetricValue('shards', nodeInfo.metrics.shards, nodeInfo) : '';
+                        
+                        // 3. Get transfers HTML
+                        let transfersHtml = '';
+                        if (nodeInfo.metrics.outgoingTransfers) {
+                            const transfersValue = this.formatMetricValue('outgoingTransfers', nodeInfo.metrics.outgoingTransfers, nodeInfo);
+                            if (transfersValue) {
+                                transfersHtml = `
+                                    <div class="transfers-section">
+                                        <dt>Transfers:</dt>
+                                        <dd>${transfersValue}</dd>
+                                    </div>
+                                `;
+                            }
+                        }
+                        
+                        // 4. Get other metrics (if any)
+                        const otherMetricsHtml = Object.entries(nodeInfo.metrics)
+                            .filter(([key]) => key !== 'prettySize' && key !== 'sizeBytes' && key !== 'shardStates' && 
+                                              key !== 'shard_states' && key !== 'shards' && key !== 'outgoingTransfers')
                             .map(([key, value]) => {
                                 const formattedValue = this.formatMetricValue(key, value, nodeInfo);
                                 if (!formattedValue) return '';
                                 
-                                let formattedKey = key;
-                                switch (key) {
-                                    case 'prettySize':
-                                        formattedKey = 'Size';
-                                        break;
-                                    case 'outgoingTransfers':
-                                        formattedKey = 'Transfers';
-                                        break;
-                                    default:
-                                        formattedKey = key.charAt(0).toUpperCase() + key.slice(1);
-                                }
-                                
+                                const formattedKey = key.charAt(0).toUpperCase() + key.slice(1);
                                 return `
                                     <dt>${formattedKey}:</dt>
                                     <dd>${formattedValue}</dd>
@@ -404,8 +451,21 @@ class VigilanteDashboard {
                             .join('');
                             
                         nodeDetails.innerHTML = `
-                            <h4>${podName}${peerIdDisplay}</h4>
-                            <dl>${metricsHtml}</dl>
+                            <div class="node-info-header">
+                                <h4>${podName}${peerIdDisplay}</h4>
+                                ${sizeHtml}
+                            </div>
+                            ${shardsHtml}
+                            ${otherMetricsHtml ? `<dl class="other-metrics">${otherMetricsHtml}</dl>` : ''}
+                            <div class="node-deletion-controls">
+                                <button class="delete-api-button" data-collection="${collection.name}" data-node-url="${nodeInfo.nodeUrl || ''}" data-pod-name="${podName}" data-pod-namespace="${nodeInfo.podNamespace || ''}" title="Delete collection via API on this node">
+                                    🗑️ API
+                                </button>
+                                <button class="delete-disk-button" data-collection="${collection.name}" data-node-url="${nodeInfo.nodeUrl || ''}" data-pod-name="${podName}" data-pod-namespace="${nodeInfo.podNamespace || ''}" title="Delete collection from disk on this node">
+                                    🗑️ Disk
+                                </button>
+                            </div>
+                            ${transfersHtml ? `<dl class="transfers-metrics">${transfersHtml}</dl>` : ''}
                         `;
 
                         nodeDetails.setAttribute('data-state-key', stateKey);
@@ -508,6 +568,28 @@ class VigilanteDashboard {
                                 } catch (error) {
                                     alert(`Error: ${error.message}`);
                                 }
+                            });
+                        }
+
+                        // Setup delete buttons
+                        const deleteApiButton = nodeDetails.querySelector('.delete-api-button');
+                        if (deleteApiButton) {
+                            deleteApiButton.addEventListener('click', async (e) => {
+                                e.stopPropagation();
+                                const collectionName = deleteApiButton.dataset.collection;
+                                const nodeUrl = deleteApiButton.dataset.nodeUrl;
+                                await this.deleteCollection(collectionName, 'Api', true, nodeUrl, null, null);
+                            });
+                        }
+
+                        const deleteDiskButton = nodeDetails.querySelector('.delete-disk-button');
+                        if (deleteDiskButton) {
+                            deleteDiskButton.addEventListener('click', async (e) => {
+                                e.stopPropagation();
+                                const collectionName = deleteDiskButton.dataset.collection;
+                                const podName = deleteDiskButton.dataset.podName;
+                                const podNamespace = deleteDiskButton.dataset.podNamespace;
+                                await this.deleteCollection(collectionName, 'Disk', true, null, podName, podNamespace);
                             });
                         }
 
@@ -774,6 +856,88 @@ class VigilanteDashboard {
         statusCard.classList.remove('refreshing');
         refreshButton.classList.remove('refreshing');
         refreshIndicator.classList.remove('refreshing');
+    }
+
+    async deleteCollection(collectionName, deletionType, singleNode = false, nodeUrl = null, podName = null, podNamespace = null) {
+        const typeLabel = deletionType === 'Api' ? 'API' : 'Disk';
+        const scopeLabel = singleNode ? `on ${podName || nodeUrl}` : 'on all nodes';
+        
+        if (!confirm(`Are you sure you want to delete collection '${collectionName}' via ${typeLabel} ${scopeLabel}?\n\nThis action cannot be undone!`)) {
+            return;
+        }
+
+        try {
+            const requestBody = {
+                collectionName: collectionName,
+                deletionType: deletionType,
+                singleNode: singleNode
+            };
+
+            if (singleNode) {
+                if (deletionType === 'Api') {
+                    requestBody.nodeUrl = nodeUrl;
+                } else {
+                    requestBody.podName = podName;
+                    requestBody.podNamespace = podNamespace;
+                }
+            }
+
+            const response = await fetch(this.deleteCollectionEndpoint, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const result = await response.json();
+            
+            if (response.ok && result.success) {
+                this.showDeletionResult(collectionName, result, true);
+                // Refresh after a short delay to allow deletion to complete
+                setTimeout(() => this.refresh(), 1000);
+            } else {
+                this.showDeletionResult(collectionName, result, false);
+            }
+        } catch (error) {
+            alert(`Error deleting collection: ${error.message}`);
+        }
+    }
+
+    showDeletionResult(collectionName, result, success) {
+        const message = document.createElement('div');
+        message.className = `deletion-message ${success ? 'success' : 'error'}`;
+        
+        let html = `<div class="deletion-message-header">
+            <strong>${success ? '✓' : '✗'} ${result.message}</strong>
+            <button class="close-button" onclick="this.parentElement.parentElement.remove()">×</button>
+        </div>`;
+        
+        if (result.results && Object.keys(result.results).length > 0) {
+            html += '<div class="deletion-results">';
+            for (const [node, nodeResult] of Object.entries(result.results)) {
+                const icon = nodeResult.success ? '✓' : '✗';
+                const statusClass = nodeResult.success ? 'success' : 'error';
+                html += `<div class="node-deletion-result ${statusClass}">
+                    <span class="result-icon">${icon}</span>
+                    <span class="result-node">${node}</span>
+                    ${nodeResult.error ? `<span class="result-error">${nodeResult.error}</span>` : ''}
+                </div>`;
+            }
+            html += '</div>';
+        }
+        
+        message.innerHTML = html;
+        
+        const header = document.querySelector('.header');
+        header.insertAdjacentElement('afterend', message);
+        
+        // Auto-remove after 10 seconds
+        setTimeout(() => {
+            if (message.parentNode) {
+                message.remove();
+            }
+        }, 10000);
     }
 
     showError(message) {
