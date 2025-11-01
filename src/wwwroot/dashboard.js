@@ -296,7 +296,7 @@ class VigilanteDashboard {
         // Remember which collections were open before update
         const openCollections = new Set();
         document.querySelectorAll('.collection-details.visible').forEach(row => {
-            const nameCell = row.previousElementSibling.querySelector('.collection-name-container span:first-child');
+            const nameCell = row.previousElementSibling.querySelector('.collection-name-line');
             if (nameCell) {
                 openCollections.add(nameCell.textContent);
             }
