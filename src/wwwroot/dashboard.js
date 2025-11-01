@@ -15,22 +15,32 @@ class VigilanteDashboard {
     }
 
     // Convert numeric status to string
-    getStatusText(statusCode) {
-        const statusMap = {
-            0: 'Healthy',
-            1: 'Degraded', 
-            2: 'Unavailable'
-        };
-        return statusMap[statusCode] || 'Unknown';
+    getStatusText(status) {
+        // Handle both numeric (old) and string (new) enum values
+        if (typeof status === 'number') {
+            const statusMap = {
+                0: 'Healthy',
+                1: 'Degraded', 
+                2: 'Unavailable'
+            };
+            return statusMap[status] || 'Unknown';
+        }
+        // String enum values are already in correct format
+        return status || 'Unknown';
     }
 
-    getStatusClass(statusCode) {
-        const classMap = {
-            0: 'healthy',
-            1: 'degraded',
-            2: 'unavailable'
-        };
-        return classMap[statusCode] || 'loading';
+    getStatusClass(status) {
+        // Handle both numeric (old) and string (new) enum values
+        if (typeof status === 'number') {
+            const classMap = {
+                0: 'healthy',
+                1: 'degraded',
+                2: 'unavailable'
+            };
+            return classMap[status] || 'loading';
+        }
+        // Convert string enum to lowercase for CSS class
+        return (status || 'loading').toLowerCase();
     }
 
     init() {
