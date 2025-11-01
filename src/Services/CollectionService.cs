@@ -227,7 +227,7 @@ public class CollectionService : ICollectionService
             "products", 
             "embeddings",
             // Long collection names to test UI overflow handling
-            "super_long_collection_name_with_multiple_underscores_and_segments_to_test_horizontal_overflow_behavior",
+            "super_long_collection_name_with_multiple_underscores_and_segments_to_test_horizontal_overflow_behavior_even_longer_for_test_purposes",
             "analytics_data_warehouse_user_behavior_tracking_embeddings_v2_production_quantized_optimized_2024"
         };
         var testPeers = new[]

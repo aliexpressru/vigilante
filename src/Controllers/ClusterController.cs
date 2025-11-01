@@ -94,7 +94,7 @@ public class ClusterController(
         }
     }
 
-    [HttpDelete("collection")]
+    [HttpDelete("delete-collection")]
     [ProducesResponseType(typeof(V1DeleteCollectionResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(V1DeleteCollectionResponse), StatusCodes.Status500InternalServerError)]

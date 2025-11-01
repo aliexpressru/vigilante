@@ -3,7 +3,7 @@ class VigilanteDashboard {
         this.statusApiEndpoint = '/api/v1/cluster/status';
         this.sizesApiEndpoint = '/api/v1/cluster/collections-info';
         this.replicateShardsEndpoint = '/api/v1/cluster/replicate-shards';
-        this.deleteCollectionEndpoint = '/api/v1/cluster/collection';
+        this.deleteCollectionEndpoint = '/api/v1/cluster/delete-collection';
         this.refreshInterval = 0;
         this.intervalId = null;
         this.openCollections = new Set();
@@ -350,19 +350,25 @@ class VigilanteDashboard {
                 nameCell.className = 'collection-name';
                 nameCell.colSpan = podNames.length + 1;
                 
-                // Create a container for name and size
-                const nameContainer = document.createElement('div');
-                nameContainer.className = 'collection-name-container';
+                // Create a container for the entire collection header
+                const headerContainer = document.createElement('div');
+                headerContainer.className = 'collection-header-container';
                 
-                const nameSpan = document.createElement('span');
-                nameSpan.textContent = collection.name;
-                nameSpan.title = collection.name; // Show full name on hover
-                nameContainer.appendChild(nameSpan);
+                // First line: collection name only
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'collection-name-line';
+                nameDiv.textContent = collection.name;
+                nameDiv.title = collection.name;
+                headerContainer.appendChild(nameDiv);
+                
+                // Second line: size and delete buttons
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'collection-actions-line';
                 
                 const sizeSpan = document.createElement('span');
                 sizeSpan.className = 'collection-size';
                 sizeSpan.textContent = this.formatSize(collectionTotalSize);
-                nameContainer.appendChild(sizeSpan);
+                actionsDiv.appendChild(sizeSpan);
                 
                 // Add collection-wide delete buttons
                 const deleteButtonsContainer = document.createElement('div');
@@ -388,9 +394,10 @@ class VigilanteDashboard {
                 
                 deleteButtonsContainer.appendChild(deleteAllApiButton);
                 deleteButtonsContainer.appendChild(deleteAllDiskButton);
-                nameContainer.appendChild(deleteButtonsContainer);
+                actionsDiv.appendChild(deleteButtonsContainer);
                 
-                nameCell.appendChild(nameContainer);
+                headerContainer.appendChild(actionsDiv);
+                nameCell.appendChild(headerContainer);
                 row.appendChild(nameCell);
 
                 const detailsRow = document.createElement('tr');
@@ -460,10 +467,21 @@ class VigilanteDashboard {
                             .filter(html => html)
                             .join('');
                             
+                        const fullNodeTitle = nodeInfo.peerId ? `${podName} (${nodeInfo.peerId})` : podName;
+                        
+                        // Format size for header line
+                        let sizeForHeader = '';
+                        if (nodeInfo.metrics.sizeBytes) {
+                            const formattedSize = this.formatSize(nodeInfo.metrics.sizeBytes);
+                            sizeForHeader = `<span class="node-size-badge">${formattedSize}</span>`;
+                        }
+                        
                         nodeDetails.innerHTML = `
                             <div class="node-info-header">
-                                <h4>${podName}${peerIdDisplay}</h4>
-                                ${sizeHtml}
+                                <h4 title="${fullNodeTitle}">${podName}${peerIdDisplay}</h4>
+                            </div>
+                            <div class="node-size-line">
+                                ${sizeForHeader}
                             </div>
                             ${shardsHtml}
                             ${otherMetricsHtml ? `<dl class="other-metrics">${otherMetricsHtml}</dl>` : ''}
@@ -704,6 +722,7 @@ class VigilanteDashboard {
         const nodeId = document.createElement('div');
         nodeId.className = 'node-id';
         nodeId.textContent = node.peerId;
+        nodeId.title = node.peerId; // Show full peer ID on hover
 
         if (node.isLeader) {
             const leaderBadge = document.createElement('span');
@@ -712,12 +731,7 @@ class VigilanteDashboard {
             nodeId.appendChild(leaderBadge);
         }
 
-        const status = document.createElement('div');
-        status.className = `node-status ${node.isHealthy ? 'healthy' : 'unhealthy'}`;
-        status.textContent = node.isHealthy ? 'Healthy' : 'Unhealthy';
-
         header.appendChild(nodeId);
-        header.appendChild(status);
 
         const details = document.createElement('div');
         details.className = 'node-details';

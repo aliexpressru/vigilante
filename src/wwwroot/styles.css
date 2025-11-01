@@ -227,7 +227,7 @@ body {
 
 .node-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
     margin-bottom: 12px;
     padding-bottom: 8px;
@@ -237,26 +237,12 @@ body {
     font-weight: bold;
     font-size: 1.1rem;
     color: #333;
-    flex: 1;
+    text-align: center;
+    word-break: break-word;
+    line-height: 1.3;
 }
 
-.node-status {
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 0.8rem;
-    font-weight: bold;
-    text-transform: uppercase;
-}
-
-.node-status.healthy {
-    background: #4caf50;
-    color: white;
-}
-
-.node-status.unhealthy {
-    background: #f44336;
-    color: white;
-}
+/* Node status removed - color of card border indicates health */
 
 .node-peer-id {
     color: #666;
@@ -479,33 +465,40 @@ body {
     color: #333;
 }
 
-.collection-name-container {
+/* Collection header container - two lines */
+.collection-header-container {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
+    gap: 8px;
     width: 100%;
-    gap: 1rem;
-    min-width: 0; /* Allow flex items to shrink below content size */
 }
 
-.collection-name-container > span:first-child {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0; /* Allow shrinking */
-    flex: 1; /* Take available space */
+/* First line: collection name */
+.collection-name-line {
+    font-size: 0.85rem; /* Smaller font for all collections */
+    font-weight: 600;
+    color: #333;
+    word-break: break-word; /* Allow breaking long words */
+    line-height: 1.3;
+}
+
+/* Second line: size and buttons */
+.collection-actions-line {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .collection-size {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     color: #1976d2;
     background: linear-gradient(135deg, #e3f2fd, #bbdefb);
-    padding: 0.3rem 0.8rem;
+    padding: 0.25rem 0.7rem;
     border-radius: 6px;
     border: 1px solid #90caf9;
     font-weight: 600;
-    white-space: nowrap; /* Prevent wrapping */
-    flex-shrink: 0; /* Don't shrink the size badge */
+    white-space: nowrap;
+    flex-shrink: 0;
     box-shadow: 0 1px 3px rgba(33, 150, 243, 0.1);
 }
 
@@ -606,15 +599,37 @@ body {
 
 .node-info-header {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 12px;
-    gap: 12px;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 8px;
 }
 
 .node-info-header h4 {
     margin: 0;
-    flex: 1;
+    text-align: center;
+    word-break: break-word;
+    line-height: 1.3;
+    font-size: 1rem;
+}
+
+/* Node size line */
+.node-size-line {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 12px;
+}
+
+.node-size-badge {
+    font-size: 0.85rem;
+    color: #1976d2;
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    padding: 0.25rem 0.7rem;
+    border-radius: 6px;
+    border: 1px solid #90caf9;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(33, 150, 243, 0.1);
 }
 
 .collection-node-info dl {
@@ -754,18 +769,7 @@ body {
     display: inline-block;
 }
 
-.size-metric-standalone {
-    font-size: 0.9rem;
-    color: #1976d2;
-    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
-    padding: 0.3rem 0.8rem;
-    border-radius: 6px;
-    border: 1px solid #90caf9;
-    font-weight: 600;
-    display: inline-block;
-    box-shadow: 0 1px 3px rgba(33, 150, 243, 0.1);
-    white-space: nowrap;
-}
+/* size-metric-standalone removed - now using node-size-badge and collection-size */
 
 .shard-item {
     display: flex;
@@ -1068,7 +1072,7 @@ body {
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 
-/* Delete buttons for individual nodes */
+/* Delete buttons for individual nodes - after Move/Sync controls */
 .node-deletion-controls {
     display: flex;
     gap: 6px;
