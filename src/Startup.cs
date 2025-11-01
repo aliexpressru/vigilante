@@ -49,7 +49,11 @@ public class Startup(IConfiguration configuration)
                 .AddPrometheusExporter());
 
         // API
-        services.AddControllers();
+        services.AddControllers()
+            .AddJsonOptions(options =>
+            {
+                options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+            });
         services.AddFluentValidationAutoValidation()
             .AddFluentValidationClientsideAdapters()
             .AddValidatorsFromAssemblyContaining<V1ReplicateShardsRequestValidator>();
