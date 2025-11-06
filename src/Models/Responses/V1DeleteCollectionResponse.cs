@@ -4,17 +4,8 @@ namespace Vigilante.Models.Responses;
 /// Response for delete collection operation
 /// </summary>
 public class V1DeleteCollectionResponse
+ : BaseOperationResponse
 {
-    /// <summary>
-    /// Overall operation message
-    /// </summary>
-    public string Message { get; set; } = string.Empty;
-    
-    /// <summary>
-    /// Whether the operation was successful overall
-    /// </summary>
-    public bool Success { get; set; }
-    
     /// <summary>
     /// Results per node (only for multi-node operations)
     /// Key is node identifier (URL for API, PodName for Disk)

@@ -2,8 +2,11 @@ class VigilanteDashboard {
     constructor() {
         this.statusApiEndpoint = '/api/v1/cluster/status';
         this.sizesApiEndpoint = '/api/v1/cluster/collections-info';
+        this.snapshotsApiEndpoint = '/api/v1/cluster/snapshots-info';
         this.replicateShardsEndpoint = '/api/v1/cluster/replicate-shards';
         this.deleteCollectionEndpoint = '/api/v1/cluster/delete-collection';
+        this.deleteSnapshotFromDiskEndpoint = '/api/v1/cluster/snapshots/delete-from-disk';
+        this.recoverFromDiskSnapshotEndpoint = '/api/v1/cluster/snapshots/recover-from-disk';
         this.createSnapshotEndpoint = '/api/v1/cluster/create-snapshot';
         this.deleteSnapshotEndpoint = '/api/v1/cluster/delete-snapshot';
         this.downloadSnapshotEndpoint = '/api/v1/cluster/download-snapshot';
@@ -12,6 +15,7 @@ class VigilanteDashboard {
         this.refreshInterval = 0;
         this.intervalId = null;
         this.openCollections = new Set();
+        this.openSnapshots = new Set();
         this.selectedState = new Map();
         this.deletionStatus = new Map(); // Track deletion status per collection
         this.currentActiveNode = null; // Track currently active node
@@ -53,6 +57,7 @@ class VigilanteDashboard {
         // Load initial data but don't start auto-refresh by default
         this.loadClusterStatus();
         this.loadCollectionSizes();
+        this.loadSnapshots();
     }
 
     setupRefreshControls() {
@@ -83,6 +88,7 @@ class VigilanteDashboard {
     refresh() {
         this.loadClusterStatus();
         this.loadCollectionSizes();
+        this.loadSnapshots();
     }
 
     startAutoRefresh() {
@@ -464,14 +470,9 @@ class VigilanteDashboard {
                 nameDiv.title = collection.name;
                 headerContainer.appendChild(nameDiv);
                 
-                // Second line: size and delete buttons
+                // Second line: delete buttons and size
                 const actionsDiv = document.createElement('div');
                 actionsDiv.className = 'collection-actions-line';
-                
-                const sizeSpan = document.createElement('span');
-                sizeSpan.className = 'collection-size';
-                sizeSpan.textContent = this.formatSize(collectionTotalSize);
-                actionsDiv.appendChild(sizeSpan);
                 
                 // Add collection-wide delete buttons
                 const deleteButtonsContainer = document.createElement('div');
@@ -508,6 +509,11 @@ class VigilanteDashboard {
                 deleteButtonsContainer.appendChild(deleteAllDiskButton);
                 deleteButtonsContainer.appendChild(createSnapshotAllButton);
                 actionsDiv.appendChild(deleteButtonsContainer);
+                
+                const sizeSpan = document.createElement('span');
+                sizeSpan.className = 'collection-size';
+                sizeSpan.textContent = this.formatSize(collectionTotalSize);
+                actionsDiv.appendChild(sizeSpan);
                 
                 headerContainer.appendChild(actionsDiv);
                 nameCell.appendChild(headerContainer);
@@ -864,6 +870,343 @@ class VigilanteDashboard {
         const container = document.getElementById('collectionsTable');
         container.innerHTML = '';
         container.appendChild(table);
+    }
+
+    async loadSnapshots() {
+        try {
+            const response = await fetch(this.snapshotsApiEndpoint);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            const snapshots = Array.isArray(data) ? data : (data.snapshots || []);
+            this.updateSnapshotsTable(snapshots);
+            
+        } catch (error) {
+            console.error('Error fetching snapshots:', error);
+        }
+    }
+
+    updateSnapshotsTable(snapshots) {
+        if (!snapshots || snapshots.length === 0) {
+            const container = document.getElementById('snapshotsTable');
+            container.innerHTML = '<p style="color: #999; padding: 20px; text-align: center;">No snapshots found</p>';
+            document.getElementById('totalSnapshotsSize').textContent = 'Total: 0 B';
+            return;
+        }
+
+        // Group by collection name only (each node can have unique snapshot name)
+        const grouped = {};
+        let totalSize = 0;
+
+        snapshots.forEach(snapshot => {
+            const key = snapshot.collectionName;
+            if (!grouped[key]) {
+                grouped[key] = {
+                    collectionName: snapshot.collectionName,
+                    totalSize: 0,
+                    nodes: {}
+                };
+            }
+            grouped[key].totalSize += snapshot.sizeBytes;
+            totalSize += snapshot.sizeBytes;
+            
+            // Store snapshot info per node URL
+            grouped[key].nodes[snapshot.nodeUrl] = snapshot;
+        });
+
+        // Update total size display
+        document.getElementById('totalSnapshotsSize').textContent = `Total: ${this.formatSize(totalSize)}`;
+
+        // Create table
+        const table = document.createElement('table');
+        const tbody = document.createElement('tbody');
+
+        Object.values(grouped).forEach(collection => {
+            // Main collection row
+            const row = document.createElement('tr');
+            row.className = 'snapshot-row';
+            
+            const key = collection.collectionName;
+            const isOpen = this.openSnapshots.has(key);
+
+            const td = document.createElement('td');
+            td.colSpan = 1;
+            
+            const container = document.createElement('div');
+            container.className = 'snapshot-header-container';
+            
+            const nameLine = document.createElement('div');
+            nameLine.className = 'snapshot-name-line';
+            nameLine.innerHTML = `
+                <i class="fas fa-camera" style="color: #7b1fa2; margin-right: 8px;"></i>
+                <strong>${collection.collectionName}</strong>
+            `;
+            
+            const actionsLine = document.createElement('div');
+            actionsLine.className = 'snapshot-actions-line';
+            
+            const buttonsGroup = document.createElement('div');
+            buttonsGroup.className = 'snapshot-buttons-group';
+            
+            const recoverAllBtn = document.createElement('button');
+            recoverAllBtn.className = 'action-button action-button-success';
+            recoverAllBtn.innerHTML = '<i class="fas fa-undo"></i> Recover All';
+            recoverAllBtn.onclick = (e) => {
+                e.stopPropagation();
+                this.recoverSnapshotOnAllNodes(collection);
+            };
+            
+            const deleteAllBtn = document.createElement('button');
+            deleteAllBtn.className = 'action-button action-button-danger';
+            deleteAllBtn.innerHTML = '<i class="fas fa-trash"></i> Delete All';
+            deleteAllBtn.onclick = (e) => {
+                e.stopPropagation();
+                this.deleteSnapshotFromAllNodes(collection);
+            };
+            
+            buttonsGroup.appendChild(recoverAllBtn);
+            buttonsGroup.appendChild(deleteAllBtn);
+            actionsLine.appendChild(buttonsGroup);
+            
+            const sizeSpan = document.createElement('span');
+            sizeSpan.className = 'snapshot-size';
+            sizeSpan.textContent = this.formatSize(collection.totalSize);
+            actionsLine.appendChild(sizeSpan);
+            
+            container.appendChild(nameLine);
+            container.appendChild(actionsLine);
+            td.appendChild(container);
+            row.appendChild(td);
+
+            // Details row for nodes
+            const detailsRow = document.createElement('tr');
+            detailsRow.className = `snapshot-details ${isOpen ? 'visible' : ''}`;
+            const detailsTd = document.createElement('td');
+            detailsTd.colSpan = 1;
+            
+            const nodesTable = document.createElement('table');
+            nodesTable.className = 'nodes-table';
+            const nodesHeader = document.createElement('tr');
+            nodesHeader.innerHTML = `
+                <th>Node</th>
+                <th>Peer ID</th>
+                <th>Pod</th>
+                <th>Snapshot Name</th>
+                <th>Size</th>
+                <th>Actions</th>
+            `;
+            nodesTable.appendChild(nodesHeader);
+
+            Object.values(collection.nodes).forEach(node => {
+                const nodeRow = document.createElement('tr');
+                // Escape quotes in snapshot name for onclick attributes
+                const escapedSnapshotName = node.snapshotName.replace(/'/g, "\\'");
+                const escapedCollectionName = collection.collectionName.replace(/'/g, "\\'");
+                
+                // Create cells
+                const cellNode = document.createElement('td');
+                cellNode.textContent = node.nodeUrl;
+                
+                const cellPeer = document.createElement('td');
+                cellPeer.innerHTML = `<code>${node.peerId}</code>`;
+                
+                const cellPod = document.createElement('td');
+                cellPod.textContent = node.podName;
+                
+                const cellSnapshot = document.createElement('td');
+                cellSnapshot.textContent = node.snapshotName;
+                
+                const cellSize = document.createElement('td');
+                cellSize.textContent = node.prettySize;
+                
+                const cellActions = document.createElement('td');
+                const actionsContainer = document.createElement('div');
+                actionsContainer.className = 'snapshot-actions-cell';
+                
+                const recoverBtn = document.createElement('button');
+                recoverBtn.className = 'action-button action-button-success action-button-sm';
+                recoverBtn.innerHTML = '<i class="fas fa-undo"></i>';
+                recoverBtn.title = 'Recover from this snapshot';
+                recoverBtn.onclick = () => this.recoverSnapshotFromNode(node.nodeUrl, collection.collectionName, node.snapshotName);
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'action-button action-button-danger action-button-sm';
+                deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+                deleteBtn.title = 'Delete this snapshot';
+                deleteBtn.onclick = () => this.deleteSnapshotFromNode(node.podName, node.podNamespace || 'default', collection.collectionName, node.snapshotName);
+                
+                actionsContainer.appendChild(recoverBtn);
+                actionsContainer.appendChild(deleteBtn);
+                cellActions.appendChild(actionsContainer);
+                
+                nodeRow.appendChild(cellNode);
+                nodeRow.appendChild(cellPeer);
+                nodeRow.appendChild(cellPod);
+                nodeRow.appendChild(cellSnapshot);
+                nodeRow.appendChild(cellSize);
+                nodeRow.appendChild(cellActions);
+                
+                nodesTable.appendChild(nodeRow);
+            });
+
+            detailsTd.appendChild(nodesTable);
+            detailsRow.appendChild(detailsTd);
+
+            // Toggle details on click
+            row.addEventListener('click', () => {
+                if (this.openSnapshots.has(key)) {
+                    this.openSnapshots.delete(key);
+                    detailsRow.classList.remove('visible');
+                } else {
+                    this.openSnapshots.add(key);
+                    detailsRow.classList.add('visible');
+                }
+            });
+
+            tbody.appendChild(row);
+            tbody.appendChild(detailsRow);
+        });
+
+        table.appendChild(tbody);
+        const container = document.getElementById('snapshotsTable');
+        container.innerHTML = '';
+        container.appendChild(table);
+    }
+
+    async recoverSnapshotFromNode(nodeUrl, collectionName, snapshotName) {
+        const toastId = this.showToast(`Recovering ${collectionName} from ${snapshotName} on ${nodeUrl}...`, 'info', 0);
+        
+        try {
+            const response = await fetch(this.recoverFromDiskSnapshotEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    nodeUrl,
+                    collectionName,
+                    snapshotName
+                })
+            });
+
+            const result = await response.json();
+            this.removeToast(toastId);
+
+            if (response.ok && result.success) {
+                this.showToast(`✓ ${result.message}`, 'success', 5000);
+            } else {
+                this.showToast(`✗ ${result.message || 'Recovery failed'}`, 'error', 5000);
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`✗ Error recovering snapshot: ${error.message}`, 'error', 5000);
+        }
+    }
+
+    async recoverSnapshotOnAllNodes(collection) {
+        const nodes = Object.values(collection.nodes);
+        const toastId = this.showToast(`Recovering ${collection.collectionName} on ${nodes.length} nodes...`, 'info', 0);
+        
+        try {
+            const promises = nodes.map(node => 
+                fetch(this.recoverFromDiskSnapshotEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        nodeUrl: node.nodeUrl,
+                        collectionName: collection.collectionName,
+                        snapshotName: node.snapshotName // Each node has its own snapshot name
+                    })
+                })
+            );
+
+            const results = await Promise.all(promises);
+            this.removeToast(toastId);
+
+            const successCount = results.filter(r => r.ok).length;
+            if (successCount === results.length) {
+                this.showToast(`✓ Successfully recovered ${collection.collectionName} on all ${nodes.length} nodes`, 'success', 5000);
+            } else {
+                this.showToast(`⚠ Recovered on ${successCount}/${nodes.length} nodes`, 'warning', 5000);
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`✗ Error recovering snapshots: ${error.message}`, 'error', 5000);
+        }
+    }
+
+    async deleteSnapshotFromNode(podName, podNamespace, collectionName, snapshotName) {
+        if (!confirm(`Delete snapshot ${snapshotName} for ${collectionName} from ${podName}?`)) {
+            return;
+        }
+
+        const toastId = this.showToast(`Deleting ${snapshotName} from ${podName}...`, 'info', 0);
+        
+        try {
+            const response = await fetch(this.deleteSnapshotFromDiskEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    podName,
+                    podNamespace,
+                    collectionName,
+                    snapshotName
+                })
+            });
+
+            const result = await response.json();
+            this.removeToast(toastId);
+
+            if (response.ok && result.success) {
+                this.showToast(`✓ ${result.message}`, 'success', 5000);
+                this.loadSnapshots(); // Reload to update UI
+            } else {
+                this.showToast(`✗ ${result.message || 'Deletion failed'}`, 'error', 5000);
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`✗ Error deleting snapshot: ${error.message}`, 'error', 5000);
+        }
+    }
+
+    async deleteSnapshotFromAllNodes(collection) {
+        const nodes = Object.values(collection.nodes);
+        if (!confirm(`Delete all snapshots for ${collection.collectionName} from all ${nodes.length} nodes?`)) {
+            return;
+        }
+
+        const toastId = this.showToast(`Deleting snapshots for ${collection.collectionName} from ${nodes.length} nodes...`, 'info', 0);
+        
+        try {
+            const promises = nodes.map(node => 
+                fetch(this.deleteSnapshotFromDiskEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        podName: node.podName,
+                        podNamespace: node.podNamespace || 'default',
+                        collectionName: collection.collectionName,
+                        snapshotName: node.snapshotName // Each node has its own snapshot name
+                    })
+                })
+            );
+
+            const results = await Promise.all(promises);
+            this.removeToast(toastId);
+
+            const successCount = results.filter(r => r.ok).length;
+            if (successCount === results.length) {
+                this.showToast(`✓ Successfully deleted snapshots for ${collection.collectionName} from all ${nodes.length} nodes`, 'success', 5000);
+                this.loadSnapshots(); // Reload to update UI
+            } else {
+                this.showToast(`⚠ Deleted from ${successCount}/${nodes.length} nodes`, 'warning', 5000);
+                this.loadSnapshots(); // Reload to update UI
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`✗ Error deleting snapshots: ${error.message}`, 'error', 5000);
+        }
     }
 
     updateUI(clusterState) {

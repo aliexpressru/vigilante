@@ -3,18 +3,8 @@ namespace Vigilante.Models.Responses;
 /// <summary>
 /// Response for delete snapshot operation
 /// </summary>
-public class V1DeleteSnapshotResponse
+public class V1DeleteSnapshotResponse: BaseOperationResponse
 {
-    /// <summary>
-    /// Overall operation message
-    /// </summary>
-    public string Message { get; set; } = string.Empty;
-    
-    /// <summary>
-    /// Whether the operation was successful overall
-    /// </summary>
-    public bool Success { get; set; }
-    
     /// <summary>
     /// Results per node (only for multi-node operations)
     /// Key is node URL

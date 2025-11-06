@@ -24,6 +24,9 @@ public class Startup(IConfiguration configuration)
         // Metrics service
         services.AddSingleton<IMeterService, MeterService>();
         
+        // Test data provider for local development
+        services.AddSingleton<TestDataProvider>();
+        
         // Core services - CollectionService has no dependencies on ClusterManager anymore
         services.AddSingleton<ICollectionService, CollectionService>();
         services.AddSingleton<ClusterManager>();

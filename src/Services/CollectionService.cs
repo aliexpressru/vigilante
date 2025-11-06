@@ -1,6 +1,4 @@
 using k8s;
-using System.Text;
-using System.Net.WebSockets;
 using Aer.QdrantClient.Http.Abstractions;
 using Vigilante.Models;
 using Vigilante.Configuration;
@@ -14,36 +12,35 @@ public class CollectionService : ICollectionService
 {
     private readonly ILogger<CollectionService> _logger;
     private readonly IMeterService _meterService;
-    private readonly IKubernetes? _kubernetes;
+    private readonly PodCommandExecutor? _commandExecutor;
     private readonly QdrantOptions _options;
     private readonly IQdrantClientFactory _clientFactory;
-
-    private const string PrettySizeMetricKey = "prettySize";
-    private const string SizeBytesMetricKey = "sizeBytes";
-    private const string ShardsMetricKey = "shards";
-    private const string OutgoingTransfersKey = "outgoingTransfers";
-    private const string ShardStatesKey = "shardStates";
+    private readonly TestDataProvider _testDataProvider;
 
     public CollectionService(
         ILogger<CollectionService> logger,
         IMeterService meterService,
         IQdrantClientFactory clientFactory,
-        IOptions<QdrantOptions> options)
+        IOptions<QdrantOptions> options,
+        TestDataProvider testDataProvider,
+        ILogger<PodCommandExecutor> commandExecutorLogger)
     {
         _logger = logger;
         _meterService = meterService;
         _clientFactory = clientFactory;
         _options = options.Value;
+        _testDataProvider = testDataProvider;
 
-        // Try to initialize Kubernetes client only if we're running in a cluster
+        // Try to initialize Kubernetes client and command executor only if we're running in a cluster
         try
         {
-            _kubernetes = new Kubernetes(KubernetesClientConfiguration.InClusterConfig());
+            var kubernetes = new Kubernetes(KubernetesClientConfiguration.InClusterConfig());
+            _commandExecutor = new PodCommandExecutor(kubernetes, commandExecutorLogger);
         }
         catch (k8s.Exceptions.KubeConfigException)
         {
             _logger.LogWarning("Not running in Kubernetes cluster, collection size monitoring will be disabled");
-            _kubernetes = null;
+            _commandExecutor = null;
         }
     }
 
@@ -98,7 +95,7 @@ public class CollectionService : ICollectionService
             "Starting to get collection sizes for pod {PodName} (Node URL {NodeUrl}) in namespace {Namespace}",
             podName, nodeUrl, podNamespace);
 
-        if (_kubernetes == null)
+        if (_commandExecutor == null)
         {
             return [];
         }
@@ -107,107 +104,36 @@ public class CollectionService : ICollectionService
 
         try
         {
-            using var webSocket = await _kubernetes.WebSocketNamespacedPodExecAsync(
+            var collections = await _commandExecutor.ListDirectoriesAsync(
                 podName,
                 podNamespace,
-                new[] { "sh", "-c", "cd /qdrant/storage/collections && ls -1d */" },
-                "qdrant",
-                cancellationToken: cancellationToken);
+                "/qdrant/storage/collections",
+                cancellationToken);
 
-            var buffer = new byte[4096];
-            var segment = new ArraySegment<byte>(buffer);
-            var collectionsOutput = new StringBuilder(512);
-
-            WebSocketReceiveResult result;
-            do
-            {
-                result = await webSocket.ReceiveAsync(segment, cancellationToken);
-                if (result.Count > 0)
-                {
-                    collectionsOutput.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
-                }
-            } while (!result.CloseStatus.HasValue && !cancellationToken.IsCancellationRequested);
-
-            var collections = collectionsOutput.ToString()
-                .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(name => name
-                    .TrimEnd('/')
-                    .Trim()
-                    .Where(c => !char.IsControl(c))
-                    .ToArray())
-                .Select(chars => new string(chars))
-                .Where(name => !string.IsNullOrWhiteSpace(name) && !name.StartsWith("."))
-                .ToList();
+            _logger.LogDebug("Found {Count} collections on pod {PodName}", collections.Count, podName);
 
             foreach (var collection in collections)
             {
-                try
+                var sizeBytes = await _commandExecutor.GetSizeAsync(
+                    podName,
+                    podNamespace,
+                    "/qdrant/storage/collections",
+                    collection,
+                    cancellationToken);
+
+                if (sizeBytes.HasValue)
                 {
-                        
-                    // Command breakdown: ["sh", "-c", "cd /qdrant/storage/collections && du -sb \"collection\" | cut -f1"]
-                    // - "sh": Use the Bourne shell to execute commands
-                    // - "-c": Execute the following string as a command
-                    // - "cd /qdrant/storage/collections": Change directory to Qdrant collections storage
-                    // - "&&": Execute the next command only if the previous one succeeds
-                    // - "du": Disk usage command
-                    // - "-s": Summary (don't recursively show nested directories)
-                    // - "-b": Show size in bytes (instead of blocks)
-                    // - "\"collection\"": The collection directory name (quoted to handle special characters)
-                    // - "|": Pipe the output to the next command
-                    // - "cut -f1": Extract only the first field (the size in bytes, excluding the path)
-                    using var sizeWebSocket = await _kubernetes.WebSocketNamespacedPodExecAsync(
-                        podName,
-                        podNamespace,
-                        new[] { "sh", "-c", $"cd /qdrant/storage/collections && du -sb \"{collection}\" | cut -f1" },
-                        "qdrant",
-                        cancellationToken: cancellationToken);
-
-                    var sizeOutput = new StringBuilder(64); // Size output is typically small, pre-allocate
-                    do
+                    var collectionSize = new CollectionSize
                     {
-                        result = await sizeWebSocket.ReceiveAsync(segment, cancellationToken);
-                        if (result.Count > 0)
-                        {
-                            var receivedText = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                            _logger.LogDebug("Received size data for {Collection}: {ReceivedText}", collection,
-                                receivedText);
-                            sizeOutput.Append(receivedText);
-                        }
-                    } while (!result.CloseStatus.HasValue && !cancellationToken.IsCancellationRequested);
+                        PodName = podName,
+                        NodeUrl = nodeUrl,
+                        PeerId = peerId,
+                        CollectionName = collection,
+                        SizeBytes = sizeBytes.Value
+                    };
 
-                    var output = sizeOutput.ToString()
-                        .Trim()
-                        .Replace("\n", "")
-                        .Replace("\r", "")
-                        .Replace("\0", "");
-                    _logger.LogDebug("Raw size output for collection {Collection}: '{Output}'", collection, output);
-
-                    // Remove any non-digit characters
-                    var cleanedOutput = new string(output.Where(c => char.IsDigit(c)).ToArray());
-                    if (!string.IsNullOrEmpty(cleanedOutput) && long.TryParse(cleanedOutput, out var sizeBytes))
-                    {
-                        var collectionSize = new CollectionSize
-                        {
-                            PodName = podName,
-                            NodeUrl = nodeUrl,
-                            PeerId = peerId,
-                            CollectionName = collection,
-                            SizeBytes = sizeBytes
-                        };
-
-                        sizes.Add(collectionSize);
-                        _meterService.UpdateCollectionSize(collectionSize);
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Failed to parse size for collection {Collection}: '{Output}'",
-                            collection, output);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to get size for collection {Collection} in pod {PodName}",
-                        collection, podName);
+                    sizes.Add(collectionSize);
+                    _meterService.UpdateCollectionSize(collectionSize);
                 }
             }
         }
@@ -221,94 +147,7 @@ public class CollectionService : ICollectionService
 
     public IReadOnlyList<CollectionInfo> GenerateTestCollectionData()
     {
-        var testData = new List<CollectionInfo>();
-        var testCollections = new[] 
-        { 
-            "test_collection", 
-            "products", 
-            "embeddings",
-            // Long collection names to test UI overflow handling
-            "super_long_collection_name_with_multiple_underscores_and_segments_to_test_horizontal_overflow_behavior_even_longer_for_test_purposes",
-            "analytics_data_warehouse_user_behavior_tracking_embeddings_v2_production_quantized_optimized_2024"
-        };
-        var testPeers = new[]
-        {
-            ("peer1", "pod-1", "http://localhost:6333"),
-            ("peer2", "pod-2", "http://localhost:6334"),
-            ("peer3", "pod-3", "http://localhost:6335")
-        };
-
-        // Define different sizes for different collections to make it more realistic
-        var collectionSizes = new Dictionary<string, (string prettySize, long sizeBytes)>
-        {
-            { "test_collection", ("1.2 GB", 1288490188L) },
-            { "products", ("850.5 MB", 891873484L) },
-            { "embeddings", ("3.7 GB", 3971891200L) },
-            { "super_long_collection_name_with_multiple_underscores_and_segments_to_test_horizontal_overflow_behavior", ("7.3 GB", 7836344320L) },
-            { "analytics_data_warehouse_user_behavior_tracking_embeddings_v2_production_quantized_optimized_2024", ("22.1 GB", 23735685734L) }
-        };
-
-        foreach (var collection in testCollections)
-        {
-            var (prettySize, sizeBytes) = collectionSizes.GetValueOrDefault(collection, ("1.0 GB", 1073741824L));
-            
-            foreach (var (peerId, podName, url) in testPeers)
-            {
-                var shards = new List<int>();
-                var transfers = new List<object>();
-                var shardStates = new Dictionary<string, string>();
-
-                // Distribute shards among peers with different states
-                if (peerId == "peer1")
-                {
-                    shards.AddRange(new[] { 0, 1, 2 });
-                    transfers.Add(new { isSync = true, shardId = 2, to = "pod-2", toPeerId = "peer2" });
-                    
-                    // States for the first peer
-                    shardStates["0"] = "Active";          // Active shard
-                    shardStates["1"] = "Initializing";    // Being initialized
-                    shardStates["2"] = "PartialSnapshot"; // Being transferred
-                }
-                else if (peerId == "peer2")
-                {
-                    shards.AddRange(new[] { 3, 4, 5 });
-                    
-                    // States for the second peer
-                    shardStates["3"] = "Listener";        // In listener mode
-                    shardStates["4"] = "Dead";           // Inaccessible
-                    shardStates["5"] = "Recovery";       // Being recovered
-                }
-                else if (peerId == "peer3")
-                {
-                    shards.AddRange(new[] { 6, 7, 8 });
-                    transfers.Add(new { isSync = false, shardId = 8, to = "pod-1", toPeerId = "peer1" });
-                    
-                    // States for the third peer
-                    shardStates["6"] = "Resharding";             // Being resharded
-                    shardStates["7"] = "ReshardingScaleDown";   // Being scaled down
-                    shardStates["8"] = "Partial";               // Partially available
-                }
-
-                var metrics = new Dictionary<string, object>
-                {
-                    { PrettySizeMetricKey, prettySize },
-                    { SizeBytesMetricKey, sizeBytes },
-                    { ShardsMetricKey, shards },
-                    { OutgoingTransfersKey, transfers },
-                    { ShardStatesKey, shardStates }
-                };
-
-                testData.Add(new CollectionInfo
-                {
-                    CollectionName = collection,
-                    PodName = podName,
-                    PeerId = peerId,
-                    Metrics = metrics
-                });
-            }
-        }
-
-        return testData;
+        return _testDataProvider.GenerateTestCollectionData();
     }
 
     public async Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client, CancellationToken cancellationToken = default)
@@ -420,88 +259,20 @@ public class CollectionService : ICollectionService
             "Deleting collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}",
             collectionName, podName, podNamespace);
 
-        if (_kubernetes == null)
+        if (_commandExecutor == null)
         {
             _logger.LogError("Kubernetes client not available, cannot delete collection from disk");
             return false;
         }
 
-        try
-        {
-            // Execute rm -rf command to delete the collection directory
-            // Command: rm -rf /qdrant/storage/collections/{collectionName}
-            using var webSocket = await _kubernetes.WebSocketNamespacedPodExecAsync(
-                podName,
-                podNamespace,
-                new[] { "sh", "-c", $"rm -rf /qdrant/storage/collections/{collectionName}" },
-                "qdrant",
-                cancellationToken: cancellationToken);
-
-            var buffer = new byte[4096];
-            var segment = new ArraySegment<byte>(buffer);
-            var output = new StringBuilder();
-
-            WebSocketReceiveResult result;
-            do
-            {
-                result = await webSocket.ReceiveAsync(segment, cancellationToken);
-                if (result.Count > 0)
-                {
-                    output.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
-                }
-            } while (!result.CloseStatus.HasValue && !cancellationToken.IsCancellationRequested);
-
-            var outputStr = output.ToString();
-            
-            // Check if there were any errors in the output
-            if (!string.IsNullOrEmpty(outputStr) && 
-                (outputStr.Contains("error", StringComparison.OrdinalIgnoreCase) || 
-                 outputStr.Contains("permission denied", StringComparison.OrdinalIgnoreCase)))
-            {
-                _logger.LogError("Failed to delete collection {CollectionName} from disk: {Output}", 
-                    collectionName, outputStr);
-                return false;
-            }
-
-            // Verify deletion by checking if the directory still exists
-            using var verifyWebSocket = await _kubernetes.WebSocketNamespacedPodExecAsync(
-                podName,
-                podNamespace,
-                new[] { "sh", "-c", $"test -d /qdrant/storage/collections/{collectionName} && echo 'exists' || echo 'deleted'" },
-                "qdrant",
-                cancellationToken: cancellationToken);
-
-            var verifyOutput = new StringBuilder();
-            do
-            {
-                result = await verifyWebSocket.ReceiveAsync(segment, cancellationToken);
-                if (result.Count > 0)
-                {
-                    verifyOutput.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
-                }
-            } while (!result.CloseStatus.HasValue && !cancellationToken.IsCancellationRequested);
-
-            var verifyResult = verifyOutput.ToString().Trim();
-            
-            if (verifyResult.Contains("deleted"))
-            {
-                _logger.LogInformation("✅ Collection {CollectionName} deleted successfully from disk on pod {PodName}", 
-                    collectionName, podName);
-                return true;
-            }
-            else
-            {
-                _logger.LogError("Collection {CollectionName} still exists after deletion attempt on pod {PodName}", 
-                    collectionName, podName);
-                return false;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete collection {CollectionName} from disk on pod {PodName}", 
-                collectionName, podName);
-            return false;
-        }
+        var fullPath = $"/qdrant/storage/collections/{collectionName}";
+        return await _commandExecutor.DeleteAndVerifyAsync(
+            podName, 
+            podNamespace, 
+            fullPath, 
+            isDirectory: true, 
+            $"Collection {collectionName}", 
+            cancellationToken);
     }
     public async Task<string?> CreateCollectionSnapshotAsync(
         string nodeUrl,
@@ -882,5 +653,124 @@ public class CollectionService : ICollectionService
         
         _logger.LogInformation("Retrieved {Count} collections from Qdrant API", result.Count);
         return result;
+    }
+
+    public async Task<IEnumerable<SnapshotInfo>> GetSnapshotsFromDiskForPodAsync(
+        string podName,
+        string podNamespace,
+        string nodeUrl,
+        string peerId,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation(
+            "Starting to get snapshots from disk for pod {PodName} (Node URL {NodeUrl}) in namespace {Namespace}",
+            podName, nodeUrl, podNamespace);
+
+        if (_commandExecutor == null)
+        {
+            return [];
+        }
+
+        var snapshots = new List<SnapshotInfo>();
+
+        try
+        {
+            var collectionFolders = await _commandExecutor.ListFilesAsync(
+                podName,
+                podNamespace,
+                "/qdrant/storage/snapshots",
+                "*/",
+                cancellationToken);
+
+            _logger.LogDebug("Found {Count} collection folders in snapshots directory on pod {PodName}", 
+                collectionFolders.Count, podName);
+
+            foreach (var collectionName in collectionFolders)
+            {
+                try
+                {
+                    var snapshotFiles = await _commandExecutor.ListFilesAsync(
+                        podName,
+                        podNamespace,
+                        $"/qdrant/storage/snapshots/{collectionName}",
+                        "*.snapshot",
+                        cancellationToken);
+
+                    _logger.LogDebug("Found {Count} snapshot files for collection {CollectionName} on pod {PodName}", 
+                        snapshotFiles.Count, collectionName, podName);
+
+                    foreach (var snapshotFile in snapshotFiles.Where(f => f.EndsWith(".snapshot")))
+                    {
+                        var sizeBytes = await _commandExecutor.GetSizeAsync(
+                            podName,
+                            podNamespace,
+                            $"/qdrant/storage/snapshots/{collectionName}",
+                            snapshotFile,
+                            cancellationToken);
+
+                        if (sizeBytes.HasValue)
+                        {
+                            var snapshotInfo = new SnapshotInfo
+                            {
+                                PodName = podName,
+                                NodeUrl = nodeUrl,
+                                PeerId = peerId,
+                                CollectionName = collectionName,
+                                SnapshotName = snapshotFile,
+                                SizeBytes = sizeBytes.Value
+                            };
+
+                            snapshots.Add(snapshotInfo);
+                            _logger.LogDebug("Added snapshot {SnapshotName} for collection {CollectionName}: {Size}", 
+                                snapshotFile, collectionName, snapshotInfo.PrettySize);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to get snapshots for collection {Collection} on pod {PodName}",
+                        collectionName, podName);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get snapshots from disk for pod {PodName}", podName);
+        }
+
+        _logger.LogInformation("Found {Count} snapshots on pod {PodName}", snapshots.Count, podName);
+        return snapshots;
+    }
+
+    public IReadOnlyList<SnapshotInfo> GenerateTestSnapshotData()
+    {
+        return _testDataProvider.GenerateTestSnapshotData();
+    }
+
+    public async Task<bool> DeleteSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation(
+            "Deleting snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}",
+            snapshotName, collectionName, podName, podNamespace);
+
+        if (_commandExecutor == null)
+        {
+            _logger.LogError("Kubernetes client not available, cannot delete snapshot from disk");
+            return false;
+        }
+
+        var fullPath = $"/qdrant/storage/snapshots/{collectionName}/{snapshotName}";
+        return await _commandExecutor.DeleteAndVerifyAsync(
+            podName, 
+            podNamespace, 
+            fullPath, 
+            isDirectory: false, 
+            $"Snapshot {snapshotName}", 
+            cancellationToken);
     }
 }

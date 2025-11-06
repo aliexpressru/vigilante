@@ -14,7 +14,7 @@ public interface ICollectionService
         string nodeUrl,
         string peerId,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Internal method to replicate shards (called by ClusterManager)
     /// </summary>
@@ -26,20 +26,21 @@ public interface ICollectionService
         uint[] shardIds,
         bool isMove,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Checks if collections can be successfully retrieved from the node
     /// </summary>
     /// <param name="client">Qdrant HTTP client</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Tuple with success status and error message if failed</returns>
-    Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client, CancellationToken cancellationToken = default);
-    
+    Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Generates test collection data for local development
     /// </summary>
     IReadOnlyList<CollectionInfo> GenerateTestCollectionData();
-    
+
     /// <summary>
     /// Deletes a collection via Qdrant API
     /// </summary>
@@ -47,7 +48,7 @@ public interface ICollectionService
         string nodeUrl,
         string collectionName,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Deletes a collection directly from disk on a specific pod
     /// </summary>
@@ -56,7 +57,7 @@ public interface ICollectionService
         string podNamespace,
         string collectionName,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Creates a snapshot of a collection on a specific node
     /// </summary>
@@ -64,7 +65,7 @@ public interface ICollectionService
         string nodeUrl,
         string collectionName,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Lists all snapshots for a collection on a specific node
     /// </summary>
@@ -72,7 +73,7 @@ public interface ICollectionService
         string nodeUrl,
         string collectionName,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Deletes a snapshot for a collection on a specific node
     /// </summary>
@@ -81,7 +82,7 @@ public interface ICollectionService
         string collectionName,
         string snapshotName,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Downloads a snapshot for a collection from a specific node
     /// </summary>
@@ -90,7 +91,7 @@ public interface ICollectionService
         string collectionName,
         string snapshotName,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Recovers a collection from a snapshot on a specific node
     /// </summary>
@@ -99,7 +100,7 @@ public interface ICollectionService
         string collectionName,
         string snapshotName,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Recovers a collection from an uploaded snapshot on a specific node
     /// </summary>
@@ -108,7 +109,7 @@ public interface ICollectionService
         string collectionName,
         Stream snapshotData,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Gets clustering information for a collection and enriches collection infos with shard data
     /// </summary>
@@ -117,12 +118,36 @@ public interface ICollectionService
         IList<CollectionInfo> collectionInfos,
         Dictionary<string, string> peerToPodMap,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Gets collections list from a Qdrant node directly (fallback when Kubernetes is not available)
     /// </summary>
     Task<IReadOnlyList<CollectionInfo>> GetCollectionsFromQdrantAsync(
         IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken);
-}
 
+    /// <summary>
+    /// Gets snapshot files and their sizes from disk for a specific pod
+    /// </summary>
+    Task<IEnumerable<SnapshotInfo>> GetSnapshotsFromDiskForPodAsync(
+        string podName,
+        string podNamespace,
+        string nodeUrl,
+        string peerId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Generates test snapshot data for local development
+    /// </summary>
+    IReadOnlyList<SnapshotInfo> GenerateTestSnapshotData();
+
+    /// <summary>
+    /// Deletes a snapshot file directly from disk on a specific pod
+    /// </summary>
+    Task<bool> DeleteSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
+}

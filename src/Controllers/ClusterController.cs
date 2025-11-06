@@ -502,4 +502,141 @@ public class ClusterController(
             });
         }
     }
+
+    [HttpGet("snapshots-info")]
+    public async Task<ActionResult<V1GetSnapshotsInfoResponse>> GetSnapshotsInfo(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await clusterManager.GetSnapshotsInfoAsync(cancellationToken);
+
+            return Ok(new V1GetSnapshotsInfoResponse
+            {
+                Snapshots = result
+                    .Select(snapshot => new V1GetSnapshotsInfoResponse.SnapshotInfoDto
+                    {
+                        PodName = snapshot.PodName,
+                        NodeUrl = snapshot.NodeUrl,
+                        PeerId = snapshot.PeerId,
+                        CollectionName = snapshot.CollectionName,
+                        SnapshotName = snapshot.SnapshotName,
+                        SizeBytes = snapshot.SizeBytes,
+                        PrettySize = snapshot.PrettySize,
+                        PodNamespace = ""
+                    })
+                    .OrderBy(x => x.CollectionName)
+                    .ThenBy(x => x.SnapshotName)
+                    .ToArray()
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "Failed to get snapshots info", details = ex.Message });
+        }
+    }
+
+    [HttpPost("snapshots/delete-from-disk")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DeleteSnapshotFromDisk(
+        [FromBody] V1DeleteSnapshotFromDiskRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var success = await clusterManager.DeleteSnapshotFromDiskAsync(
+                request.PodName!,
+                request.PodNamespace!,
+                request.CollectionName!,
+                request.SnapshotName!,
+                cancellationToken);
+
+            var response = new V1DeleteSnapshotResponse
+            {
+                Success = success,
+                Message = success
+                    ? $"Snapshot '{request.SnapshotName}' for collection '{request.CollectionName}' deleted successfully from disk on pod {request.PodName}"
+                    : $"Failed to delete snapshot '{request.SnapshotName}' from disk on pod {request.PodName}",
+                Results = new Dictionary<string, NodeSnapshotDeletionResult>
+                {
+                    [request.PodName!] = new NodeSnapshotDeletionResult
+                    {
+                        Success = success,
+                        Error = success ? null : "Deletion failed"
+                    }
+                }
+            };
+
+            return success ? Ok(response) : StatusCode(500, response);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error deleting snapshot from disk");
+            return StatusCode(500, new V1DeleteSnapshotResponse
+            {
+                Success = false,
+                Message = "Internal server error",
+                Results = new Dictionary<string, NodeSnapshotDeletionResult>
+                {
+                    ["error"] = new NodeSnapshotDeletionResult
+                    {
+                        Success = false,
+                        Error = ex.Message
+                    }
+                }
+            });
+        }
+    }
+
+    [HttpPost("snapshots/recover-from-disk")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> RecoverFromDiskSnapshot(
+        [FromBody] V1RecoverFromDiskSnapshotRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            // Use existing RecoverCollectionFromSnapshotAsync since it works with disk snapshots
+            var success = await clusterManager.RecoverCollectionFromSnapshotAsync(
+                request.NodeUrl!,
+                request.CollectionName!,
+                request.SnapshotName!,
+                cancellationToken);
+
+            var response = new V1RecoverFromSnapshotResponse
+            {
+                Success = success,
+                Message = success
+                    ? $"Collection '{request.CollectionName}' recovery from snapshot '{request.SnapshotName}' initiated successfully on {request.NodeUrl}"
+                    : $"Failed to recover collection '{request.CollectionName}' from snapshot '{request.SnapshotName}' on {request.NodeUrl}",
+                Error = success ? null : "Recovery failed"
+            };
+
+            return success ? Ok(response) : StatusCode(500, response);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error recovering from disk snapshot");
+            return StatusCode(500, new V1RecoverFromSnapshotResponse
+            {
+                Success = false,
+                Message = "Internal server error",
+                Error = ex.Message
+            });
+        }
+    }
 }

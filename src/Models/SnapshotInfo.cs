@@ -2,7 +2,7 @@ using Vigilante.Extensions;
 
 namespace Vigilante.Models;
 
-public class CollectionSize
+public class SnapshotInfo
 {
     public string PodName { get; set; }
 
@@ -12,7 +12,10 @@ public class CollectionSize
 
     public string CollectionName { get; set; }
 
+    public string SnapshotName { get; set; }
+
     public long SizeBytes { get; set; }
 
     public string PrettySize => SizeBytes.ToPrettySize();
 }
+
