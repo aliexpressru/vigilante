@@ -163,163 +163,116 @@ public class ClusterManager(
         // Get cluster state first
         var state = await GetClusterStateAsync(cancellationToken);
         
-        // If running in test mode (no pods), return test data
-        if (state.Nodes.All(n => string.IsNullOrEmpty(n.PodName)))
-        {
-            logger.LogDebug("Running in local mode (no pods found), returning test data");
-            return collectionService.GenerateTestCollectionData();
-        }
-
-        var result = new List<CollectionInfo>();
-        
         // Create mapping of PeerId to podName
         var peerToPodMap = state.Nodes
             .Where(n => !string.IsNullOrEmpty(n.PeerId) && !string.IsNullOrEmpty(n.PodName))
-            .ToDictionary(n => n.PeerId!, n => n.PodName!);
+            .ToDictionary(n => n.PeerId, n => n.PodName!);
             
         var nodes = state.Nodes;
         logger.LogInformation("Found {NodesCount} nodes to process. Healthy nodes: {HealthyCount}", 
             nodes.Count, nodes.Count(n => n.IsHealthy));
-            
-        // First, get all collections and their sizes from all nodes
-        foreach (var node in nodes)
+        
+        var result = new List<CollectionInfo>();
+        bool hasPodsWithNames = nodes.Any(n => !string.IsNullOrEmpty(n.PodName));
+        
+        // Priority 1: Try to get collections from Kubernetes storage (if we have pod names)
+        if (hasPodsWithNames)
         {
-            logger.LogInformation(
-                "Processing node: URL={NodeUrl}, PeerId={PeerId}, IsHealthy={IsHealthy}, Namespace={Namespace}", 
-                node.Url, node.PeerId, node.IsHealthy, node.Namespace);
-            try
+            logger.LogInformation("Attempting to get collections from Kubernetes storage");
+            
+            foreach (var node in nodes)
             {
-                var podName = await GetPodNameFromIpAsync(node.Url, node.Namespace ?? "", cancellationToken);
-                if (string.IsNullOrEmpty(podName))
+                logger.LogInformation(
+                    "Processing node: URL={NodeUrl}, PeerId={PeerId}, IsHealthy={IsHealthy}, Namespace={Namespace}", 
+                    node.Url, node.PeerId, node.IsHealthy, node.Namespace);
+                try
                 {
-                    logger.LogWarning("Could not find pod for IP {NodeUrl} in namespace {Namespace}", node.Url,
-                        node.Namespace);
-                    continue;
+                    var podName = await GetPodNameFromIpAsync(node.Url, node.Namespace ?? "", cancellationToken);
+                    if (string.IsNullOrEmpty(podName))
+                    {
+                        logger.LogWarning("Could not find pod for IP {NodeUrl} in namespace {Namespace}", node.Url,
+                            node.Namespace);
+                        continue;
+                    }
+
+                    logger.LogInformation("Found pod {PodName} for IP {NodeUrl}", podName, node.Url);
+                    
+                    var collectionSizes =
+                        await collectionService.GetCollectionsSizesForPodAsync(podName, node.Namespace ?? "", node.Url, node.PeerId, cancellationToken);
+                    var sizesList = collectionSizes.ToList();
+                    logger.LogInformation("Retrieved {SizesCount} collection sizes from pod {PodName}", sizesList.Count,
+                        podName);
+
+                    foreach (var size in sizesList)
+                    {
+                        // Get snapshots for this collection on this node
+                        List<string> snapshots = new List<string>();
+                        try
+                        {
+                            snapshots = await collectionService.ListCollectionSnapshotsAsync(node.Url, size.CollectionName, cancellationToken);
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogWarning(ex, "Failed to get snapshots for collection {CollectionName} on node {NodeUrl}", 
+                                size.CollectionName, node.Url);
+                        }
+
+                        var metrics = new Dictionary<string, object>
+                        {
+                            { "prettySize", size.PrettySize },
+                            { "sizeBytes", size.SizeBytes },
+                            { "snapshots", snapshots }
+                        };
+
+                        result.Add(new CollectionInfo
+                        {
+                            CollectionName = size.CollectionName,
+                            NodeUrl = size.NodeUrl,
+                            PodName = size.PodName,
+                            PeerId = size.PeerId,
+                            PodNamespace = node.Namespace ?? "",
+                            Metrics = metrics
+                        });
+                    }
                 }
-
-                logger.LogInformation("Found pod {PodName} for IP {NodeUrl}", podName, node.Url);
-                
-                var collectionSizes =
-                    await collectionService.GetCollectionsSizesForPodAsync(podName, node.Namespace ?? "", node.Url, node.PeerId!, cancellationToken);
-                var sizesList = collectionSizes.ToList();
-                logger.LogInformation("Retrieved {SizesCount} collection sizes from pod {PodName}", sizesList.Count,
-                    podName);
-
-                foreach (var size in sizesList)
+                catch (Exception ex)
                 {
-                    var metrics = new Dictionary<string, object>
-                    {
-                        { "prettySize", size.PrettySize },
-                        { "sizeBytes", size.SizeBytes }
-                    };
-
-                    result.Add(new CollectionInfo
-                    {
-                        CollectionName = size.CollectionName,
-                        NodeUrl = size.NodeUrl,
-                        PodName = size.PodName,
-                        PeerId = size.PeerId,
-                        PodNamespace = node.Namespace ?? "",
-                        Metrics = metrics
-                    });
+                    logger.LogError(ex, "Failed to get collection sizes for node {nodeUrl}", node.Url);
                 }
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to get collection sizes for node {nodeUrl}", node.Url);
             }
         }
         
-        // Then, get sharding information from a healthy node
-        var healthyNode = nodes.FirstOrDefault(n => n.IsHealthy);
-        if (healthyNode != null)
+        // Priority 2: If we didn't get any collections from storage, try Qdrant API
+        if (result.Count == 0 && nodes.Count > 0)
         {
-            try
+            logger.LogInformation("No collections found in Kubernetes storage, trying Qdrant API");
+            
+            var nodeInfos = nodes.Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName));
+            var collectionsFromQdrant = await collectionService.GetCollectionsFromQdrantAsync(nodeInfos, cancellationToken);
+            result.AddRange(collectionsFromQdrant);
+        }
+        
+        // Priority 3: If still no collections, return test data
+        if (result.Count == 0)
+        {
+            logger.LogDebug("No collections found from any source, returning test data");
+            return collectionService.GenerateTestCollectionData();
+        }
+        
+        // Enrich with clustering information from all healthy nodes
+        var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
+        if (healthyNodes.Count > 0)
+        {
+            logger.LogInformation("Enriching collections with clustering info from {HealthyNodeCount} healthy nodes", healthyNodes.Count);
+            
+            // Query each healthy node to get its local shards information
+            foreach (var healthyNode in healthyNodes)
             {
-                var uri = new Uri(healthyNode.Url);
-                var qdrantClient = clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
-
-                // Group collections by name to avoid duplicates
-                var collections = result
-                    .Select(r => r.CollectionName)
-                    .Distinct();
-
-                foreach (var collectionName in collections)
-                {
-                    try
-                    {
-                        var clusteringInfo = await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
-                        if (clusteringInfo?.Status?.IsSuccess == true && clusteringInfo.Result != null)
-                        {
-                            // Update metrics for each node's collection
-                            var collectionInfos = result.Where(r => r.CollectionName == collectionName);
-                            foreach (var info in collectionInfos)
-                            {
-                                var shards = new List<ulong>();
-                                var shardStates = new Dictionary<string, string>();
-
-                                // If this is the node we made request from, use local shards
-                                if (healthyNode.PeerId == info.PeerId)
-                                {
-                                    if (clusteringInfo.Result.LocalShards != null)
-                                    {
-                                        foreach (var shard in clusteringInfo.Result.LocalShards)
-                                        {
-                                            shards.Add(shard.ShardId);
-                                            shardStates[shard.ShardId.ToString()] = shard.State.ToString();
-                                        }
-                                    }
-                                }
-                                else if (clusteringInfo.Result.RemoteShards != null)
-                                {
-                                    // Find shards for this node in remote shards
-                                    foreach (var remoteShard in clusteringInfo.Result.RemoteShards)
-                                    {
-                                        if (remoteShard.PeerId.ToString() == info.PeerId)
-                                        {
-                                            shards.Add(remoteShard.ShardId);
-                                            shardStates[remoteShard.ShardId.ToString()] = remoteShard.State.ToString();
-                                        }
-                                    }
-                                }
-
-                                if (shards.Count != 0)
-                                {
-                                    info.Metrics["shards"] = shards;
-                                    info.Metrics["shardStates"] = shardStates;
-                                }
-
-                                // Add outgoing transfers information with pod names instead of PeerIds
-                                if (clusteringInfo.Result.ShardTransfers != null)
-                                {
-                                    var outgoingTransfers = clusteringInfo.Result.ShardTransfers
-                                        .Where(t => t.From.ToString() == info.PeerId)
-                                        .Select(t => new
-                                        {
-                                            ShardId = t.ShardId,
-                                            To = peerToPodMap.TryGetValue(t.To.ToString(), out var podName) ? podName : t.To.ToString(),
-                                            IsSync = t.Sync
-                                        })
-                                        .ToList();
-
-                                    if (outgoingTransfers.Count != 0)
-                                    {
-                                        info.Metrics["outgoingTransfers"] = outgoingTransfers;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogError(ex, "Failed to get clustering info for collection {Collection} from node {NodeUrl}", 
-                            collectionName, healthyNode.Url);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to setup QdrantClient for node {NodeUrl}", healthyNode.Url);
+                await collectionService.EnrichWithClusteringInfoAsync(
+                    healthyNode.Url,
+                    result,
+                    peerToPodMap,
+                    cancellationToken);
             }
         }
         else
@@ -551,4 +504,163 @@ public class ClusterManager(
         NodeErrorType.CollectionsFetchError => "Collections Error",
         _ => "Unknown Error"
     };
+
+    // Snapshot operations
+
+    public async Task<string?> CreateCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Creating snapshot for collection {CollectionName} on node {NodeUrl}", 
+            collectionName, nodeUrl);
+
+        return await collectionService.CreateCollectionSnapshotAsync(nodeUrl, collectionName, cancellationToken);
+    }
+
+    public async Task<Dictionary<string, string?>> CreateCollectionSnapshotOnAllNodesAsync(
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Creating snapshot for collection {CollectionName} on all nodes", collectionName);
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var results = new Dictionary<string, string?>();
+
+        var createTasks = state.Nodes.Select(async node =>
+        {
+            var snapshotName = await collectionService.CreateCollectionSnapshotAsync(
+                node.Url,
+                collectionName,
+                cancellationToken);
+
+            return (NodeUrl: node.Url, SnapshotName: snapshotName);
+        });
+
+        var createResults = await Task.WhenAll(createTasks);
+
+        foreach (var result in createResults)
+        {
+            results[result.NodeUrl] = result.SnapshotName;
+        }
+
+        var successCount = results.Values.Count(s => s != null);
+        logger.LogInformation("Snapshot created for collection {CollectionName}: {SuccessCount}/{TotalCount} nodes", 
+            collectionName, successCount, results.Count);
+
+        return results;
+    }
+
+    public async Task<Dictionary<string, List<string>>> ListCollectionSnapshotsOnAllNodesAsync(
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogDebug("Listing snapshots for collection {CollectionName} on all nodes", collectionName);
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var results = new Dictionary<string, List<string>>();
+
+        var listTasks = state.Nodes.Select(async node =>
+        {
+            var snapshots = await collectionService.ListCollectionSnapshotsAsync(
+                node.Url,
+                collectionName,
+                cancellationToken);
+
+            return (NodeUrl: node.Url, Snapshots: snapshots);
+        });
+
+        var listResults = await Task.WhenAll(listTasks);
+
+        foreach (var result in listResults)
+        {
+            results[result.NodeUrl] = result.Snapshots;
+        }
+
+        return results;
+    }
+
+    public async Task<bool> DeleteCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} on node {NodeUrl}", 
+            snapshotName, collectionName, nodeUrl);
+
+        return await collectionService.DeleteCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, cancellationToken);
+    }
+
+    public async Task<Dictionary<string, bool>> DeleteCollectionSnapshotOnAllNodesAsync(
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} on all nodes", 
+            snapshotName, collectionName);
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var results = new Dictionary<string, bool>();
+
+        var deleteTasks = state.Nodes.Select(async node =>
+        {
+            var success = await collectionService.DeleteCollectionSnapshotAsync(
+                node.Url,
+                collectionName,
+                snapshotName,
+                cancellationToken);
+
+            return (NodeUrl: node.Url, Success: success);
+        });
+
+        var deleteResults = await Task.WhenAll(deleteTasks);
+
+        foreach (var result in deleteResults)
+        {
+            results[result.NodeUrl] = result.Success;
+        }
+
+        var successCount = results.Values.Count(s => s);
+        logger.LogInformation("Snapshot {SnapshotName} deleted for collection {CollectionName}: {SuccessCount}/{TotalCount} nodes", 
+            snapshotName, collectionName, successCount, results.Count);
+
+        return results;
+    }
+
+    public async Task<Stream?> DownloadCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from node {NodeUrl}", 
+            snapshotName, collectionName, nodeUrl);
+
+        return await collectionService.DownloadCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, cancellationToken);
+    }
+
+    public async Task<bool> RecoverCollectionFromSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Recovering collection {CollectionName} from snapshot {SnapshotName} on node {NodeUrl}", 
+            collectionName, snapshotName, nodeUrl);
+
+        return await collectionService.RecoverCollectionFromSnapshotAsync(nodeUrl, collectionName, snapshotName, cancellationToken);
+    }
+
+    public async Task<bool> RecoverCollectionFromUploadedSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        Stream snapshotData,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Recovering collection {CollectionName} from uploaded snapshot on node {NodeUrl}", 
+            collectionName, nodeUrl);
+
+        return await collectionService.RecoverCollectionFromUploadedSnapshotAsync(nodeUrl, collectionName, snapshotData, cancellationToken);
+    }
 }

@@ -56,5 +56,73 @@ public interface ICollectionService
         string podNamespace,
         string collectionName,
         CancellationToken cancellationToken);
+    
+    /// <summary>
+    /// Creates a snapshot of a collection on a specific node
+    /// </summary>
+    Task<string?> CreateCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken);
+    
+    /// <summary>
+    /// Lists all snapshots for a collection on a specific node
+    /// </summary>
+    Task<List<string>> ListCollectionSnapshotsAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken);
+    
+    /// <summary>
+    /// Deletes a snapshot for a collection on a specific node
+    /// </summary>
+    Task<bool> DeleteCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
+    
+    /// <summary>
+    /// Downloads a snapshot for a collection from a specific node
+    /// </summary>
+    Task<Stream?> DownloadCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
+    
+    /// <summary>
+    /// Recovers a collection from a snapshot on a specific node
+    /// </summary>
+    Task<bool> RecoverCollectionFromSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
+    
+    /// <summary>
+    /// Recovers a collection from an uploaded snapshot on a specific node
+    /// </summary>
+    Task<bool> RecoverCollectionFromUploadedSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        Stream snapshotData,
+        CancellationToken cancellationToken);
+    
+    /// <summary>
+    /// Gets clustering information for a collection and enriches collection infos with shard data
+    /// </summary>
+    Task EnrichWithClusteringInfoAsync(
+        string healthyNodeUrl,
+        IList<CollectionInfo> collectionInfos,
+        Dictionary<string, string> peerToPodMap,
+        CancellationToken cancellationToken);
+    
+    /// <summary>
+    /// Gets collections list from a Qdrant node directly (fallback when Kubernetes is not available)
+    /// </summary>
+    Task<IReadOnlyList<CollectionInfo>> GetCollectionsFromQdrantAsync(
+        IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
+        CancellationToken cancellationToken);
 }
 

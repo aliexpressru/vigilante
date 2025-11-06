@@ -1039,7 +1039,8 @@ body {
 }
 
 .delete-all-api-button,
-.delete-all-disk-button {
+.delete-all-disk-button,
+.create-snapshot-all-button {
     padding: 6px 12px;
     border: none;
     border-radius: 4px;
@@ -1068,6 +1069,17 @@ body {
 
 .delete-all-disk-button:hover {
     background: #d32f2f;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.create-snapshot-all-button {
+    background: #667eea;
+    color: white;
+}
+
+.create-snapshot-all-button:hover {
+    background: #5568d3;
     transform: translateY(-1px);
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
@@ -1446,6 +1458,360 @@ body {
 .result-error {
     color: #d32f2f;
     font-size: 0.85rem;
+}
+
+/* Snapshots Section */
+.snapshots-section {
+    margin-top: 16px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+}
+
+.snapshots-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.snapshots-header h5 {
+    margin: 0;
+    font-size: 1rem;
+    color: #333;
+}
+
+.snapshot-header-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.create-snapshot-btn,
+.upload-snapshot-btn {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+}
+
+.create-snapshot-btn:hover {
+    background: #5568d3;
+    transform: translateY(-1px);
+}
+
+.upload-snapshot-btn {
+    background: #28a745;
+}
+
+.upload-snapshot-btn:hover {
+    background: #218838;
+    transform: translateY(-1px);
+}
+
+.snapshots-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.snapshot-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
+}
+
+.snapshot-name {
+    font-size: 0.9rem;
+    color: #333;
+    font-family: 'Courier New', monospace;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.snapshot-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.snapshot-download-btn,
+.snapshot-recover-btn,
+.snapshot-delete-btn {
+    background: transparent;
+    border: none;
+    padding: 6px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s;
+    font-size: 0.9rem;
+}
+
+.snapshot-download-btn {
+    color: #2196f3;
+}
+
+.snapshot-download-btn:hover {
+    background: #e3f2fd;
+}
+
+.snapshot-recover-btn {
+    color: #ff9800;
+}
+
+.snapshot-recover-btn:hover {
+    background: #fff3e0;
+}
+
+.snapshot-delete-btn {
+    color: #f44336;
+}
+
+.snapshot-delete-btn:hover {
+    background: #ffebee;
+}
+
+.snapshots-empty {
+    text-align: center;
+    padding: 16px;
+    color: #999;
+    font-style: italic;
+    font-size: 0.9rem;
+}
+
+/* Modal for Upload Snapshot */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+}
+
+.modal-content {
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    max-width: 500px;
+    width: 90%;
+}
+
+.modal-content h3 {
+    margin-bottom: 16px;
+    color: #333;
+}
+
+.modal-content p {
+    margin-bottom: 16px;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.modal-content form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.modal-content input[type="file"] {
+    padding: 12px;
+    border: 2px dashed #667eea;
+    border-radius: 8px;
+    background: #f8f9fa;
+    cursor: pointer;
+}
+
+.modal-content input[type="file"]:hover {
+    border-color: #5568d3;
+    background: #e9ecef;
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.btn-primary,
+.btn-secondary {
+    padding: 10px 20px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: #667eea;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #5568d3;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+
+/* Toast Notifications */
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 400px;
+}
+
+.toast {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    animation: slideIn 0.3s ease-out;
+    border-left: 4px solid #667eea;
+}
+
+.toast.success {
+    border-left-color: #28a745;
+}
+
+.toast.error {
+    border-left-color: #dc3545;
+}
+
+.toast.warning {
+    border-left-color: #ffc107;
+}
+
+.toast.info {
+    border-left-color: #17a2b8;
+}
+
+.toast-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.toast.success .toast-icon {
+    color: #28a745;
+}
+
+.toast.error .toast-icon {
+    color: #dc3545;
+}
+
+.toast.warning .toast-icon {
+    color: #ffc107;
+}
+
+.toast.info .toast-icon {
+    color: #17a2b8;
+}
+
+.toast-content {
+    flex: 1;
+}
+
+.toast-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #333;
+}
+
+.toast-message {
+    font-size: 14px;
+    color: #666;
+}
+
+.toast-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #999;
+    cursor: pointer;
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.toast-close:hover {
+    color: #333;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+}
+
+.toast.removing {
+    animation: slideOut 0.3s ease-out forwards;
+}
+
+/* Loading spinner */
+.toast-spinner {
+    width: 20px;
+    height: 20px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 /* Footer */

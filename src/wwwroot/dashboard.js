@@ -4,12 +4,18 @@ class VigilanteDashboard {
         this.sizesApiEndpoint = '/api/v1/cluster/collections-info';
         this.replicateShardsEndpoint = '/api/v1/cluster/replicate-shards';
         this.deleteCollectionEndpoint = '/api/v1/cluster/delete-collection';
+        this.createSnapshotEndpoint = '/api/v1/cluster/create-snapshot';
+        this.deleteSnapshotEndpoint = '/api/v1/cluster/delete-snapshot';
+        this.downloadSnapshotEndpoint = '/api/v1/cluster/download-snapshot';
+        this.recoverFromSnapshotEndpoint = '/api/v1/cluster/recover-from-snapshot';
+        this.recoverFromUploadedSnapshotEndpoint = '/api/v1/cluster/recover-from-uploaded-snapshot';
         this.refreshInterval = 0;
         this.intervalId = null;
         this.openCollections = new Set();
         this.selectedState = new Map();
         this.deletionStatus = new Map(); // Track deletion status per collection
         this.currentActiveNode = null; // Track currently active node
+        this.toastIdCounter = 0; // Counter for unique toast IDs
         this.init();
         this.setupRefreshControls();
     }
@@ -93,6 +99,91 @@ class VigilanteDashboard {
             clearInterval(this.intervalId);
             this.intervalId = null;
         }
+    }
+
+    // Toast notification methods
+    showToast(message, type = 'info', title = null, duration = 5000, isLoading = false) {
+        const container = document.getElementById('toast-container');
+        if (!container) return null;
+
+        const toastId = `toast-${this.toastIdCounter++}`;
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.id = toastId;
+
+        const icons = {
+            success: '<i class="fas fa-check-circle"></i>',
+            error: '<i class="fas fa-exclamation-circle"></i>',
+            warning: '<i class="fas fa-exclamation-triangle"></i>',
+            info: '<i class="fas fa-info-circle"></i>'
+        };
+
+        const iconHtml = isLoading 
+            ? '<div class="toast-spinner"></div>'
+            : `<div class="toast-icon">${icons[type] || icons.info}</div>`;
+
+        toast.innerHTML = `
+            ${iconHtml}
+            <div class="toast-content">
+                ${title ? `<div class="toast-title">${title}</div>` : ''}
+                <div class="toast-message">${message}</div>
+            </div>
+            ${!isLoading ? '<button class="toast-close" aria-label="Close">&times;</button>' : ''}
+        `;
+
+        const closeBtn = toast.querySelector('.toast-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.removeToast(toastId));
+        }
+
+        container.appendChild(toast);
+
+        // Auto remove after duration (if not loading)
+        if (duration > 0 && !isLoading) {
+            setTimeout(() => this.removeToast(toastId), duration);
+        }
+
+        return toastId;
+    }
+
+    removeToast(toastId) {
+        const toast = document.getElementById(toastId);
+        if (!toast) return;
+
+        toast.classList.add('removing');
+        setTimeout(() => {
+            toast.remove();
+        }, 300);
+    }
+
+    updateToast(toastId, message, type = 'info', title = null) {
+        const toast = document.getElementById(toastId);
+        if (!toast) return;
+
+        const icons = {
+            success: '<i class="fas fa-check-circle"></i>',
+            error: '<i class="fas fa-exclamation-circle"></i>',
+            warning: '<i class="fas fa-exclamation-triangle"></i>',
+            info: '<i class="fas fa-info-circle"></i>'
+        };
+
+        toast.className = `toast ${type}`;
+        toast.innerHTML = `
+            <div class="toast-icon">${icons[type] || icons.info}</div>
+            <div class="toast-content">
+                ${title ? `<div class="toast-title">${title}</div>` : ''}
+                <div class="toast-message">${message}</div>
+            </div>
+            <button class="toast-close" aria-label="Close">&times;</button>
+        `;
+
+        const closeBtn = toast.querySelector('.toast-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.removeToast(toastId));
+        }
+
+        // Auto remove after 5 seconds
+        setTimeout(() => this.removeToast(toastId), 5000);
     }
 
     async loadClusterStatus() {
@@ -206,14 +297,17 @@ class VigilanteDashboard {
         peerButtonsContainer.innerHTML = '';
 
         Object.entries(collection.nodes)
-            .filter(([otherPodName, info]) => info.peerId && info.peerId !== nodeInfo.peerId)
-            .forEach(([otherPodName, info]) => {
+            .filter(([nodeKey, info]) => info.peerId && info.peerId !== nodeInfo.peerId)
+            .forEach(([nodeKey, info]) => {
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = 'peer-button';
                 button.setAttribute('data-peer-id', info.peerId);
-                button.setAttribute('title', `${otherPodName} (${info.peerId})`); // Add tooltip with full info
-                button.textContent = otherPodName; // Show only pod name
+                
+                // Show podName if available and not 'unknown', otherwise show peerId
+                const displayName = info.podName && info.podName !== 'unknown' ? info.podName : info.peerId;
+                button.setAttribute('title', `${info.podName} (${info.peerId})`);
+                button.textContent = displayName;
 
                 // Restore selected button state
                 if (savedState.targetPeer === info.peerId) {
@@ -316,7 +410,9 @@ class VigilanteDashboard {
                 };
             }
 
-            acc[info.collectionName].nodes[info.podName] = {
+            // Use peerId as unique key to avoid overwriting nodes with the same podName
+            const nodeKey = info.peerId || info.podName || info.nodeUrl;
+            acc[info.collectionName].nodes[nodeKey] = {
                 size: info.metrics?.size || 0,
                 podName: info.podName,
                 peerId: info.peerId || '',
@@ -326,8 +422,15 @@ class VigilanteDashboard {
             };
             return acc;
         }, {});
+        
+        console.log('Collections grouped by name:', collectionsByName);
+        console.log('Total unique collections:', Object.keys(collectionsByName).length);
+        Object.entries(collectionsByName).forEach(([name, collection]) => {
+            console.log(`Collection ${name} has ${Object.keys(collection.nodes).length} nodes`);
+        });
 
-        const podNames = [...new Set(collections.map(info => info.podName).filter(Boolean))].sort();
+        // Get unique node keys (peerIds or podNames) for display
+        const nodeKeys = [...new Set(collections.map(info => info.peerId || info.podName || info.nodeUrl).filter(Boolean))].sort();
         const table = document.createElement('table');
         table.className = 'collections-table';
         const tbody = document.createElement('tbody');
@@ -348,7 +451,7 @@ class VigilanteDashboard {
                 
                 const nameCell = document.createElement('td');
                 nameCell.className = 'collection-name';
-                nameCell.colSpan = podNames.length + 1;
+                nameCell.colSpan = nodeKeys.length + 1;
                 
                 // Create a container for the entire collection header
                 const headerContainer = document.createElement('div');
@@ -392,8 +495,18 @@ class VigilanteDashboard {
                     await this.deleteCollection(collection.name, 'Disk', false);
                 };
                 
+                const createSnapshotAllButton = document.createElement('button');
+                createSnapshotAllButton.className = 'create-snapshot-all-button';
+                createSnapshotAllButton.innerHTML = '📸 Snapshot All';
+                createSnapshotAllButton.title = 'Create snapshot on all nodes';
+                createSnapshotAllButton.onclick = async (e) => {
+                    e.stopPropagation();
+                    await this.createSnapshot(collection.name, null, true);
+                };
+                
                 deleteButtonsContainer.appendChild(deleteAllApiButton);
                 deleteButtonsContainer.appendChild(deleteAllDiskButton);
+                deleteButtonsContainer.appendChild(createSnapshotAllButton);
                 actionsDiv.appendChild(deleteButtonsContainer);
                 
                 headerContainer.appendChild(actionsDiv);
@@ -407,12 +520,12 @@ class VigilanteDashboard {
                 }
 
                 const detailsCell = document.createElement('td');
-                detailsCell.colSpan = podNames.length + 1;
+                detailsCell.colSpan = nodeKeys.length + 1;
                 const detailsContent = document.createElement('div');
                 detailsContent.className = 'collection-details-content';
 
-                podNames.forEach(podName => {
-                    const nodeInfo = collection.nodes[podName];
+                nodeKeys.forEach(nodeKey => {
+                    const nodeInfo = collection.nodes[nodeKey];
                     if (nodeInfo) {
                         const nodeDetails = document.createElement('div');
                         nodeDetails.className = 'collection-node-info';
@@ -453,7 +566,7 @@ class VigilanteDashboard {
                         // 4. Get other metrics (if any)
                         const otherMetricsHtml = Object.entries(nodeInfo.metrics)
                             .filter(([key]) => key !== 'prettySize' && key !== 'sizeBytes' && key !== 'shardStates' && 
-                                              key !== 'shard_states' && key !== 'shards' && key !== 'outgoingTransfers')
+                                              key !== 'shard_states' && key !== 'shards' && key !== 'outgoingTransfers' && key !== 'snapshots')
                             .map(([key, value]) => {
                                 const formattedValue = this.formatMetricValue(key, value, nodeInfo);
                                 if (!formattedValue) return '';
@@ -467,7 +580,11 @@ class VigilanteDashboard {
                             .filter(html => html)
                             .join('');
                             
-                        const fullNodeTitle = nodeInfo.peerId ? `${podName} (${nodeInfo.peerId})` : podName;
+                        // Determine display name: use podName if available and not 'unknown', otherwise use peerId
+                        const displayName = nodeInfo.podName && nodeInfo.podName !== 'unknown' 
+                            ? nodeInfo.podName 
+                            : (nodeInfo.peerId || nodeInfo.nodeUrl);
+                        const fullNodeTitle = nodeInfo.peerId ? `${displayName} (${nodeInfo.peerId})` : displayName;
                         
                         // Format size for header line
                         let sizeForHeader = '';
@@ -476,24 +593,82 @@ class VigilanteDashboard {
                             sizeForHeader = `<span class="node-size-badge">${formattedSize}</span>`;
                         }
                         
+                        // Generate snapshots HTML
+                        let snapshotsHtml = '';
+                        if (nodeInfo.metrics.snapshots && nodeInfo.metrics.snapshots.length > 0) {
+                            const snapshotsList = nodeInfo.metrics.snapshots.map(snapshot => 
+                                `<div class="snapshot-item">
+                                    <span class="snapshot-name" title="${snapshot}">${snapshot}</span>
+                                    <div class="snapshot-actions">
+                                        <button class="snapshot-download-btn" data-snapshot="${snapshot}" title="Download snapshot">
+                                            <i class="fas fa-download"></i>
+                                        </button>
+                                        <button class="snapshot-recover-btn" data-snapshot="${snapshot}" title="Recover from snapshot">
+                                            <i class="fas fa-undo"></i>
+                                        </button>
+                                        <button class="snapshot-delete-btn" data-snapshot="${snapshot}" title="Delete snapshot">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>`
+                            ).join('');
+                            
+                            snapshotsHtml = `
+                                <div class="snapshots-section">
+                                    <div class="snapshots-header">
+                                        <h5>📸 Snapshots (${nodeInfo.metrics.snapshots.length})</h5>
+                                        <div class="snapshot-header-actions">
+                                            <button class="create-snapshot-btn" title="Create new snapshot">
+                                                <i class="fas fa-plus"></i> Create
+                                            </button>
+                                            <button class="upload-snapshot-btn" title="Upload and recover from snapshot">
+                                                <i class="fas fa-upload"></i> Upload
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="snapshots-list">
+                                        ${snapshotsList}
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            snapshotsHtml = `
+                                <div class="snapshots-section">
+                                    <div class="snapshots-header">
+                                        <h5>📸 Snapshots (0)</h5>
+                                        <div class="snapshot-header-actions">
+                                            <button class="create-snapshot-btn" title="Create new snapshot">
+                                                <i class="fas fa-plus"></i> Create
+                                            </button>
+                                            <button class="upload-snapshot-btn" title="Upload and recover from snapshot">
+                                                <i class="fas fa-upload"></i> Upload
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="snapshots-empty">No snapshots available</div>
+                                </div>
+                            `;
+                        }
+                        
                         nodeDetails.innerHTML = `
                             <div class="node-info-header">
-                                <h4 title="${fullNodeTitle}">${podName}${peerIdDisplay}</h4>
+                                <h4 title="${fullNodeTitle}">${displayName}${peerIdDisplay}</h4>
                             </div>
                             <div class="node-size-line">
                                 ${sizeForHeader}
                             </div>
                             ${shardsHtml}
                             ${otherMetricsHtml ? `<dl class="other-metrics">${otherMetricsHtml}</dl>` : ''}
+                            ${transfersHtml ? `<dl class="transfers-metrics">${transfersHtml}</dl>` : ''}
+                            ${snapshotsHtml}
                             <div class="node-deletion-controls">
-                                <button class="delete-api-button" data-collection="${collection.name}" data-node-url="${nodeInfo.nodeUrl || ''}" data-pod-name="${podName}" data-pod-namespace="${nodeInfo.podNamespace || ''}" title="Delete collection via API on this node">
+                                <button class="delete-api-button" data-collection="${collection.name}" data-node-url="${nodeInfo.nodeUrl || ''}" data-pod-name="${nodeInfo.podName || ''}" data-pod-namespace="${nodeInfo.podNamespace || ''}" title="Delete collection via API on this node">
                                     🗑️ API
                                 </button>
-                                <button class="delete-disk-button" data-collection="${collection.name}" data-node-url="${nodeInfo.nodeUrl || ''}" data-pod-name="${podName}" data-pod-namespace="${nodeInfo.podNamespace || ''}" title="Delete collection from disk on this node">
+                                <button class="delete-disk-button" data-collection="${collection.name}" data-node-url="${nodeInfo.nodeUrl || ''}" data-pod-name="${nodeInfo.podName || ''}" data-pod-namespace="${nodeInfo.podNamespace || ''}" title="Delete collection from disk on this node">
                                     🗑️ Disk
                                 </button>
                             </div>
-                            ${transfersHtml ? `<dl class="transfers-metrics">${transfersHtml}</dl>` : ''}
                         `;
 
                         nodeDetails.setAttribute('data-state-key', stateKey);
@@ -618,6 +793,50 @@ class VigilanteDashboard {
                                 const podName = deleteDiskButton.dataset.podName;
                                 const podNamespace = deleteDiskButton.dataset.podNamespace;
                                 await this.deleteCollection(collectionName, 'Disk', true, null, podName, podNamespace);
+                            });
+                        }
+
+                        // Setup snapshot buttons
+                        const createSnapshotBtn = nodeDetails.querySelector('.create-snapshot-btn');
+                        if (createSnapshotBtn) {
+                            createSnapshotBtn.addEventListener('click', async (e) => {
+                                e.stopPropagation();
+                                await this.createSnapshot(collection.name, nodeInfo.nodeUrl, false);
+                            });
+                        }
+
+                        const snapshotDownloadBtns = nodeDetails.querySelectorAll('.snapshot-download-btn');
+                        snapshotDownloadBtns.forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                e.stopPropagation();
+                                const snapshotName = btn.dataset.snapshot;
+                                await this.downloadSnapshot(collection.name, snapshotName, nodeInfo.nodeUrl);
+                            });
+                        });
+
+                        const snapshotRecoverBtns = nodeDetails.querySelectorAll('.snapshot-recover-btn');
+                        snapshotRecoverBtns.forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                e.stopPropagation();
+                                const snapshotName = btn.dataset.snapshot;
+                                await this.recoverFromSnapshot(collection.name, snapshotName, nodeInfo.nodeUrl);
+                            });
+                        });
+
+                        const snapshotDeleteBtns = nodeDetails.querySelectorAll('.snapshot-delete-btn');
+                        snapshotDeleteBtns.forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                e.stopPropagation();
+                                const snapshotName = btn.dataset.snapshot;
+                                await this.deleteSnapshot(collection.name, snapshotName, nodeInfo.nodeUrl, false);
+                            });
+                        });
+
+                        const uploadSnapshotBtn = nodeDetails.querySelector('.upload-snapshot-btn');
+                        if (uploadSnapshotBtn) {
+                            uploadSnapshotBtn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                this.showUploadSnapshotDialog(collection.name, nodeInfo.nodeUrl);
                             });
                         }
 
@@ -990,6 +1209,329 @@ class VigilanteDashboard {
                 errorDiv.remove();
             }
         }, 4000);
+    }
+
+    // Snapshot management methods
+    async createSnapshot(collectionName, nodeUrl, onAllNodes = false) {
+        const target = onAllNodes ? 'all nodes' : 'node';
+        const toastId = this.showToast(
+            `Creating snapshot for collection '${collectionName}' on ${target}...`,
+            'info',
+            'Creating Snapshot',
+            0,
+            true
+        );
+
+        try {
+            const requestBody = {
+                collectionName: collectionName,
+                singleNode: !onAllNodes,
+                nodeUrl: onAllNodes ? null : nodeUrl
+            };
+
+            const response = await fetch(this.createSnapshotEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.updateToast(
+                    toastId,
+                    result.message || `Snapshot creation accepted. It will appear in the list shortly.`,
+                    'success',
+                    'Snapshot Creation Accepted'
+                );
+                
+                // Refresh after a short delay to allow snapshot to be created
+                setTimeout(() => this.refresh(), 2000);
+            } else {
+                this.updateToast(
+                    toastId,
+                    result.message || 'Unknown error occurred',
+                    'error',
+                    'Failed to Create Snapshot'
+                );
+            }
+        } catch (error) {
+            this.updateToast(
+                toastId,
+                error.message,
+                'error',
+                'Error Creating Snapshot'
+            );
+        }
+    }
+
+    async deleteSnapshot(collectionName, snapshotName, nodeUrl, onAllNodes = false) {
+        if (!confirm(`Are you sure you want to delete snapshot '${snapshotName}' for collection '${collectionName}'?`)) {
+            return;
+        }
+
+        const target = onAllNodes ? 'all nodes' : 'node';
+        const toastId = this.showToast(
+            `Deleting snapshot '${snapshotName}' from ${target}...`,
+            'info',
+            'Deleting Snapshot',
+            0,
+            true
+        );
+
+        try {
+            const requestBody = {
+                collectionName: collectionName,
+                snapshotName: snapshotName,
+                singleNode: !onAllNodes,
+                nodeUrl: onAllNodes ? null : nodeUrl
+            };
+
+            const response = await fetch(this.deleteSnapshotEndpoint, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.updateToast(
+                    toastId,
+                    result.message || 'Snapshot deletion accepted',
+                    'success',
+                    'Snapshot Deleted'
+                );
+                
+                // Refresh after a short delay
+                setTimeout(() => this.refresh(), 1000);
+            } else {
+                this.updateToast(
+                    toastId,
+                    result.message || 'Unknown error occurred',
+                    'error',
+                    'Failed to Delete Snapshot'
+                );
+            }
+        } catch (error) {
+            this.updateToast(
+                toastId,
+                error.message,
+                'error',
+                'Error Deleting Snapshot'
+            );
+        }
+    }
+
+    async downloadSnapshot(collectionName, snapshotName, nodeUrl) {
+        const toastId = this.showToast(
+            `Downloading snapshot '${snapshotName}'...`,
+            'info',
+            'Downloading',
+            0,
+            true
+        );
+
+        try {
+            const requestBody = {
+                nodeUrl: nodeUrl,
+                collectionName: collectionName,
+                snapshotName: snapshotName
+            };
+
+            const response = await fetch(this.downloadSnapshotEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to download snapshot');
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = snapshotName;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            this.updateToast(
+                toastId,
+                `Snapshot '${snapshotName}' downloaded successfully`,
+                'success',
+                'Download Complete'
+            );
+        } catch (error) {
+            this.updateToast(
+                toastId,
+                error.message,
+                'error',
+                'Download Failed'
+            );
+        }
+    }
+
+    async recoverFromSnapshot(collectionName, snapshotName, nodeUrl) {
+        if (!confirm(`Are you sure you want to recover collection '${collectionName}' from snapshot '${snapshotName}'?\n\nThis will restore the collection data from the snapshot.`)) {
+            return;
+        }
+
+        const toastId = this.showToast(
+            `Recovering collection '${collectionName}' from snapshot '${snapshotName}'...`,
+            'info',
+            'Recovering Collection',
+            0,
+            true
+        );
+
+        try {
+            const requestBody = {
+                nodeUrl: nodeUrl,
+                collectionName: collectionName,
+                snapshotName: snapshotName
+            };
+
+            const response = await fetch(this.recoverFromSnapshotEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.updateToast(
+                    toastId,
+                    result.message || 'Collection recovery accepted. The process is running in background.',
+                    'success',
+                    'Recovery Accepted'
+                );
+                
+                // Refresh after a delay
+                setTimeout(() => this.refresh(), 2000);
+            } else {
+                this.updateToast(
+                    toastId,
+                    result.message || 'Unknown error occurred',
+                    'error',
+                    'Recovery Failed'
+                );
+            }
+        } catch (error) {
+            this.updateToast(
+                toastId,
+                error.message,
+                'error',
+                'Error Recovering Collection'
+            );
+        }
+    }
+
+    showUploadSnapshotDialog(collectionName, nodeUrl) {
+        // Create modal dialog
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h3>Upload Snapshot for ${collectionName}</h3>
+                <p>Node: ${nodeUrl}</p>
+                <form id="uploadSnapshotForm">
+                    <input type="file" id="snapshotFile" accept=".snapshot" required>
+                    <div class="modal-buttons">
+                        <button type="submit" class="btn-primary">Upload & Recover</button>
+                        <button type="button" class="btn-secondary" id="cancelUpload">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Handle form submission
+        document.getElementById('uploadSnapshotForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('snapshotFile');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                this.showToast('Please select a snapshot file', 'warning', 'No File Selected');
+                return;
+            }
+
+            modal.remove();
+
+            const toastId = this.showToast(
+                `Uploading and recovering collection '${collectionName}' from snapshot...`,
+                'info',
+                'Uploading Snapshot',
+                0,
+                true
+            );
+
+            try {
+                const formData = new FormData();
+                formData.append('nodeUrl', nodeUrl);
+                formData.append('collectionName', collectionName);
+                formData.append('snapshotFile', file);
+
+                const response = await fetch(this.recoverFromUploadedSnapshotEndpoint, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    this.updateToast(
+                        toastId,
+                        result.message || 'Snapshot uploaded and recovery accepted. The process is running in background.',
+                        'success',
+                        'Upload & Recovery Accepted'
+                    );
+                    
+                    // Refresh after a delay
+                    setTimeout(() => this.refresh(), 2000);
+                } else {
+                    this.updateToast(
+                        toastId,
+                        result.message || 'Unknown error occurred',
+                        'error',
+                        'Upload Failed'
+                    );
+                }
+            } catch (error) {
+                this.updateToast(
+                    toastId,
+                    error.message,
+                    'error',
+                    'Error Uploading Snapshot'
+                );
+            }
+        });
+
+        // Handle cancel
+        document.getElementById('cancelUpload').addEventListener('click', () => {
+            modal.remove();
+        });
+
+        // Close on overlay click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
     }
 }
 

@@ -236,4 +236,270 @@ public class ClusterController(
             });
         }
     }
+
+    [HttpPost("create-snapshot")]
+    [ProducesResponseType(typeof(V1CreateSnapshotResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1CreateSnapshotResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1CreateSnapshotResponse>> CreateSnapshot(
+        [FromBody] V1CreateSnapshotRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (request.SingleNode)
+            {
+                // Create snapshot on specific node
+                var snapshotName = await clusterManager.CreateCollectionSnapshotAsync(
+                    request.NodeUrl!,
+                    request.CollectionName,
+                    cancellationToken);
+
+                var response = new V1CreateSnapshotResponse
+                {
+                    Success = snapshotName != null,
+                    SnapshotName = snapshotName,
+                    Message = snapshotName != null
+                        ? $"Snapshot '{snapshotName}' created successfully for collection '{request.CollectionName}' on {request.NodeUrl}"
+                        : $"Failed to create snapshot for collection '{request.CollectionName}' on {request.NodeUrl}"
+                };
+
+                return snapshotName != null ? Ok(response) : StatusCode(500, response);
+            }
+            else
+            {
+                // Create snapshot on all nodes
+                var results = await clusterManager.CreateCollectionSnapshotOnAllNodesAsync(
+                    request.CollectionName,
+                    cancellationToken);
+
+                var successCount = results.Values.Count(s => s != null);
+                var response = new V1CreateSnapshotResponse
+                {
+                    Success = successCount > 0,
+                    Message = successCount == 0
+                        ? "Failed to create snapshot on any node"
+                        : $"Snapshot created for collection '{request.CollectionName}' on {successCount}/{results.Count} nodes",
+                    Results = results
+                };
+
+                return successCount > 0 ? Ok(response) : StatusCode(500, response);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during snapshot creation");
+            return StatusCode(500, new V1CreateSnapshotResponse
+            {
+                Success = false,
+                Message = "Internal server error during snapshot creation",
+            });
+        }
+    }
+
+    [HttpDelete("delete-snapshot")]
+    [ProducesResponseType(typeof(V1DeleteSnapshotResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1DeleteSnapshotResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1DeleteSnapshotResponse>> DeleteSnapshot(
+        [FromBody] V1DeleteSnapshotRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (request.SingleNode)
+            {
+                // Delete snapshot on specific node
+                var success = await clusterManager.DeleteCollectionSnapshotAsync(
+                    request.NodeUrl!,
+                    request.CollectionName,
+                    request.SnapshotName,
+                    cancellationToken);
+
+                var response = new V1DeleteSnapshotResponse
+                {
+                    Success = success,
+                    Message = success
+                        ? $"Snapshot '{request.SnapshotName}' deleted successfully for collection '{request.CollectionName}' on {request.NodeUrl}"
+                        : $"Failed to delete snapshot '{request.SnapshotName}' for collection '{request.CollectionName}' on {request.NodeUrl}",
+                    Results = new Dictionary<string, NodeSnapshotDeletionResult>
+                    {
+                        [request.NodeUrl!] = new NodeSnapshotDeletionResult
+                        {
+                            Success = success,
+                            Error = success ? null : "Deletion failed"
+                        }
+                    }
+                };
+
+                return success ? Ok(response) : StatusCode(500, response);
+            }
+            else
+            {
+                // Delete snapshot on all nodes
+                var results = await clusterManager.DeleteCollectionSnapshotOnAllNodesAsync(
+                    request.CollectionName,
+                    request.SnapshotName,
+                    cancellationToken);
+
+                var successCount = results.Values.Count(s => s);
+                var nodeResults = results.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => new NodeSnapshotDeletionResult
+                    {
+                        Success = kvp.Value,
+                        Error = kvp.Value ? null : "Deletion failed"
+                    });
+
+                var response = new V1DeleteSnapshotResponse
+                {
+                    Success = successCount > 0,
+                    Message = successCount == 0
+                        ? "Failed to delete snapshot on any node"
+                        : $"Snapshot '{request.SnapshotName}' deleted for collection '{request.CollectionName}' on {successCount}/{results.Count} nodes",
+                    Results = nodeResults
+                };
+
+                return successCount > 0 ? Ok(response) : StatusCode(500, response);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during snapshot deletion");
+            return StatusCode(500, new V1DeleteSnapshotResponse
+            {
+                Success = false,
+                Message = "Internal server error during snapshot deletion",
+                Results = new Dictionary<string, NodeSnapshotDeletionResult>
+                {
+                    ["error"] = new NodeSnapshotDeletionResult
+                    {
+                        Success = false,
+                        Error = ex.Message
+                    }
+                }
+            });
+        }
+    }
+
+    [HttpGet("download-snapshot")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DownloadSnapshot(
+        [FromQuery] string nodeUrl,
+        [FromQuery] string collectionName,
+        [FromQuery] string snapshotName,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var snapshotData = await clusterManager.DownloadCollectionSnapshotAsync(
+                nodeUrl,
+                collectionName,
+                snapshotName,
+                cancellationToken);
+
+            if (snapshotData != null && snapshotData.Length > 0)
+            {
+                return File(snapshotData, "application/octet-stream", snapshotName);
+            }
+
+            return StatusCode(500, new { error = "Failed to download snapshot" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during snapshot download");
+            return StatusCode(500, new { error = "Internal server error during snapshot download", details = ex.Message });
+        }
+    }
+
+    [HttpPost("recover-from-snapshot")]
+    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1RecoverFromSnapshotResponse>> RecoverFromSnapshot(
+        [FromBody] V1RecoverFromSnapshotRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var success = await clusterManager.RecoverCollectionFromSnapshotAsync(
+                request.NodeUrl,
+                request.CollectionName,
+                request.SnapshotName,
+                cancellationToken);
+
+            var response = new V1RecoverFromSnapshotResponse
+            {
+                Success = success,
+                Message = success
+                    ? $"Collection '{request.CollectionName}' recovered successfully from snapshot '{request.SnapshotName}' on {request.NodeUrl}"
+                    : $"Failed to recover collection '{request.CollectionName}' from snapshot '{request.SnapshotName}' on {request.NodeUrl}",
+                Error = success ? null : "Recovery failed"
+            };
+
+            return success ? Ok(response) : StatusCode(500, response);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during snapshot recovery");
+            return StatusCode(500, new V1RecoverFromSnapshotResponse
+            {
+                Success = false,
+                Message = "Internal server error during snapshot recovery",
+                Error = ex.Message
+            });
+        }
+    }
+
+    [HttpPost("recover-from-uploaded-snapshot")]
+    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1RecoverFromSnapshotResponse>> RecoverFromUploadedSnapshot(
+        [FromForm] V1RecoverFromUploadedSnapshotRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (request.SnapshotFile == null || request.SnapshotFile.Length == 0)
+            {
+                return BadRequest(new V1RecoverFromSnapshotResponse
+                {
+                    Success = false,
+                    Message = "No snapshot file provided",
+                    Error = "Snapshot file is required"
+                });
+            }
+
+            using var snapshotStream = request.SnapshotFile.OpenReadStream();
+            var success = await clusterManager.RecoverCollectionFromUploadedSnapshotAsync(
+                request.NodeUrl,
+                request.CollectionName,
+                snapshotStream,
+                cancellationToken);
+
+            var response = new V1RecoverFromSnapshotResponse
+            {
+                Success = success,
+                Message = success
+                    ? $"Collection '{request.CollectionName}' recovered successfully from uploaded snapshot on {request.NodeUrl}"
+                    : $"Failed to recover collection '{request.CollectionName}' from uploaded snapshot on {request.NodeUrl}",
+                Error = success ? null : "Recovery failed"
+            };
+
+            return success ? Ok(response) : StatusCode(500, response);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during uploaded snapshot recovery");
+            return StatusCode(500, new V1RecoverFromSnapshotResponse
+            {
+                Success = false,
+                Message = "Internal server error during uploaded snapshot recovery",
+                Error = ex.Message
+            });
+        }
+    }
 }
