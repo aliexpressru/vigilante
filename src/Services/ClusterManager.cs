@@ -11,6 +11,7 @@ public class ClusterManager(
     IQdrantNodesProvider nodesProvider,
     IQdrantClientFactory clientFactory,
     ICollectionService collectionService,
+    TestDataProvider testDataProvider,
     IOptions<QdrantOptions> options,
     ILogger<ClusterManager> logger,
     IMeterService meterService)
@@ -256,7 +257,7 @@ public class ClusterManager(
         if (result.Count == 0)
         {
             logger.LogDebug("No collections found from any source, returning test data");
-            return collectionService.GenerateTestCollectionData();
+            return testDataProvider.GenerateTestCollectionData();
         }
         
         // Enrich with clustering information from all healthy nodes
@@ -719,7 +720,7 @@ public class ClusterManager(
         if (!hasPodsWithNames)
         {
             logger.LogDebug("No snapshots found from Kubernetes storage, returning test data");
-            return collectionService.GenerateTestSnapshotData();
+            return testDataProvider.GenerateTestSnapshotData();
         }
 
         logger.LogInformation("Retrieved {SnapshotsCount} snapshots total", result.Count);

@@ -15,21 +15,18 @@ public class CollectionService : ICollectionService
     private readonly PodCommandExecutor? _commandExecutor;
     private readonly QdrantOptions _options;
     private readonly IQdrantClientFactory _clientFactory;
-    private readonly TestDataProvider _testDataProvider;
 
     public CollectionService(
         ILogger<CollectionService> logger,
         IMeterService meterService,
         IQdrantClientFactory clientFactory,
         IOptions<QdrantOptions> options,
-        TestDataProvider testDataProvider,
         ILogger<PodCommandExecutor> commandExecutorLogger)
     {
         _logger = logger;
         _meterService = meterService;
         _clientFactory = clientFactory;
         _options = options.Value;
-        _testDataProvider = testDataProvider;
 
         // Try to initialize Kubernetes client and command executor only if we're running in a cluster
         try
@@ -143,11 +140,6 @@ public class CollectionService : ICollectionService
         }
 
         return sizes;
-    }
-
-    public IReadOnlyList<CollectionInfo> GenerateTestCollectionData()
-    {
-        return _testDataProvider.GenerateTestCollectionData();
     }
 
     public async Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client, CancellationToken cancellationToken = default)
@@ -740,11 +732,6 @@ public class CollectionService : ICollectionService
 
         _logger.LogInformation("Found {Count} snapshots on pod {PodName}", snapshots.Count, podName);
         return snapshots;
-    }
-
-    public IReadOnlyList<SnapshotInfo> GenerateTestSnapshotData()
-    {
-        return _testDataProvider.GenerateTestSnapshotData();
     }
 
     public async Task<bool> DeleteSnapshotFromDiskAsync(

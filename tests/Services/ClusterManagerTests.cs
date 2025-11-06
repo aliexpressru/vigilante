@@ -22,6 +22,7 @@ public class ClusterManagerTests
     private IMeterService _meterService = null!;
     private IQdrantClientFactory _clientFactory = null!;
     private ICollectionService _collectionService = null!;
+    private TestDataProvider _testDataProvider = null!;
     private ClusterManager _clusterManager = null!;
     private ConcurrentDictionary<string, IQdrantHttpClient> _mockClients = null!;
 
@@ -37,6 +38,9 @@ public class ClusterManagerTests
         _mockClients = new ConcurrentDictionary<string, IQdrantHttpClient>();
         
         _options.Value.Returns(new QdrantOptions { HttpTimeoutSeconds = 5 });
+        
+        // Create TestDataProvider with the same options
+        _testDataProvider = new TestDataProvider(_options);
         
         // Setup collection service to always return healthy
         _collectionService
@@ -58,6 +62,7 @@ public class ClusterManagerTests
             _nodesProvider,
             _clientFactory,
             _collectionService,
+            _testDataProvider,
             _options,
             _logger,
             _meterService);
