@@ -135,7 +135,6 @@ public class TestDataProvider
         // Collections that have snapshots with different snapshot names per node
         var testCollections = new[]
         {
-            ("ke_recs.candidates__cf__item__liked__embeddings__qdrant~~20251103", 520000000L), // ~500 MB per node
             ("test_collection", 530000000L),  // ~500 MB per node
             ("products", 310000000L),          // ~300 MB per node
             ("embeddings", 1600000000L),       // ~1.5 GB per node

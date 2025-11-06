@@ -716,7 +716,7 @@ public class ClusterManager(
         }
         
         // Priority 2: If we didn't get any snapshots, return test data
-        if (result.Count == 0)
+        if (!hasPodsWithNames)
         {
             logger.LogDebug("No snapshots found from Kubernetes storage, returning test data");
             return collectionService.GenerateTestSnapshotData();
