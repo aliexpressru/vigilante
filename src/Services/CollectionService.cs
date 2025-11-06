@@ -678,7 +678,7 @@ public class CollectionService : ICollectionService
             var collectionFolders = await _commandExecutor.ListFilesAsync(
                 podName,
                 podNamespace,
-                "/qdrant/storage/snapshots",
+                "/qdrant/snapshots",
                 "*/",
                 cancellationToken);
 
@@ -692,7 +692,7 @@ public class CollectionService : ICollectionService
                     var snapshotFiles = await _commandExecutor.ListFilesAsync(
                         podName,
                         podNamespace,
-                        $"/qdrant/storage/snapshots/{collectionName}",
+                        $"/qdrant/snapshots/{collectionName}",
                         "*.snapshot",
                         cancellationToken);
 
@@ -704,7 +704,7 @@ public class CollectionService : ICollectionService
                         var sizeBytes = await _commandExecutor.GetSizeAsync(
                             podName,
                             podNamespace,
-                            $"/qdrant/storage/snapshots/{collectionName}",
+                            $"/qdrant/snapshots/{collectionName}",
                             snapshotFile,
                             cancellationToken);
 
@@ -764,7 +764,7 @@ public class CollectionService : ICollectionService
             return false;
         }
 
-        var fullPath = $"/qdrant/storage/snapshots/{collectionName}/{snapshotName}";
+        var fullPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
         return await _commandExecutor.DeleteAndVerifyAsync(
             podName, 
             podNamespace, 

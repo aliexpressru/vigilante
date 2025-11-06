@@ -36,10 +36,6 @@ public interface ICollectionService
     Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Generates test collection data for local development
-    /// </summary>
-    IReadOnlyList<CollectionInfo> GenerateTestCollectionData();
 
     /// <summary>
     /// Deletes a collection via Qdrant API
@@ -136,10 +132,6 @@ public interface ICollectionService
         string peerId,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Generates test snapshot data for local development
-    /// </summary>
-    IReadOnlyList<SnapshotInfo> GenerateTestSnapshotData();
 
     /// <summary>
     /// Deletes a snapshot file directly from disk on a specific pod
