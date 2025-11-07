@@ -40,20 +40,39 @@ public class ClusterController(
         {
             var result = await clusterManager.GetCollectionsInfoAsync(cancellationToken);
 
-            return Ok(new V1GetCollectionsInfoResponse
-            {
-                Collections = result
-                    .Select(size => new V1GetCollectionsInfoResponse.CollectionInfo
+            // Collect all issues from collections into a general issues array
+            var allIssues = new List<string>();
+            
+            var collections = result
+                .Select(size =>
+                {
+                    // Add formatted issues for collections with problems
+                    if (size.Issues.Count > 0)
+                    {
+                        foreach (var issue in size.Issues)
+                        {
+                            allIssues.Add($"[{size.CollectionName}@{size.PodName}] {issue}");
+                        }
+                    }
+                    
+                    return new V1GetCollectionsInfoResponse.CollectionInfo
                     {
                         PodName = size.PodName,
                         NodeUrl = size.NodeUrl,
                         PeerId = size.PeerId,
                         CollectionName = size.CollectionName,
                         PodNamespace = size.PodNamespace,
-                        Metrics = size.Metrics
-                    })
-                    .OrderBy(x => x.CollectionName)
-                    .ToArray()
+                        Metrics = size.Metrics,
+                        Issues = size.Issues
+                    };
+                })
+                .OrderBy(x => x.CollectionName)
+                .ToArray();
+
+            return Ok(new V1GetCollectionsInfoResponse
+            {
+                Collections = collections,
+                Issues = allIssues.ToArray()
             });
         }
         catch (Exception ex)

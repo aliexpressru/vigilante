@@ -20,6 +20,8 @@ class VigilanteDashboard {
         this.deletionStatus = new Map(); // Track deletion status per collection
         this.currentActiveNode = null; // Track currently active node
         this.toastIdCounter = 0; // Counter for unique toast IDs
+        this.clusterIssues = []; // Issues from cluster/status
+        this.collectionIssues = []; // Issues from collections-info
         this.init();
         this.setupRefreshControls();
     }
@@ -223,6 +225,13 @@ class VigilanteDashboard {
             const data = await response.json();
             // Handle both direct array and nested collections property
             const collections = Array.isArray(data) ? data : (data.collections || []);
+            
+            // Extract collection issues if present
+            this.collectionIssues = data.issues || [];
+            
+            // Update combined issues display
+            this.updateCombinedIssues();
+            
             this.updateCollectionSizes(collections);
             
         } catch (error) {
@@ -1211,7 +1220,10 @@ class VigilanteDashboard {
 
     updateUI(clusterState) {
         this.updateOverallStatus(clusterState);
-        this.updateIssues(clusterState.health.issues);
+        // Store cluster issues
+        this.clusterIssues = clusterState.health.issues || [];
+        // Update combined issues display
+        this.updateCombinedIssues();
         this.updateNodes(clusterState.nodes);
     }
 
@@ -1235,22 +1247,71 @@ class VigilanteDashboard {
         leaderNode.textContent = clusterState.health.leader || 'None';
     }
 
-    updateIssues(issues) {
+    updateCombinedIssues() {
         const issuesCard = document.getElementById('issuesCard');
         const issuesList = document.getElementById('issuesList');
 
-        if (issues && issues.length > 0) {
-            issuesCard.style.display = 'block';
-            issuesList.innerHTML = '';
-            
-            issues.forEach(issue => {
-                const li = document.createElement('li');
-                li.textContent = issue;
-                issuesList.appendChild(li);
-            });
-        } else {
+        const totalIssues = this.clusterIssues.length + this.collectionIssues.length;
+
+        if (totalIssues === 0) {
             issuesCard.style.display = 'none';
+            return;
         }
+
+        issuesCard.style.display = 'block';
+        issuesList.innerHTML = '';
+
+        // Add cluster issues section
+        if (this.clusterIssues.length > 0) {
+            const clusterSection = document.createElement('div');
+            clusterSection.className = 'issues-section';
+            clusterSection.innerHTML = `
+                <div class="issues-section-header">
+                    <i class="fas fa-server"></i> Cluster Issues (${this.clusterIssues.length})
+                </div>
+            `;
+            
+            const clusterList = document.createElement('ul');
+            clusterList.className = 'issues-sublist';
+            this.clusterIssues.forEach(issue => {
+                const li = document.createElement('li');
+                li.className = 'issue-item cluster-issue';
+                li.textContent = issue;
+                clusterList.appendChild(li);
+            });
+            
+            clusterSection.appendChild(clusterList);
+            issuesList.appendChild(clusterSection);
+        }
+
+        // Add collection issues section
+        if (this.collectionIssues.length > 0) {
+            const collectionSection = document.createElement('div');
+            collectionSection.className = 'issues-section';
+            collectionSection.innerHTML = `
+                <div class="issues-section-header">
+                    <i class="fas fa-database"></i> Collection Issues (${this.collectionIssues.length})
+                </div>
+            `;
+            
+            const collectionList = document.createElement('ul');
+            collectionList.className = 'issues-sublist';
+            this.collectionIssues.forEach(issue => {
+                const li = document.createElement('li');
+                li.className = 'issue-item collection-issue';
+                li.textContent = issue;
+                collectionList.appendChild(li);
+            });
+            
+            collectionSection.appendChild(collectionList);
+            issuesList.appendChild(collectionSection);
+        }
+    }
+
+    updateIssues(issues) {
+        // Legacy method - kept for compatibility
+        // Now handled by updateCombinedIssues
+        console.warn('updateIssues is deprecated, use updateCombinedIssues instead');
     }
 
     updateNodes(nodes) {
@@ -1270,8 +1331,8 @@ class VigilanteDashboard {
             nodesGrid.appendChild(nodeCard);
         });
 
-        console.log('Nodes UI updated, triggering collection sizes load');
-        this.loadCollectionSizes();
+        console.log('Nodes UI updated');
+        // Note: loadCollectionSizes is called separately in refresh() to avoid duplicate calls
     }
 
     createNodeCard(node) {

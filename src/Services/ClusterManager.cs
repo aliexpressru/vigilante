@@ -228,22 +228,33 @@ public class ClusterManager(
         logger.LogInformation("Found {NodesCount} nodes to process. Healthy nodes: {HealthyCount}", 
             nodes.Count, nodes.Count(n => n.IsHealthy));
         
-        var result = new List<CollectionInfo>();
+        // Step 1: ALWAYS get collections from Qdrant API first
+        logger.LogInformation("Fetching collections from Qdrant API");
+        var nodeInfos = nodes.Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName));
+        var collectionsFromApi = await collectionService.GetCollectionsFromQdrantAsync(nodeInfos, cancellationToken);
+        var result = collectionsFromApi.ToList();
+        
+        logger.LogInformation("Retrieved {Count} collections from Qdrant API", result.Count);
+        
+        // Step 2: If we have pods, get collections from storage and enrich the data
         bool hasPodsWithNames = nodes.Any(n => !string.IsNullOrEmpty(n.PodName));
         
-        // Priority 1: Try to get collections from Kubernetes storage (if we have pod names)
-        if (hasPodsWithNames)
+        if (hasPodsWithNames && result.Count > 0)
         {
-            logger.LogInformation("Attempting to get collections from Kubernetes storage");
+            logger.LogInformation("Enriching collections with storage information from Kubernetes");
+            
+            // Create a lookup for collections from storage: (NodeUrl, CollectionName) -> CollectionSize
+            var storageCollections = new Dictionary<(string NodeUrl, string CollectionName), CollectionSize>();
             
             foreach (var node in nodes)
             {
-                logger.LogInformation(
-                    "Processing node: URL={NodeUrl}, PeerId={PeerId}, IsHealthy={IsHealthy}, Namespace={Namespace}", 
-                    node.Url, node.PeerId, node.IsHealthy, node.Namespace);
                 try
                 {
-                    var podName = await GetPodNameFromIpAsync(node.Url, node.Namespace ?? "", cancellationToken);
+                    // Use PodName from config if available, otherwise try to resolve from IP
+                    var podName = !string.IsNullOrEmpty(node.PodName) 
+                        ? node.PodName 
+                        : await GetPodNameFromIpAsync(node.Url, node.Namespace ?? "", cancellationToken);
+                        
                     if (string.IsNullOrEmpty(podName))
                     {
                         logger.LogWarning("Could not find pod for IP {NodeUrl} in namespace {Namespace}", node.Url,
@@ -251,71 +262,64 @@ public class ClusterManager(
                         continue;
                     }
 
-                    logger.LogInformation("Found pod {PodName} for IP {NodeUrl}", podName, node.Url);
+                    logger.LogInformation("Found pod {PodName} for IP {NodeUrl}, fetching storage info", podName, node.Url);
                     
                     var collectionSizes =
-                        await collectionService.GetCollectionsSizesForPodAsync(podName, node.Namespace ?? "", node.Url, node.PeerId, cancellationToken);
-                    var sizesList = collectionSizes.ToList();
-                    logger.LogInformation("Retrieved {SizesCount} collection sizes from pod {PodName}", sizesList.Count,
-                        podName);
-
-                    foreach (var size in sizesList)
+                        (await collectionService.GetCollectionsSizesForPodAsync(podName, node.Namespace ?? "", node.Url, node.PeerId, cancellationToken))
+                        .ToList();
+                    
+                    foreach (var size in collectionSizes)
                     {
-                        // Get snapshots for this collection on this node
-                        List<string> snapshots = new List<string>();
-                        try
-                        {
-                            snapshots = await collectionService.ListCollectionSnapshotsAsync(node.Url, size.CollectionName, cancellationToken);
-                        }
-                        catch (Exception ex)
-                        {
-                            logger.LogWarning(ex, "Failed to get snapshots for collection {CollectionName} on node {NodeUrl}", 
-                                size.CollectionName, node.Url);
-                        }
-
-                        var metrics = new Dictionary<string, object>
-                        {
-                            { "prettySize", size.PrettySize },
-                            { "sizeBytes", size.SizeBytes },
-                            { "snapshots", snapshots }
-                        };
-
-                        result.Add(new CollectionInfo
-                        {
-                            CollectionName = size.CollectionName,
-                            NodeUrl = size.NodeUrl,
-                            PodName = size.PodName,
-                            PeerId = size.PeerId,
-                            PodNamespace = node.Namespace ?? "",
-                            Metrics = metrics
-                        });
+                        storageCollections[(size.NodeUrl, size.CollectionName)] = size;
                     }
+                    
+                    logger.LogInformation("Retrieved {SizesCount} collection sizes from pod {PodName}", collectionSizes.Count,
+                        podName);
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "Failed to get collection sizes for node {nodeUrl}", node.Url);
+                    logger.LogError(ex, "Failed to get collection sizes for node {NodeUrl}", node.Url);
                 }
+            }
+            
+            logger.LogInformation("Found {Count} collections in storage across all nodes", storageCollections.Count);
+            
+            // Step 3: Enrich API collections with storage data and identify issues
+            foreach (var collection in result)
+            {
+                var key = (collection.NodeUrl, collection.CollectionName);
+                
+                if (storageCollections.TryGetValue(key, out var storageInfo))
+                {
+                    // Collection exists in both API and storage - enrich with storage data
+                    collection.Metrics["prettySize"] = storageInfo.PrettySize;
+                    collection.Metrics["sizeBytes"] = storageInfo.SizeBytes;
+                    
+                    logger.LogDebug("Enriched collection {CollectionName} on {NodeUrl} with storage data: {Size}",
+                        collection.CollectionName, collection.NodeUrl, storageInfo.PrettySize);
+                }
+                else
+                {
+                    // Collection exists in API but NOT in storage - this is an issue!
+                    collection.Issues.Add("Collection exists in API but not found in storage");
+                    
+                    logger.LogWarning("⚠️ Collection {CollectionName} on node {NodeUrl} exists in API but not in storage!",
+                        collection.CollectionName, collection.NodeUrl);
+                }
+                
+                // Get snapshots for this collection (already done in GetCollectionsFromQdrantAsync)
+                // but we can verify they match with what's in metrics if needed
             }
         }
         
-        // Priority 2: If we didn't get any collections from storage, try Qdrant API
-        if (result.Count == 0 && nodes.Count > 0)
-        {
-            logger.LogInformation("No collections found in Kubernetes storage, trying Qdrant API");
-            
-            var nodeInfos = nodes.Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName));
-            var collectionsFromQdrant = await collectionService.GetCollectionsFromQdrantAsync(nodeInfos, cancellationToken);
-            result.AddRange(collectionsFromQdrant);
-        }
-        
-        // Priority 3: If still no collections, return test data
+        // Step 4: If no collections found from API, return test data
         if (result.Count == 0)
         {
-            logger.LogDebug("No collections found from any source, returning test data");
+            logger.LogDebug("No collections found from API, returning test data");
             return testDataProvider.GenerateTestCollectionData();
         }
         
-        // Enrich with clustering information from all healthy nodes
+        // Step 5: Enrich with clustering information from all healthy nodes
         var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
         if (healthyNodes.Count > 0)
         {
@@ -336,8 +340,9 @@ public class ClusterManager(
             logger.LogWarning("No healthy nodes found, skipping sharding information collection");
         }
 
-        logger.LogInformation("Completed GetCollectionsInfoAsync, found {TotalCollections} collections in total",
-            result.Count);
+        var collectionsWithIssues = result.Count(c => c.Issues.Count > 0);
+        logger.LogInformation("Completed GetCollectionsInfoAsync, found {TotalCollections} collections in total ({IssuesCount} with issues)",
+            result.Count, collectionsWithIssues);
 
         return result;
     }

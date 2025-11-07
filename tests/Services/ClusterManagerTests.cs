@@ -7,6 +7,7 @@ using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Responses;
 using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Configuration;
+using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
@@ -959,4 +960,488 @@ public class ClusterManagerTests
         // Act & Assert - Currently just a placeholder, but should not throw
         Assert.DoesNotThrowAsync(async () => await _clusterManager.RecoverClusterAsync());
     }
+
+    #region Collection Issues Tests
+
+    [Test]
+    public async Task GetCollectionsInfoAsync_AlwaysFetchesFromApiFirst()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var apiCollections = new List<CollectionInfo>
+        {
+            new()
+            {
+                CollectionName = "test_collection",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", "N/A" },
+                    { "sizeBytes", 0L },
+                    { "snapshots", new List<string>() }
+                }
+            }
+        };
+
+        _collectionService.GetCollectionsFromQdrantAsync(
+                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(apiCollections);
+
+        // Act
+        var result = await _clusterManager.GetCollectionsInfoAsync();
+
+        // Assert
+        await _collectionService.Received(1).GetCollectionsFromQdrantAsync(
+            Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+            Arg.Any<CancellationToken>());
+
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].CollectionName, Is.EqualTo("test_collection"));
+    }
+
+    [Test]
+    public async Task GetCollectionsInfoAsync_WhenCollectionExistsInApiButNotInStorage_AddsIssue()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // API returns a collection
+        var apiCollections = new List<CollectionInfo>
+        {
+            new()
+            {
+                CollectionName = "missing_from_storage",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", "N/A" },
+                    { "sizeBytes", 0L },
+                    { "snapshots", new List<string>() }
+                }
+            }
+        };
+
+        _collectionService.GetCollectionsFromQdrantAsync(
+                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(apiCollections);
+
+        // Storage returns empty (collection not found in storage)
+        _collectionService.GetCollectionsSizesForPodAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new List<CollectionSize>());
+
+        // Act
+        var result = await _clusterManager.GetCollectionsInfoAsync();
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].Issues, Has.Count.EqualTo(1));
+        Assert.That(result[0].Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
+        Assert.That(result[0].Metrics["prettySize"], Is.EqualTo("N/A"));
+        Assert.That(result[0].Metrics["sizeBytes"], Is.EqualTo(0L));
+    }
+
+    [Test]
+    public async Task GetCollectionsInfoAsync_WhenCollectionExistsInBothApiAndStorage_EnrichesWithStorageData()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // API returns a collection
+        var apiCollections = new List<CollectionInfo>
+        {
+            new()
+            {
+                CollectionName = "test_collection",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", "N/A" },
+                    { "sizeBytes", 0L },
+                    { "snapshots", new List<string>() }
+                }
+            }
+        };
+
+        _collectionService.GetCollectionsFromQdrantAsync(
+                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(apiCollections);
+
+        // Storage returns the same collection with size info
+        var storageCollections = new List<CollectionSize>
+        {
+            new()
+            {
+                CollectionName = "test_collection",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                SizeBytes = 1073741824L // 1 GB
+            }
+        };
+
+        _collectionService.GetCollectionsSizesForPodAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(storageCollections);
+
+        // Act
+        var result = await _clusterManager.GetCollectionsInfoAsync();
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].Issues, Has.Count.EqualTo(0), "Should have no issues when collection exists in both API and storage");
+        Assert.That(result[0].Metrics["prettySize"], Is.EqualTo("1 GB"));
+        Assert.That(result[0].Metrics["sizeBytes"], Is.EqualTo(1073741824L));
+    }
+
+    [Test]
+    public async Task GetCollectionsInfoAsync_WithMultipleCollections_CorrectlyIdentifiesIssues()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // API returns 3 collections
+        var apiCollections = new List<CollectionInfo>
+        {
+            new()
+            {
+                CollectionName = "collection_in_both",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+            },
+            new()
+            {
+                CollectionName = "collection_missing_from_storage",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+            },
+            new()
+            {
+                CollectionName = "another_in_both",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+            }
+        };
+
+        _collectionService.GetCollectionsFromQdrantAsync(
+                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(apiCollections);
+
+        // Storage returns only 2 collections (one is missing)
+        var storageCollections = new List<CollectionSize>
+        {
+            new()
+            {
+                CollectionName = "collection_in_both",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                SizeBytes = 500000000L
+            },
+            new()
+            {
+                CollectionName = "another_in_both",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                SizeBytes = 750000000L
+            }
+        };
+
+        _collectionService.GetCollectionsSizesForPodAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(storageCollections);
+
+        // Act
+        var result = await _clusterManager.GetCollectionsInfoAsync();
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(3));
+        
+        var collectionInBoth = result.First(c => c.CollectionName == "collection_in_both");
+        Assert.That(collectionInBoth.Issues, Has.Count.EqualTo(0));
+        Assert.That(collectionInBoth.Metrics["sizeBytes"], Is.EqualTo(500000000L));
+
+        var collectionMissing = result.First(c => c.CollectionName == "collection_missing_from_storage");
+        Assert.That(collectionMissing.Issues, Has.Count.EqualTo(1));
+        Assert.That(collectionMissing.Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
+        Assert.That(collectionMissing.Metrics["prettySize"], Is.EqualTo("N/A"));
+
+        var anotherInBoth = result.First(c => c.CollectionName == "another_in_both");
+        Assert.That(anotherInBoth.Issues, Has.Count.EqualTo(0));
+        Assert.That(anotherInBoth.Metrics["sizeBytes"], Is.EqualTo(750000000L));
+    }
+
+    [Test]
+    public async Task GetCollectionsInfoAsync_WhenNoCollectionsFromApi_ReturnsTestData()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // API returns no collections
+        _collectionService.GetCollectionsFromQdrantAsync(
+                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new List<CollectionInfo>());
+
+        // Act
+        var result = await _clusterManager.GetCollectionsInfoAsync();
+
+        // Assert - should return test data
+        Assert.That(result, Has.Count.GreaterThan(0), "Should return test data when no collections from API");
+        Assert.That(result.Any(c => c.CollectionName.Contains("test") || c.CollectionName.Contains("product")), 
+            Is.True, "Test data should contain standard test collections");
+    }
+
+    [Test]
+    public async Task GetCollectionsInfoAsync_WithMultipleNodes_HandlesStorageCorrectly()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" },
+            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+        var pod2Id = 1002UL;
+
+        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+                    {
+                        { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+                    },
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var mockClient2 = _mockClients.GetOrAdd("node2:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient2.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod2Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+                    {
+                        { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+                    },
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // API returns collections from both nodes
+        var apiCollections = new List<CollectionInfo>
+        {
+            new()
+            {
+                CollectionName = "collection1",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+            },
+            new()
+            {
+                CollectionName = "collection1",
+                NodeUrl = "http://node2:6333",
+                PodName = "pod2",
+                PeerId = "1002",
+                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+            }
+        };
+
+        _collectionService.GetCollectionsFromQdrantAsync(
+                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(apiCollections);
+
+        // Storage returns size for node1 but not node2
+        _collectionService.GetCollectionsSizesForPodAsync(
+                "pod1",
+                Arg.Any<string>(),
+                "http://node1:6333",
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new List<CollectionSize>
+            {
+                new()
+                {
+                    CollectionName = "collection1",
+                    NodeUrl = "http://node1:6333",
+                    PodName = "pod1",
+                    PeerId = "1001",
+                    SizeBytes = 1000000000L
+                }
+            });
+
+        _collectionService.GetCollectionsSizesForPodAsync(
+                "pod2",
+                Arg.Any<string>(),
+                "http://node2:6333",
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new List<CollectionSize>());
+
+        // Act
+        var result = await _clusterManager.GetCollectionsInfoAsync();
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(2));
+        
+        var node1Collection = result.First(c => c.NodeUrl == "http://node1:6333");
+        Assert.That(node1Collection.Issues, Has.Count.EqualTo(0));
+        Assert.That(node1Collection.Metrics["sizeBytes"], Is.EqualTo(1000000000L));
+
+        var node2Collection = result.First(c => c.NodeUrl == "http://node2:6333");
+        Assert.That(node2Collection.Issues, Has.Count.EqualTo(1));
+        Assert.That(node2Collection.Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
+    }
+
+    #endregion
 }

@@ -3,6 +3,8 @@ namespace Vigilante.Models.Responses;
 public class V1GetCollectionsInfoResponse
 {
     public CollectionInfo[] Collections { get; set; } = [];
+    
+    public string[] Issues { get; set; } = [];
 
     public class CollectionInfo
     {
@@ -17,5 +19,7 @@ public class V1GetCollectionsInfoResponse
         public string PodNamespace { get; set; } = string.Empty;
 
         public Dictionary<string, object> Metrics { get; set; } = new();
+        
+        public List<string> Issues { get; set; } = new();
     }
 }
