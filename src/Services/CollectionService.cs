@@ -12,7 +12,7 @@ public class CollectionService : ICollectionService
 {
     private readonly ILogger<CollectionService> _logger;
     private readonly IMeterService _meterService;
-    private readonly PodCommandExecutor? _commandExecutor;
+    private readonly IPodCommandExecutor? _commandExecutor;
     private readonly QdrantOptions _options;
     private readonly IQdrantClientFactory _clientFactory;
 
@@ -660,6 +660,7 @@ public class CollectionService : ICollectionService
 
         if (_commandExecutor == null)
         {
+            _logger.LogWarning("Kubernetes client not available, cannot get snapshots from disk for pod {PodName}", podName);
             return [];
         }
 
@@ -667,6 +668,8 @@ public class CollectionService : ICollectionService
 
         try
         {
+            _logger.LogInformation("Listing collection folders in /qdrant/snapshots on pod {PodName}", podName);
+            
             var collectionFolders = await _commandExecutor.ListFilesAsync(
                 podName,
                 podNamespace,
@@ -674,13 +677,16 @@ public class CollectionService : ICollectionService
                 "*/",
                 cancellationToken);
 
-            _logger.LogDebug("Found {Count} collection folders in snapshots directory on pod {PodName}", 
-                collectionFolders.Count, podName);
+            _logger.LogInformation("Found {Count} collection folders in snapshots directory on pod {PodName}: {Folders}", 
+                collectionFolders.Count, podName, string.Join(", ", collectionFolders));
 
             foreach (var collectionName in collectionFolders)
             {
                 try
                 {
+                    _logger.LogInformation("Listing snapshot files in /qdrant/snapshots/{CollectionName} on pod {PodName}", 
+                        collectionName, podName);
+                    
                     var snapshotFiles = await _commandExecutor.ListFilesAsync(
                         podName,
                         podNamespace,
@@ -688,11 +694,14 @@ public class CollectionService : ICollectionService
                         "*.snapshot",
                         cancellationToken);
 
-                    _logger.LogDebug("Found {Count} snapshot files for collection {CollectionName} on pod {PodName}", 
-                        snapshotFiles.Count, collectionName, podName);
+                    _logger.LogInformation("Found {Count} snapshot files for collection {CollectionName} on pod {PodName}: {Files}", 
+                        snapshotFiles.Count, collectionName, podName, string.Join(", ", snapshotFiles));
 
                     foreach (var snapshotFile in snapshotFiles.Where(f => f.EndsWith(".snapshot")))
                     {
+                        _logger.LogDebug("Getting size for snapshot {SnapshotFile} in {CollectionName}", 
+                            snapshotFile, collectionName);
+                        
                         var sizeBytes = await _commandExecutor.GetSizeAsync(
                             podName,
                             podNamespace,
@@ -713,8 +722,13 @@ public class CollectionService : ICollectionService
                             };
 
                             snapshots.Add(snapshotInfo);
-                            _logger.LogDebug("Added snapshot {SnapshotName} for collection {CollectionName}: {Size}", 
-                                snapshotFile, collectionName, snapshotInfo.PrettySize);
+                            _logger.LogInformation("Added snapshot {SnapshotName} for collection {CollectionName}: {Size} bytes ({PrettySize})", 
+                                snapshotFile, collectionName, sizeBytes.Value, snapshotInfo.PrettySize);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Could not get size for snapshot {SnapshotFile} in collection {CollectionName}", 
+                                snapshotFile, collectionName);
                         }
                     }
                 }

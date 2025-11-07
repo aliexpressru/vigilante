@@ -1,13 +1,14 @@
 using k8s;
 using System.Net.WebSockets;
 using System.Text;
+using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services;
 
 /// <summary>
 /// Executes shell commands in Kubernetes pods via WebSocket
 /// </summary>
-public class PodCommandExecutor
+public class PodCommandExecutor : IPodCommandExecutor
 {
     private readonly IKubernetes _kubernetes;
     private readonly ILogger<PodCommandExecutor> _logger;

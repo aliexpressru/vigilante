@@ -682,13 +682,13 @@ public class ClusterManager(
         // Priority 1: Try to get snapshots from Kubernetes storage (if we have pod names)
         if (hasPodsWithNames)
         {
-            logger.LogInformation("Attempting to get snapshots from Kubernetes storage");
+            logger.LogInformation("Attempting to get snapshots from Kubernetes storage for {NodeCount} nodes", nodes.Count);
             
             foreach (var node in nodes)
             {
                 logger.LogInformation(
-                    "Processing node: URL={NodeUrl}, PeerId={PeerId}, IsHealthy={IsHealthy}, Namespace={Namespace}", 
-                    node.Url, node.PeerId, node.IsHealthy, node.Namespace);
+                    "Processing node for snapshots: URL={NodeUrl}, PeerId={PeerId}, IsHealthy={IsHealthy}, Namespace={Namespace}, PodName={PodName}", 
+                    node.Url, node.PeerId, node.IsHealthy, node.Namespace, node.PodName);
                 try
                 {
                     var podName = await GetPodNameFromIpAsync(node.Url, node.Namespace ?? "", cancellationToken);
@@ -699,21 +699,29 @@ public class ClusterManager(
                         continue;
                     }
 
-                    logger.LogInformation("Found pod {PodName} for IP {NodeUrl}", podName, node.Url);
+                    logger.LogInformation("Found pod {PodName} for IP {NodeUrl}, retrieving snapshots...", podName, node.Url);
                     
                     var snapshots =
                         await collectionService.GetSnapshotsFromDiskForPodAsync(podName, node.Namespace ?? "", node.Url, node.PeerId, cancellationToken);
                     var snapshotsList = snapshots.ToList();
-                    logger.LogInformation("Retrieved {SnapshotsCount} snapshots from pod {PodName}", snapshotsList.Count,
-                        podName);
+                    logger.LogInformation("Retrieved {SnapshotsCount} snapshots from pod {PodName} (Node: {NodeUrl})", snapshotsList.Count,
+                        podName, node.Url);
+
+                    if (snapshotsList.Count > 0)
+                    {
+                        logger.LogDebug("Snapshots from pod {PodName}: {SnapshotNames}", 
+                            podName, string.Join(", ", snapshotsList.Select(s => s.SnapshotName)));
+                    }
 
                     result.AddRange(snapshotsList);
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "Failed to get snapshots for node {nodeUrl}", node.Url);
+                    logger.LogError(ex, "Failed to get snapshots for node {NodeUrl}", node.Url);
                 }
             }
+            
+            logger.LogInformation("Finished processing all nodes. Total snapshots collected: {Count}", result.Count);
         }
         
         // Priority 2: If we didn't get any snapshots, return test data
