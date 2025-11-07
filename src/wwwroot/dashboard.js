@@ -675,7 +675,6 @@ class VigilanteDashboard {
                             ${shardsHtml}
                             ${otherMetricsHtml ? `<dl class="other-metrics">${otherMetricsHtml}</dl>` : ''}
                             ${snapshotsHtml}
-                            ${transfersHtml ? `<dl class="transfers-metrics">${transfersHtml}</dl>` : ''}
                             <div class="node-deletion-controls">
                                 <button class="delete-api-button" data-collection="${collection.name}" data-node-url="${nodeInfo.nodeUrl || ''}" data-pod-name="${nodeInfo.podName || ''}" data-pod-namespace="${nodeInfo.podNamespace || ''}" title="Delete collection via API on this node">
                                     🗑️ API
@@ -684,6 +683,7 @@ class VigilanteDashboard {
                                     🗑️ Disk
                                 </button>
                             </div>
+                            ${transfersHtml ? `<dl class="transfers-metrics">${transfersHtml}</dl>` : ''}
                         `;
 
                         nodeDetails.setAttribute('data-state-key', stateKey);
@@ -1513,6 +1513,14 @@ class VigilanteDashboard {
             return;
         }
 
+        const toastId = this.showToast(
+            `Deleting collection '${collectionName}' via ${typeLabel} ${scopeLabel}...`,
+            'info',
+            'Deletion in progress',
+            0,
+            true
+        );
+
         try {
             const requestBody = {
                 collectionName: collectionName,
@@ -1540,51 +1548,37 @@ class VigilanteDashboard {
             const result = await response.json();
             
             if (response.ok && result.success) {
-                this.showDeletionResult(collectionName, result, true);
+                this.showDeletionResultToast(toastId, collectionName, result, true);
                 // Refresh after a short delay to allow deletion to complete
                 setTimeout(() => this.refresh(), 1000);
             } else {
-                this.showDeletionResult(collectionName, result, false);
+                this.showDeletionResultToast(toastId, collectionName, result, false);
             }
         } catch (error) {
-            alert(`Error deleting collection: ${error.message}`);
+            this.removeToast(toastId);
+            this.showToast(`Error deleting collection: ${error.message}`, 'error', 'Deletion failed', 5000);
         }
     }
 
-    showDeletionResult(collectionName, result, success) {
-        const message = document.createElement('div');
-        message.className = `deletion-message ${success ? 'success' : 'error'}`;
-        
-        let html = `<div class="deletion-message-header">
-            <strong>${success ? '✓' : '✗'} ${result.message}</strong>
-            <button class="close-button" onclick="this.parentElement.parentElement.remove()">×</button>
-        </div>`;
+    showDeletionResultToast(toastId, collectionName, result, success) {
+        let detailsHtml = '';
         
         if (result.results && Object.keys(result.results).length > 0) {
-            html += '<div class="deletion-results">';
-            for (const [node, nodeResult] of Object.entries(result.results)) {
-                const icon = nodeResult.success ? '✓' : '✗';
-                const statusClass = nodeResult.success ? 'success' : 'error';
-                html += `<div class="node-deletion-result ${statusClass}">
-                    <span class="result-icon">${icon}</span>
-                    <span class="result-node">${node}</span>
-                    ${nodeResult.error ? `<span class="result-error">${nodeResult.error}</span>` : ''}
-                </div>`;
-            }
-            html += '</div>';
+            const resultsList = Object.entries(result.results)
+                .map(([node, nodeResult]) => {
+                    const icon = nodeResult.success ? '✓' : '✗';
+                    const error = nodeResult.error ? ` - ${nodeResult.error}` : '';
+                    return `${icon} ${node}${error}`;
+                })
+                .join('<br>');
+            detailsHtml = `<div style="margin-top: 8px; font-size: 0.9em;">${resultsList}</div>`;
         }
         
-        message.innerHTML = html;
+        const message = `${result.message}${detailsHtml}`;
+        const type = success ? 'success' : 'error';
+        const title = success ? '✓ Deletion successful' : '✗ Deletion failed';
         
-        const header = document.querySelector('.header');
-        header.insertAdjacentElement('afterend', message);
-        
-        // Auto-remove after 10 seconds
-        setTimeout(() => {
-            if (message.parentNode) {
-                message.remove();
-            }
-        }, 10000);
+        this.updateToast(toastId, message, type, title);
     }
 
     showError(message) {
