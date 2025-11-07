@@ -10,8 +10,8 @@ namespace Aer.Vigilante.Tests.Services;
 
 /// <summary>
 /// Tests for CollectionService snapshot retrieval functionality.
-/// Uses mocked IPodCommandExecutor to validate logic without Kubernetes dependencies.
-/// PodCommandExecutorTests already covers WebSocket parsing and command execution.
+/// Uses mocked IPodCommandExecutor to validate business logic.
+/// Low-level command parsing and WebSocket handling is covered by PodCommandExecutorTests.
 /// </summary>
 [TestFixture]
 public class CollectionServiceTests
@@ -46,7 +46,7 @@ public class CollectionServiceTests
         // Arrange
         var podName = "qdrant1-0";
         var podNamespace = "qdrant";
-        var nodeUrl = "http://10.200.52.254:6333";
+        var nodeUrl = "http://10.0.0.1:6333";
         var peerId = "peer1";
         
         var collectionName = "test_collection";
@@ -55,58 +55,28 @@ public class CollectionServiceTests
 
         // Mock ListFilesAsync for /qdrant/snapshots - returns collection folders and tmp
         _mockCommandExecutor
-            .ListFilesAsync(
-                podName,
-                podNamespace,
-                "/qdrant/snapshots",
-                "*/",
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new List<string> 
-            { 
-                collectionName,
-                "tmp" // this folder should be ignored if it has no .snapshot files
-            }));
+            .ListFilesAsync(podName, podNamespace, "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new List<string> { collectionName, "tmp" }));
 
         // Mock ListFilesAsync for specific collection - returns .snapshot file
         _mockCommandExecutor
-            .ListFilesAsync(
-                podName,
-                podNamespace,
-                $"/qdrant/snapshots/{collectionName}",
-                "*.snapshot",
-                Arg.Any<CancellationToken>())
+            .ListFilesAsync(podName, podNamespace, $"/qdrant/snapshots/{collectionName}", "*.snapshot", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new List<string> { snapshotFileName }));
 
         // Mock ListFilesAsync for tmp folder - empty result
         _mockCommandExecutor
-            .ListFilesAsync(
-                podName,
-                podNamespace,
-                "/qdrant/snapshots/tmp",
-                "*.snapshot",
-                Arg.Any<CancellationToken>())
+            .ListFilesAsync(podName, podNamespace, "/qdrant/snapshots/tmp", "*.snapshot", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new List<string>()));
 
         // Mock GetSizeAsync for snapshot file
         _mockCommandExecutor
-            .GetSizeAsync(
-                podName,
-                podNamespace,
-                $"/qdrant/snapshots/{collectionName}",
-                snapshotFileName,
-                Arg.Any<CancellationToken>())
+            .GetSizeAsync(podName, podNamespace, $"/qdrant/snapshots/{collectionName}", snapshotFileName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<long?>(snapshotSize));
 
-        // Create service with mocked command executor
         var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
 
         // Act
-        var result = await service.GetSnapshotsFromDiskForPodAsync(
-            podName, 
-            podNamespace, 
-            nodeUrl, 
-            peerId, 
-            CancellationToken.None);
+        var result = await service.GetSnapshotsFromDiskForPodAsync(podName, podNamespace, nodeUrl, peerId, CancellationToken.None);
 
         // Assert
         var snapshots = result.ToList();
@@ -133,37 +103,22 @@ public class CollectionServiceTests
         // Arrange
         var podName = "qdrant1-0";
         var podNamespace = "qdrant";
-        var nodeUrl = "http://10.200.52.254:6333";
+        var nodeUrl = "http://10.0.0.1:6333";
         var peerId = "peer1";
 
         // Mock - only tmp folder without snapshot files
         _mockCommandExecutor
-            .ListFilesAsync(
-                podName,
-                podNamespace,
-                "/qdrant/snapshots",
-                "*/",
-                Arg.Any<CancellationToken>())
+            .ListFilesAsync(podName, podNamespace, "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new List<string> { "tmp" }));
 
         _mockCommandExecutor
-            .ListFilesAsync(
-                podName,
-                podNamespace,
-                "/qdrant/snapshots/tmp",
-                "*.snapshot",
-                Arg.Any<CancellationToken>())
+            .ListFilesAsync(podName, podNamespace, "/qdrant/snapshots/tmp", "*.snapshot", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new List<string>()));
 
         var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
 
         // Act
-        var result = await service.GetSnapshotsFromDiskForPodAsync(
-            podName, 
-            podNamespace, 
-            nodeUrl, 
-            peerId, 
-            CancellationToken.None);
+        var result = await service.GetSnapshotsFromDiskForPodAsync(podName, podNamespace, nodeUrl, peerId, CancellationToken.None);
 
         // Assert
         Assert.That(result, Is.Empty, "Should return empty list when only tmp folder exists without snapshots");
@@ -175,27 +130,17 @@ public class CollectionServiceTests
         // Arrange
         var podName = "qdrant1-0";
         var podNamespace = "qdrant";
-        var nodeUrl = "http://10.200.52.254:6333";
+        var nodeUrl = "http://10.0.0.1:6333";
         var peerId = "peer1";
 
         _mockCommandExecutor
-            .ListFilesAsync(
-                podName,
-                podNamespace,
-                "/qdrant/snapshots",
-                "*/",
-                Arg.Any<CancellationToken>())
+            .ListFilesAsync(podName, podNamespace, "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new List<string>()));
 
         var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
 
         // Act
-        var result = await service.GetSnapshotsFromDiskForPodAsync(
-            podName, 
-            podNamespace, 
-            nodeUrl, 
-            peerId, 
-            CancellationToken.None);
+        var result = await service.GetSnapshotsFromDiskForPodAsync(podName, podNamespace, nodeUrl, peerId, CancellationToken.None);
 
         // Assert
         Assert.That(result, Is.Empty, "Should return empty list when no collection folders exist");
@@ -207,7 +152,7 @@ public class CollectionServiceTests
         // Arrange
         var podName = "qdrant1-0";
         var podNamespace = "qdrant";
-        var nodeUrl = "http://10.200.52.254:6333";
+        var nodeUrl = "http://10.0.0.1:6333";
         var peerId = "peer1";
         
         var collectionName = "embeddings_collection";
@@ -235,12 +180,7 @@ public class CollectionServiceTests
         var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
 
         // Act
-        var result = await service.GetSnapshotsFromDiskForPodAsync(
-            podName, 
-            podNamespace, 
-            nodeUrl, 
-            peerId, 
-            CancellationToken.None);
+        var result = await service.GetSnapshotsFromDiskForPodAsync(podName, podNamespace, nodeUrl, peerId, CancellationToken.None);
 
         // Assert
         var snapshots = result.ToList();
@@ -261,7 +201,7 @@ public class CollectionServiceTests
         // Arrange
         var podName = "qdrant1-0";
         var podNamespace = "qdrant";
-        var nodeUrl = "http://10.200.52.254:6333";
+        var nodeUrl = "http://10.0.0.1:6333";
         var peerId = "peer1";
         
         var collection1 = "embeddings";
@@ -292,12 +232,7 @@ public class CollectionServiceTests
         var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
 
         // Act
-        var result = await service.GetSnapshotsFromDiskForPodAsync(
-            podName, 
-            podNamespace, 
-            nodeUrl, 
-            peerId, 
-            CancellationToken.None);
+        var result = await service.GetSnapshotsFromDiskForPodAsync(podName, podNamespace, nodeUrl, peerId, CancellationToken.None);
 
         // Assert
         var snapshots = result.ToList();
@@ -313,13 +248,13 @@ public class CollectionServiceTests
     [Test]
     public async Task GetSnapshotsFromDiskForPodAsync_ShouldHandleLongCollectionNames()
     {
-        // Arrange - test with real long collection name from production
+        // Arrange - test with long collection name similar to production
         var podName = "qdrant1-0";
         var podNamespace = "qdrant";
-        var nodeUrl = "http://10.200.52.254:6333";
+        var nodeUrl = "http://10.0.0.1:6333";
         var peerId = "peer1";
         
-        var collectionName = "ke_recs.candidates__cf__item__liked__embeddings__qdrant~~20251104";
+        var collectionName = "long_collection_name_with_special__chars__and__timestamps~~20251104";
         var snapshotFileName = $"{collectionName}-375902039176772-2025-11-06-16-42-21.snapshot";
         var snapshotSize = 5000000000L; // 5 GB
 
@@ -338,18 +273,13 @@ public class CollectionServiceTests
         var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
 
         // Act
-        var result = await service.GetSnapshotsFromDiskForPodAsync(
-            podName, 
-            podNamespace, 
-            nodeUrl, 
-            peerId, 
-            CancellationToken.None);
+        var result = await service.GetSnapshotsFromDiskForPodAsync(podName, podNamespace, nodeUrl, peerId, CancellationToken.None);
 
         // Assert
         var snapshots = result.ToList();
         Assert.That(snapshots, Has.Count.EqualTo(1));
         Assert.That(snapshots[0].CollectionName, Is.EqualTo(collectionName));
-        Assert.That(snapshots[0].SnapshotName, Does.Contain("ke_recs.candidates"));
+        Assert.That(snapshots[0].SnapshotName, Does.Contain("long_collection_name"));
         Assert.That(snapshots[0].SizeBytes, Is.EqualTo(snapshotSize));
     }
 

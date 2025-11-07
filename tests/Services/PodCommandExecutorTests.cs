@@ -155,6 +155,44 @@ public class PodCommandExecutorTests
         }
     }
 
+    [Test]
+    public async Task ListDirectoriesAsync_ShouldHandleColonSuffixFromLsCommand()
+    {
+        // Arrange
+        var podName = "test-pod";
+        var podNamespace = "default";
+        var directory = "/qdrant/snapshots";
+        
+        // Some versions of ls -1d */ add ':' after directory names instead of '/'
+        // This is the actual output we saw in production logs
+        var mockOutput = "long_collection_name_with_special__chars~~20251104/:\ntmp/:\nupload\n";
+        
+        var mockWebSocket = CreateMockWebSocket(mockOutput);
+        _kubernetes.WebSocketNamespacedPodExecAsync(
+            Arg.Any<string>(), 
+            Arg.Any<string>(), 
+            Arg.Any<IEnumerable<string>>(),
+            Arg.Any<string>(),
+            cancellationToken: Arg.Any<CancellationToken>()
+        ).Returns(mockWebSocket);
+
+        // Act
+        var result = await _executor.ListDirectoriesAsync(podName, podNamespace, directory, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(3));
+        Assert.That(result[0], Is.EqualTo("long_collection_name_with_special__chars~~20251104"));
+        Assert.That(result[1], Is.EqualTo("tmp"));
+        Assert.That(result[2], Is.EqualTo("upload"));
+        
+        // Verify no trailing slashes or colons
+        foreach (var item in result)
+        {
+            Assert.That(item, Does.Not.EndWith("/"));
+            Assert.That(item, Does.Not.EndWith(":"));
+        }
+    }
+
     #endregion
 
     #region ListFilesAsync Tests

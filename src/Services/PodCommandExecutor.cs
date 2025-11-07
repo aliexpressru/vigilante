@@ -243,7 +243,7 @@ public class PodCommandExecutor : IPodCommandExecutor
         return output
             .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(name => name
-                .TrimEnd('/')
+                .TrimEnd('/', ':')  // Remove both / and : that ls -1d */ can add
                 .Trim()
                 .Where(c => !char.IsControl(c))
                 .ToArray())
