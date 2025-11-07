@@ -67,8 +67,8 @@ public class ClusterManager(
                     {
                         var failures = string.Join(", ", clusterInfo.Result.MessageSendFailures.Select(kvp => 
                         {
-                            var valueStr = kvp.Value != null ? JsonSerializer.Serialize(kvp.Value) : "null";
-                            return $"{kvp.Key}: {valueStr}";
+                            var formattedError = FormatMessageSendFailure(kvp.Value);
+                            return $"{kvp.Key}: {formattedError}";
                         }));
                         errors.Add($"Message send failures: {failures}");
                         // Only set error type if not already set by consensus error
@@ -572,6 +572,64 @@ public class ClusterManager(
         NodeErrorType.MessageSendFailures => "Message Send Failures",
         _ => "Unknown Error"
     };
+
+    private static string FormatMessageSendFailure(object? failure)
+    {
+        if (failure == null)
+            return "unknown error";
+
+        try
+        {
+            // Serialize to JSON and parse to extract key information
+            var json = JsonSerializer.Serialize(failure);
+            var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // Extract count and latest error
+            var count = root.TryGetProperty("Count", out var countProp) ? countProp.GetInt32() : 0;
+            var latestError = root.TryGetProperty("LatestError", out var errorProp) ? errorProp.GetString() : null;
+
+            // Parse the latest error to extract just the important message
+            if (!string.IsNullOrEmpty(latestError))
+            {
+                // Try to extract the main error message (e.g., "Can't send Raft message over channel")
+                var messageStart = latestError.IndexOf("message: \"", StringComparison.Ordinal);
+                if (messageStart >= 0)
+                {
+                    messageStart += 10; // length of "message: \""
+                    var messageEnd = latestError.IndexOf("\"", messageStart, StringComparison.Ordinal);
+                    if (messageEnd > messageStart)
+                    {
+                        var message = latestError.Substring(messageStart, messageEnd - messageStart);
+                        // Unescape common escape sequences
+                        message = message.Replace("\\u0027", "'").Replace("\\\"", "\"");
+                        return count > 1 ? $"{message} ({count} failures)" : message;
+                    }
+                }
+
+                // Fallback: try to extract status
+                var statusStart = latestError.IndexOf("status: ", StringComparison.Ordinal);
+                if (statusStart >= 0)
+                {
+                    statusStart += 8; // length of "status: "
+                    var statusEnd = latestError.IndexOf(",", statusStart, StringComparison.Ordinal);
+                    if (statusEnd > statusStart)
+                    {
+                        var status = latestError.Substring(statusStart, statusEnd - statusStart);
+                        return count > 1 ? $"{status} error ({count} failures)" : $"{status} error";
+                    }
+                }
+            }
+
+            // If we can't parse it nicely, just show count
+            return count > 0 ? $"{count} send failures" : "send failure";
+        }
+        catch
+        {
+            // If parsing fails, return a simple message
+            return "communication error";
+        }
+    }
 
     // Snapshot operations
 
