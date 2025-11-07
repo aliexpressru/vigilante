@@ -4,6 +4,7 @@ using Vigilante.Configuration;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
+using System.Text.Json;
 
 namespace Vigilante.Services;
 
@@ -64,7 +65,11 @@ public class ClusterManager(
                     // Check message send failures
                     if (clusterInfo.Result.MessageSendFailures != null && clusterInfo.Result.MessageSendFailures.Count > 0)
                     {
-                        var failures = string.Join(", ", clusterInfo.Result.MessageSendFailures.Select(kvp => $"{kvp.Key}: {kvp.Value}"));
+                        var failures = string.Join(", ", clusterInfo.Result.MessageSendFailures.Select(kvp => 
+                        {
+                            var valueStr = kvp.Value != null ? JsonSerializer.Serialize(kvp.Value) : "null";
+                            return $"{kvp.Key}: {valueStr}";
+                        }));
                         errors.Add($"Message send failures: {failures}");
                         // Only set error type if not already set by consensus error
                         if (nodeInfo.ErrorType == NodeErrorType.None)
