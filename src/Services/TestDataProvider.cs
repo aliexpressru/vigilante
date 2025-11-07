@@ -131,7 +131,7 @@ public class TestDataProvider
     public IReadOnlyList<SnapshotInfo> GenerateTestSnapshotData()
     {
         var testData = new List<SnapshotInfo>();
-        
+
         // Collections that have snapshots with different snapshot names per node
         var testCollections = new[]
         {
@@ -139,9 +139,9 @@ public class TestDataProvider
             ("products", 310000000L),          // ~300 MB per node
             ("embeddings", 1600000000L),       // ~1.5 GB per node
         };
-        
+
         // Generate test peers from actual Qdrant configuration
-        var testPeers = _options.Nodes.Select((node, index) => 
+        var testPeers = _options.Nodes.Select((node, index) =>
             (
                 peerId: $"peer{index + 1}",
                 podName: $"qdrant-{index}",
@@ -149,7 +149,7 @@ public class TestDataProvider
                 index
             )
         ).ToList();
-        
+
         // If no nodes configured, use defaults
         if (testPeers.Count == 0)
         {
@@ -166,8 +166,8 @@ public class TestDataProvider
         var realSnapshotIdsPerNode = new Dictionary<string, Dictionary<string, string>>();
         // var realSnapshotIdsPerNode = new Dictionary<string, Dictionary<string, string>>
         // {
-        //     { 
-        //         "collection_name", 
+        //     {
+        //         "collection_name",
         //         new Dictionary<string, string>
         //         {
         //             { "ip1", "375902039176772" },
@@ -183,10 +183,10 @@ public class TestDataProvider
             {
                 // Extract host from URL (format: http://host:port)
                 var nodeHost = url.Replace("http://", "").Replace("https://", "").Split(':')[0];
-                
+
                 // Use real snapshot IDs mapped to specific nodes if available
                 string uniqueId;
-                if (realSnapshotIdsPerNode.TryGetValue(collectionName, out var nodeMapping) 
+                if (realSnapshotIdsPerNode.TryGetValue(collectionName, out var nodeMapping)
                     && nodeMapping.TryGetValue(nodeHost, out var mappedId))
                 {
                     uniqueId = mappedId;
@@ -196,10 +196,10 @@ public class TestDataProvider
                     // Generate synthetic ID for other collections or unknown nodes
                     uniqueId = (375902039176772L + index * 123456789L).ToString();
                 }
-                
+
                 var timestamp = "2025-11-06-08-41-36";
                 var snapshotName = $"{collectionName}-{uniqueId}-{timestamp}.snapshot";
-                
+
                 // Vary size slightly per node
                 var sizeVariation = index * 10000000L; // 10MB variation per node
                 var sizeBytes = baseSizeBytes + sizeVariation;

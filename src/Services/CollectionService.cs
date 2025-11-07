@@ -421,7 +421,7 @@ public class CollectionService : ICollectionService
                 collectionName, 
                 snapshotName, 
                 cancellationToken,
-                isWaitForResult: false);
+                isWaitForResult: true);
             
             if (result.IsAcceptedOrSuccess())
             {

@@ -7,6 +7,8 @@ public enum NodeErrorType
     ConnectionError,
     InvalidResponse,
     ClusterSplit,
-    CollectionsFetchError
+    CollectionsFetchError,
+    ConsensusThreadError,
+    MessageSendFailures
 }
 

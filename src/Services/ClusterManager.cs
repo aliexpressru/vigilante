@@ -50,6 +50,30 @@ public class ClusterManager(
                     nodeInfo.IsLeader = clusterInfo.Result.RaftInfo?.Leader != null &&
                                         clusterInfo.Result.RaftInfo.Leader.ToString() == clusterInfo.Result.PeerId.ToString();
                     
+                    var errors = new List<string>();
+                    
+                    // Check consensus thread status for errors
+                    if (clusterInfo.Result.ConsensusThreadStatus?.Err != null)
+                    {
+                        var consensusError = clusterInfo.Result.ConsensusThreadStatus.Err;
+                        errors.Add($"Consensus thread error: {consensusError}");
+                        nodeInfo.ErrorType = NodeErrorType.ConsensusThreadError;
+                        logger.LogWarning("Node {NodeUrl} has consensus thread error: {Error}", nodeInfo.Url, consensusError);
+                    }
+                    
+                    // Check message send failures
+                    if (clusterInfo.Result.MessageSendFailures != null && clusterInfo.Result.MessageSendFailures.Count > 0)
+                    {
+                        var failures = string.Join(", ", clusterInfo.Result.MessageSendFailures.Select(kvp => $"{kvp.Key}: {kvp.Value}"));
+                        errors.Add($"Message send failures: {failures}");
+                        // Only set error type if not already set by consensus error
+                        if (nodeInfo.ErrorType == NodeErrorType.None)
+                        {
+                            nodeInfo.ErrorType = NodeErrorType.MessageSendFailures;
+                        }
+                        logger.LogWarning("Node {NodeUrl} has message send failures: {Failures}", nodeInfo.Url, failures);
+                    }
+                    
                     // Collect peer information for split detection
                     if (clusterInfo.Result.Peers != null)
                     {
@@ -68,11 +92,15 @@ public class ClusterManager(
                         
                         if (!isHealthy)
                         {
-                            nodeInfo.IsHealthy = false;
-                            nodeInfo.Error = errorMessage ?? "Failed to fetch collections";
-                            nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.CollectionsFetchError);
-                            nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
+                            errors.Add(errorMessage ?? "Failed to fetch collections");
+                            // Only set error type if not already set by consensus or message send errors
+                            if (nodeInfo.ErrorType == NodeErrorType.None)
+                            {
+                                nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
+                            }
                             logger.LogWarning("Node {NodeUrl} collections check failed: {Error}", nodeInfo.Url, errorMessage);
+                            // Mark as unhealthy immediately for collection fetch errors
+                            nodeInfo.IsHealthy = false;
                         }
                     }
                     catch (OperationCanceledException ex)
@@ -81,18 +109,32 @@ public class ClusterManager(
                             throw;
 
                         logger.LogWarning(ex, "Collections request timed out for node {NodeUrl}", nodeInfo.Url);
+                        errors.Add("Collections request timed out");
+                        if (nodeInfo.ErrorType == NodeErrorType.None)
+                        {
+                            nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
+                        }
+                        // Mark as unhealthy immediately for collection fetch errors
                         nodeInfo.IsHealthy = false;
-                        nodeInfo.Error = "Collections request timed out";
-                        nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.CollectionsFetchError);
-                        nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
                     }
                     catch (Exception ex)
                     {
                         logger.LogWarning(ex, "Failed to fetch collections for node {NodeUrl}", nodeInfo.Url);
+                        errors.Add($"Failed to fetch collections: {ex.Message}");
+                        if (nodeInfo.ErrorType == NodeErrorType.None)
+                        {
+                            nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
+                        }
+                        // Mark as unhealthy immediately for collection fetch errors
                         nodeInfo.IsHealthy = false;
-                        nodeInfo.Error = $"Failed to fetch collections: {ex.Message}";
-                        nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.CollectionsFetchError);
-                        nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
+                    }
+                    
+                    // Store errors for later (after split detection), but don't mark as unhealthy yet
+                    // unless it's a collection fetch error (which we already handled above)
+                    if (errors.Count > 0)
+                    {
+                        nodeInfo.Error = string.Join("; ", errors);
+                        nodeInfo.ShortError = GetShortErrorMessage(nodeInfo.ErrorType);
                     }
                 }
                 else
@@ -138,6 +180,19 @@ public class ClusterManager(
         
         // Detect cluster splits after all nodes have been queried
         DetectClusterSplits(nodeStatuses);
+        
+        // After split detection, mark nodes with consensus/message errors as unhealthy if they weren't already marked
+        foreach (var node in nodeStatuses)
+        {
+            // If node has errors (consensus or message send failures) but is still marked healthy
+            // (wasn't marked as split or collection error), mark it as unhealthy now
+            if (node.IsHealthy && !string.IsNullOrEmpty(node.Error) && 
+                (node.ErrorType == NodeErrorType.ConsensusThreadError || node.ErrorType == NodeErrorType.MessageSendFailures))
+            {
+                node.IsHealthy = false;
+                logger.LogInformation("Marking node {NodeUrl} as unhealthy due to {ErrorType}", node.Url, node.ErrorType);
+            }
+        }
         
         var state = new ClusterState
         {
@@ -503,6 +558,8 @@ public class ClusterManager(
         NodeErrorType.InvalidResponse => "Invalid Response",
         NodeErrorType.ClusterSplit => "Cluster Split",
         NodeErrorType.CollectionsFetchError => "Collections Error",
+        NodeErrorType.ConsensusThreadError => "Consensus Error",
+        NodeErrorType.MessageSendFailures => "Message Send Failures",
         _ => "Unknown Error"
     };
 
