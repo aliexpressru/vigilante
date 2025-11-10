@@ -401,30 +401,50 @@ public class ClusterController(
         }
     }
 
-    [HttpGet("download-snapshot")]
+    [HttpPost("download-snapshot")]
     [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DownloadSnapshot(
-        [FromQuery] string nodeUrl,
-        [FromQuery] string collectionName,
-        [FromQuery] string snapshotName,
+        [FromBody] V1DownloadSnapshotRequest request,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var snapshotData = await clusterManager.DownloadCollectionSnapshotAsync(
-                nodeUrl,
-                collectionName,
-                snapshotName,
-                cancellationToken);
-
-            if (snapshotData != null && snapshotData.Length > 0)
+            Stream? snapshotStream;
+            
+            if (request.DownloadType == Models.Enums.SnapshotDownloadType.Api)
             {
-                return File(snapshotData, "application/octet-stream", snapshotName);
+                // Download via API
+                snapshotStream = await clusterManager.DownloadCollectionSnapshotAsync(
+                    request.NodeUrl!,
+                    request.CollectionName,
+                    request.SnapshotName,
+                    cancellationToken);
+
+                if (snapshotStream == null)
+                {
+                    return StatusCode(500, new { error = "Failed to download snapshot via API" });
+                }
+            }
+            else // Disk
+            {
+                // Download from disk
+                snapshotStream = await clusterManager.DownloadSnapshotFromDiskAsync(
+                    request.PodName!,
+                    request.PodNamespace!,
+                    request.CollectionName,
+                    request.SnapshotName,
+                    cancellationToken);
+
+                if (snapshotStream == null)
+                {
+                    return StatusCode(500, new { error = "Failed to download snapshot from disk" });
+                }
             }
 
-            return StatusCode(500, new { error = "Failed to download snapshot" });
+            // Return the stream as a file download
+            return File(snapshotStream, "application/octet-stream", request.SnapshotName);
         }
         catch (Exception ex)
         {

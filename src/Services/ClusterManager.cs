@@ -766,6 +766,19 @@ public class ClusterManager(
         return await collectionService.DownloadCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, cancellationToken);
     }
 
+    public async Task<Stream?> DownloadSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName}", 
+            snapshotName, collectionName, podName);
+
+        return await collectionService.DownloadSnapshotFromDiskAsync(podName, podNamespace, collectionName, snapshotName, cancellationToken);
+    }
+
     public async Task<bool> RecoverCollectionFromSnapshotAsync(
         string nodeUrl,
         string collectionName,

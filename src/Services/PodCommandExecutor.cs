@@ -251,5 +251,143 @@ public class PodCommandExecutor : IPodCommandExecutor
             .Where(name => !string.IsNullOrWhiteSpace(name) && !name.StartsWith("."))
             .ToList();
     }
+
+    /// <summary>
+    /// Downloads a file from a pod as a stream using cat command
+    /// </summary>
+    public async Task<Stream?> DownloadFileAsync(
+        string podName,
+        string podNamespace,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Downloading file {FilePath} from pod {PodName} in namespace {Namespace}",
+                filePath, podName, podNamespace);
+
+            // Use cat to stream file contents directly
+            var command = $"cat {filePath}";
+            
+            var webSocket = await _kubernetes.WebSocketNamespacedPodExecAsync(
+                podName,
+                podNamespace,
+                new[] { "sh", "-c", command },
+                "qdrant",
+                cancellationToken: cancellationToken);
+
+            // Create a stream that will read from WebSocket
+            var stream = new WebSocketStream(webSocket, _logger, filePath, podName);
+            
+            _logger.LogInformation("✅ Started streaming file {FilePath} from pod {PodName}",
+                filePath, podName);
+            
+            return stream;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to download file {FilePath} from pod {PodName}",
+                filePath, podName);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Stream wrapper for WebSocket that reads binary data from a pod
+    /// </summary>
+    private class WebSocketStream : Stream
+    {
+        private readonly WebSocket _webSocket;
+        private readonly ILogger _logger;
+        private readonly string _filePath;
+        private readonly string _podName;
+        private bool _disposed;
+        private long _totalBytesRead;
+
+        public WebSocketStream(WebSocket webSocket, ILogger logger, string filePath, string podName)
+        {
+            _webSocket = webSocket;
+            _logger = logger;
+            _filePath = filePath;
+            _podName = podName;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => _totalBytesRead;
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            return ReadAsync(buffer, offset, count, CancellationToken.None).GetAwaiter().GetResult();
+        }
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            if (_webSocket.State != WebSocketState.Open)
+            {
+                return 0; // End of stream
+            }
+
+            try
+            {
+                var segment = new ArraySegment<byte>(buffer, offset, count);
+                var result = await _webSocket.ReceiveAsync(segment, cancellationToken);
+
+                if (result.MessageType == WebSocketMessageType.Close || result.Count == 0)
+                {
+                    _logger.LogDebug("WebSocket closed or no more data for {FilePath} from pod {PodName}. Total bytes read: {TotalBytes}",
+                        _filePath, _podName, _totalBytesRead);
+                    return 0; // End of stream
+                }
+
+                _totalBytesRead += result.Count;
+                return result.Count;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error reading from WebSocket for {FilePath} from pod {PodName}",
+                    _filePath, _podName);
+                return 0;
+            }
+        }
+
+        public override void Flush() { }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (!_disposed)
+            {
+                if (disposing)
+                {
+                    _logger.LogInformation("Completed download of {FilePath} from pod {PodName}. Total bytes: {TotalBytes}",
+                        _filePath, _podName, _totalBytesRead);
+                    _webSocket.Dispose();
+                }
+                _disposed = true;
+            }
+            base.Dispose(disposing);
+        }
+    }
 }
 

@@ -405,6 +405,45 @@ public class CollectionService : ICollectionService
             return null;
         }
     }
+
+    public async Task<Stream?> DownloadSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation(
+            "Downloading snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}",
+            snapshotName, collectionName, podName, podNamespace);
+
+        if (_commandExecutor == null)
+        {
+            _logger.LogError("Kubernetes client not available, cannot download snapshot from disk");
+            return null;
+        }
+
+        var snapshotPath = $"/qdrant/storage/snapshots/{collectionName}/{snapshotName}";
+        var fileStream = await _commandExecutor.DownloadFileAsync(
+            podName, 
+            podNamespace, 
+            snapshotPath, 
+            cancellationToken);
+
+        if (fileStream != null)
+        {
+            _logger.LogInformation("✅ Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName}", 
+                snapshotName, podName);
+        }
+        else
+        {
+            _logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName}", 
+                snapshotName, podName);
+        }
+
+        return fileStream;
+    }
+
     public async Task<bool> RecoverCollectionFromSnapshotAsync(
         string nodeUrl,
         string collectionName,

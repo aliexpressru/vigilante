@@ -80,10 +80,20 @@ public interface ICollectionService
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Downloads a snapshot for a collection from a specific node
+    /// Downloads a snapshot for a collection from a specific node via API
     /// </summary>
     Task<Stream?> DownloadCollectionSnapshotAsync(
         string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Downloads a snapshot directly from disk on a specific pod
+    /// </summary>
+    Task<Stream?> DownloadSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
         string collectionName,
         string snapshotName,
         CancellationToken cancellationToken);

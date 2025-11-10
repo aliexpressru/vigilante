@@ -164,7 +164,7 @@ class VigilanteDashboard {
         }, 300);
     }
 
-    updateToast(toastId, message, type = 'info', title = null) {
+    updateToast(toastId, message, type = 'info', title = null, progress = null, autoRemove = true) {
         const toast = document.getElementById(toastId);
         if (!toast) return;
 
@@ -175,14 +175,26 @@ class VigilanteDashboard {
             info: '<i class="fas fa-info-circle"></i>'
         };
 
+        const isLoading = type === 'info' && progress !== null;
+        const iconHtml = isLoading
+            ? '<div class="toast-spinner"></div>'
+            : `<div class="toast-icon">${icons[type] || icons.info}</div>`;
+
+        const progressHtml = progress !== null && progress >= 0 && progress <= 100
+            ? `<div class="toast-progress-container">
+                <div class="toast-progress-bar" style="width: ${progress}%"></div>
+               </div>`
+            : '';
+
         toast.className = `toast ${type}`;
         toast.innerHTML = `
-            <div class="toast-icon">${icons[type] || icons.info}</div>
+            ${iconHtml}
             <div class="toast-content">
                 ${title ? `<div class="toast-title">${title}</div>` : ''}
                 <div class="toast-message">${message}</div>
+                ${progressHtml}
             </div>
-            <button class="toast-close" aria-label="Close">&times;</button>
+            ${!isLoading ? '<button class="toast-close" aria-label="Close">&times;</button>' : ''}
         `;
 
         const closeBtn = toast.querySelector('.toast-close');
@@ -190,8 +202,10 @@ class VigilanteDashboard {
             closeBtn.addEventListener('click', () => this.removeToast(toastId));
         }
 
-        // Auto remove after 5 seconds
-        setTimeout(() => this.removeToast(toastId), 5000);
+        // Auto remove after 5 seconds only if autoRemove is true and not loading
+        if (autoRemove && !isLoading) {
+            setTimeout(() => this.removeToast(toastId), 5000);
+        }
     }
 
     async loadClusterStatus() {
@@ -613,17 +627,25 @@ class VigilanteDashboard {
                         if (nodeInfo.metrics.snapshots && nodeInfo.metrics.snapshots.length > 0) {
                             const snapshotsList = nodeInfo.metrics.snapshots.map(snapshot => 
                                 `<div class="snapshot-item">
-                                    <span class="snapshot-name" title="${snapshot}">${snapshot}</span>
-                                    <div class="snapshot-actions">
-                                        <button class="snapshot-download-btn" data-snapshot="${snapshot}" title="Download snapshot">
-                                            <i class="fas fa-download"></i>
-                                        </button>
-                                        <button class="snapshot-recover-btn" data-snapshot="${snapshot}" title="Recover from snapshot">
-                                            <i class="fas fa-undo"></i>
-                                        </button>
-                                        <button class="snapshot-delete-btn" data-snapshot="${snapshot}" title="Delete snapshot">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
+                                    <div class="snapshot-item-content">
+                                        <div class="snapshot-name-wrapper">
+                                            <i class="fas fa-camera snapshot-icon"></i>
+                                            <span class="snapshot-name" title="${snapshot}">${snapshot}</span>
+                                        </div>
+                                        <div class="snapshot-actions">
+                                            <button class="snapshot-download-api-btn" data-snapshot="${snapshot}" title="Download via API">
+                                                📥 API
+                                            </button>
+                                            <button class="snapshot-download-disk-btn" data-snapshot="${snapshot}" title="Download from Disk">
+                                                💾 Disk
+                                            </button>
+                                            <button class="snapshot-recover-btn" data-snapshot="${snapshot}" title="Recover from snapshot">
+                                                <i class="fas fa-undo"></i>
+                                            </button>
+                                            <button class="snapshot-delete-btn" data-snapshot="${snapshot}" title="Delete snapshot">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>`
                             ).join('');
@@ -820,12 +842,35 @@ class VigilanteDashboard {
                             });
                         }
 
-                        const snapshotDownloadBtns = nodeDetails.querySelectorAll('.snapshot-download-btn');
-                        snapshotDownloadBtns.forEach(btn => {
+                        const snapshotDownloadApiBtns = nodeDetails.querySelectorAll('.snapshot-download-api-btn');
+                        snapshotDownloadApiBtns.forEach(btn => {
                             btn.addEventListener('click', async (e) => {
                                 e.stopPropagation();
                                 const snapshotName = btn.dataset.snapshot;
-                                await this.downloadSnapshot(collection.name, snapshotName, nodeInfo.nodeUrl);
+                                await this.downloadSnapshot(
+                                    collection.name, 
+                                    snapshotName,
+                                    'API',
+                                    nodeInfo.nodeUrl,
+                                    null,
+                                    null
+                                );
+                            });
+                        });
+
+                        const snapshotDownloadDiskBtns = nodeDetails.querySelectorAll('.snapshot-download-disk-btn');
+                        snapshotDownloadDiskBtns.forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                e.stopPropagation();
+                                const snapshotName = btn.dataset.snapshot;
+                                await this.downloadSnapshot(
+                                    collection.name, 
+                                    snapshotName,
+                                    'Disk',
+                                    null,
+                                    nodeInfo.podName,
+                                    nodeInfo.podNamespace || 'default'
+                                );
                             });
                         });
 
@@ -1035,6 +1080,32 @@ class VigilanteDashboard {
                 const actionsContainer = document.createElement('div');
                 actionsContainer.className = 'snapshot-actions-cell';
                 
+                const downloadApiBtn = document.createElement('button');
+                downloadApiBtn.className = 'action-button action-button-primary action-button-sm';
+                downloadApiBtn.innerHTML = '📥 API';
+                downloadApiBtn.title = 'Download via API';
+                downloadApiBtn.onclick = () => this.downloadSnapshot(
+                    collection.collectionName, 
+                    node.snapshotName, 
+                    'API',
+                    node.nodeUrl, 
+                    null, 
+                    null
+                );
+                
+                const downloadDiskBtn = document.createElement('button');
+                downloadDiskBtn.className = 'action-button action-button-info action-button-sm';
+                downloadDiskBtn.innerHTML = '💾 Disk';
+                downloadDiskBtn.title = 'Download from Disk';
+                downloadDiskBtn.onclick = () => this.downloadSnapshot(
+                    collection.collectionName, 
+                    node.snapshotName, 
+                    'Disk',
+                    null,
+                    node.podName, 
+                    node.podNamespace || 'default'
+                );
+                
                 const recoverBtn = document.createElement('button');
                 recoverBtn.className = 'action-button action-button-success action-button-sm';
                 recoverBtn.innerHTML = '<i class="fas fa-undo"></i>';
@@ -1047,6 +1118,8 @@ class VigilanteDashboard {
                 deleteBtn.title = 'Delete this snapshot';
                 deleteBtn.onclick = () => this.deleteSnapshotFromNode(node.podName, node.podNamespace || 'default', collection.collectionName, node.snapshotName);
                 
+                actionsContainer.appendChild(downloadApiBtn);
+                actionsContainer.appendChild(downloadDiskBtn);
                 actionsContainer.appendChild(recoverBtn);
                 actionsContainer.appendChild(deleteBtn);
                 cellActions.appendChild(actionsContainer);
@@ -1725,9 +1798,10 @@ class VigilanteDashboard {
         }
     }
 
-    async downloadSnapshot(collectionName, snapshotName, nodeUrl) {
+    async downloadSnapshot(collectionName, snapshotName, downloadType, nodeUrl = null, podName = null, podNamespace = null) {
+        const typeLabel = downloadType === 'API' ? 'API' : 'Disk';
         const toastId = this.showToast(
-            `Downloading snapshot '${snapshotName}'...`,
+            `Preparing download of '${snapshotName}' via ${typeLabel}...`,
             'info',
             'Downloading',
             0,
@@ -1736,10 +1810,17 @@ class VigilanteDashboard {
 
         try {
             const requestBody = {
-                nodeUrl: nodeUrl,
                 collectionName: collectionName,
-                snapshotName: snapshotName
+                snapshotName: snapshotName,
+                downloadType: downloadType === 'API' ? 0 : 1, // 0=Api, 1=Disk
             };
+
+            if (downloadType === 'API') {
+                requestBody.nodeUrl = nodeUrl;
+            } else {
+                requestBody.podName = podName;
+                requestBody.podNamespace = podNamespace;
+            }
 
             const response = await fetch(this.downloadSnapshotEndpoint, {
                 method: 'POST',
@@ -1750,10 +1831,75 @@ class VigilanteDashboard {
             });
 
             if (!response.ok) {
-                throw new Error('Failed to download snapshot');
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to download snapshot');
             }
 
-            const blob = await response.blob();
+            // Get total size from Content-Length header
+            const contentLength = response.headers.get('Content-Length');
+            const total = contentLength ? parseInt(contentLength, 10) : 0;
+            
+            // Update toast with initial progress
+            if (total > 0) {
+                this.updateToast(
+                    toastId,
+                    `0% (0 / ${this.formatSize(total)})`,
+                    'info',
+                    `Downloading '${snapshotName}' via ${typeLabel}`,
+                    0,
+                    false
+                );
+            } else {
+                this.updateToast(
+                    toastId,
+                    `Downloading...`,
+                    'info',
+                    `Downloading '${snapshotName}' via ${typeLabel}`,
+                    null,
+                    false
+                );
+            }
+
+            // Read the response stream with progress tracking
+            const reader = response.body.getReader();
+            const chunks = [];
+            let receivedLength = 0;
+
+            while (true) {
+                const { done, value } = await reader.read();
+
+                if (done) break;
+
+                chunks.push(value);
+                receivedLength += value.length;
+
+                // Update progress
+                if (total > 0) {
+                    const percent = Math.round((receivedLength / total) * 100);
+                    this.updateToast(
+                        toastId,
+                        `${percent}% (${this.formatSize(receivedLength)} / ${this.formatSize(total)})`,
+                        'info',
+                        `Downloading '${snapshotName}' via ${typeLabel}`,
+                        percent,
+                        false
+                    );
+                } else {
+                    this.updateToast(
+                        toastId,
+                        `${this.formatSize(receivedLength)} received...`,
+                        'info',
+                        `Downloading '${snapshotName}' via ${typeLabel}`,
+                        null,
+                        false
+                    );
+                }
+            }
+
+            // Combine chunks into a blob
+            const blob = new Blob(chunks);
+            
+            // Trigger download
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -1765,9 +1911,11 @@ class VigilanteDashboard {
 
             this.updateToast(
                 toastId,
-                `Snapshot '${snapshotName}' downloaded successfully`,
+                `Downloaded successfully (${this.formatSize(receivedLength)})`,
                 'success',
-                'Download Complete'
+                `'${snapshotName}' via ${typeLabel}`,
+                100,
+                true
             );
         } catch (error) {
             this.updateToast(

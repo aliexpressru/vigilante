@@ -44,5 +44,14 @@ public interface IPodCommandExecutor
         bool isDirectory,
         string itemDescription,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Downloads a file from a pod as a stream
+    /// </summary>
+    Task<Stream?> DownloadFileAsync(
+        string podName,
+        string podNamespace,
+        string filePath,
+        CancellationToken cancellationToken);
 }
 
