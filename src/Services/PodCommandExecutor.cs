@@ -329,56 +329,77 @@ public class PodCommandExecutor : IPodCommandExecutor
 
         public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
-            if (_webSocket.State != WebSocketState.Open)
+            while (_webSocket.State == WebSocketState.Open)
             {
-                return 0; // End of stream
-            }
-
-            try
-            {
-                // Kubernetes WebSocket uses a channel prefix (first byte):
-                // 0 = stdin, 1 = stdout, 2 = stderr, 3 = error/resize
-                // We need to read the entire message and skip the channel byte
-                var tempBuffer = new byte[count + 1]; // +1 for channel byte
-                var segment = new ArraySegment<byte>(tempBuffer);
-                var result = await _webSocket.ReceiveAsync(segment, cancellationToken);
-
-                if (result.MessageType == WebSocketMessageType.Close || result.Count == 0)
+                try
                 {
-                    _logger.LogDebug("WebSocket closed or no more data for {FilePath} from pod {PodName}. Total bytes read: {TotalBytes}",
-                        _filePath, _podName, _totalBytesRead);
-                    return 0; // End of stream
+                    // Kubernetes WebSocket uses a channel prefix (first byte):
+                    // 0 = stdin, 1 = stdout, 2 = stderr, 3 = error/resize
+                    // Read into a larger buffer to handle the channel byte and full message
+                    var tempBuffer = new byte[Math.Max(count + 1, 8192)];
+                    var segment = new ArraySegment<byte>(tempBuffer);
+                    var result = await _webSocket.ReceiveAsync(segment, cancellationToken);
+
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        _logger.LogDebug("WebSocket closed for {FilePath} from pod {PodName}. Total bytes read: {TotalBytes}",
+                            _filePath, _podName, _totalBytesRead);
+                        return 0; // End of stream
+                    }
+
+                    if (result.Count == 0)
+                    {
+                        // Empty message, continue reading
+                        continue;
+                    }
+
+                    // First byte is the channel
+                    var channel = tempBuffer[0];
+                    
+                    // Skip messages from non-stdout channels (like stderr)
+                    if (channel != 1)
+                    {
+                        // This is stderr or another channel, skip it
+                        continue;
+                    }
+
+                    // Data starts from byte 1 (after channel byte)
+                    if (result.Count < 2)
+                    {
+                        // Only channel byte, no actual data - continue reading
+                        continue;
+                    }
+
+                    var dataLength = result.Count - 1; // Exclude channel byte
+                    var bytesToCopy = Math.Min(dataLength, count);
+                    
+                    // Copy data (excluding channel byte) to output buffer
+                    Array.Copy(tempBuffer, 1, buffer, offset, bytesToCopy);
+                    
+                    _totalBytesRead += bytesToCopy;
+                    
+                    if (_totalBytesRead % (1024 * 1024) == 0 || _totalBytesRead < 1024) // Log every 1MB or first KB
+                    {
+                        _logger.LogDebug("Downloaded {TotalBytes} bytes from {FilePath}", _totalBytesRead, _filePath);
+                    }
+                    
+                    return bytesToCopy;
                 }
-
-                // First byte is the channel (1 = stdout, which contains our file data)
-                if (result.Count < 2)
+                catch (WebSocketException ex) when (ex.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely)
                 {
-                    // No actual data, just channel byte
+                    _logger.LogDebug("WebSocket connection closed prematurely for {FilePath}. Total bytes read: {TotalBytes}",
+                        _filePath, _totalBytesRead);
                     return 0;
                 }
-
-                var channel = tempBuffer[0];
-                var dataLength = result.Count - 1; // Exclude channel byte
-                
-                // Copy data (excluding channel byte) to output buffer
-                Array.Copy(tempBuffer, 1, buffer, offset, dataLength);
-                
-                _totalBytesRead += dataLength;
-                
-                if (_totalBytesRead % (1024 * 1024) == 0) // Log every 1MB
+                catch (Exception ex)
                 {
-                    _logger.LogDebug("Downloaded {TotalBytes} bytes from {FilePath} (channel: {Channel})",
-                        _totalBytesRead, _filePath, channel);
+                    _logger.LogError(ex, "Error reading from WebSocket for {FilePath} from pod {PodName}. Total bytes read: {TotalBytes}",
+                        _filePath, _podName, _totalBytesRead);
+                    return 0;
                 }
-                
-                return dataLength;
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error reading from WebSocket for {FilePath} from pod {PodName}. Total bytes read: {TotalBytes}",
-                    _filePath, _podName, _totalBytesRead);
-                return 0;
-            }
+            
+            return 0; // WebSocket is not open
         }
 
         public override void Flush() { }

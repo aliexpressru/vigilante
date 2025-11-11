@@ -1103,7 +1103,7 @@ class VigilanteDashboard {
                     'Disk',
                     null,
                     node.podName, 
-                    node.podNamespace || 'default'
+                    node.podNamespace || 'qdrant'
                 );
                 
                 const recoverBtn = document.createElement('button');
@@ -1116,7 +1116,7 @@ class VigilanteDashboard {
                 deleteBtn.className = 'action-button action-button-danger action-button-sm';
                 deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
                 deleteBtn.title = 'Delete this snapshot';
-                deleteBtn.onclick = () => this.deleteSnapshotFromNode(node.podName, node.podNamespace || 'default', collection.collectionName, node.snapshotName);
+                deleteBtn.onclick = () => this.deleteSnapshotFromNode(node.podName, node.podNamespace || 'qdrant', collection.collectionName, node.snapshotName);
                 
                 actionsContainer.appendChild(downloadApiBtn);
                 actionsContainer.appendChild(downloadDiskBtn);
