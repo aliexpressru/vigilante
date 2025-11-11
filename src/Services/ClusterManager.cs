@@ -791,7 +791,7 @@ public class ClusterManager(
         return await collectionService.RecoverCollectionFromSnapshotAsync(nodeUrl, collectionName, snapshotName, cancellationToken);
     }
 
-    public async Task<bool> RecoverCollectionFromUploadedSnapshotAsync(
+    public async Task<(bool Success, string? Error)> RecoverCollectionFromUploadedSnapshotAsync(
         string nodeUrl,
         string collectionName,
         Stream snapshotData,

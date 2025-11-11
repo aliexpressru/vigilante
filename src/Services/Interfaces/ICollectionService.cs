@@ -110,7 +110,7 @@ public interface ICollectionService
     /// <summary>
     /// Recovers a collection from an uploaded snapshot on a specific node
     /// </summary>
-    Task<bool> RecoverCollectionFromUploadedSnapshotAsync(
+    Task<(bool Success, string? Error)> RecoverCollectionFromUploadedSnapshotAsync(
         string nodeUrl,
         string collectionName,
         Stream snapshotData,

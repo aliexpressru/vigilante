@@ -481,7 +481,7 @@ public class CollectionService : ICollectionService
             return false;
         }
     }
-    public async Task<bool> RecoverCollectionFromUploadedSnapshotAsync(
+    public async Task<(bool Success, string? Error)> RecoverCollectionFromUploadedSnapshotAsync(
         string nodeUrl,
         string collectionName,
         Stream snapshotData,
@@ -489,10 +489,16 @@ public class CollectionService : ICollectionService
     {
         try
         {
-            _logger.LogInformation("Recovering collection {CollectionName} from uploaded snapshot on node {NodeUrl}", 
-                collectionName, nodeUrl);
+            _logger.LogInformation("Starting recovery of collection {CollectionName} from uploaded snapshot on node {NodeUrl}. Stream position: {Position}, CanSeek: {CanSeek}", 
+                collectionName, nodeUrl, snapshotData.Position, snapshotData.CanSeek);
+            
             var uri = new Uri(nodeUrl);
-            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            
+            // Use client with infinite timeout for uploading large snapshots
+            var qdrantClient = _clientFactory.CreateClientWithInfiniteTimeout(uri.Host, uri.Port, _options.ApiKey);
+            
+            _logger.LogInformation("Sending snapshot to Qdrant node {NodeUrl} for collection {CollectionName}...", 
+                nodeUrl, collectionName);
             
             var result = await qdrantClient.RecoverCollectionFromUploadedSnapshot(
                 collectionName, 
@@ -500,23 +506,27 @@ public class CollectionService : ICollectionService
                 cancellationToken,
                 isWaitForResult: false);
             
+            _logger.LogInformation("Received response from Qdrant node {NodeUrl} for collection {CollectionName}", 
+                nodeUrl, collectionName);
+            
             if (result.IsAcceptedOrSuccess())
             {
                 var statusText = result.IsAccepted() ? "recovery accepted" : "recovered successfully";
                 _logger.LogInformation("✅ Collection {CollectionName} {StatusText} from uploaded snapshot on node {NodeUrl}", 
                     collectionName, statusText, nodeUrl);
-                return true;
+                return (true, null);
             }
             
+            var error = result?.Status?.Error ?? "Unknown error";
             _logger.LogError("Failed to recover collection {CollectionName} from uploaded snapshot: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
-            return false;
+                collectionName, error);
+            return (false, error);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to recover collection {CollectionName} from uploaded snapshot on node {NodeUrl}",
                 collectionName, nodeUrl);
-            return false;
+            return (false, $"Exception: {ex.Message}");
         }
     }
 

@@ -512,8 +512,9 @@ public class ClusterController(
                 });
             }
 
-            using var snapshotStream = request.SnapshotFile.OpenReadStream();
-            var success = await clusterManager.RecoverCollectionFromUploadedSnapshotAsync(
+            // Open stream without buffering the entire file
+            await using var snapshotStream = request.SnapshotFile.OpenReadStream();
+            var (success, error) = await clusterManager.RecoverCollectionFromUploadedSnapshotAsync(
                 request.NodeUrl,
                 request.CollectionName,
                 snapshotStream,
@@ -525,7 +526,7 @@ public class ClusterController(
                 Message = success
                     ? $"Collection '{request.CollectionName}' recovered successfully from uploaded snapshot on {request.NodeUrl}"
                     : $"Failed to recover collection '{request.CollectionName}' from uploaded snapshot on {request.NodeUrl}",
-                Error = success ? null : "Recovery failed"
+                Error = success ? null : error
             };
 
             return success ? Ok(response) : StatusCode(500, response);

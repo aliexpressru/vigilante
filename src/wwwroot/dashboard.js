@@ -1513,6 +1513,17 @@ class VigilanteDashboard {
         });
         details.appendChild(dashboardBtn);
 
+        // Upload Snapshot to Node button
+        const uploadToNodeBtn = document.createElement('button');
+        uploadToNodeBtn.className = 'upload-to-node-button';
+        uploadToNodeBtn.innerHTML = '<i class="fas fa-upload"></i> Upload Snapshot';
+        uploadToNodeBtn.title = 'Upload snapshot to this node';
+        uploadToNodeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.showUploadToNodeDialog(node.url, node.podName, node.namespace);
+        });
+        details.appendChild(uploadToNodeBtn);
+
         card.appendChild(header);
         card.appendChild(details);
 
@@ -2078,6 +2089,216 @@ class VigilanteDashboard {
                 modal.remove();
             }
         });
+    }
+
+    showUploadToNodeDialog(nodeUrl, podName, namespace) {
+        // Create modal dialog
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h3>Upload Snapshot to Node</h3>
+                <p>Node: ${nodeUrl}</p>
+                <p class="modal-description">Upload a snapshot to create or recover a collection on this node</p>
+                <form id="uploadToNodeForm">
+                    <div class="form-group">
+                        <label for="collectionNameInput">Collection Name:</label>
+                        <input type="text" id="collectionNameInput" placeholder="Enter collection name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="snapshotFileInput">Snapshot File:</label>
+                        <input type="file" id="snapshotFileInput" accept=".snapshot" required>
+                    </div>
+                    <div class="modal-buttons">
+                        <button type="submit" class="btn-primary">Upload & Recover</button>
+                        <button type="button" class="btn-secondary" id="cancelUploadToNode">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Handle form submission
+        document.getElementById('uploadToNodeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const collectionNameInput = document.getElementById('collectionNameInput');
+            const fileInput = document.getElementById('snapshotFileInput');
+            const collectionName = collectionNameInput.value.trim();
+            const file = fileInput.files[0];
+
+            if (!collectionName) {
+                this.showToast('Please enter a collection name', 'warning', 'Missing Collection Name');
+                return;
+            }
+
+            if (!file) {
+                this.showToast('Please select a snapshot file', 'warning', 'No File Selected');
+                return;
+            }
+
+            modal.remove();
+
+            const toastId = this.showToast(
+                `Preparing to upload snapshot...`,
+                'info',
+                `Uploading to ${collectionName}`,
+                0,
+                true
+            );
+
+            try {
+                const formData = new FormData();
+                formData.append('nodeUrl', nodeUrl);
+                formData.append('collectionName', collectionName);
+                formData.append('snapshotFile', file);
+
+                // Use XMLHttpRequest for upload progress tracking
+                const xhr = new XMLHttpRequest();
+
+                // Track upload progress
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        this.updateToast(
+                            toastId,
+                            `${percent}% (${this.formatSize(e.loaded)} / ${this.formatSize(e.total)})`,
+                            'info',
+                            `Uploading snapshot to ${collectionName}`,
+                            percent,
+                            false
+                        );
+                    } else {
+                        this.updateToast(
+                            toastId,
+                            `${this.formatSize(e.loaded)} uploaded...`,
+                            'info',
+                            `Uploading snapshot to ${collectionName}`,
+                            null,
+                            false
+                        );
+                    }
+                });
+
+                // When upload completes, show processing status
+                xhr.upload.addEventListener('load', () => {
+                    this.updateToast(
+                        toastId,
+                        'Upload complete. Processing snapshot on Qdrant node...',
+                        'info',
+                        `Processing ${collectionName}`,
+                        100,
+                        false
+                    );
+                });
+
+                // Handle completion
+                xhr.addEventListener('load', () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        const result = JSON.parse(xhr.responseText);
+                        
+                        if (result.success) {
+                            this.updateToast(
+                                toastId,
+                                result.message || `Snapshot uploaded successfully. Recovery is running in background.`,
+                                'success',
+                                `Collection '${collectionName}'`,
+                                100,
+                                true
+                            );
+                            
+                            // Refresh after a delay
+                            setTimeout(() => this.refresh(), 3000);
+                        } else {
+                            this.updateToast(
+                                toastId,
+                                result.message || 'Failed to upload snapshot',
+                                'error',
+                                'Upload Failed',
+                                null,
+                                true
+                            );
+                        }
+                    } else {
+                        // Try to parse error response
+                        let errorMessage = `HTTP ${xhr.status}: ${xhr.statusText}`;
+                        try {
+                            const errorData = JSON.parse(xhr.responseText);
+                            if (errorData.errors) {
+                                const errors = Object.values(errorData.errors).flat();
+                                errorMessage = errors.join(', ');
+                            } else if (errorData.message) {
+                                errorMessage = errorData.message;
+                            }
+                        } catch (e) {
+                            // Use default error message
+                        }
+                        
+                        this.updateToast(
+                            toastId,
+                            errorMessage,
+                            'error',
+                            'Upload Failed',
+                            null,
+                            true
+                        );
+                    }
+                });
+
+                // Handle errors
+                xhr.addEventListener('error', () => {
+                    this.updateToast(
+                        toastId,
+                        'Network error occurred during upload',
+                        'error',
+                        'Upload Failed',
+                        null,
+                        true
+                    );
+                });
+
+                xhr.addEventListener('abort', () => {
+                    this.updateToast(
+                        toastId,
+                        'Upload was cancelled',
+                        'warning',
+                        'Upload Cancelled',
+                        null,
+                        true
+                    );
+                });
+
+                // Send request
+                xhr.open('POST', this.recoverFromUploadedSnapshotEndpoint);
+                xhr.send(formData);
+            } catch (error) {
+                this.updateToast(
+                    toastId,
+                    error.message,
+                    'error',
+                    'Error Uploading Snapshot',
+                    null,
+                    true
+                );
+            }
+        });
+
+        // Handle cancel
+        document.getElementById('cancelUploadToNode').addEventListener('click', () => {
+            modal.remove();
+        });
+
+        // Close on overlay click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+
+        // Focus on collection name input
+        setTimeout(() => {
+            document.getElementById('collectionNameInput').focus();
+        }, 100);
     }
 }
 

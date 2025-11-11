@@ -9,6 +9,14 @@ AppContext.SetData("System.Net.SocketsHttpHandler.MaxConnectionsPerServer", 10);
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure Kestrel for large file uploads (no size limit)
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxRequestBodySize = null; // No limit on request body size
+    serverOptions.Limits.MinRequestBodyDataRate = null; // Allow slow uploads for large files
+    serverOptions.Limits.MinResponseDataRate = null; // Allow slow downloads for large files
+});
+
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)

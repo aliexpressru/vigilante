@@ -21,4 +21,14 @@ public class DefaultQdrantClientFactory : IQdrantClientFactory
             ? new QdrantHttpClient(host, port)
             : new QdrantHttpClient(host, port, apiKey: apiKey));
     }
+
+    public IQdrantHttpClient CreateClientWithInfiniteTimeout(string host, int port, string? apiKey = null)
+    {
+        // Use separate cache key with :infinite suffix for clients with infinite timeout
+        var key = $"{host}:{port}:{apiKey ?? "no-key"}:infinite";
+        
+        return _clientCache.GetOrAdd(key, string.IsNullOrEmpty(apiKey)
+            ? new QdrantHttpClient(host, port, httpClientTimeout: Timeout.InfiniteTimeSpan)
+            : new QdrantHttpClient(host, port, apiKey: apiKey, httpClientTimeout: Timeout.InfiniteTimeSpan));
+    }
 }
