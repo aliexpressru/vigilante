@@ -73,6 +73,17 @@ public class PodCommandExecutor : IPodCommandExecutor
     // - "echo 'deleted'": Print 'deleted' if file not found
     private const string CheckFileExistsCommand = "test -f {0} && echo 'exists' || echo 'deleted'";
 
+    // Command: cat {path} 2>/dev/null || echo ''
+    // - "cat {path}": Read file contents
+    // - "2>/dev/null": Redirect errors to null (suppress error messages)
+    // - "||": Execute next command if previous fails
+    // - "echo ''": Return empty string if file not found (prevents error)
+    private const string GetFileContentCommand = "cat {0} 2>/dev/null || echo ''";
+
+    // Command: cat {path}
+    // - "cat {path}": Stream file contents to stdout (for binary streaming)
+    private const string StreamFileCommand = "cat {0}";
+
     public PodCommandExecutor(IKubernetes kubernetes, ILogger<PodCommandExecutor> logger)
     {
         _kubernetes = kubernetes;
@@ -253,6 +264,37 @@ public class PodCommandExecutor : IPodCommandExecutor
     }
 
     /// <summary>
+    /// Gets content of a file from pod
+    /// </summary>
+    public async Task<string?> GetFileContentAsync(
+        string podName,
+        string podNamespace,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogDebug("Reading file content from {FilePath} on pod {PodName}", filePath, podName);
+            
+            var command = string.Format(GetFileContentCommand, filePath);
+            var content = await ExecuteCommandAsync(podName, podNamespace, command, cancellationToken);
+            
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                _logger.LogDebug("File not found or empty at {FilePath}", filePath);
+                return null;
+            }
+            
+            return content.Trim();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read file content from {FilePath}", filePath);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Downloads a file from a pod as a stream using cat command
     /// </summary>
     public async Task<Stream?> DownloadFileAsync(
@@ -267,7 +309,7 @@ public class PodCommandExecutor : IPodCommandExecutor
                 filePath, podName, podNamespace);
 
             // Use cat to stream file contents directly
-            var command = $"cat {filePath}";
+            var command = string.Format(StreamFileCommand, filePath);
             
             var webSocket = await _kubernetes.WebSocketNamespacedPodExecAsync(
                 podName,
@@ -303,6 +345,9 @@ public class PodCommandExecutor : IPodCommandExecutor
         private readonly string _podName;
         private bool _disposed;
         private long _totalBytesRead;
+        private byte[] _leftoverBuffer = Array.Empty<byte>();
+        private int _leftoverOffset;
+        private int _leftoverCount;
 
         public WebSocketStream(WebSocket webSocket, ILogger logger, string filePath, string podName)
         {
@@ -329,14 +374,25 @@ public class PodCommandExecutor : IPodCommandExecutor
 
         public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
+            // First, return any leftover data from previous read
+            if (_leftoverCount > 0)
+            {
+                var bytesToCopy = Math.Min(_leftoverCount, count);
+                Array.Copy(_leftoverBuffer, _leftoverOffset, buffer, offset, bytesToCopy);
+                _leftoverOffset += bytesToCopy;
+                _leftoverCount -= bytesToCopy;
+                _totalBytesRead += bytesToCopy;
+                return bytesToCopy;
+            }
+
             while (_webSocket.State == WebSocketState.Open)
             {
                 try
                 {
                     // Kubernetes WebSocket uses a channel prefix (first byte):
                     // 0 = stdin, 1 = stdout, 2 = stderr, 3 = error/resize
-                    // Read into a larger buffer to handle the channel byte and full message
-                    var tempBuffer = new byte[Math.Max(count + 1, 8192)];
+                    // Read into a large buffer to handle complete WebSocket message
+                    var tempBuffer = new byte[65536]; // 64KB buffer for WebSocket messages
                     var segment = new ArraySegment<byte>(tempBuffer);
                     var result = await _webSocket.ReceiveAsync(segment, cancellationToken);
 
@@ -359,7 +415,12 @@ public class PodCommandExecutor : IPodCommandExecutor
                     // Skip messages from non-stdout channels (like stderr)
                     if (channel != 1)
                     {
-                        // This is stderr or another channel, skip it
+                        // This is stderr or another channel, log it and skip
+                        if (channel == 2 && result.Count > 1)
+                        {
+                            var stderrMessage = Encoding.UTF8.GetString(tempBuffer, 1, result.Count - 1);
+                            _logger.LogWarning("stderr from {PodName}: {Message}", _podName, stderrMessage.Trim());
+                        }
                         continue;
                     }
 
@@ -377,6 +438,18 @@ public class PodCommandExecutor : IPodCommandExecutor
                     Array.Copy(tempBuffer, 1, buffer, offset, bytesToCopy);
                     
                     _totalBytesRead += bytesToCopy;
+                    
+                    // If we have more data than requested, store it in leftover buffer
+                    if (dataLength > bytesToCopy)
+                    {
+                        var leftoverSize = dataLength - bytesToCopy;
+                        _leftoverBuffer = new byte[leftoverSize];
+                        Array.Copy(tempBuffer, 1 + bytesToCopy, _leftoverBuffer, 0, leftoverSize);
+                        _leftoverOffset = 0;
+                        _leftoverCount = leftoverSize;
+                        
+                        _logger.LogDebug("Stored {LeftoverBytes} bytes in leftover buffer", leftoverSize);
+                    }
                     
                     if (_totalBytesRead % (1024 * 1024) == 0 || _totalBytesRead < 1024) // Log every 1MB or first KB
                     {

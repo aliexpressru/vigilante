@@ -46,6 +46,15 @@ public interface IPodCommandExecutor
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Gets content of a text file from a pod
+    /// </summary>
+    Task<string?> GetFileContentAsync(
+        string podName,
+        string podNamespace,
+        string filePath,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Downloads a file from a pod as a stream
     /// </summary>
     Task<Stream?> DownloadFileAsync(

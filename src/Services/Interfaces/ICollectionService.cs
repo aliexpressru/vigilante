@@ -99,6 +99,14 @@ public interface ICollectionService
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Checks if a collection exists on a specific node
+    /// </summary>
+    Task<bool> CheckCollectionExistsAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Recovers a collection from a snapshot on a specific node
     /// </summary>
     Task<bool> RecoverCollectionFromSnapshotAsync(
@@ -107,14 +115,6 @@ public interface ICollectionService
         string snapshotName,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Recovers a collection from an uploaded snapshot on a specific node
-    /// </summary>
-    Task<(bool Success, string? Error)> RecoverCollectionFromUploadedSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        Stream snapshotData,
-        CancellationToken cancellationToken);
 
     /// <summary>
     /// Gets clustering information for a collection and enriches collection infos with shard data

@@ -779,6 +779,17 @@ public class ClusterManager(
         return await collectionService.DownloadSnapshotFromDiskAsync(podName, podNamespace, collectionName, snapshotName, cancellationToken);
     }
 
+    public async Task<bool> CheckCollectionExistsAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Checking if collection {CollectionName} exists on node {NodeUrl}", 
+            collectionName, nodeUrl);
+
+        return await collectionService.CheckCollectionExistsAsync(nodeUrl, collectionName, cancellationToken);
+    }
+
     public async Task<bool> RecoverCollectionFromSnapshotAsync(
         string nodeUrl,
         string collectionName,
@@ -791,17 +802,6 @@ public class ClusterManager(
         return await collectionService.RecoverCollectionFromSnapshotAsync(nodeUrl, collectionName, snapshotName, cancellationToken);
     }
 
-    public async Task<(bool Success, string? Error)> RecoverCollectionFromUploadedSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        Stream snapshotData,
-        CancellationToken cancellationToken)
-    {
-        logger.LogInformation("Recovering collection {CollectionName} from uploaded snapshot on node {NodeUrl}", 
-            collectionName, nodeUrl);
-
-        return await collectionService.RecoverCollectionFromUploadedSnapshotAsync(nodeUrl, collectionName, snapshotData, cancellationToken);
-    }
 
     public async Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(CancellationToken cancellationToken = default)
     {

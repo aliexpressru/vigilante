@@ -406,6 +406,57 @@ public class CollectionService : ICollectionService
         }
     }
 
+    private async Task<string?> GetSnapshotChecksumAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken)
+    {
+        if (_commandExecutor == null)
+        {
+            _logger.LogWarning("Kubernetes client not available, cannot get checksum");
+            return null;
+        }
+
+        try
+        {
+            var snapshotPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
+            var checksumPath = $"{snapshotPath}.checksum";
+            
+            _logger.LogInformation("Reading checksum from {ChecksumPath} on pod {PodName}", checksumPath, podName);
+            
+            var checksumContent = await _commandExecutor.GetFileContentAsync(
+                podName,
+                podNamespace,
+                checksumPath,
+                cancellationToken);
+
+            if (string.IsNullOrWhiteSpace(checksumContent))
+            {
+                _logger.LogWarning("No checksum file found for snapshot {SnapshotName}", snapshotName);
+                return null;
+            }
+
+            // Checksum file format: "<checksum> <filename>" or just "<checksum>"
+            var parts = checksumContent.Trim().Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length > 0)
+            {
+                var checksum = parts[0].Trim().ToLowerInvariant();
+                _logger.LogInformation("Found checksum for {SnapshotName}: {Checksum}", snapshotName, checksum);
+                return checksum;
+            }
+
+            _logger.LogWarning("Could not parse checksum from content: {Content}", checksumContent);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get checksum for snapshot {SnapshotName}", snapshotName);
+            return null;
+        }
+    }
+
     public async Task<Stream?> DownloadSnapshotFromDiskAsync(
         string podName,
         string podNamespace,
@@ -435,24 +486,81 @@ public class CollectionService : ICollectionService
         var snapshotPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
         _logger.LogInformation("Downloading from path: {Path}", snapshotPath);
         
+        // Get expected checksum first
+        var expectedChecksum = await GetSnapshotChecksumAsync(
+            podName,
+            effectiveNamespace,
+            collectionName,
+            snapshotName,
+            cancellationToken);
+
+        if (string.IsNullOrEmpty(expectedChecksum))
+        {
+            _logger.LogWarning("⚠️ No checksum available for snapshot {SnapshotName}, will download without validation", 
+                snapshotName);
+        }
+        else
+        {
+            _logger.LogInformation("Will validate snapshot against checksum: {Checksum}", expectedChecksum);
+        }
+        
         var fileStream = await _commandExecutor.DownloadFileAsync(
             podName, 
             effectiveNamespace, 
             snapshotPath, 
             cancellationToken);
 
-        if (fileStream != null)
-        {
-            _logger.LogInformation("✅ Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
-                snapshotName, podName, effectiveNamespace);
-        }
-        else
+        if (fileStream == null)
         {
             _logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName} in namespace {Namespace}", 
                 snapshotName, podName, effectiveNamespace);
+            return null;
+        }
+
+        _logger.LogInformation("✅ Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
+            snapshotName, podName, effectiveNamespace);
+
+        // Wrap stream with checksum validation if we have expected checksum
+        if (!string.IsNullOrEmpty(expectedChecksum))
+        {
+            var validatingStream = new ChecksumValidatingStream(
+                fileStream, 
+                expectedChecksum, 
+                snapshotName, 
+                _logger);
+            
+            return validatingStream;
         }
 
         return fileStream;
+    }
+
+    public async Task<bool> CheckCollectionExistsAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Checking if collection {CollectionName} exists on node {NodeUrl}", 
+                collectionName, nodeUrl);
+            
+            var uri = new Uri(nodeUrl);
+            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            
+            var result = await qdrantClient.GetCollectionInfo(collectionName, cancellationToken);
+            
+            var exists = result?.Status?.IsSuccess == true;
+            _logger.LogInformation("Collection {CollectionName} exists: {Exists}", collectionName, exists);
+            
+            return exists;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error checking if collection {CollectionName} exists on node {NodeUrl}, assuming it doesn't exist", 
+                collectionName, nodeUrl);
+            return false;
+        }
     }
 
     public async Task<bool> RecoverCollectionFromSnapshotAsync(
@@ -490,54 +598,6 @@ public class CollectionService : ICollectionService
             _logger.LogError(ex, "Failed to recover collection {CollectionName} from snapshot {SnapshotName} on node {NodeUrl}", 
                 collectionName, snapshotName, nodeUrl);
             return false;
-        }
-    }
-    public async Task<(bool Success, string? Error)> RecoverCollectionFromUploadedSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        Stream snapshotData,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogInformation("Starting recovery of collection {CollectionName} from uploaded snapshot on node {NodeUrl}. Stream position: {Position}, CanSeek: {CanSeek}", 
-                collectionName, nodeUrl, snapshotData.Position, snapshotData.CanSeek);
-            
-            var uri = new Uri(nodeUrl);
-            
-            // Use client with infinite timeout for uploading large snapshots
-            var qdrantClient = _clientFactory.CreateClientWithInfiniteTimeout(uri.Host, uri.Port, _options.ApiKey);
-            
-            _logger.LogInformation("Sending snapshot to Qdrant node {NodeUrl} for collection {CollectionName}...", 
-                nodeUrl, collectionName);
-            
-            var result = await qdrantClient.RecoverCollectionFromUploadedSnapshot(
-                collectionName, 
-                snapshotData, 
-                cancellationToken,
-                isWaitForResult: false);
-            
-            _logger.LogInformation("Received response from Qdrant node {NodeUrl} for collection {CollectionName}", 
-                nodeUrl, collectionName);
-            
-            if (result.IsAcceptedOrSuccess())
-            {
-                var statusText = result.IsAccepted() ? "recovery accepted" : "recovered successfully";
-                _logger.LogInformation("✅ Collection {CollectionName} {StatusText} from uploaded snapshot on node {NodeUrl}", 
-                    collectionName, statusText, nodeUrl);
-                return (true, null);
-            }
-            
-            var error = result?.Status?.Error ?? "Unknown error";
-            _logger.LogError("Failed to recover collection {CollectionName} from uploaded snapshot: {Error}",
-                collectionName, error);
-            return (false, error);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to recover collection {CollectionName} from uploaded snapshot on node {NodeUrl}",
-                collectionName, nodeUrl);
-            return (false, $"Exception: {ex.Message}");
         }
     }
 
@@ -835,3 +895,4 @@ public class CollectionService : ICollectionService
             cancellationToken);
     }
 }
+

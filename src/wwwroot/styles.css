@@ -1559,6 +1559,38 @@ body {
     font-size: 0.85rem;
 }
 
+/* Create Snapshot Section in Collections Overview */
+.create-snapshot-section {
+    margin-top: 16px;
+    padding: 12px;
+    text-align: center;
+}
+
+.create-snapshot-section .create-snapshot-btn {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.create-snapshot-section .create-snapshot-btn:hover {
+    background: #5568d3;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.create-snapshot-section .create-snapshot-btn i {
+    font-size: 1rem;
+}
+
 /* Snapshots Section */
 .snapshots-section {
     margin-top: 16px;
@@ -2158,12 +2190,12 @@ body {
 }
 
 /* Column widths for better layout */
-.nodes-table th:nth-child(1) { width: 16%; } /* Node URL - расширена */
-.nodes-table th:nth-child(2) { width: 10%; } /* Peer ID */
-.nodes-table th:nth-child(3) { width: 10%; } /* Pod */
-.nodes-table th:nth-child(4) { width: 39%; } /* Snapshot Name */
+.nodes-table th:nth-child(1) { width: 15%; } /* Node URL */
+.nodes-table th:nth-child(2) { width: 10%; }  /* Peer ID */
+.nodes-table th:nth-child(3) { width: 10%; }  /* Pod */
+.nodes-table th:nth-child(4) { width: 40%; } /* Snapshot Name */
 .nodes-table th:nth-child(5) { width: 8%; }  /* Size */
-.nodes-table th:nth-child(6) { width: 17%; } /* Actions */
+.nodes-table th:nth-child(6) { width: 17%; } /* Actions - 3 кнопки */
 
 /* Align Actions header to the right */
 .nodes-table th:nth-child(6) {
@@ -2208,6 +2240,8 @@ body {
 .nodes-table td:nth-child(6) {
     white-space: nowrap;
     text-align: right;
+    min-width: 160px;
+    width: auto;
 }
 
 .nodes-table .snapshot-actions-cell {
@@ -2215,6 +2249,8 @@ body {
     gap: 4px;
     align-items: center;
     justify-content: flex-end;
+    flex-wrap: nowrap;
+    min-width: fit-content;
 }
 
 /* Action buttons for snapshots */
@@ -2289,27 +2325,72 @@ body {
     cursor: not-allowed;
 }
 
+/* Responsive adjustments for smaller screens */
+@media (max-width: 1400px) {
+    .nodes-table {
+        font-size: 0.75rem;
+    }
+    
+    .nodes-table th,
+    .nodes-table td {
+        padding: 6px 8px;
+    }
+    
+    .action-button-sm {
+        padding: 3px 6px;
+        font-size: 0.65rem;
+        height: 24px;
+    }
+    
+    .nodes-table th:nth-child(1) { width: 12%; }
+    .nodes-table th:nth-child(2) { width: 8%; }
+    .nodes-table th:nth-child(3) { width: 8%; }
+    .nodes-table th:nth-child(4) { width: 34%; }
+    .nodes-table th:nth-child(5) { width: 8%; }
+    .nodes-table th:nth-child(6) { width: 30%; }
+}
+
+@media (max-width: 1200px) {
+    .nodes-table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+    
+    .action-button-sm {
+        padding: 3px 5px;
+        font-size: 0.6rem;
+        height: 22px;
+    }
+    
+    .snapshot-actions-cell {
+        gap: 3px;
+    }
+}
+
 /* Action button small variant */
 .action-button-sm {
-    padding: 6px;
-    font-size: 0.75rem;
+    padding: 4px 8px;
+    font-size: 0.7rem;
     margin: 0;
-    min-width: 28px;
-    height: 28px;
+    min-width: auto;
+    height: 26px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .action-button-sm i {
     font-size: 0.8rem;
     margin: 0;
 }
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
+
 .action-button:active {
     transform: translateY(0);
 }
+
 .action-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;

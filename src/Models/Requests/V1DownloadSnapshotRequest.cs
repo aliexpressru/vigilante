@@ -1,9 +1,7 @@
-using Vigilante.Models.Enums;
-
 namespace Vigilante.Models.Requests;
 
 /// <summary>
-/// Request to download a snapshot
+/// Request to download a snapshot (unified endpoint that tries API first, then falls back to Disk)
 /// </summary>
 public class V1DownloadSnapshotRequest
 {
@@ -18,23 +16,18 @@ public class V1DownloadSnapshotRequest
     public required string SnapshotName { get; set; }
     
     /// <summary>
-    /// Type of download operation (API or Disk)
+    /// Node URL for download
     /// </summary>
-    public required SnapshotDownloadType DownloadType { get; set; }
+    public required string NodeUrl { get; set; }
     
     /// <summary>
-    /// Node URL for API download (required when DownloadType = Api)
+    /// Pod name for fallback disk download
     /// </summary>
-    public string? NodeUrl { get; set; }
+    public required string PodName { get; set; }
     
     /// <summary>
-    /// Pod name for disk download (required when DownloadType = Disk)
+    /// Pod namespace for fallback disk download
     /// </summary>
-    public string? PodName { get; set; }
-    
-    /// <summary>
-    /// Pod namespace for disk download (required when DownloadType = Disk)
-    /// </summary>
-    public string? PodNamespace { get; set; }
+    public required string PodNamespace { get; set; }
 }
 

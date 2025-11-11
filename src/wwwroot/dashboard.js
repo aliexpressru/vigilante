@@ -11,14 +11,10 @@ class VigilanteDashboard {
         this.deleteSnapshotEndpoint = '/api/v1/cluster/delete-snapshot';
         this.downloadSnapshotEndpoint = '/api/v1/cluster/download-snapshot';
         this.recoverFromSnapshotEndpoint = '/api/v1/cluster/recover-from-snapshot';
-        this.recoverFromUploadedSnapshotEndpoint = '/api/v1/cluster/recover-from-uploaded-snapshot';
         this.refreshInterval = 0;
         this.intervalId = null;
-        this.openCollections = new Set();
         this.openSnapshots = new Set();
         this.selectedState = new Map();
-        this.deletionStatus = new Map(); // Track deletion status per collection
-        this.currentActiveNode = null; // Track currently active node
         this.toastIdCounter = 0; // Counter for unique toast IDs
         this.clusterIssues = []; // Issues from cluster/status
         this.collectionIssues = []; // Issues from collections-info
@@ -326,8 +322,8 @@ class VigilanteDashboard {
         peerButtonsContainer.innerHTML = '';
 
         Object.entries(collection.nodes)
-            .filter(([nodeKey, info]) => info.peerId && info.peerId !== nodeInfo.peerId)
-            .forEach(([nodeKey, info]) => {
+            .filter(([_, info]) => info.peerId && info.peerId !== nodeInfo.peerId)
+            .forEach(([_, info]) => {
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = 'peer-button';
@@ -371,7 +367,7 @@ class VigilanteDashboard {
 
     clearOtherNodesState(currentStateKey) {
         // Clear selection on all nodes except the current one
-        for (const [key, state] of this.selectedState.entries()) {
+        for (const [key, _] of this.selectedState.entries()) {
             if (key !== currentStateKey) {
                 const nodeDetails = document.querySelector(`[data-state-key="${key}"]`);
                 if (nodeDetails) {
@@ -567,18 +563,11 @@ class VigilanteDashboard {
                             moveChecked: false
                         };
                         
-                        // 1. Format size first (without label)
-                        let sizeHtml = '';
-                        if (nodeInfo.metrics.sizeBytes) {
-                            const formattedSize = this.formatSize(nodeInfo.metrics.sizeBytes);
-                            sizeHtml = `<div class="size-metric-standalone">${formattedSize}</div>`;
-                        }
-                        
-                        // 2. Get shards HTML (includes Target nodes, Shards, and action controls)
+                        // Get shards HTML (includes Target nodes, Shards, and action controls)
                         const shardsHtml = nodeInfo.metrics.shards ? 
                             this.formatMetricValue('shards', nodeInfo.metrics.shards, nodeInfo) : '';
                         
-                        // 3. Get transfers HTML
+                        // Get transfers HTML
                         let transfersHtml = '';
                         if (nodeInfo.metrics.outgoingTransfers) {
                             const transfersValue = this.formatMetricValue('outgoingTransfers', nodeInfo.metrics.outgoingTransfers, nodeInfo);
@@ -622,70 +611,14 @@ class VigilanteDashboard {
                             sizeForHeader = `<span class="node-size-badge">${formattedSize}</span>`;
                         }
                         
-                        // Generate snapshots HTML
-                        let snapshotsHtml = '';
-                        if (nodeInfo.metrics.snapshots && nodeInfo.metrics.snapshots.length > 0) {
-                            const snapshotsList = nodeInfo.metrics.snapshots.map(snapshot => 
-                                `<div class="snapshot-item">
-                                    <div class="snapshot-item-content">
-                                        <div class="snapshot-name-wrapper">
-                                            <i class="fas fa-camera snapshot-icon"></i>
-                                            <span class="snapshot-name" title="${snapshot}">${snapshot}</span>
-                                        </div>
-                                        <div class="snapshot-actions">
-                                            <button class="snapshot-download-api-btn" data-snapshot="${snapshot}" title="Download via API">
-                                                📥 API
-                                            </button>
-                                            <button class="snapshot-download-disk-btn" data-snapshot="${snapshot}" title="Download from Disk">
-                                                💾 Disk
-                                            </button>
-                                            <button class="snapshot-recover-btn" data-snapshot="${snapshot}" title="Recover from snapshot">
-                                                <i class="fas fa-undo"></i>
-                                            </button>
-                                            <button class="snapshot-delete-btn" data-snapshot="${snapshot}" title="Delete snapshot">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>`
-                            ).join('');
-                            
-                            snapshotsHtml = `
-                                <div class="snapshots-section">
-                                    <div class="snapshots-header">
-                                        <h5>📸 Snapshots (${nodeInfo.metrics.snapshots.length})</h5>
-                                        <div class="snapshot-header-actions">
-                                            <button class="create-snapshot-btn" title="Create new snapshot">
-                                                <i class="fas fa-plus"></i> Create
-                                            </button>
-                                            <button class="upload-snapshot-btn" title="Upload and recover from snapshot">
-                                                <i class="fas fa-upload"></i> Upload
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div class="snapshots-list">
-                                        ${snapshotsList}
-                                    </div>
-                                </div>
-                            `;
-                        } else {
-                            snapshotsHtml = `
-                                <div class="snapshots-section">
-                                    <div class="snapshots-header">
-                                        <h5>📸 Snapshots (0)</h5>
-                                        <div class="snapshot-header-actions">
-                                            <button class="create-snapshot-btn" title="Create new snapshot">
-                                                <i class="fas fa-plus"></i> Create
-                                            </button>
-                                            <button class="upload-snapshot-btn" title="Upload and recover from snapshot">
-                                                <i class="fas fa-upload"></i> Upload
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div class="snapshots-empty">No snapshots available</div>
-                                </div>
-                            `;
-                        }
+                        // Create Snapshot button only
+                        const createSnapshotHtml = `
+                            <div class="create-snapshot-section">
+                                <button class="create-snapshot-btn" title="Create new snapshot for this collection">
+                                    <i class="fas fa-camera"></i> Create Snapshot
+                                </button>
+                            </div>
+                        `;
                         
                         nodeDetails.innerHTML = `
                             <div class="node-info-header">
@@ -696,7 +629,7 @@ class VigilanteDashboard {
                             </div>
                             ${shardsHtml}
                             ${otherMetricsHtml ? `<dl class="other-metrics">${otherMetricsHtml}</dl>` : ''}
-                            ${snapshotsHtml}
+                            ${createSnapshotHtml}
                             <div class="node-deletion-controls">
                                 <button class="delete-api-button" data-collection="${collection.name}" data-node-url="${nodeInfo.nodeUrl || ''}" data-pod-name="${nodeInfo.podName || ''}" data-pod-namespace="${nodeInfo.podNamespace || ''}" title="Delete collection via API on this node">
                                     🗑️ API
@@ -833,7 +766,7 @@ class VigilanteDashboard {
                             });
                         }
 
-                        // Setup snapshot buttons
+                        // Setup create snapshot button
                         const createSnapshotBtn = nodeDetails.querySelector('.create-snapshot-btn');
                         if (createSnapshotBtn) {
                             createSnapshotBtn.addEventListener('click', async (e) => {
@@ -842,63 +775,6 @@ class VigilanteDashboard {
                             });
                         }
 
-                        const snapshotDownloadApiBtns = nodeDetails.querySelectorAll('.snapshot-download-api-btn');
-                        snapshotDownloadApiBtns.forEach(btn => {
-                            btn.addEventListener('click', async (e) => {
-                                e.stopPropagation();
-                                const snapshotName = btn.dataset.snapshot;
-                                await this.downloadSnapshot(
-                                    collection.name, 
-                                    snapshotName,
-                                    'API',
-                                    nodeInfo.nodeUrl,
-                                    null,
-                                    null
-                                );
-                            });
-                        });
-
-                        const snapshotDownloadDiskBtns = nodeDetails.querySelectorAll('.snapshot-download-disk-btn');
-                        snapshotDownloadDiskBtns.forEach(btn => {
-                            btn.addEventListener('click', async (e) => {
-                                e.stopPropagation();
-                                const snapshotName = btn.dataset.snapshot;
-                                await this.downloadSnapshot(
-                                    collection.name, 
-                                    snapshotName,
-                                    'Disk',
-                                    null,
-                                    nodeInfo.podName,
-                                    nodeInfo.podNamespace || 'qdrant'
-                                );
-                            });
-                        });
-
-                        const snapshotRecoverBtns = nodeDetails.querySelectorAll('.snapshot-recover-btn');
-                        snapshotRecoverBtns.forEach(btn => {
-                            btn.addEventListener('click', async (e) => {
-                                e.stopPropagation();
-                                const snapshotName = btn.dataset.snapshot;
-                                await this.recoverFromSnapshot(collection.name, snapshotName, nodeInfo.nodeUrl);
-                            });
-                        });
-
-                        const snapshotDeleteBtns = nodeDetails.querySelectorAll('.snapshot-delete-btn');
-                        snapshotDeleteBtns.forEach(btn => {
-                            btn.addEventListener('click', async (e) => {
-                                e.stopPropagation();
-                                const snapshotName = btn.dataset.snapshot;
-                                await this.deleteSnapshot(collection.name, snapshotName, nodeInfo.nodeUrl, false);
-                            });
-                        });
-
-                        const uploadSnapshotBtn = nodeDetails.querySelector('.upload-snapshot-btn');
-                        if (uploadSnapshotBtn) {
-                            uploadSnapshotBtn.addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                this.showUploadSnapshotDialog(collection.name, nodeInfo.nodeUrl);
-                            });
-                        }
 
                         detailsContent.appendChild(nodeDetails);
                     }
@@ -1057,9 +933,6 @@ class VigilanteDashboard {
             Object.values(collection.nodes).forEach(node => {
                 const nodeRow = document.createElement('tr');
                 // Escape quotes in snapshot name for onclick attributes
-                const escapedSnapshotName = node.snapshotName.replace(/'/g, "\\'");
-                const escapedCollectionName = collection.collectionName.replace(/'/g, "\\'");
-                
                 // Create cells
                 const cellNode = document.createElement('td');
                 cellNode.textContent = node.nodeUrl;
@@ -1080,28 +953,14 @@ class VigilanteDashboard {
                 const actionsContainer = document.createElement('div');
                 actionsContainer.className = 'snapshot-actions-cell';
                 
-                const downloadApiBtn = document.createElement('button');
-                downloadApiBtn.className = 'action-button action-button-primary action-button-sm';
-                downloadApiBtn.innerHTML = '📥 API';
-                downloadApiBtn.title = 'Download via API';
-                downloadApiBtn.onclick = () => this.downloadSnapshot(
+                const downloadBtn = document.createElement('button');
+                downloadBtn.className = 'action-button action-button-primary action-button-sm';
+                downloadBtn.innerHTML = '<i class="fas fa-download"></i> Download';
+                downloadBtn.title = 'Download snapshot (tries API first, falls back to Disk)';
+                downloadBtn.onclick = () => this.downloadSnapshot(
                     collection.collectionName, 
                     node.snapshotName, 
-                    'API',
-                    node.nodeUrl, 
-                    null, 
-                    null
-                );
-                
-                const downloadDiskBtn = document.createElement('button');
-                downloadDiskBtn.className = 'action-button action-button-info action-button-sm';
-                downloadDiskBtn.innerHTML = '💾 Disk';
-                downloadDiskBtn.title = 'Download from Disk';
-                downloadDiskBtn.onclick = () => this.downloadSnapshot(
-                    collection.collectionName, 
-                    node.snapshotName, 
-                    'Disk',
-                    null,
+                    node.nodeUrl,
                     node.podName, 
                     node.podNamespace || 'qdrant'
                 );
@@ -1118,8 +977,7 @@ class VigilanteDashboard {
                 deleteBtn.title = 'Delete this snapshot';
                 deleteBtn.onclick = () => this.deleteSnapshotFromNode(node.podName, node.podNamespace || 'qdrant', collection.collectionName, node.snapshotName);
                 
-                actionsContainer.appendChild(downloadApiBtn);
-                actionsContainer.appendChild(downloadDiskBtn);
+                actionsContainer.appendChild(downloadBtn);
                 actionsContainer.appendChild(recoverBtn);
                 actionsContainer.appendChild(deleteBtn);
                 cellActions.appendChild(actionsContainer);
@@ -1513,16 +1371,6 @@ class VigilanteDashboard {
         });
         details.appendChild(dashboardBtn);
 
-        // Upload Snapshot to Node button
-        const uploadToNodeBtn = document.createElement('button');
-        uploadToNodeBtn.className = 'upload-to-node-button';
-        uploadToNodeBtn.innerHTML = '<i class="fas fa-upload"></i> Upload Snapshot';
-        uploadToNodeBtn.title = 'Upload snapshot to this node';
-        uploadToNodeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.showUploadToNodeDialog(node.url, node.podName, node.namespace);
-        });
-        details.appendChild(uploadToNodeBtn);
 
         card.appendChild(header);
         card.appendChild(details);
@@ -1749,70 +1597,9 @@ class VigilanteDashboard {
         }
     }
 
-    async deleteSnapshot(collectionName, snapshotName, nodeUrl, onAllNodes = false) {
-        if (!confirm(`Are you sure you want to delete snapshot '${snapshotName}' for collection '${collectionName}'?`)) {
-            return;
-        }
-
-        const target = onAllNodes ? 'all nodes' : 'node';
+    async downloadSnapshot(collectionName, snapshotName, nodeUrl, podName, podNamespace) {
         const toastId = this.showToast(
-            `Deleting snapshot '${snapshotName}' from ${target}...`,
-            'info',
-            'Deleting Snapshot',
-            0,
-            true
-        );
-
-        try {
-            const requestBody = {
-                collectionName: collectionName,
-                snapshotName: snapshotName,
-                singleNode: !onAllNodes,
-                nodeUrl: onAllNodes ? null : nodeUrl
-            };
-
-            const response = await fetch(this.deleteSnapshotEndpoint, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                this.updateToast(
-                    toastId,
-                    result.message || 'Snapshot deletion accepted',
-                    'success',
-                    'Snapshot Deleted'
-                );
-                
-                // Refresh after a short delay
-                setTimeout(() => this.refresh(), 1000);
-            } else {
-                this.updateToast(
-                    toastId,
-                    result.message || 'Unknown error occurred',
-                    'error',
-                    'Failed to Delete Snapshot'
-                );
-            }
-        } catch (error) {
-            this.updateToast(
-                toastId,
-                error.message,
-                'error',
-                'Error Deleting Snapshot'
-            );
-        }
-    }
-
-    async downloadSnapshot(collectionName, snapshotName, downloadType, nodeUrl = null, podName = null, podNamespace = null) {
-        const typeLabel = downloadType === 'API' ? 'API' : 'Disk';
-        const toastId = this.showToast(
-            `Preparing download of '${snapshotName}' via ${typeLabel}...`,
+            `Preparing download of '${snapshotName}'...`,
             'info',
             'Downloading',
             0,
@@ -1823,15 +1610,10 @@ class VigilanteDashboard {
             const requestBody = {
                 collectionName: collectionName,
                 snapshotName: snapshotName,
-                downloadType: downloadType === 'API' ? 0 : 1, // 0=Api, 1=Disk
+                nodeUrl: nodeUrl,
+                podName: podName,
+                podNamespace: podNamespace
             };
-
-            if (downloadType === 'API') {
-                requestBody.nodeUrl = nodeUrl;
-            } else {
-                requestBody.podName = podName;
-                requestBody.podNamespace = podNamespace;
-            }
 
             const response = await fetch(this.downloadSnapshotEndpoint, {
                 method: 'POST',
@@ -1856,7 +1638,7 @@ class VigilanteDashboard {
                     toastId,
                     `0% (0 / ${this.formatSize(total)})`,
                     'info',
-                    `Downloading '${snapshotName}' via ${typeLabel}`,
+                    `Downloading '${snapshotName}'`,
                     0,
                     false
                 );
@@ -1865,7 +1647,7 @@ class VigilanteDashboard {
                     toastId,
                     `Downloading...`,
                     'info',
-                    `Downloading '${snapshotName}' via ${typeLabel}`,
+                    `Downloading '${snapshotName}'`,
                     null,
                     false
                 );
@@ -1891,7 +1673,7 @@ class VigilanteDashboard {
                         toastId,
                         `${percent}% (${this.formatSize(receivedLength)} / ${this.formatSize(total)})`,
                         'info',
-                        `Downloading '${snapshotName}' via ${typeLabel}`,
+                        `Downloading '${snapshotName}'`,
                         percent,
                         false
                     );
@@ -1900,7 +1682,7 @@ class VigilanteDashboard {
                         toastId,
                         `${this.formatSize(receivedLength)} received...`,
                         'info',
-                        `Downloading '${snapshotName}' via ${typeLabel}`,
+                        `Downloading '${snapshotName}'`,
                         null,
                         false
                     );
@@ -1924,7 +1706,7 @@ class VigilanteDashboard {
                 toastId,
                 `Downloaded successfully (${this.formatSize(receivedLength)})`,
                 'success',
-                `'${snapshotName}' via ${typeLabel}`,
+                `'${snapshotName}'`,
                 100,
                 true
             );
@@ -1936,369 +1718,6 @@ class VigilanteDashboard {
                 'Download Failed'
             );
         }
-    }
-
-    async recoverFromSnapshot(collectionName, snapshotName, nodeUrl) {
-        if (!confirm(`Are you sure you want to recover collection '${collectionName}' from snapshot '${snapshotName}'?\n\nThis will restore the collection data from the snapshot.`)) {
-            return;
-        }
-
-        const toastId = this.showToast(
-            `Recovering collection '${collectionName}' from snapshot '${snapshotName}'...`,
-            'info',
-            'Recovering Collection',
-            0,
-            true
-        );
-
-        try {
-            const requestBody = {
-                nodeUrl: nodeUrl,
-                collectionName: collectionName,
-                snapshotName: snapshotName
-            };
-
-            const response = await fetch(this.recoverFromSnapshotEndpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                this.updateToast(
-                    toastId,
-                    result.message || 'Collection recovery accepted. The process is running in background.',
-                    'success',
-                    'Recovery Accepted'
-                );
-                
-                // Refresh after a delay
-                setTimeout(() => this.refresh(), 2000);
-            } else {
-                this.updateToast(
-                    toastId,
-                    result.message || 'Unknown error occurred',
-                    'error',
-                    'Recovery Failed'
-                );
-            }
-        } catch (error) {
-            this.updateToast(
-                toastId,
-                error.message,
-                'error',
-                'Error Recovering Collection'
-            );
-        }
-    }
-
-    showUploadSnapshotDialog(collectionName, nodeUrl) {
-        // Create modal dialog
-        const modal = document.createElement('div');
-        modal.className = 'modal-overlay';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <h3>Upload Snapshot for ${collectionName}</h3>
-                <p>Node: ${nodeUrl}</p>
-                <form id="uploadSnapshotForm">
-                    <input type="file" id="snapshotFile" accept=".snapshot" required>
-                    <div class="modal-buttons">
-                        <button type="submit" class="btn-primary">Upload & Recover</button>
-                        <button type="button" class="btn-secondary" id="cancelUpload">Cancel</button>
-                    </div>
-                </form>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-
-        // Handle form submission
-        document.getElementById('uploadSnapshotForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const fileInput = document.getElementById('snapshotFile');
-            const file = fileInput.files[0];
-
-            if (!file) {
-                this.showToast('Please select a snapshot file', 'warning', 'No File Selected');
-                return;
-            }
-
-            modal.remove();
-
-            const toastId = this.showToast(
-                `Uploading and recovering collection '${collectionName}' from snapshot...`,
-                'info',
-                'Uploading Snapshot',
-                0,
-                true
-            );
-
-            try {
-                const formData = new FormData();
-                formData.append('nodeUrl', nodeUrl);
-                formData.append('collectionName', collectionName);
-                formData.append('snapshotFile', file);
-
-                const response = await fetch(this.recoverFromUploadedSnapshotEndpoint, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    this.updateToast(
-                        toastId,
-                        result.message || 'Snapshot uploaded and recovery accepted. The process is running in background.',
-                        'success',
-                        'Upload & Recovery Accepted'
-                    );
-                    
-                    // Refresh after a delay
-                    setTimeout(() => this.refresh(), 2000);
-                } else {
-                    this.updateToast(
-                        toastId,
-                        result.message || 'Unknown error occurred',
-                        'error',
-                        'Upload Failed'
-                    );
-                }
-            } catch (error) {
-                this.updateToast(
-                    toastId,
-                    error.message,
-                    'error',
-                    'Error Uploading Snapshot'
-                );
-            }
-        });
-
-        // Handle cancel
-        document.getElementById('cancelUpload').addEventListener('click', () => {
-            modal.remove();
-        });
-
-        // Close on overlay click
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.remove();
-            }
-        });
-    }
-
-    showUploadToNodeDialog(nodeUrl, podName, namespace) {
-        // Create modal dialog
-        const modal = document.createElement('div');
-        modal.className = 'modal-overlay';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <h3>Upload Snapshot to Node</h3>
-                <p>Node: ${nodeUrl}</p>
-                <p class="modal-description">Upload a snapshot to create or recover a collection on this node</p>
-                <form id="uploadToNodeForm">
-                    <div class="form-group">
-                        <label for="collectionNameInput">Collection Name:</label>
-                        <input type="text" id="collectionNameInput" placeholder="Enter collection name" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="snapshotFileInput">Snapshot File:</label>
-                        <input type="file" id="snapshotFileInput" accept=".snapshot" required>
-                    </div>
-                    <div class="modal-buttons">
-                        <button type="submit" class="btn-primary">Upload & Recover</button>
-                        <button type="button" class="btn-secondary" id="cancelUploadToNode">Cancel</button>
-                    </div>
-                </form>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-
-        // Handle form submission
-        document.getElementById('uploadToNodeForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const collectionNameInput = document.getElementById('collectionNameInput');
-            const fileInput = document.getElementById('snapshotFileInput');
-            const collectionName = collectionNameInput.value.trim();
-            const file = fileInput.files[0];
-
-            if (!collectionName) {
-                this.showToast('Please enter a collection name', 'warning', 'Missing Collection Name');
-                return;
-            }
-
-            if (!file) {
-                this.showToast('Please select a snapshot file', 'warning', 'No File Selected');
-                return;
-            }
-
-            modal.remove();
-
-            const toastId = this.showToast(
-                `Preparing to upload snapshot...`,
-                'info',
-                `Uploading to ${collectionName}`,
-                0,
-                true
-            );
-
-            try {
-                const formData = new FormData();
-                formData.append('nodeUrl', nodeUrl);
-                formData.append('collectionName', collectionName);
-                formData.append('snapshotFile', file);
-
-                // Use XMLHttpRequest for upload progress tracking
-                const xhr = new XMLHttpRequest();
-
-                // Track upload progress
-                xhr.upload.addEventListener('progress', (e) => {
-                    if (e.lengthComputable) {
-                        const percent = Math.round((e.loaded / e.total) * 100);
-                        this.updateToast(
-                            toastId,
-                            `${percent}% (${this.formatSize(e.loaded)} / ${this.formatSize(e.total)})`,
-                            'info',
-                            `Uploading snapshot to ${collectionName}`,
-                            percent,
-                            false
-                        );
-                    } else {
-                        this.updateToast(
-                            toastId,
-                            `${this.formatSize(e.loaded)} uploaded...`,
-                            'info',
-                            `Uploading snapshot to ${collectionName}`,
-                            null,
-                            false
-                        );
-                    }
-                });
-
-                // When upload completes, show processing status
-                xhr.upload.addEventListener('load', () => {
-                    this.updateToast(
-                        toastId,
-                        'Upload complete. Processing snapshot on Qdrant node...',
-                        'info',
-                        `Processing ${collectionName}`,
-                        100,
-                        false
-                    );
-                });
-
-                // Handle completion
-                xhr.addEventListener('load', () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        const result = JSON.parse(xhr.responseText);
-                        
-                        if (result.success) {
-                            this.updateToast(
-                                toastId,
-                                result.message || `Snapshot uploaded successfully. Recovery is running in background.`,
-                                'success',
-                                `Collection '${collectionName}'`,
-                                100,
-                                true
-                            );
-                            
-                            // Refresh after a delay
-                            setTimeout(() => this.refresh(), 3000);
-                        } else {
-                            this.updateToast(
-                                toastId,
-                                result.message || 'Failed to upload snapshot',
-                                'error',
-                                'Upload Failed',
-                                null,
-                                true
-                            );
-                        }
-                    } else {
-                        // Try to parse error response
-                        let errorMessage = `HTTP ${xhr.status}: ${xhr.statusText}`;
-                        try {
-                            const errorData = JSON.parse(xhr.responseText);
-                            if (errorData.errors) {
-                                const errors = Object.values(errorData.errors).flat();
-                                errorMessage = errors.join(', ');
-                            } else if (errorData.message) {
-                                errorMessage = errorData.message;
-                            }
-                        } catch (e) {
-                            // Use default error message
-                        }
-                        
-                        this.updateToast(
-                            toastId,
-                            errorMessage,
-                            'error',
-                            'Upload Failed',
-                            null,
-                            true
-                        );
-                    }
-                });
-
-                // Handle errors
-                xhr.addEventListener('error', () => {
-                    this.updateToast(
-                        toastId,
-                        'Network error occurred during upload',
-                        'error',
-                        'Upload Failed',
-                        null,
-                        true
-                    );
-                });
-
-                xhr.addEventListener('abort', () => {
-                    this.updateToast(
-                        toastId,
-                        'Upload was cancelled',
-                        'warning',
-                        'Upload Cancelled',
-                        null,
-                        true
-                    );
-                });
-
-                // Send request
-                xhr.open('POST', this.recoverFromUploadedSnapshotEndpoint);
-                xhr.send(formData);
-            } catch (error) {
-                this.updateToast(
-                    toastId,
-                    error.message,
-                    'error',
-                    'Error Uploading Snapshot',
-                    null,
-                    true
-                );
-            }
-        });
-
-        // Handle cancel
-        document.getElementById('cancelUploadToNode').addEventListener('click', () => {
-            modal.remove();
-        });
-
-        // Close on overlay click
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.remove();
-            }
-        });
-
-        // Focus on collection name input
-        setTimeout(() => {
-            document.getElementById('collectionNameInput').focus();
-        }, 100);
     }
 }
 

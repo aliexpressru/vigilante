@@ -411,25 +411,54 @@ public class ClusterController(
     {
         try
         {
-            Stream? snapshotStream;
-            
-            if (request.DownloadType == Models.Enums.SnapshotDownloadType.Api)
-            {
-                // Download via API
-                snapshotStream = await clusterManager.DownloadCollectionSnapshotAsync(
-                    request.NodeUrl!,
-                    request.CollectionName,
-                    request.SnapshotName,
-                    cancellationToken);
+            logger.LogInformation("Starting unified download for snapshot {SnapshotName} of collection {CollectionName}", 
+                request.SnapshotName, request.CollectionName);
 
-                if (snapshotStream == null)
+            Stream? snapshotStream = null;
+            var downloadMethod = "unknown";
+
+            // First, check if collection exists in Qdrant
+            var collectionExists = await clusterManager.CheckCollectionExistsAsync(
+                request.NodeUrl!,
+                request.CollectionName,
+                cancellationToken);
+
+            if (collectionExists)
+            {
+                logger.LogInformation("Collection {CollectionName} exists, attempting download via API", request.CollectionName);
+                
+                // Try downloading via API
+                try
                 {
-                    return StatusCode(500, new { error = "Failed to download snapshot via API" });
+                    snapshotStream = await clusterManager.DownloadCollectionSnapshotAsync(
+                        request.NodeUrl!,
+                        request.CollectionName,
+                        request.SnapshotName,
+                        cancellationToken);
+
+                    if (snapshotStream != null)
+                    {
+                        downloadMethod = "API";
+                        logger.LogInformation("Successfully downloaded snapshot via API");
+                    }
+                }
+                catch (Exception apiEx)
+                {
+                    logger.LogWarning(apiEx, "Failed to download via API, will try disk");
+                    snapshotStream = null;
                 }
             }
-            else // Disk
+            else
             {
-                // Download from disk
+                logger.LogInformation("Collection {CollectionName} does not exist in Qdrant, will download from disk", 
+                    request.CollectionName);
+            }
+
+            // If API download failed or collection doesn't exist, try downloading from disk
+            if (snapshotStream == null)
+            {
+                logger.LogInformation("Attempting download from disk for snapshot {SnapshotName}", request.SnapshotName);
+                
                 snapshotStream = await clusterManager.DownloadSnapshotFromDiskAsync(
                     request.PodName!,
                     request.PodNamespace!,
@@ -437,11 +466,21 @@ public class ClusterController(
                     request.SnapshotName,
                     cancellationToken);
 
-                if (snapshotStream == null)
+                if (snapshotStream != null)
                 {
-                    return StatusCode(500, new { error = "Failed to download snapshot from disk" });
+                    downloadMethod = "Disk";
+                    logger.LogInformation("Successfully downloaded snapshot from disk");
                 }
             }
+
+            if (snapshotStream == null)
+            {
+                logger.LogError("Failed to download snapshot via both API and Disk");
+                return StatusCode(500, new { error = "Failed to download snapshot via both API and Disk" });
+            }
+
+            logger.LogInformation("Returning snapshot {SnapshotName} downloaded via {Method}", 
+                request.SnapshotName, downloadMethod);
 
             // Return the stream as a file download
             return File(snapshotStream, "application/octet-stream", request.SnapshotName);
@@ -492,56 +531,6 @@ public class ClusterController(
         }
     }
 
-    [HttpPost("recover-from-uploaded-snapshot")]
-    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<V1RecoverFromSnapshotResponse>> RecoverFromUploadedSnapshot(
-        [FromForm] V1RecoverFromUploadedSnapshotRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            if (request.SnapshotFile == null || request.SnapshotFile.Length == 0)
-            {
-                return BadRequest(new V1RecoverFromSnapshotResponse
-                {
-                    Success = false,
-                    Message = "No snapshot file provided",
-                    Error = "Snapshot file is required"
-                });
-            }
-
-            // Open stream without buffering the entire file
-            await using var snapshotStream = request.SnapshotFile.OpenReadStream();
-            var (success, error) = await clusterManager.RecoverCollectionFromUploadedSnapshotAsync(
-                request.NodeUrl,
-                request.CollectionName,
-                snapshotStream,
-                cancellationToken);
-
-            var response = new V1RecoverFromSnapshotResponse
-            {
-                Success = success,
-                Message = success
-                    ? $"Collection '{request.CollectionName}' recovered successfully from uploaded snapshot on {request.NodeUrl}"
-                    : $"Failed to recover collection '{request.CollectionName}' from uploaded snapshot on {request.NodeUrl}",
-                Error = success ? null : error
-            };
-
-            return success ? Ok(response) : StatusCode(500, response);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error during uploaded snapshot recovery");
-            return StatusCode(500, new V1RecoverFromSnapshotResponse
-            {
-                Success = false,
-                Message = "Internal server error during uploaded snapshot recovery",
-                Error = ex.Message
-            });
-        }
-    }
 
     [HttpGet("snapshots-info")]
     public async Task<ActionResult<V1GetSnapshotsInfoResponse>> GetSnapshotsInfo(
