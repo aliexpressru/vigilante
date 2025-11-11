@@ -869,7 +869,7 @@ class VigilanteDashboard {
                                     'Disk',
                                     null,
                                     nodeInfo.podName,
-                                    nodeInfo.podNamespace || 'default'
+                                    nodeInfo.podNamespace || 'qdrant'
                                 );
                             });
                         });
@@ -1267,7 +1267,7 @@ class VigilanteDashboard {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         podName: node.podName,
-                        podNamespace: node.podNamespace || 'default',
+                        podNamespace: node.podNamespace || 'qdrant',
                         collectionName: collection.collectionName,
                         snapshotName: node.snapshotName // Each node has its own snapshot name
                     })

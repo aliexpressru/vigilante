@@ -414,8 +414,8 @@ public class CollectionService : ICollectionService
         CancellationToken cancellationToken)
     {
         _logger.LogInformation(
-            "Downloading snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}",
-            snapshotName, collectionName, podName, podNamespace);
+            "Downloading snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}. Received namespace: '{NamespaceRaw}'",
+            snapshotName, collectionName, podName, podNamespace, podNamespace ?? "NULL");
 
         if (_commandExecutor == null)
         {
@@ -423,22 +423,31 @@ public class CollectionService : ICollectionService
             return null;
         }
 
+        // Ensure namespace is not empty or null
+        var effectiveNamespace = string.IsNullOrWhiteSpace(podNamespace) ? "qdrant" : podNamespace;
+        
+        if (effectiveNamespace != podNamespace)
+        {
+            _logger.LogWarning("Namespace was empty or null, using default 'qdrant'. Original value: '{Original}'", 
+                podNamespace ?? "NULL");
+        }
+
         var snapshotPath = $"/qdrant/storage/snapshots/{collectionName}/{snapshotName}";
         var fileStream = await _commandExecutor.DownloadFileAsync(
             podName, 
-            podNamespace, 
+            effectiveNamespace, 
             snapshotPath, 
             cancellationToken);
 
         if (fileStream != null)
         {
-            _logger.LogInformation("✅ Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName}", 
-                snapshotName, podName);
+            _logger.LogInformation("✅ Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
+                snapshotName, podName, effectiveNamespace);
         }
         else
         {
-            _logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName}", 
-                snapshotName, podName);
+            _logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName} in namespace {Namespace}", 
+                snapshotName, podName, effectiveNamespace);
         }
 
         return fileStream;
