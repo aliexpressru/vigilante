@@ -336,7 +336,11 @@ public class PodCommandExecutor : IPodCommandExecutor
 
             try
             {
-                var segment = new ArraySegment<byte>(buffer, offset, count);
+                // Kubernetes WebSocket uses a channel prefix (first byte):
+                // 0 = stdin, 1 = stdout, 2 = stderr, 3 = error/resize
+                // We need to read the entire message and skip the channel byte
+                var tempBuffer = new byte[count + 1]; // +1 for channel byte
+                var segment = new ArraySegment<byte>(tempBuffer);
                 var result = await _webSocket.ReceiveAsync(segment, cancellationToken);
 
                 if (result.MessageType == WebSocketMessageType.Close || result.Count == 0)
@@ -346,13 +350,33 @@ public class PodCommandExecutor : IPodCommandExecutor
                     return 0; // End of stream
                 }
 
-                _totalBytesRead += result.Count;
-                return result.Count;
+                // First byte is the channel (1 = stdout, which contains our file data)
+                if (result.Count < 2)
+                {
+                    // No actual data, just channel byte
+                    return 0;
+                }
+
+                var channel = tempBuffer[0];
+                var dataLength = result.Count - 1; // Exclude channel byte
+                
+                // Copy data (excluding channel byte) to output buffer
+                Array.Copy(tempBuffer, 1, buffer, offset, dataLength);
+                
+                _totalBytesRead += dataLength;
+                
+                if (_totalBytesRead % (1024 * 1024) == 0) // Log every 1MB
+                {
+                    _logger.LogDebug("Downloaded {TotalBytes} bytes from {FilePath} (channel: {Channel})",
+                        _totalBytesRead, _filePath, channel);
+                }
+                
+                return dataLength;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error reading from WebSocket for {FilePath} from pod {PodName}",
-                    _filePath, _podName);
+                _logger.LogError(ex, "Error reading from WebSocket for {FilePath} from pod {PodName}. Total bytes read: {TotalBytes}",
+                    _filePath, _podName, _totalBytesRead);
                 return 0;
             }
         }

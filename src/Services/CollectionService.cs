@@ -432,7 +432,9 @@ public class CollectionService : ICollectionService
                 podNamespace ?? "NULL");
         }
 
-        var snapshotPath = $"/qdrant/storage/snapshots/{collectionName}/{snapshotName}";
+        var snapshotPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
+        _logger.LogInformation("Downloading from path: {Path}", snapshotPath);
+        
         var fileStream = await _commandExecutor.DownloadFileAsync(
             podName, 
             effectiveNamespace, 
