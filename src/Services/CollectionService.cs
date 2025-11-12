@@ -529,12 +529,14 @@ public class CollectionService : ICollectionService
         _logger.LogInformation("✅ Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
             snapshotName, podName, effectiveNamespace);
 
+        // Wrap stream in Base64DecodingStream first (file is base64-encoded for WebSocket integrity)
+        Stream resultStream = new Base64DecodingStream(fileStream);
+        
         // Wrap stream with size limit if we know the expected size
-        Stream resultStream = fileStream;
         if (expectedSize.HasValue)
         {
-            _logger.LogInformation("🔒 Limiting stream to {Size} bytes to prevent reading extra data", expectedSize.Value);
-            resultStream = new LimitedStream(fileStream, expectedSize.Value);
+            _logger.LogInformation("🔒 Limiting decoded stream to {Size} bytes to prevent reading extra data", expectedSize.Value);
+            resultStream = new LimitedStream(resultStream, expectedSize.Value);
         }
 
         // Wrap stream with checksum validation if we have expected checksum
