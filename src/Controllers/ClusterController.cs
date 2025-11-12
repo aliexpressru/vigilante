@@ -492,6 +492,42 @@ public class ClusterController(
         }
     }
 
+    [HttpPost("download-snapshot-from-disk")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DownloadSnapshotFromDisk(
+        [FromBody] V1DownloadSnapshotFromDiskRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            logger.LogInformation("[DEBUG] Direct download from disk for snapshot {SnapshotName} of collection {CollectionName} on pod {PodName}", 
+                request.SnapshotName, request.CollectionName, request.PodName);
+
+            var snapshotStream = await clusterManager.DownloadSnapshotFromDiskAsync(
+                request.PodName!,
+                request.PodNamespace!,
+                request.CollectionName,
+                request.SnapshotName,
+                cancellationToken);
+
+            if (snapshotStream == null)
+            {
+                logger.LogError("[DEBUG] Failed to download snapshot from disk");
+                return StatusCode(500, new { error = "Failed to download snapshot from disk" });
+            }
+
+            logger.LogInformation("[DEBUG] Returning snapshot stream from disk");
+            return File(snapshotStream, "application/octet-stream", request.SnapshotName);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[DEBUG] Error during direct disk download");
+            return StatusCode(500, new { error = "Internal server error during disk download", details = ex.Message });
+        }
+    }
+
     [HttpPost("recover-from-snapshot")]
     [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

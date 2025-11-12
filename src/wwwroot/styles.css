@@ -451,6 +451,22 @@ body {
     margin-bottom: 1rem;
 }
 
+.collections-stats {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.total-count {
+    font-size: 1.1rem;
+    color: #667eea;
+    background: #f0f2ff;
+    padding: 0.3rem 0.8rem;
+    border-radius: 4px;
+    border: 1px solid #c5ceff;
+    font-weight: 600;
+}
+
 .total-size {
     font-size: 1.1rem;
     color: #666;
@@ -2190,12 +2206,12 @@ body {
 }
 
 /* Column widths for better layout */
-.nodes-table th:nth-child(1) { width: 15%; } /* Node URL */
-.nodes-table th:nth-child(2) { width: 10%; }  /* Peer ID */
-.nodes-table th:nth-child(3) { width: 10%; }  /* Pod */
-.nodes-table th:nth-child(4) { width: 40%; } /* Snapshot Name */
+.nodes-table th:nth-child(1) { width: 14%; } /* Node URL */
+.nodes-table th:nth-child(2) { width: 9%; }  /* Peer ID */
+.nodes-table th:nth-child(3) { width: 9%; }  /* Pod */
+.nodes-table th:nth-child(4) { width: 38%; } /* Snapshot Name */
 .nodes-table th:nth-child(5) { width: 8%; }  /* Size */
-.nodes-table th:nth-child(6) { width: 17%; } /* Actions - 3 кнопки */
+.nodes-table th:nth-child(6) { width: 22%; } /* Actions - 4 кнопки (включая debug) */
 
 /* Align Actions header to the right */
 .nodes-table th:nth-child(6) {
@@ -2240,7 +2256,7 @@ body {
 .nodes-table td:nth-child(6) {
     white-space: nowrap;
     text-align: right;
-    min-width: 160px;
+    min-width: 200px;
     width: auto;
 }
 
