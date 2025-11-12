@@ -529,15 +529,20 @@ public class CollectionService : ICollectionService
         _logger.LogInformation("✅ Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
             snapshotName, podName, effectiveNamespace);
 
-        // Wrap stream in Base64DecodingStream first (file is base64-encoded for WebSocket integrity)
-        Stream resultStream = new Base64DecodingStream(fileStream);
-        
-        // Wrap stream with size limit if we know the expected size
+        // First, limit the base64 TEXT stream if we know the expected binary size
+        Stream base64Stream = fileStream;
         if (expectedSize.HasValue)
         {
-            _logger.LogInformation("🔒 Limiting decoded stream to {Size} bytes to prevent reading extra data", expectedSize.Value);
-            resultStream = new LimitedStream(resultStream, expectedSize.Value);
+            // Calculate expected base64 size: ceil(binarySize / 3) * 4
+            // Base64 encodes 3 bytes into 4 characters
+            var expectedBase64Size = ((expectedSize.Value + 2) / 3) * 4;
+            _logger.LogInformation("🔒 Limiting base64 stream to {Base64Size} bytes (decoded will be {BinarySize} bytes / {PrettySize})", 
+                expectedBase64Size, expectedSize.Value, expectedSize.Value.ToPrettySize());
+            base64Stream = new LimitedStream(fileStream, expectedBase64Size);
         }
+        
+        // Then wrap in Base64DecodingStream to decode on the fly
+        Stream resultStream = new Base64DecodingStream(base64Stream);
 
         // Wrap stream with checksum validation if we have expected checksum
         // TODO: Checksum validation temporarily disabled due to WebSocket data corruption investigation
