@@ -85,6 +85,12 @@ public class PodCommandExecutor : IPodCommandExecutor
     // - "cat {path}": Stream file contents to stdout (for binary streaming)
     private const string StreamFileCommand = "cat {0}";
 
+    // Command: stat -c %s {path}
+    // - "stat": Display file status
+    // - "-c %s": Format string to print only file size in bytes
+    // - "{path}": Path to the file
+    private const string GetFileSizeCommand = "stat -c %s {0}";
+
     public PodCommandExecutor(IKubernetes kubernetes, ILogger<PodCommandExecutor> logger)
     {
         _kubernetes = kubernetes;
@@ -262,6 +268,38 @@ public class PodCommandExecutor : IPodCommandExecutor
             .Select(chars => new string(chars))
             .Where(name => !string.IsNullOrWhiteSpace(name) && !name.StartsWith("."))
             .ToList();
+    }
+
+    /// <summary>
+    /// Gets exact file size in bytes using stat command
+    /// </summary>
+    public async Task<long?> GetFileSizeInBytesAsync(
+        string podName,
+        string podNamespace,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogDebug("Getting file size for {FilePath} on pod {PodName}", filePath, podName);
+            
+            var command = string.Format(GetFileSizeCommand, filePath);
+            var output = await ExecuteCommandAsync(podName, podNamespace, command, cancellationToken);
+            
+            if (long.TryParse(output.Trim(), out var size))
+            {
+                _logger.LogDebug("File size for {FilePath}: {Size} bytes", filePath, size);
+                return size;
+            }
+            
+            _logger.LogWarning("Could not parse file size from output: {Output}", output);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get file size for {FilePath}", filePath);
+            return null;
+        }
     }
 
     /// <summary>

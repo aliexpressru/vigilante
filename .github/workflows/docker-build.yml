@@ -37,9 +37,11 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: |
           type=semver,pattern={{version}}
+          type=raw,value=latest
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
+      continue-on-error: false
       with:
         context: .
         platforms: linux/amd64
@@ -47,4 +49,5 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
-        cache-to: type=gha,mode=max
+        # Temporarily disable cache-to to avoid GitHub Actions cache 502 errors
+        # cache-to: type=gha,mode=max

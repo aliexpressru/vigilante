@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace Vigilante.Services;
+namespace Vigilante.Utilities;
 
 /// <summary>
 /// Stream wrapper that calculates SHA256 checksum while reading and validates it at the end

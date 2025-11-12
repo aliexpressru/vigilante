@@ -46,6 +46,15 @@ public interface IPodCommandExecutor
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Gets exact file size in bytes using stat command
+    /// </summary>
+    Task<long?> GetFileSizeInBytesAsync(
+        string podName,
+        string podNamespace,
+        string filePath,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Gets content of a text file from a pod
     /// </summary>
     Task<string?> GetFileContentAsync(

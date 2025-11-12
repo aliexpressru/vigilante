@@ -5,6 +5,7 @@ using Vigilante.Configuration;
 using Microsoft.Extensions.Options;
 using Vigilante.Services.Interfaces;
 using Vigilante.Extensions;
+using Vigilante.Utilities;
 
 namespace Vigilante.Services;
 
@@ -486,7 +487,24 @@ public class CollectionService : ICollectionService
         var snapshotPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
         _logger.LogInformation("Downloading from path: {Path}", snapshotPath);
         
-        // Get expected checksum first
+        // Get expected file size using stat command
+        var expectedSize = await _commandExecutor.GetFileSizeInBytesAsync(
+            podName,
+            effectiveNamespace,
+            snapshotPath,
+            cancellationToken);
+
+        if (expectedSize.HasValue)
+        {
+            _logger.LogInformation("📏 Expected file size: {Size} bytes ({PrettySize})", 
+                expectedSize.Value, expectedSize.Value.ToPrettySize());
+        }
+        else
+        {
+            _logger.LogWarning("⚠️ Could not determine file size - download may read extra data!");
+        }
+        
+        // Get expected checksum
         var expectedChecksum = await GetSnapshotChecksumAsync(
             podName,
             effectiveNamespace,
@@ -520,19 +538,25 @@ public class CollectionService : ICollectionService
         _logger.LogInformation("✅ Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
             snapshotName, podName, effectiveNamespace);
 
+        // Wrap stream with size limit if we know the expected size
+        Stream resultStream = fileStream;
+        if (expectedSize.HasValue)
+        {
+            _logger.LogInformation("🔒 Limiting stream to {Size} bytes to prevent reading extra data", expectedSize.Value);
+            resultStream = new LimitedStream(fileStream, expectedSize.Value);
+        }
+
         // Wrap stream with checksum validation if we have expected checksum
         if (!string.IsNullOrEmpty(expectedChecksum))
         {
-            var validatingStream = new ChecksumValidatingStream(
-                fileStream, 
+            resultStream = new ChecksumValidatingStream(
+                resultStream, 
                 expectedChecksum, 
                 snapshotName, 
                 _logger);
-            
-            return validatingStream;
         }
 
-        return fileStream;
+        return resultStream;
     }
 
     public async Task<bool> CheckCollectionExistsAsync(
