@@ -485,7 +485,7 @@ public class CollectionService : ICollectionService
         }
 
         var snapshotPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
-        _logger.LogInformation("Starting download: {Path}", snapshotPath);
+        _logger.LogInformation("Starting download: {Path} from pod {PodName}", snapshotPath, podName);
         
         // Get expected file size using stat command
         var expectedSize = await _commandExecutor.GetFileSizeInBytesAsync(
@@ -493,6 +493,16 @@ public class CollectionService : ICollectionService
             effectiveNamespace,
             snapshotPath,
             cancellationToken);
+
+        if (expectedSize.HasValue)
+        {
+            _logger.LogInformation("📏 Got expected file size: {Size} bytes ({PrettySize})", 
+                expectedSize.Value, expectedSize.Value.ToPrettySize());
+        }
+        else
+        {
+            _logger.LogWarning("⚠️ Could not get file size from pod - will download without size limit!");
+        }
         
         // Get expected checksum
         var expectedChecksum = await GetSnapshotChecksumAsync(

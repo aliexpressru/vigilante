@@ -281,23 +281,35 @@ public class PodCommandExecutor : IPodCommandExecutor
     {
         try
         {
-            _logger.LogDebug("Getting file size for {FilePath} on pod {PodName}", filePath, podName);
+            _logger.LogInformation("Getting file size for {FilePath} on pod {PodName} in namespace {Namespace}", 
+                filePath, podName, podNamespace);
             
             var command = string.Format(GetFileSizeCommand, filePath);
+            _logger.LogInformation("Executing command: stat -c %s {FilePath}", filePath);
+            
             var output = await ExecuteCommandAsync(podName, podNamespace, command, cancellationToken);
+            
+            _logger.LogInformation("stat command output: '{Output}' (length: {Length})", 
+                output, output?.Length ?? 0);
+            
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                _logger.LogWarning("stat command returned empty output for {FilePath}", filePath);
+                return null;
+            }
             
             if (long.TryParse(output.Trim(), out var size))
             {
-                _logger.LogDebug("File size for {FilePath}: {Size} bytes", filePath, size);
+                _logger.LogInformation("✅ Got file size for {FilePath}: {Size} bytes", filePath, size);
                 return size;
             }
             
-            _logger.LogWarning("Could not parse file size from output: {Output}", output);
+            _logger.LogWarning("❌ Could not parse file size from output: '{Output}'", output);
             return null;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to get file size for {FilePath}", filePath);
+            _logger.LogError(ex, "❌ Failed to get file size for {FilePath} on pod {PodName}", filePath, podName);
             return null;
         }
     }
