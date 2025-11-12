@@ -541,12 +541,20 @@ public class PodCommandExecutor : IPodCommandExecutor
                     var dataLength = result.Count - 1; // Exclude channel byte
                     var bytesToCopy = Math.Min(dataLength, count);
                     
-                    // Log first message for debugging
-                    if (_stdoutMessages == 1 && channel == 1)
+                    // Log first stdout message for debugging data corruption
+                    if (_stdoutMessages == 1)
                     {
                         var first20Bytes = string.Join(" ", tempBuffer.Skip(1).Take(Math.Min(20, dataLength)).Select(b => b.ToString("X2")));
-                        _logger.LogInformation("📦 First stdout message: Count={Count}, DataLength={DataLength}, First20Bytes=[{Bytes}]",
-                            result.Count, dataLength, first20Bytes);
+                        _logger.LogInformation("📦 FIRST stdout message #1: Channel={Channel}, Count={Count}, DataLength={DataLength}, First20Bytes=[{Bytes}]",
+                            channel, result.Count, dataLength, first20Bytes);
+                    }
+                    
+                    // Also log second message to see pattern
+                    if (_stdoutMessages == 2)
+                    {
+                        var first10Bytes = string.Join(" ", tempBuffer.Skip(1).Take(Math.Min(10, dataLength)).Select(b => b.ToString("X2")));
+                        _logger.LogInformation("📦 SECOND stdout message #2: Count={Count}, DataLength={DataLength}, First10Bytes=[{Bytes}]",
+                            result.Count, dataLength, first10Bytes);
                     }
                     
                     // Copy data (excluding channel byte) to output buffer
