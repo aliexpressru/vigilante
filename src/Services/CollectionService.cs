@@ -485,7 +485,7 @@ public class CollectionService : ICollectionService
         }
 
         var snapshotPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
-        _logger.LogInformation("Downloading from path: {Path}", snapshotPath);
+        _logger.LogInformation("Starting download: {Path}", snapshotPath);
         
         // Get expected file size using stat command
         var expectedSize = await _commandExecutor.GetFileSizeInBytesAsync(
@@ -493,16 +493,6 @@ public class CollectionService : ICollectionService
             effectiveNamespace,
             snapshotPath,
             cancellationToken);
-
-        if (expectedSize.HasValue)
-        {
-            _logger.LogInformation("📏 Expected file size: {Size} bytes ({PrettySize})", 
-                expectedSize.Value, expectedSize.Value.ToPrettySize());
-        }
-        else
-        {
-            _logger.LogWarning("⚠️ Could not determine file size - download may read extra data!");
-        }
         
         // Get expected checksum
         var expectedChecksum = await GetSnapshotChecksumAsync(
@@ -511,21 +501,12 @@ public class CollectionService : ICollectionService
             collectionName,
             snapshotName,
             cancellationToken);
-
-        if (string.IsNullOrEmpty(expectedChecksum))
-        {
-            _logger.LogWarning("⚠️ No checksum available for snapshot {SnapshotName}, will download without validation", 
-                snapshotName);
-        }
-        else
-        {
-            _logger.LogInformation("Will validate snapshot against checksum: {Checksum}", expectedChecksum);
-        }
         
         var fileStream = await _commandExecutor.DownloadFileAsync(
             podName, 
             effectiveNamespace, 
             snapshotPath, 
+            expectedSize,
             cancellationToken);
 
         if (fileStream == null)

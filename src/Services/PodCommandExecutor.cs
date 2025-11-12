@@ -336,10 +336,23 @@ public class PodCommandExecutor : IPodCommandExecutor
     /// <summary>
     /// Downloads a file from a pod as a stream using cat command
     /// </summary>
+    public Task<Stream?> DownloadFileAsync(
+        string podName,
+        string podNamespace,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        return DownloadFileAsync(podName, podNamespace, filePath, null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Downloads a file from a pod as a stream using cat command with optional expected size for logging
+    /// </summary>
     public async Task<Stream?> DownloadFileAsync(
         string podName,
         string podNamespace,
         string filePath,
+        long? expectedSize,
         CancellationToken cancellationToken)
     {
         try
@@ -358,7 +371,7 @@ public class PodCommandExecutor : IPodCommandExecutor
                 cancellationToken: cancellationToken);
 
             // Create a stream that will read from WebSocket
-            var stream = new WebSocketStream(webSocket, _logger, filePath, podName);
+            var stream = new WebSocketStream(webSocket, _logger, filePath, podName, expectedSize);
             
             _logger.LogInformation("✅ Started streaming file {FilePath} from pod {PodName}",
                 filePath, podName);
@@ -382,6 +395,7 @@ public class PodCommandExecutor : IPodCommandExecutor
         private readonly ILogger _logger;
         private readonly string _filePath;
         private readonly string _podName;
+        private readonly long? _expectedSize;
         private bool _disposed;
         private long _totalBytesRead;
         private byte[] _leftoverBuffer = Array.Empty<byte>();
@@ -392,12 +406,13 @@ public class PodCommandExecutor : IPodCommandExecutor
         private int _otherMessages;
         private long _totalWebSocketBytes;
 
-        public WebSocketStream(WebSocket webSocket, ILogger logger, string filePath, string podName)
+        public WebSocketStream(WebSocket webSocket, ILogger logger, string filePath, string podName, long? expectedSize = null)
         {
             _webSocket = webSocket;
             _logger = logger;
             _filePath = filePath;
             _podName = podName;
+            _expectedSize = expectedSize;
         }
 
         public override bool CanRead => true;
@@ -559,18 +574,43 @@ public class PodCommandExecutor : IPodCommandExecutor
             {
                 if (disposing)
                 {
-                    _logger.LogInformation(
-                        "✅ Download completed: {FilePath} from {PodName}\n" +
-                        "   Data bytes (stdout only): {DataBytes} ({FormattedDataSize})\n" +
-                        "   Total WebSocket bytes: {TotalWSBytes} ({FormattedWSSize})\n" +
-                        "   Overhead: {Overhead} bytes ({OverheadPercent:F2}%)\n" +
-                        "   Messages: stdout={StdoutCount}, stderr={StderrCount}, other={OtherCount}",
-                        _filePath, _podName,
-                        _totalBytesRead, _totalBytesRead.ToPrettySize(),
-                        _totalWebSocketBytes, _totalWebSocketBytes.ToPrettySize(),
-                        _totalWebSocketBytes - _totalBytesRead, 
-                        (_totalWebSocketBytes - _totalBytesRead) * 100.0 / _totalWebSocketBytes,
-                        _stdoutMessages, _stderrMessages, _otherMessages);
+                    if (_expectedSize.HasValue)
+                    {
+                        var extraBytes = _totalBytesRead - _expectedSize.Value;
+                        var status = extraBytes == 0 ? "✅" : "⚠️";
+                        
+                        _logger.LogInformation(
+                            "{Status} Download completed: {FilePath} from {PodName}\n" +
+                            "   📏 Expected file size: {ExpectedSize} bytes ({ExpectedSizeFormatted})\n" +
+                            "   📊 Data bytes (stdout only): {DataBytes} bytes ({FormattedDataSize})\n" +
+                            "   📦 Total WebSocket bytes: {TotalWSBytes} bytes ({FormattedWSSize})\n" +
+                            "   🔧 Channel overhead: {Overhead} bytes ({OverheadPercent:F2}%)\n" +
+                            "   {ExtraStatus} Extra data read: {ExtraBytes} bytes ({ExtraSizeFormatted})\n" +
+                            "   📨 Messages: stdout={StdoutCount}, stderr={StderrCount}, other={OtherCount}",
+                            status, _filePath, _podName,
+                            _expectedSize.Value, _expectedSize.Value.ToPrettySize(),
+                            _totalBytesRead, _totalBytesRead.ToPrettySize(),
+                            _totalWebSocketBytes, _totalWebSocketBytes.ToPrettySize(),
+                            _totalWebSocketBytes - _totalBytesRead, 
+                            (_totalWebSocketBytes - _totalBytesRead) * 100.0 / Math.Max(_totalWebSocketBytes, 1),
+                            extraBytes >= 0 ? "❌" : "✅", extraBytes, Math.Abs(extraBytes).ToPrettySize(),
+                            _stdoutMessages, _stderrMessages, _otherMessages);
+                    }
+                    else
+                    {
+                        _logger.LogInformation(
+                            "✅ Download completed: {FilePath} from {PodName}\n" +
+                            "   📊 Data bytes (stdout only): {DataBytes} bytes ({FormattedDataSize})\n" +
+                            "   📦 Total WebSocket bytes: {TotalWSBytes} bytes ({FormattedWSSize})\n" +
+                            "   🔧 Channel overhead: {Overhead} bytes ({OverheadPercent:F2}%)\n" +
+                            "   📨 Messages: stdout={StdoutCount}, stderr={StderrCount}, other={OtherCount}",
+                            _filePath, _podName,
+                            _totalBytesRead, _totalBytesRead.ToPrettySize(),
+                            _totalWebSocketBytes, _totalWebSocketBytes.ToPrettySize(),
+                            _totalWebSocketBytes - _totalBytesRead, 
+                            (_totalWebSocketBytes - _totalBytesRead) * 100.0 / Math.Max(_totalWebSocketBytes, 1),
+                            _stdoutMessages, _stderrMessages, _otherMessages);
+                    }
                     _webSocket.Dispose();
                 }
                 _disposed = true;

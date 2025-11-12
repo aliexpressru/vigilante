@@ -71,5 +71,15 @@ public interface IPodCommandExecutor
         string podNamespace,
         string filePath,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Downloads a file from a pod as a stream with expected size for logging
+    /// </summary>
+    Task<Stream?> DownloadFileAsync(
+        string podName,
+        string podNamespace,
+        string filePath,
+        long? expectedSize,
+        CancellationToken cancellationToken);
 }
 
