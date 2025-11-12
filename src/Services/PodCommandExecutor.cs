@@ -540,6 +540,14 @@ public class PodCommandExecutor : IPodCommandExecutor
                     var dataLength = result.Count - 1; // Exclude channel byte
                     var bytesToCopy = Math.Min(dataLength, count);
                     
+                    // Log first message for debugging
+                    if (_stdoutMessages == 1 && channel == 1)
+                    {
+                        var first20Bytes = string.Join(" ", tempBuffer.Skip(1).Take(Math.Min(20, dataLength)).Select(b => b.ToString("X2")));
+                        _logger.LogInformation("📦 First stdout message: Count={Count}, DataLength={DataLength}, First20Bytes=[{Bytes}]",
+                            result.Count, dataLength, first20Bytes);
+                    }
+                    
                     // Copy data (excluding channel byte) to output buffer
                     Array.Copy(tempBuffer, 1, buffer, offset, bytesToCopy);
                     
