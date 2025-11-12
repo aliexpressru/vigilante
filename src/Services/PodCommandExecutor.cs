@@ -504,6 +504,14 @@ public class PodCommandExecutor : IPodCommandExecutor
                     // First byte is the channel
                     var channel = tempBuffer[0];
                     
+                    // Log VERY FIRST WebSocket message BEFORE any counting
+                    if (_stdoutMessages == 0 && _stderrMessages == 0 && _otherMessages == 0)
+                    {
+                        var first20Bytes = string.Join(" ", tempBuffer.Take(Math.Min(21, result.Count)).Select(b => b.ToString("X2")));
+                        _logger.LogInformation("🔵 VERY FIRST WebSocket message (before processing): Channel={Channel}, Count={Count}, First20BytesWithChannel=[{Bytes}]",
+                            channel, result.Count, first20Bytes);
+                    }
+                    
                     // Track message types
                     if (channel == 1)
                         _stdoutMessages++;
