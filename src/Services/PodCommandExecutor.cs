@@ -243,7 +243,16 @@ public class PodCommandExecutor : IPodCommandExecutor
             result = await webSocket.ReceiveAsync(segment, cancellationToken);
             if (result.Count > 0)
             {
-                output.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                // Kubernetes WebSocket uses channel prefix (first byte):
+                // 0 = stdin, 1 = stdout, 2 = stderr, 3 = error/resize
+                // Skip the first byte (channel) and only read actual data
+                var dataStart = 1;
+                var dataLength = result.Count - 1;
+                
+                if (dataLength > 0)
+                {
+                    output.Append(Encoding.UTF8.GetString(buffer, dataStart, dataLength));
+                }
             }
         } while (!result.CloseStatus.HasValue && !cancellationToken.IsCancellationRequested);
 
