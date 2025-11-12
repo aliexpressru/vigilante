@@ -1,6 +1,7 @@
 using k8s;
 using System.Net.WebSockets;
 using System.Text;
+using Vigilante.Extensions;
 using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services;
@@ -348,6 +349,10 @@ public class PodCommandExecutor : IPodCommandExecutor
         private byte[] _leftoverBuffer = Array.Empty<byte>();
         private int _leftoverOffset;
         private int _leftoverCount;
+        private int _stdoutMessages;
+        private int _stderrMessages;
+        private int _otherMessages;
+        private long _totalWebSocketBytes;
 
         public WebSocketStream(WebSocket webSocket, ILogger logger, string filePath, string podName)
         {
@@ -398,19 +403,37 @@ public class PodCommandExecutor : IPodCommandExecutor
 
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        _logger.LogDebug("WebSocket closed for {FilePath} from pod {PodName}. Total bytes read: {TotalBytes}",
+                        _logger.LogInformation("WebSocket closed for {FilePath} from pod {PodName}. Total bytes read: {TotalBytes}",
                             _filePath, _podName, _totalBytesRead);
                         return 0; // End of stream
                     }
 
+                    _totalWebSocketBytes += result.Count;
+
                     if (result.Count == 0)
                     {
                         // Empty message, continue reading
+                        _logger.LogDebug("Received empty WebSocket message, continuing...");
                         continue;
                     }
 
                     // First byte is the channel
                     var channel = tempBuffer[0];
+                    
+                    // Track message types
+                    if (channel == 1)
+                        _stdoutMessages++;
+                    else if (channel == 2)
+                        _stderrMessages++;
+                    else
+                        _otherMessages++;
+                    
+                    // Log received message details for debugging
+                    if (_totalBytesRead < 1024 * 1024) // Log details only for first MB
+                    {
+                        _logger.LogDebug("Received WebSocket message: Channel={Channel}, Count={Count}, MessageType={MessageType}, EndOfMessage={EndOfMessage}",
+                            channel, result.Count, result.MessageType, result.EndOfMessage);
+                    }
                     
                     // Skip messages from non-stdout channels (like stderr)
                     if (channel != 1)
@@ -498,8 +521,18 @@ public class PodCommandExecutor : IPodCommandExecutor
             {
                 if (disposing)
                 {
-                    _logger.LogInformation("Completed download of {FilePath} from pod {PodName}. Total bytes: {TotalBytes}",
-                        _filePath, _podName, _totalBytesRead);
+                    _logger.LogInformation(
+                        "✅ Download completed: {FilePath} from {PodName}\n" +
+                        "   Data bytes (stdout only): {DataBytes} ({FormattedDataSize})\n" +
+                        "   Total WebSocket bytes: {TotalWSBytes} ({FormattedWSSize})\n" +
+                        "   Overhead: {Overhead} bytes ({OverheadPercent:F2}%)\n" +
+                        "   Messages: stdout={StdoutCount}, stderr={StderrCount}, other={OtherCount}",
+                        _filePath, _podName,
+                        _totalBytesRead, _totalBytesRead.ToPrettySize(),
+                        _totalWebSocketBytes, _totalWebSocketBytes.ToPrettySize(),
+                        _totalWebSocketBytes - _totalBytesRead, 
+                        (_totalWebSocketBytes - _totalBytesRead) * 100.0 / _totalWebSocketBytes,
+                        _stdoutMessages, _stderrMessages, _otherMessages);
                     _webSocket.Dispose();
                 }
                 _disposed = true;
