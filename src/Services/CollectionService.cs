@@ -5,7 +5,6 @@ using Vigilante.Configuration;
 using Microsoft.Extensions.Options;
 using Vigilante.Services.Interfaces;
 using Vigilante.Extensions;
-using Vigilante.Utilities;
 
 namespace Vigilante.Services;
 
@@ -529,42 +528,20 @@ public class CollectionService : ICollectionService
         _logger.LogInformation("✅ Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
             snapshotName, podName, effectiveNamespace);
 
-        // First, limit the base64 TEXT stream if we know the expected binary size
-        Stream base64Stream = fileStream;
         if (expectedSize.HasValue)
         {
-            // Calculate expected base64 size: ceil(binarySize / 3) * 4
-            // Base64 encodes 3 bytes into 4 characters
-            var expectedBase64Size = ((expectedSize.Value + 2) / 3) * 4;
-            _logger.LogInformation("🔒 Limiting base64 stream to {Base64Size} bytes (decoded will be {BinarySize} bytes / {PrettySize})", 
-                expectedBase64Size, expectedSize.Value, expectedSize.Value.ToPrettySize());
-            base64Stream = new LimitedStream(fileStream, expectedBase64Size);
-        }
-        
-        // Then wrap in Base64DecodingStream to decode on the fly
-        Stream resultStream = new Base64DecodingStream(base64Stream);
-
-        // Wrap stream with checksum validation if we have expected checksum
-        // TODO: Checksum validation temporarily disabled due to WebSocket data corruption investigation
-        // The file size is correct (980MB), but checksum doesn't match
-        // Need to investigate WebSocket message handling, possibly fragmentation or byte order issues
-        /*
-        if (!string.IsNullOrEmpty(expectedChecksum))
-        {
-            resultStream = new ChecksumValidatingStream(
-                resultStream, 
-                expectedChecksum, 
-                snapshotName, 
-                _logger);
-        }
-        */
-        
-        if (!string.IsNullOrEmpty(expectedChecksum))
-        {
-            _logger.LogWarning("⚠️ Checksum validation disabled for testing. Expected: {ExpectedChecksum}", expectedChecksum);
+            _logger.LogInformation("📏 Expected file size: {Size} bytes ({PrettySize}) - reading until WebSocket closes naturally", 
+                expectedSize.Value, expectedSize.Value.ToPrettySize());
         }
 
-        return resultStream;
+        if (!string.IsNullOrEmpty(expectedChecksum))
+        {
+            _logger.LogInformation("📋 Expected checksum: {Checksum} - verify after download", expectedChecksum);
+        }
+
+        // Return the stream as-is - no validation, no limits, just raw binary data
+        // User will verify checksum manually after download
+        return fileStream;
     }
 
     public async Task<bool> CheckCollectionExistsAsync(

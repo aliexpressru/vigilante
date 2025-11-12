@@ -81,11 +81,9 @@ public class PodCommandExecutor : IPodCommandExecutor
     // - "echo ''": Return empty string if file not found (prevents error)
     private const string GetFileContentCommand = "cat {0} 2>/dev/null || echo ''";
 
-    // Command: base64 -w 0 {path}
-    // - "base64": Encode file to base64 (ensures data integrity over WebSocket)
-    // - "-w 0": No line wrapping (single line output)
-    // - "{path}": Path to file to encode
-    private const string StreamFileCommand = "base64 -w 0 {0}";
+    // Command: cat {path}
+    // - "cat {path}": Stream file contents to stdout (for binary streaming)
+    private const string StreamFileCommand = "cat {0}";
 
     // Command: stat -c %s {path}
     // - "stat": Display file status
