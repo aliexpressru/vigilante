@@ -469,7 +469,8 @@ public class PodCommandExecutor : IPodCommandExecutor
                 Array.Copy(_leftoverBuffer, _leftoverOffset, buffer, offset, bytesToCopy);
                 _leftoverOffset += bytesToCopy;
                 _leftoverCount -= bytesToCopy;
-                _totalBytesRead += bytesToCopy;
+                // NOTE: Don't increment _totalBytesRead here - these bytes were already counted
+                // when first read from WebSocket in the previous ReadAsync call
                 return bytesToCopy;
             }
 
