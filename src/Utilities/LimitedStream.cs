@@ -29,24 +29,39 @@ internal class LimitedStream : Stream
     public override int Read(byte[] buffer, int offset, int count)
     {
         if (_bytesRead >= _maxBytes)
-            return 0; // EOF reached
+            return 0; // EOF - we've read the expected number of bytes
 
         var bytesToRead = (int)Math.Min(count, _maxBytes - _bytesRead);
         var bytesActuallyRead = _innerStream.Read(buffer, offset, bytesToRead);
-        _bytesRead += bytesActuallyRead;
         
+        if (bytesActuallyRead == 0 && _bytesRead < _maxBytes)
+        {
+            // Inner stream returned 0 but we haven't read enough bytes yet
+            // This should only happen when the stream is truly closed
+            return 0; // EOF from inner stream
+        }
+        
+        _bytesRead += bytesActuallyRead;
         return bytesActuallyRead;
     }
 
     public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
         if (_bytesRead >= _maxBytes)
-            return 0; // EOF reached
+            return 0; // EOF - we've read the expected number of bytes
 
         var bytesToRead = (int)Math.Min(count, _maxBytes - _bytesRead);
         var bytesActuallyRead = await _innerStream.ReadAsync(buffer, offset, bytesToRead, cancellationToken);
-        _bytesRead += bytesActuallyRead;
         
+        if (bytesActuallyRead == 0 && _bytesRead < _maxBytes)
+        {
+            // Inner stream returned 0 but we haven't read enough bytes yet
+            // This should only happen when the stream is truly closed
+            return 0; // EOF from inner stream
+        }
+        
+        _bytesRead += bytesActuallyRead;
+
         return bytesActuallyRead;
     }
 
