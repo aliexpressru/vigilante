@@ -9,7 +9,6 @@ data:
     {
       "Qdrant": {
         "MonitoringIntervalSeconds": 30,
-        "HealthCheckTimeoutSeconds": 10,
         "HttpTimeoutSeconds": 5,
         "EnableAutoRecovery": true,
         "ApiKey": "test"

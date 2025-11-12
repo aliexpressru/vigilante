@@ -289,7 +289,7 @@ public class PodCommandExecutor : IPodCommandExecutor
             
             var output = await ExecuteCommandAsync(podName, podNamespace, command, cancellationToken);
             
-            _logger.LogInformation("stat command output: '{Output}' (length: {Length})", 
+            _logger.LogInformation("stat command raw output: '{Output}' (length: {Length})", 
                 output, output?.Length ?? 0);
             
             if (string.IsNullOrWhiteSpace(output))
@@ -298,13 +298,22 @@ public class PodCommandExecutor : IPodCommandExecutor
                 return null;
             }
             
-            if (long.TryParse(output.Trim(), out var size))
+            // Aggressively trim all whitespace including newlines, tabs, spaces
+            var trimmedOutput = output.Trim().Trim('\n', '\r', '\t', ' ');
+            
+            _logger.LogInformation("After trim: '{TrimmedOutput}' (length: {Length})", 
+                trimmedOutput, trimmedOutput.Length);
+            
+            if (long.TryParse(trimmedOutput, out var size))
             {
                 _logger.LogInformation("✅ Got file size for {FilePath}: {Size} bytes", filePath, size);
                 return size;
             }
             
-            _logger.LogWarning("❌ Could not parse file size from output: '{Output}'", output);
+            // Log each character's ASCII code for debugging
+            var charCodes = string.Join(", ", trimmedOutput.Select((c, i) => $"[{i}]='{c}'({(int)c})"));
+            _logger.LogWarning("❌ Could not parse file size. Output: '{Output}', Chars: {CharCodes}", 
+                trimmedOutput, charCodes);
             return null;
         }
         catch (Exception ex)
