@@ -81,9 +81,12 @@ public class PodCommandExecutor : IPodCommandExecutor
     // - "echo ''": Return empty string if file not found (prevents error)
     private const string GetFileContentCommand = "cat {0} 2>/dev/null || echo ''";
 
-    // Command: cat {path}
-    // - "cat {path}": Stream file contents to stdout (for binary streaming)
-    private const string StreamFileCommand = "cat {0}";
+    // Command: dd if={path} bs=1M
+    // - "dd": Copy file with exact byte control
+    // - "if={path}": Input file
+    // - "bs=1M": Block size 1MB for efficient reading
+    // - stderr is redirected to /dev/null to avoid progress messages
+    private const string StreamFileCommand = "dd if={0} bs=1M 2>/dev/null";
 
     // Command: stat -c %s {path}
     // - "stat": Display file status
