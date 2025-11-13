@@ -81,12 +81,10 @@ public class PodCommandExecutor : IPodCommandExecutor
     // - "echo ''": Return empty string if file not found (prevents error)
     private const string GetFileContentCommand = "cat {0} 2>/dev/null || echo ''";
 
-    // Command: dd if={path} bs=1M
-    // - "dd": Copy file with exact byte control
-    // - "if={path}": Input file
-    // - "bs=1M": Block size 1MB for efficient reading
-    // - stderr is redirected to /dev/null to avoid progress messages
-    private const string StreamFileCommand = "dd if={0} bs=1M 2>/dev/null";
+    // Command: cat {path}
+    // - "cat {path}": Stream file contents to stdout
+    // Note: cat outputs EXACTLY the file size (verified with wc -c)
+    private const string StreamFileCommand = "cat {0}";
 
     // Command: stat -c %s {path}
     // - "stat": Display file status
@@ -367,6 +365,109 @@ public class PodCommandExecutor : IPodCommandExecutor
     }
 
     /// <summary>
+    /// Downloads a file from a pod using kubectl cp (more reliable for large files)
+    /// </summary>
+    public async Task<Stream?> DownloadFileViaKubectlCpAsync(
+        string podName,
+        string podNamespace,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Downloading file {FilePath} from pod {PodName} in namespace {Namespace} using kubectl cp",
+                filePath, podName, podNamespace);
+
+            // Create temporary file for download
+            var tempFile = Path.GetTempFileName();
+            
+            try
+            {
+                // Use kubectl cp: kubectl cp <namespace>/<pod>:/path/to/file /local/path
+                var source = $"{podNamespace}/{podName}:{filePath}";
+                var kubeConfigPath = Environment.GetEnvironmentVariable("KUBECONFIG") ?? 
+                                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".kube", "config");
+                
+                // Build kubectl cp command
+                var startInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "kubectl",
+                    Arguments = $"cp {source} {tempFile} --kubeconfig {kubeConfigPath}",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                _logger.LogInformation("Executing: kubectl cp {Source} {TempFile}", source, tempFile);
+
+                using var process = System.Diagnostics.Process.Start(startInfo);
+                if (process == null)
+                {
+                    _logger.LogError("Failed to start kubectl process");
+                    File.Delete(tempFile);
+                    return null;
+                }
+
+                var output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
+                var error = await process.StandardError.ReadToEndAsync(cancellationToken);
+                
+                await process.WaitForExitAsync(cancellationToken);
+
+                if (process.ExitCode != 0)
+                {
+                    _logger.LogError("kubectl cp failed with exit code {ExitCode}. Error: {Error}", 
+                        process.ExitCode, error);
+                    File.Delete(tempFile);
+                    return null;
+                }
+
+                if (!string.IsNullOrEmpty(error))
+                {
+                    _logger.LogWarning("kubectl cp stderr: {Error}", error);
+                }
+
+                // Verify file was downloaded
+                if (!File.Exists(tempFile))
+                {
+                    _logger.LogError("Temp file {TempFile} does not exist after kubectl cp", tempFile);
+                    return null;
+                }
+
+                var fileInfo = new FileInfo(tempFile);
+                _logger.LogInformation("✅ Downloaded {Size} bytes to {TempFile} using kubectl cp", 
+                    fileInfo.Length, tempFile);
+
+                // Open file stream with DeleteOnClose option
+                var fileStream = new FileStream(
+                    tempFile,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 81920, // 80KB buffer
+                    FileOptions.Asynchronous | FileOptions.SequentialScan | FileOptions.DeleteOnClose);
+
+                return fileStream;
+            }
+            catch
+            {
+                // Cleanup temp file on error
+                if (File.Exists(tempFile))
+                {
+                    try { File.Delete(tempFile); } catch { }
+                }
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to download file {FilePath} from pod {PodName} using kubectl cp",
+                filePath, podName);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Downloads a file from a pod as a stream using cat command
     /// </summary>
     public Task<Stream?> DownloadFileAsync(
@@ -393,8 +494,14 @@ public class PodCommandExecutor : IPodCommandExecutor
             _logger.LogInformation("Downloading file {FilePath} from pod {PodName} in namespace {Namespace}",
                 filePath, podName, podNamespace);
 
-            // Use cat to stream file contents directly
+            // Use cat - it outputs exactly the file size (verified: cat | wc -c == stat)
             var command = string.Format(StreamFileCommand, filePath);
+            
+            if (expectedSize.HasValue)
+            {
+                _logger.LogInformation("Expected file size: {Size} bytes ({FormattedSize})", 
+                    expectedSize.Value, expectedSize.Value.ToPrettySize());
+            }
             
             var webSocket = await _kubernetes.WebSocketNamespacedPodExecAsync(
                 podName,

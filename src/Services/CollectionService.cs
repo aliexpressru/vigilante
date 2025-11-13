@@ -511,26 +511,30 @@ public class CollectionService : ICollectionService
             snapshotName,
             cancellationToken);
         
-        var fileStream = await _commandExecutor.DownloadFileAsync(
+        // Use kubectl cp instead of WebSocket exec for reliable large file downloads
+        // kubectl cp uses tar internally and is designed for file transfers
+        _logger.LogInformation("Using kubectl cp for reliable download of snapshot {SnapshotName} from pod {PodName}", 
+            snapshotName, podName);
+        
+        var fileStream = await _commandExecutor.DownloadFileViaKubectlCpAsync(
             podName, 
             effectiveNamespace, 
-            snapshotPath, 
-            expectedSize,
+            snapshotPath,
             cancellationToken);
 
         if (fileStream == null)
         {
-            _logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName} in namespace {Namespace}", 
+            _logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName} in namespace {Namespace} using kubectl cp", 
                 snapshotName, podName, effectiveNamespace);
             return null;
         }
 
-        _logger.LogInformation("✅ Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
+        _logger.LogInformation("✅ Snapshot {SnapshotName} downloaded successfully from disk on pod {PodName} in namespace {Namespace} using kubectl cp", 
             snapshotName, podName, effectiveNamespace);
 
         if (expectedSize.HasValue)
         {
-            _logger.LogInformation("📏 Expected file size: {Size} bytes ({PrettySize}) - reading until WebSocket closes naturally", 
+            _logger.LogInformation("📏 Expected file size: {Size} bytes ({PrettySize})", 
                 expectedSize.Value, expectedSize.Value.ToPrettySize());
         }
 
@@ -539,8 +543,7 @@ public class CollectionService : ICollectionService
             _logger.LogInformation("📋 Expected checksum: {Checksum} - verify after download", expectedChecksum);
         }
 
-        // Return the stream as-is - no validation, no limits, just raw binary data
-        // User will verify checksum manually after download
+        // Return the file stream - kubectl cp downloaded to temp file with DeleteOnClose option
         return fileStream;
     }
 

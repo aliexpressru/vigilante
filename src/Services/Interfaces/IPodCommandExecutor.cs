@@ -64,6 +64,15 @@ public interface IPodCommandExecutor
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Downloads a file from a pod using kubectl cp (more reliable for large files)
+    /// </summary>
+    Task<Stream?> DownloadFileViaKubectlCpAsync(
+        string podName,
+        string podNamespace,
+        string filePath,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Downloads a file from a pod as a stream
     /// </summary>
     Task<Stream?> DownloadFileAsync(
