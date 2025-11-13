@@ -41,8 +41,8 @@ public class QdrantMonitorService(
 
                     if (_options.EnableAutoRecovery && !state.Health.IsHealthy)
                     {
-                        logger.LogWarning("🔧 Initiating cluster recovery procedures");
-                        await clusterManager.RecoverClusterAsync();
+                        logger.LogWarning("🔧 Auto-recovery is enabled but not yet implemented");
+                        // TODO: Implement auto-recovery logic
                     }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

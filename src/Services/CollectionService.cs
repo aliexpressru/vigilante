@@ -489,33 +489,6 @@ public class CollectionService : ICollectionService
         }
     }
 
-    public async Task<bool> CheckCollectionExistsAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogInformation("Checking if collection {CollectionName} exists on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            
-            var uri = new Uri(nodeUrl);
-            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
-            
-            var result = await qdrantClient.GetCollectionInfo(collectionName, cancellationToken);
-            
-            var exists = result?.Status?.IsSuccess == true;
-            _logger.LogInformation("Collection {CollectionName} exists: {Exists}", collectionName, exists);
-            
-            return exists;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error checking if collection {CollectionName} exists on node {NodeUrl}, assuming it doesn't exist", 
-                collectionName, nodeUrl);
-            return false;
-        }
-    }
 
     public async Task<bool> RecoverCollectionFromSnapshotAsync(
         string nodeUrl,

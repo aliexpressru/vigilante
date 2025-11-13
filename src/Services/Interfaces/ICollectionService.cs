@@ -101,10 +101,6 @@ public interface ICollectionService
     /// <summary>
     /// Checks if a collection exists on a specific node
     /// </summary>
-    Task<bool> CheckCollectionExistsAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken);
 
     /// <summary>
     /// Recovers a collection from a snapshot on a specific node

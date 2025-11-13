@@ -411,73 +411,25 @@ public class ClusterController(
     {
         try
         {
-            logger.LogInformation("Downloading snapshot {SnapshotName} of collection {CollectionName} via Qdrant API", 
-                request.SnapshotName, request.CollectionName);
-
-            // Download via Qdrant API
-            var snapshotStream = await clusterManager.DownloadCollectionSnapshotAsync(
+            var snapshotStream = await clusterManager.DownloadSnapshotWithFallbackAsync(
                 request.NodeUrl!,
                 request.CollectionName,
                 request.SnapshotName,
+                request.PodName,
+                request.PodNamespace,
                 cancellationToken);
 
             if (snapshotStream == null)
             {
-                logger.LogError("Failed to download snapshot {SnapshotName} via API", request.SnapshotName);
-                return StatusCode(500, new { error = "Cannot download snapshot. Disk-only snapshots (from deleted collections) can only be deleted, not downloaded. Use the Delete button to remove them." });
+                return StatusCode(500, new { error = "Failed to download snapshot via both API and disk" });
             }
 
-            logger.LogInformation("Successfully downloaded snapshot {SnapshotName} via API", request.SnapshotName);
-
-            // Return the stream as a file download
             return File(snapshotStream, "application/octet-stream", request.SnapshotName);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error during snapshot download");
             return StatusCode(500, new { error = "Internal server error during snapshot download", details = ex.Message });
-        }
-    }
-
-    [HttpPost("download-snapshot-from-disk")]
-    [ProducesResponseType(typeof(FileStreamResult), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> DownloadSnapshotFromDisk(
-        [FromBody] V1DownloadSnapshotFromDiskRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            logger.LogInformation("[DEBUG] Direct download from disk for snapshot {SnapshotName} of collection {CollectionName} on pod {PodName}",
-                request.SnapshotName, request.CollectionName, request.PodName);
-
-            logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName}",
-                request.SnapshotName, request.CollectionName, request.PodName);
-
-            var snapshotStream = await clusterManager.DownloadSnapshotFromDiskAsync(
-                request.PodName,
-                request.PodNamespace,
-                request.CollectionName,
-                request.SnapshotName,
-                cancellationToken);
-
-            if (snapshotStream == null)
-            {
-                logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName}",
-                    request.SnapshotName, request.PodName);
-                return StatusCode(500, new { error = "Failed to download snapshot from disk" });
-            }
-
-            logger.LogInformation("[DEBUG] Returning snapshot stream from disk");
-
-            // Return the stream as a file download
-            return File(snapshotStream, "application/octet-stream", request.SnapshotName);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "[DEBUG] Failed to download snapshot from disk");
-            return StatusCode(500, new { error = "Internal server error during snapshot download from disk", details = ex.Message });
         }
     }
 

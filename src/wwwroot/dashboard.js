@@ -965,24 +965,13 @@ class VigilanteDashboard {
                 
                 const downloadBtn = document.createElement('button');
                 downloadBtn.className = 'action-button action-button-primary action-button-sm';
-                downloadBtn.innerHTML = '<i class="fas fa-download"></i> API';
-                downloadBtn.title = 'Download snapshot via Qdrant API';
+                downloadBtn.innerHTML = '<i class="fas fa-download"></i>';
+                downloadBtn.title = 'Download snapshot (tries API first, then disk fallback)';
                 downloadBtn.onclick = () => this.downloadSnapshot(
                     collection.collectionName, 
                     node.snapshotName, 
                     node.nodeUrl,
                     node.podName, 
-                    node.podNamespace || 'qdrant'
-                );
-                
-                const downloadDiskBtn = document.createElement('button');
-                downloadDiskBtn.className = 'action-button action-button-secondary action-button-sm';
-                downloadDiskBtn.innerHTML = '<i class="fas fa-hdd"></i> Disk';
-                downloadDiskBtn.title = 'Download snapshot directly from disk (for deleted collections)';
-                downloadDiskBtn.onclick = () => this.downloadSnapshotFromDisk(
-                    collection.collectionName,
-                    node.snapshotName,
-                    node.podName,
                     node.podNamespace || 'qdrant'
                 );
                 
@@ -999,7 +988,6 @@ class VigilanteDashboard {
                 deleteBtn.onclick = () => this.deleteSnapshotFromNode(node.podName, node.podNamespace || 'qdrant', collection.collectionName, node.snapshotName);
                 
                 actionsContainer.appendChild(downloadBtn);
-                actionsContainer.appendChild(downloadDiskBtn);
                 actionsContainer.appendChild(recoverBtn);
                 actionsContainer.appendChild(deleteBtn);
                 cellActions.appendChild(actionsContainer);
@@ -1733,139 +1721,6 @@ class VigilanteDashboard {
                 true
             );
         } catch (error) {
-            this.updateToast(
-                toastId,
-                error.message,
-                'error',
-                'Download Failed'
-            );
-        }
-    }
-
-    async downloadSnapshotFromDisk(collectionName, snapshotName, podName, podNamespace) {
-        const toastId = this.showToast(
-            `Downloading '${snapshotName}' from disk...`,
-            'info',
-            'Download from Disk',
-            0,
-            true
-        );
-
-        try {
-            const requestBody = {
-                collectionName: collectionName,
-                snapshotName: snapshotName,
-                podName: podName,
-                podNamespace: podNamespace
-            };
-
-            console.log('[DEBUG] Downloading from disk with params:', requestBody);
-
-            const response = await fetch('/api/v1/cluster/download-snapshot-from-disk', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Failed to download snapshot from disk');
-            }
-
-            // Get total size from Content-Length header
-            const contentLength = response.headers.get('Content-Length');
-            const total = contentLength ? parseInt(contentLength, 10) : 0;
-            
-            console.log('[DEBUG] Content-Length:', contentLength);
-
-            // Update toast with initial progress
-            if (total > 0) {
-                this.updateToast(
-                    toastId,
-                    `0% (0 / ${this.formatSize(total)})`,
-                    'info',
-                    `Downloading '${snapshotName}' from disk`,
-                    0,
-                    false
-                );
-            } else {
-                this.updateToast(
-                    toastId,
-                    `Downloading...`,
-                    'info',
-                    `Downloading '${snapshotName}' from disk`,
-                    null,
-                    false
-                );
-            }
-
-            // Read the response stream with progress tracking
-            const reader = response.body.getReader();
-            const chunks = [];
-            let receivedLength = 0;
-
-            while (true) {
-                const { done, value } = await reader.read();
-
-                if (done) break;
-
-                chunks.push(value);
-                receivedLength += value.length;
-
-                console.log('[DEBUG] Downloaded chunk:', value.length, 'bytes. Total:', receivedLength);
-
-                // Update progress
-                if (total > 0) {
-                    const percent = Math.round((receivedLength / total) * 100);
-                    this.updateToast(
-                        toastId,
-                        `${percent}% (${this.formatSize(receivedLength)} / ${this.formatSize(total)})`,
-                        'info',
-                        `Downloading '${snapshotName}' from disk`,
-                        percent,
-                        false
-                    );
-                } else {
-                    this.updateToast(
-                        toastId,
-                        `${this.formatSize(receivedLength)} received...`,
-                        'info',
-                        `Downloading '${snapshotName}' from disk`,
-                        null,
-                        false
-                    );
-                }
-            }
-
-            console.log('[DEBUG] Download completed. Total bytes:', receivedLength);
-
-            // Combine chunks into a blob
-            const blob = new Blob(chunks);
-            
-            console.log('[DEBUG] Blob created. Size:', blob.size);
-            
-            // Trigger download
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = snapshotName;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-
-            this.updateToast(
-                toastId,
-                `Downloaded successfully (${this.formatSize(receivedLength)})`,
-                'success',
-                `'${snapshotName}' from disk`,
-                100,
-                true
-            );
-        } catch (error) {
-            console.error('[DEBUG] Download error:', error);
             this.updateToast(
                 toastId,
                 error.message,

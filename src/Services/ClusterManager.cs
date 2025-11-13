@@ -210,12 +210,7 @@ public class ClusterManager(
         return state;
     }
 
-    public async Task RecoverClusterAsync()
-    {
-        logger.LogInformation("🔧 Cluster recovery requested, but auto-recovery is not yet implemented");
-        logger.LogInformation("💡 Manual intervention may be required for cluster issues");
-        await Task.CompletedTask;
-    }
+
 
     public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(CancellationToken cancellationToken = default)
     {
@@ -677,34 +672,7 @@ public class ClusterManager(
         return results;
     }
 
-    public async Task<Dictionary<string, List<string>>> ListCollectionSnapshotsOnAllNodesAsync(
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        logger.LogDebug("Listing snapshots for collection {CollectionName} on all nodes", collectionName);
 
-        var state = await GetClusterStateAsync(cancellationToken);
-        var results = new Dictionary<string, List<string>>();
-
-        var listTasks = state.Nodes.Select(async node =>
-        {
-            var snapshots = await collectionService.ListCollectionSnapshotsAsync(
-                node.Url,
-                collectionName,
-                cancellationToken);
-
-            return (NodeUrl: node.Url, Snapshots: snapshots);
-        });
-
-        var listResults = await Task.WhenAll(listTasks);
-
-        foreach (var result in listResults)
-        {
-            results[result.NodeUrl] = result.Snapshots;
-        }
-
-        return results;
-    }
 
     public async Task<bool> DeleteCollectionSnapshotAsync(
         string nodeUrl,
@@ -754,19 +722,61 @@ public class ClusterManager(
         return results;
     }
 
-    public async Task<Stream?> DownloadCollectionSnapshotAsync(
+    /// <summary>
+    /// Downloads snapshot with automatic fallback: tries API first, then disk if API fails
+    /// </summary>
+    public async Task<Stream?> DownloadSnapshotWithFallbackAsync(
         string nodeUrl,
         string collectionName,
         string snapshotName,
+        string? podName,
+        string? podNamespace,
         CancellationToken cancellationToken)
     {
-        logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from node {NodeUrl}", 
-            snapshotName, collectionName, nodeUrl);
+        // First, try to download via Qdrant API (preferred method)
+        logger.LogInformation("Attempting to download snapshot {SnapshotName} of collection {CollectionName} via Qdrant API", 
+            snapshotName, collectionName);
 
-        return await collectionService.DownloadCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, cancellationToken);
+        var snapshotStream = await collectionService.DownloadCollectionSnapshotAsync(
+            nodeUrl, 
+            collectionName, 
+            snapshotName, 
+            cancellationToken);
+
+        if (snapshotStream != null)
+        {
+            logger.LogInformation("✅ Successfully downloaded snapshot {SnapshotName} via Qdrant API", snapshotName);
+            return snapshotStream;
+        }
+
+        // API failed, try downloading from disk (fallback for disk-only snapshots)
+        logger.LogWarning("Failed to download snapshot {SnapshotName} via API, trying disk fallback", snapshotName);
+
+        // Need podName and namespace for disk download
+        if (string.IsNullOrEmpty(podName) || string.IsNullOrEmpty(podNamespace))
+        {
+            logger.LogError("Cannot fallback to disk download: PodName or PodNamespace not provided");
+            return null;
+        }
+
+        var diskStream = await DownloadSnapshotFromDiskAsync(
+            podName,
+            podNamespace,
+            collectionName,
+            snapshotName,
+            cancellationToken);
+
+        if (diskStream != null)
+        {
+            logger.LogInformation("✅ Successfully downloaded snapshot {SnapshotName} from disk (fallback)", snapshotName);
+            return diskStream;
+        }
+
+        logger.LogError("Failed to download snapshot {SnapshotName} via both API and disk", snapshotName);
+        return null;
     }
 
-    public async Task<Stream?> DownloadSnapshotFromDiskAsync(
+    private async Task<Stream?> DownloadSnapshotFromDiskAsync(
         string podName,
         string podNamespace,
         string collectionName,
@@ -779,16 +789,7 @@ public class ClusterManager(
         return await collectionService.DownloadSnapshotFromDiskAsync(podName, podNamespace, collectionName, snapshotName, cancellationToken);
     }
 
-    public async Task<bool> CheckCollectionExistsAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        logger.LogInformation("Checking if collection {CollectionName} exists on node {NodeUrl}", 
-            collectionName, nodeUrl);
 
-        return await collectionService.CheckCollectionExistsAsync(nodeUrl, collectionName, cancellationToken);
-    }
 
     public async Task<bool> RecoverCollectionFromSnapshotAsync(
         string nodeUrl,
