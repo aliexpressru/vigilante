@@ -45,6 +45,7 @@ public interface IPodCommandExecutor
         string itemDescription,
         CancellationToken cancellationToken);
 
+
     /// <summary>
     /// Gets exact file size in bytes using stat command
     /// </summary>
@@ -64,16 +65,7 @@ public interface IPodCommandExecutor
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Downloads a file from a pod using kubectl cp (more reliable for large files)
-    /// </summary>
-    Task<Stream?> DownloadFileViaKubectlCpAsync(
-        string podName,
-        string podNamespace,
-        string filePath,
-        CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Downloads a file from a pod as a stream
+    /// Downloads a file from a pod as a stream using cat command
     /// </summary>
     Task<Stream?> DownloadFileAsync(
         string podName,
@@ -89,6 +81,15 @@ public interface IPodCommandExecutor
         string podNamespace,
         string filePath,
         long? expectedSize,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Downloads a file from a pod using kubectl cp (more reliable for large files)
+    /// </summary>
+    Task<Stream?> DownloadFileViaKubectlCpAsync(
+        string podName,
+        string podNamespace,
+        string filePath,
         CancellationToken cancellationToken);
 }
 

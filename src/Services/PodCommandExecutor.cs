@@ -88,10 +88,6 @@ public class PodCommandExecutor : IPodCommandExecutor
 
     // Command: stat -c %s {path}
     // - "stat": Display file status
-    // - "-c %s": Format string to print only file size in bytes
-    // - "{path}": Path to the file
-    private const string GetFileSizeCommand = "stat -c %s {0}";
-
     public PodCommandExecutor(IKubernetes kubernetes, ILogger<PodCommandExecutor> logger)
     {
         _kubernetes = kubernetes;
@@ -246,9 +242,16 @@ public class PodCommandExecutor : IPodCommandExecutor
             {
                 // Kubernetes WebSocket uses channel prefix (first byte):
                 // 0 = stdin, 1 = stdout, 2 = stderr, 3 = error/resize
-                // Skip the first byte (channel) and only read actual data
-                var dataStart = 1;
-                var dataLength = result.Count - 1;
+                // Check if first byte is a channel ID (0-3), otherwise it's regular data
+                var dataStart = 0;
+                var dataLength = result.Count;
+                
+                if (result.Count > 0 && buffer[0] <= 3)
+                {
+                    // First byte is a channel prefix, skip it
+                    dataStart = 1;
+                    dataLength = result.Count - 1;
+                }
                 
                 if (dataLength > 0)
                 {
@@ -268,17 +271,18 @@ public class PodCommandExecutor : IPodCommandExecutor
     {
         var output = await ExecuteCommandAsync(podName, podNamespace, command, cancellationToken);
 
-        return output
+        // First remove all control characters from the entire output
+        var cleanOutput = new string(output.Where(c => !char.IsControl(c) || c == '\n' || c == '\r').ToArray());
+
+        return cleanOutput
             .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(name => name
                 .TrimEnd('/', ':')  // Remove both / and : that ls -1d */ can add
-                .Trim()
-                .Where(c => !char.IsControl(c))
-                .ToArray())
-            .Select(chars => new string(chars))
+                .Trim())
             .Where(name => !string.IsNullOrWhiteSpace(name) && !name.StartsWith("."))
             .ToList();
     }
+
 
     /// <summary>
     /// Gets exact file size in bytes using stat command
@@ -294,8 +298,9 @@ public class PodCommandExecutor : IPodCommandExecutor
             _logger.LogInformation("Getting file size for {FilePath} on pod {PodName} in namespace {Namespace}", 
                 filePath, podName, podNamespace);
             
-            var command = string.Format(GetFileSizeCommand, filePath);
-            _logger.LogInformation("Executing command: stat -c %s {FilePath}", filePath);
+            // Use stat -c %s to get exact file size in bytes
+            var command = $"stat -c %s {filePath}";
+            _logger.LogInformation("Executing command: {Command}", command);
             
             var output = await ExecuteCommandAsync(podName, podNamespace, command, cancellationToken);
             
@@ -308,8 +313,8 @@ public class PodCommandExecutor : IPodCommandExecutor
                 return null;
             }
             
-            // Aggressively trim all whitespace including newlines, tabs, spaces
-            var trimmedOutput = output.Trim().Trim('\n', '\r', '\t', ' ');
+            // Trim all whitespace
+            var trimmedOutput = output.Trim();
             
             _logger.LogInformation("After trim: '{TrimmedOutput}' (length: {Length})", 
                 trimmedOutput, trimmedOutput.Length);
@@ -320,10 +325,7 @@ public class PodCommandExecutor : IPodCommandExecutor
                 return size;
             }
             
-            // Log each character's ASCII code for debugging
-            var charCodes = string.Join(", ", trimmedOutput.Select((c, i) => $"[{i}]='{c}'({(int)c})"));
-            _logger.LogWarning("❌ Could not parse file size. Output: '{Output}', Chars: {CharCodes}", 
-                trimmedOutput, charCodes);
+            _logger.LogWarning("❌ Could not parse file size. Output: '{Output}'", trimmedOutput);
             return null;
         }
         catch (Exception ex)
@@ -380,14 +382,14 @@ public class PodCommandExecutor : IPodCommandExecutor
 
             // Create temporary file for download
             var tempFile = Path.GetTempFileName();
-            
+
             try
             {
                 // Use kubectl cp: kubectl cp <namespace>/<pod>:/path/to/file /local/path
                 var source = $"{podNamespace}/{podName}:{filePath}";
-                var kubeConfigPath = Environment.GetEnvironmentVariable("KUBECONFIG") ?? 
+                var kubeConfigPath = Environment.GetEnvironmentVariable("KUBECONFIG") ??
                                      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".kube", "config");
-                
+
                 // Build kubectl cp command
                 var startInfo = new System.Diagnostics.ProcessStartInfo
                 {
@@ -411,12 +413,12 @@ public class PodCommandExecutor : IPodCommandExecutor
 
                 var output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
                 var error = await process.StandardError.ReadToEndAsync(cancellationToken);
-                
+
                 await process.WaitForExitAsync(cancellationToken);
 
                 if (process.ExitCode != 0)
                 {
-                    _logger.LogError("kubectl cp failed with exit code {ExitCode}. Error: {Error}", 
+                    _logger.LogError("kubectl cp failed with exit code {ExitCode}. Error: {Error}",
                         process.ExitCode, error);
                     File.Delete(tempFile);
                     return null;
@@ -435,7 +437,7 @@ public class PodCommandExecutor : IPodCommandExecutor
                 }
 
                 var fileInfo = new FileInfo(tempFile);
-                _logger.LogInformation("✅ Downloaded {Size} bytes to {TempFile} using kubectl cp", 
+                _logger.LogInformation("✅ Downloaded {Size} bytes to {TempFile} using kubectl cp",
                     fileInfo.Length, tempFile);
 
                 // Open file stream with DeleteOnClose option

@@ -20,7 +20,6 @@ class VigilanteDashboard {
         this.collectionIssues = []; // Issues from collections-info
         this.init();
         this.setupRefreshControls();
-        this.setupDebugDownload();
     }
 
     // Convert numeric status to string
@@ -966,8 +965,8 @@ class VigilanteDashboard {
                 
                 const downloadBtn = document.createElement('button');
                 downloadBtn.className = 'action-button action-button-primary action-button-sm';
-                downloadBtn.innerHTML = '<i class="fas fa-download"></i> Download';
-                downloadBtn.title = 'Download snapshot (tries API first, falls back to Disk)';
+                downloadBtn.innerHTML = '<i class="fas fa-download"></i> API';
+                downloadBtn.title = 'Download snapshot via Qdrant API';
                 downloadBtn.onclick = () => this.downloadSnapshot(
                     collection.collectionName, 
                     node.snapshotName, 
@@ -976,15 +975,14 @@ class VigilanteDashboard {
                     node.podNamespace || 'qdrant'
                 );
                 
-                // Debug button: Direct download from disk
                 const downloadDiskBtn = document.createElement('button');
-                downloadDiskBtn.className = 'action-button action-button-info action-button-sm';
+                downloadDiskBtn.className = 'action-button action-button-secondary action-button-sm';
                 downloadDiskBtn.innerHTML = '<i class="fas fa-hdd"></i> Disk';
-                downloadDiskBtn.title = 'DEBUG: Download directly from Disk (bypasses API check)';
+                downloadDiskBtn.title = 'Download snapshot directly from disk (for deleted collections)';
                 downloadDiskBtn.onclick = () => this.downloadSnapshotFromDisk(
-                    collection.collectionName, 
-                    node.snapshotName, 
-                    node.podName, 
+                    collection.collectionName,
+                    node.snapshotName,
+                    node.podName,
                     node.podNamespace || 'qdrant'
                 );
                 
@@ -997,7 +995,7 @@ class VigilanteDashboard {
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'action-button action-button-danger action-button-sm';
                 deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
-                deleteBtn.title = 'Delete this snapshot';
+                deleteBtn.title = 'Delete this snapshot from disk';
                 deleteBtn.onclick = () => this.deleteSnapshotFromNode(node.podName, node.podNamespace || 'qdrant', collection.collectionName, node.snapshotName);
                 
                 actionsContainer.appendChild(downloadBtn);
@@ -1746,9 +1744,9 @@ class VigilanteDashboard {
 
     async downloadSnapshotFromDisk(collectionName, snapshotName, podName, podNamespace) {
         const toastId = this.showToast(
-            `[DEBUG] Downloading '${snapshotName}' directly from disk...`,
+            `Downloading '${snapshotName}' from disk...`,
             'info',
-            'Debug: Download from Disk',
+            'Download from Disk',
             0,
             true
         );
@@ -1788,7 +1786,7 @@ class VigilanteDashboard {
                     toastId,
                     `0% (0 / ${this.formatSize(total)})`,
                     'info',
-                    `[DEBUG] Downloading '${snapshotName}' from disk`,
+                    `Downloading '${snapshotName}' from disk`,
                     0,
                     false
                 );
@@ -1797,7 +1795,7 @@ class VigilanteDashboard {
                     toastId,
                     `Downloading...`,
                     'info',
-                    `[DEBUG] Downloading '${snapshotName}' from disk`,
+                    `Downloading '${snapshotName}' from disk`,
                     null,
                     false
                 );
@@ -1825,7 +1823,7 @@ class VigilanteDashboard {
                         toastId,
                         `${percent}% (${this.formatSize(receivedLength)} / ${this.formatSize(total)})`,
                         'info',
-                        `[DEBUG] Downloading '${snapshotName}' from disk`,
+                        `Downloading '${snapshotName}' from disk`,
                         percent,
                         false
                     );
@@ -1834,7 +1832,7 @@ class VigilanteDashboard {
                         toastId,
                         `${this.formatSize(receivedLength)} received...`,
                         'info',
-                        `[DEBUG] Downloading '${snapshotName}' from disk`,
+                        `Downloading '${snapshotName}' from disk`,
                         null,
                         false
                     );
@@ -1862,7 +1860,7 @@ class VigilanteDashboard {
                 toastId,
                 `Downloaded successfully (${this.formatSize(receivedLength)})`,
                 'success',
-                `[DEBUG] '${snapshotName}' from disk`,
+                `'${snapshotName}' from disk`,
                 100,
                 true
             );
@@ -1872,7 +1870,7 @@ class VigilanteDashboard {
                 toastId,
                 error.message,
                 'error',
-                'Debug Download Failed'
+                'Download Failed'
             );
         }
     }

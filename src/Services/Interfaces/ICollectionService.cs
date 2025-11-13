@@ -80,7 +80,7 @@ public interface ICollectionService
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Downloads a snapshot for a collection from a specific node via API
+    /// Downloads a snapshot for a collection from a specific node
     /// </summary>
     Task<Stream?> DownloadCollectionSnapshotAsync(
         string nodeUrl,
@@ -89,7 +89,7 @@ public interface ICollectionService
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Downloads a snapshot directly from disk on a specific pod
+    /// Downloads a snapshot directly from disk on a specific pod (bypasses Qdrant API)
     /// </summary>
     Task<Stream?> DownloadSnapshotFromDiskAsync(
         string podName,

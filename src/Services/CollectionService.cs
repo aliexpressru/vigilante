@@ -406,57 +406,9 @@ public class CollectionService : ICollectionService
         }
     }
 
-    private async Task<string?> GetSnapshotChecksumAsync(
-        string podName,
-        string podNamespace,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken)
-    {
-        if (_commandExecutor == null)
-        {
-            _logger.LogWarning("Kubernetes client not available, cannot get checksum");
-            return null;
-        }
-
-        try
-        {
-            var snapshotPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
-            var checksumPath = $"{snapshotPath}.checksum";
-            
-            _logger.LogInformation("Reading checksum from {ChecksumPath} on pod {PodName}", checksumPath, podName);
-            
-            var checksumContent = await _commandExecutor.GetFileContentAsync(
-                podName,
-                podNamespace,
-                checksumPath,
-                cancellationToken);
-
-            if (string.IsNullOrWhiteSpace(checksumContent))
-            {
-                _logger.LogWarning("No checksum file found for snapshot {SnapshotName}", snapshotName);
-                return null;
-            }
-
-            // Checksum file format: "<checksum> <filename>" or just "<checksum>"
-            var parts = checksumContent.Trim().Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length > 0)
-            {
-                var checksum = parts[0].Trim().ToLowerInvariant();
-                _logger.LogInformation("Found checksum for {SnapshotName}: {Checksum}", snapshotName, checksum);
-                return checksum;
-            }
-
-            _logger.LogWarning("Could not parse checksum from content: {Content}", checksumContent);
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to get checksum for snapshot {SnapshotName}", snapshotName);
-            return null;
-        }
-    }
-
+    /// <summary>
+    /// Downloads a snapshot directly from disk on a specific pod (bypasses Qdrant API)
+    /// </summary>
     public async Task<Stream?> DownloadSnapshotFromDiskAsync(
         string podName,
         string podNamespace,
@@ -464,87 +416,77 @@ public class CollectionService : ICollectionService
         string snapshotName,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "Downloading snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}. Received namespace: '{NamespaceRaw}'",
-            snapshotName, collectionName, podName, podNamespace, podNamespace ?? "NULL");
-
-        if (_commandExecutor == null)
+        try
         {
-            _logger.LogError("Kubernetes client not available, cannot download snapshot from disk");
+            _logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}", 
+                snapshotName, collectionName, podName, podNamespace);
+
+            var snapshotPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
+            
+            _logger.LogInformation("Starting download: {SnapshotPath} from pod {PodName}", snapshotPath, podName);
+
+            if (_commandExecutor == null)
+            {
+                _logger.LogError("Command executor not available - not running in Kubernetes cluster");
+                return null;
+            }
+
+            // Get expected file size for verification
+            var expectedSize = await _commandExecutor.GetFileSizeInBytesAsync(
+                podName,
+                podNamespace,
+                snapshotPath,
+                cancellationToken);
+
+            if (expectedSize.HasValue)
+            {
+                _logger.LogInformation("📏 Got expected file size: {Size} bytes ({FormattedSize})", 
+                    expectedSize.Value, expectedSize.Value.ToPrettySize());
+            }
+            else
+            {
+                _logger.LogWarning("⚠️ Could not get file size from pod - will download without size limit!");
+            }
+
+            // Get checksum for verification
+            var checksumPath = $"{snapshotPath}.checksum";
+            var expectedChecksum = await _commandExecutor.GetFileContentAsync(
+                podName,
+                podNamespace,
+                checksumPath,
+                cancellationToken);
+
+            if (!string.IsNullOrEmpty(expectedChecksum))
+            {
+                _logger.LogInformation("📋 Expected checksum: {Checksum}", expectedChecksum);
+            }
+
+            // Download file using cat command
+            var snapshotStream = await _commandExecutor.DownloadFileAsync(
+                podName,
+                podNamespace,
+                snapshotPath,
+                expectedSize,
+                cancellationToken);
+
+            if (snapshotStream == null)
+            {
+                _logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName}", 
+                    snapshotName, podName);
+                return null;
+            }
+
+            _logger.LogInformation("✅ Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
+                snapshotName, podName, podNamespace);
+
+            return snapshotStream;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to download snapshot {SnapshotName} from disk on pod {PodName} in namespace {Namespace}", 
+                snapshotName, podName, podNamespace);
             return null;
         }
-
-        // Ensure namespace is not empty or null
-        var effectiveNamespace = string.IsNullOrWhiteSpace(podNamespace) ? "qdrant" : podNamespace;
-        
-        if (effectiveNamespace != podNamespace)
-        {
-            _logger.LogWarning("Namespace was empty or null, using default 'qdrant'. Original value: '{Original}'", 
-                podNamespace ?? "NULL");
-        }
-
-        var snapshotPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
-        _logger.LogInformation("Starting download: {Path} from pod {PodName}", snapshotPath, podName);
-        
-        // Get expected file size using stat command
-        var expectedSize = await _commandExecutor.GetFileSizeInBytesAsync(
-            podName,
-            effectiveNamespace,
-            snapshotPath,
-            cancellationToken);
-
-        if (expectedSize.HasValue)
-        {
-            _logger.LogInformation("📏 Got expected file size: {Size} bytes ({PrettySize})", 
-                expectedSize.Value, expectedSize.Value.ToPrettySize());
-        }
-        else
-        {
-            _logger.LogWarning("⚠️ Could not get file size from pod - will download without size limit!");
-        }
-        
-        // Get expected checksum
-        var expectedChecksum = await GetSnapshotChecksumAsync(
-            podName,
-            effectiveNamespace,
-            collectionName,
-            snapshotName,
-            cancellationToken);
-        
-        // Use kubectl cp instead of WebSocket exec for reliable large file downloads
-        // kubectl cp uses tar internally and is designed for file transfers
-        _logger.LogInformation("Using kubectl cp for reliable download of snapshot {SnapshotName} from pod {PodName}", 
-            snapshotName, podName);
-        
-        var fileStream = await _commandExecutor.DownloadFileViaKubectlCpAsync(
-            podName, 
-            effectiveNamespace, 
-            snapshotPath,
-            cancellationToken);
-
-        if (fileStream == null)
-        {
-            _logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName} in namespace {Namespace} using kubectl cp", 
-                snapshotName, podName, effectiveNamespace);
-            return null;
-        }
-
-        _logger.LogInformation("✅ Snapshot {SnapshotName} downloaded successfully from disk on pod {PodName} in namespace {Namespace} using kubectl cp", 
-            snapshotName, podName, effectiveNamespace);
-
-        if (expectedSize.HasValue)
-        {
-            _logger.LogInformation("📏 Expected file size: {Size} bytes ({PrettySize})", 
-                expectedSize.Value, expectedSize.Value.ToPrettySize());
-        }
-
-        if (!string.IsNullOrEmpty(expectedChecksum))
-        {
-            _logger.LogInformation("📋 Expected checksum: {Checksum} - verify after download", expectedChecksum);
-        }
-
-        // Return the file stream - kubectl cp downloaded to temp file with DeleteOnClose option
-        return fileStream;
     }
 
     public async Task<bool> CheckCollectionExistsAsync(
