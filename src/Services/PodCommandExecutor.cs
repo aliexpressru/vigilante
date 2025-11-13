@@ -84,7 +84,8 @@ public class PodCommandExecutor : IPodCommandExecutor
     // Command: cat {path}
     // - "cat {path}": Stream file contents to stdout
     // Note: cat outputs EXACTLY the file size (verified with wc -c)
-    private const string StreamFileCommand = "cat {0}";
+    // Use base64 to prevent line ending corruption during WebSocket transmission
+    private const string StreamFileCommand = "base64 {0}";
 
     // Command: stat -c %s {path}
     // - "stat": Display file status
@@ -512,13 +513,20 @@ public class PodCommandExecutor : IPodCommandExecutor
                 "qdrant",
                 cancellationToken: cancellationToken);
 
-            // Create a stream that will read from WebSocket
-            var stream = new WebSocketStream(webSocket, _logger, filePath, podName, expectedSize);
+            // Create a stream that will read from WebSocket (base64 encoded)
+            var webSocketStream = new WebSocketStream(webSocket, _logger, filePath, podName, null);
             
-            _logger.LogInformation("✅ Started streaming file {FilePath} from pod {PodName}",
+            // Wrap in CryptoStream to decode base64 on the fly
+            var base64Transform = new System.Security.Cryptography.FromBase64Transform();
+            var decodingStream = new System.Security.Cryptography.CryptoStream(
+                webSocketStream, 
+                base64Transform, 
+                System.Security.Cryptography.CryptoStreamMode.Read);
+            
+            _logger.LogInformation("✅ Started streaming file {FilePath} from pod {PodName} (base64 encoded)",
                 filePath, podName);
             
-            return stream;
+            return decodingStream;
         }
         catch (Exception ex)
         {
