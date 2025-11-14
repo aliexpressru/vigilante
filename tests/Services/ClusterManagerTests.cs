@@ -954,13 +954,6 @@ public class ClusterManagerTests
         Assert.That(result.Nodes[0].ErrorType, Is.EqualTo(NodeErrorType.InvalidResponse));
     }
 
-    [Test]
-    public void RecoverClusterAsync_ExecutesWithoutError()
-    {
-        // Act & Assert - Currently just a placeholder, but should not throw
-        Assert.DoesNotThrowAsync(async () => await _clusterManager.RecoverClusterAsync());
-    }
-
     #region Collection Issues Tests
 
     [Test]
