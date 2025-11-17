@@ -5,7 +5,7 @@ using Vigilante.Services.Interfaces;
 namespace Vigilante.Services;
 
 public class QdrantMonitorService(
-    ClusterManager clusterManager,
+    IClusterManager clusterManager,
     IOptions<QdrantOptions> options,
     ILogger<QdrantMonitorService> logger)
     : BackgroundService

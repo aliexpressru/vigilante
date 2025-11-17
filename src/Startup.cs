@@ -29,7 +29,8 @@ public class Startup(IConfiguration configuration)
         
         // Core services - CollectionService has no dependencies on ClusterManager anymore
         services.AddSingleton<ICollectionService, CollectionService>();
-        services.AddSingleton<ClusterManager>();
+        services.AddSingleton<ISnapshotService, SnapshotService>();
+        services.AddSingleton<IClusterManager, ClusterManager>();
         services.AddHostedService<QdrantMonitorService>();
 
         // OpenTelemetry with Prometheus exporter

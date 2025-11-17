@@ -1,14 +1,14 @@
 class VigilanteDashboard {
     constructor() {
         this.statusApiEndpoint = '/api/v1/cluster/status';
-        this.sizesApiEndpoint = '/api/v1/cluster/collections-info';
-        this.snapshotsApiEndpoint = '/api/v1/cluster/snapshots-info';
+        this.sizesApiEndpoint = '/api/v1/collections/info';
+        this.snapshotsApiEndpoint = '/api/v1/snapshots/info';
         this.replicateShardsEndpoint = '/api/v1/cluster/replicate-shards';
-        this.deleteCollectionEndpoint = '/api/v1/cluster/delete-collection';
-        this.createSnapshotEndpoint = '/api/v1/cluster/create-snapshot';
-        this.deleteSnapshotEndpoint = '/api/v1/cluster/delete-snapshot';
-        this.downloadSnapshotEndpoint = '/api/v1/cluster/download-snapshot';
-        this.recoverFromSnapshotEndpoint = '/api/v1/cluster/recover-from-snapshot';
+        this.deleteCollectionEndpoint = '/api/v1/collections';
+        this.createSnapshotEndpoint = '/api/v1/snapshots';
+        this.deleteSnapshotEndpoint = '/api/v1/snapshots';
+        this.downloadSnapshotEndpoint = '/api/v1/snapshots/download';
+        this.recoverFromSnapshotEndpoint = '/api/v1/snapshots/recover';
         this.refreshInterval = 0;
         this.intervalId = null;
         this.openSnapshots = new Set();
@@ -1261,7 +1261,7 @@ class VigilanteDashboard {
         );
         
         try {
-            const response = await fetch('/api/v1/cluster/recover-from-url', {
+            const response = await fetch('/api/v1/snapshots/recover-from-url', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
