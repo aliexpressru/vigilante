@@ -71,6 +71,14 @@ public interface ICollectionService
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Gets snapshot information with sizes for a collection on a specific node
+    /// </summary>
+    Task<List<(string Name, long Size)>> GetCollectionSnapshotsWithSizeAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Deletes a snapshot for a collection on a specific node
     /// </summary>
     Task<bool> DeleteCollectionSnapshotAsync(
@@ -111,6 +119,16 @@ public interface ICollectionService
         string snapshotName,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Recovers a collection from a snapshot URL (e.g., S3 URL) on a specific node
+    /// </summary>
+    Task<bool> RecoverCollectionFromUrlAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotUrl,
+        string? snapshotChecksum,
+        bool waitForResult,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Gets clustering information for a collection and enriches collection infos with shard data

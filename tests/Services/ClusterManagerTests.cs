@@ -11,6 +11,7 @@ using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
+using SnapshotInfo = Vigilante.Models.SnapshotInfo;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -1437,4 +1438,1111 @@ public class ClusterManagerTests
     }
 
     #endregion
+
+    #region CreateCollectionSnapshotAsync Tests
+
+    [Test]
+    public async Task CreateCollectionSnapshotAsync_WhenSuccessful_ReturnsSnapshotName()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test_collection";
+        var snapshotName = "test_collection-123-2025-11-17.snapshot";
+
+        _collectionService
+            .CreateCollectionSnapshotAsync(nodeUrl, collectionName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(snapshotName));
+
+        // Act
+        var result = await _clusterManager.CreateCollectionSnapshotAsync(nodeUrl, collectionName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.EqualTo(snapshotName));
+        await _collectionService.Received(1).CreateCollectionSnapshotAsync(nodeUrl, collectionName, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CreateCollectionSnapshotAsync_WhenFailed_ReturnsNull()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test_collection";
+
+        _collectionService
+            .CreateCollectionSnapshotAsync(nodeUrl, collectionName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(null));
+
+        // Act
+        var result = await _clusterManager.CreateCollectionSnapshotAsync(nodeUrl, collectionName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.Null);
+    }
+
+    #endregion
+
+    #region CreateCollectionSnapshotOnAllNodesAsync Tests
+
+    [Test]
+    public async Task CreateCollectionSnapshotOnAllNodesAsync_CreatesOnAllNodes()
+    {
+        // Arrange
+        var collectionName = "test_collection";
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" },
+            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+        var pod2Id = 1002UL;
+
+        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+                    {
+                        { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+                    },
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var mockClient2 = _mockClients.GetOrAdd("node2:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient2.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod2Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+                    {
+                        { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+                    },
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        _collectionService
+            .CreateCollectionSnapshotAsync("http://node1:6333", collectionName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>("snapshot1.snapshot"));
+
+        _collectionService
+            .CreateCollectionSnapshotAsync("http://node2:6333", collectionName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>("snapshot2.snapshot"));
+
+        // Act
+        var result = await _clusterManager.CreateCollectionSnapshotOnAllNodesAsync(collectionName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(2));
+        Assert.That(result["http://node1:6333"], Is.EqualTo("snapshot1.snapshot"));
+        Assert.That(result["http://node2:6333"], Is.EqualTo("snapshot2.snapshot"));
+    }
+
+    #endregion
+
+    #region DeleteCollectionSnapshotAsync Tests
+
+    [Test]
+    public async Task DeleteCollectionSnapshotAsync_WhenSuccessful_ReturnsTrue()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test_collection";
+        var snapshotName = "test_collection-123.snapshot";
+
+        _collectionService
+            .DeleteCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        // Act
+        var result = await _clusterManager.DeleteCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.True);
+        await _collectionService.Received(1).DeleteCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DeleteCollectionSnapshotAsync_WhenFailed_ReturnsFalse()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test_collection";
+        var snapshotName = "test_collection-123.snapshot";
+
+        _collectionService
+            .DeleteCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(false));
+
+        // Act
+        var result = await _clusterManager.DeleteCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.False);
+    }
+
+    #endregion
+
+    #region DeleteCollectionSnapshotOnAllNodesAsync Tests
+
+    [Test]
+    public async Task DeleteCollectionSnapshotOnAllNodesAsync_DeletesFromAllNodes()
+    {
+        // Arrange
+        var collectionName = "test_collection";
+        var snapshotName = "test-snapshot.snapshot";
+        
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" },
+            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+        var pod2Id = 1002UL;
+
+        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+                    {
+                        { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+                    },
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var mockClient2 = _mockClients.GetOrAdd("node2:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient2.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod2Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+                    {
+                        { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+                    },
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        _collectionService
+            .DeleteCollectionSnapshotAsync(Arg.Any<string>(), collectionName, snapshotName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        // Act
+        var result = await _clusterManager.DeleteCollectionSnapshotOnAllNodesAsync(collectionName, snapshotName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(2));
+        Assert.That(result.Values.All(v => v), Is.True);
+    }
+
+    #endregion
+
+    #region RecoverCollectionFromSnapshotAsync Tests
+
+    [Test]
+    public async Task RecoverCollectionFromSnapshotAsync_WhenSuccessful_ReturnsTrue()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test_collection";
+        var snapshotName = "test_collection-123.snapshot";
+
+        _collectionService
+            .RecoverCollectionFromSnapshotAsync(nodeUrl, collectionName, snapshotName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        // Act
+        var result = await _clusterManager.RecoverCollectionFromSnapshotAsync(nodeUrl, collectionName, snapshotName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.True);
+        await _collectionService.Received(1).RecoverCollectionFromSnapshotAsync(nodeUrl, collectionName, snapshotName, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RecoverCollectionFromSnapshotAsync_WhenFailed_ReturnsFalse()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test_collection";
+        var snapshotName = "test_collection-123.snapshot";
+
+        _collectionService
+            .RecoverCollectionFromSnapshotAsync(nodeUrl, collectionName, snapshotName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(false));
+
+        // Act
+        var result = await _clusterManager.RecoverCollectionFromSnapshotAsync(nodeUrl, collectionName, snapshotName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.False);
+    }
+
+    #endregion
+
+    #region RecoverCollectionFromUrlAsync Tests
+
+    [Test]
+    public async Task RecoverCollectionFromUrlAsync_WhenSuccessful_ReturnsTrue()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test_collection";
+        var snapshotUrl = "s3://bucket/snapshot.snapshot";
+        var checksum = "abc123";
+
+        _collectionService
+            .RecoverCollectionFromUrlAsync(nodeUrl, collectionName, snapshotUrl, checksum, true, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        // Act
+        var result = await _clusterManager.RecoverCollectionFromUrlAsync(
+            nodeUrl, collectionName, snapshotUrl, checksum, true, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.True);
+        await _collectionService.Received(1).RecoverCollectionFromUrlAsync(
+            nodeUrl, collectionName, snapshotUrl, checksum, true, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RecoverCollectionFromUrlAsync_WhenFailed_ReturnsFalse()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test_collection";
+        var snapshotUrl = "s3://bucket/snapshot.snapshot";
+
+        _collectionService
+            .RecoverCollectionFromUrlAsync(nodeUrl, collectionName, snapshotUrl, null, true, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(false));
+
+        // Act
+        var result = await _clusterManager.RecoverCollectionFromUrlAsync(
+            nodeUrl, collectionName, snapshotUrl, null, true, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public async Task RecoverCollectionFromUrlAsync_WithoutChecksum_Works()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test_collection";
+        var snapshotUrl = "https://example.com/snapshot.snapshot";
+
+        _collectionService
+            .RecoverCollectionFromUrlAsync(nodeUrl, collectionName, snapshotUrl, null, false, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        // Act
+        var result = await _clusterManager.RecoverCollectionFromUrlAsync(
+            nodeUrl, collectionName, snapshotUrl, null, false, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.True);
+        await _collectionService.Received(1).RecoverCollectionFromUrlAsync(
+            nodeUrl, collectionName, snapshotUrl, null, false, Arg.Any<CancellationToken>());
+    }
+
+    #endregion
+
+    #region DeleteCollectionViaApiAsync Tests
+
+    [Test]
+    public async Task DeleteCollectionViaApiAsync_WhenSuccessful_ReturnsTrue()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test_collection";
+
+        _collectionService
+            .DeleteCollectionViaApiAsync(nodeUrl, collectionName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        // Act
+        var result = await _clusterManager.DeleteCollectionViaApiAsync(nodeUrl, collectionName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.True);
+        await _collectionService.Received(1).DeleteCollectionViaApiAsync(nodeUrl, collectionName, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DeleteCollectionViaApiAsync_WhenFailed_ReturnsFalse()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test_collection";
+
+        _collectionService
+            .DeleteCollectionViaApiAsync(nodeUrl, collectionName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(false));
+
+        // Act
+        var result = await _clusterManager.DeleteCollectionViaApiAsync(nodeUrl, collectionName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.False);
+    }
+
+    #endregion
+
+    #region DeleteCollectionViaApiOnAllNodesAsync Tests
+
+    [Test]
+    public async Task DeleteCollectionViaApiOnAllNodesAsync_DeletesFromAllNodes()
+    {
+        // Arrange
+        var collectionName = "test_collection";
+        
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" },
+            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+        var pod2Id = 1002UL;
+
+        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+                    {
+                        { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+                    },
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var mockClient2 = _mockClients.GetOrAdd("node2:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient2.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod2Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+                    {
+                        { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+                    },
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        _collectionService
+            .DeleteCollectionViaApiAsync(Arg.Any<string>(), collectionName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        // Act
+        var result = await _clusterManager.DeleteCollectionViaApiOnAllNodesAsync(collectionName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(2));
+        Assert.That(result.Values.All(v => v), Is.True);
+    }
+
+    #endregion
+
+    #region ReplicateShardsAsync Tests
+
+    [Test]
+    public async Task ReplicateShardsAsync_WhenSuccessful_ReturnsTrue()
+    {
+        // Arrange
+        var sourcePeerId = 1001UL;
+        var targetPeerId = 1002UL;
+        var collectionName = "test_collection";
+        var shardIds = new uint[] { 0, 1 };
+
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = 1001UL,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = 1001UL, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        _collectionService
+            .ReplicateShardsAsync(
+                Arg.Any<string>(),
+                sourcePeerId,
+                targetPeerId,
+                collectionName,
+                shardIds,
+                false,
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        // Act
+        var result = await _clusterManager.ReplicateShardsAsync(
+            sourcePeerId, targetPeerId, collectionName, shardIds, false, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public async Task ReplicateShardsAsync_WithMoveShards_Works()
+    {
+        // Arrange
+        var sourcePeerId = 1001UL;
+        var targetPeerId = 1002UL;
+        var collectionName = "test_collection";
+        var shardIds = new uint[] { 0 };
+
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = 1001UL,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = 1001UL, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        _collectionService
+            .ReplicateShardsAsync(
+                Arg.Any<string>(),
+                sourcePeerId,
+                targetPeerId,
+                collectionName,
+                shardIds,
+                true, // isMove = true
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        // Act
+        var result = await _clusterManager.ReplicateShardsAsync(
+            sourcePeerId, targetPeerId, collectionName, shardIds, true, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.True);
+        await _collectionService.Received(1).ReplicateShardsAsync(
+            Arg.Any<string>(),
+            sourcePeerId,
+            targetPeerId,
+            collectionName,
+            shardIds,
+            true,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReplicateShardsAsync_WhenNoHealthyNodes_ReturnsFalse()
+    {
+        // Arrange
+        var sourcePeerId = 1001UL;
+        var targetPeerId = 1002UL;
+        var collectionName = "test_collection";
+        var shardIds = new uint[] { 0 };
+
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        // Node is unhealthy (returns error)
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns<GetClusterInfoResponse>(_ => throw new HttpRequestException("Connection refused"));
+
+        // Act
+        var result = await _clusterManager.ReplicateShardsAsync(
+            sourcePeerId, targetPeerId, collectionName, shardIds, false, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.False);
+    }
+
+    #endregion
+
+    #region GetSnapshotsInfoAsync Tests
+
+    [Test]
+    public async Task GetSnapshotsInfoAsync_WhenHasPodsWithNames_ReturnsSnapshotsFromDisk()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var snapshotsFromDisk = new List<SnapshotInfo>
+        {
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "1001",
+                CollectionName = "collection1",
+                SnapshotName = "snapshot1.snapshot",
+                SizeBytes = 1024,
+                PodNamespace = "ns1",
+                Source = SnapshotSource.KubernetesStorage
+            }
+        };
+
+        _collectionService
+            .GetSnapshotsFromDiskForPodAsync("pod1", "ns1", "http://node1:6333", "1001", Arg.Any<CancellationToken>())
+            .Returns(snapshotsFromDisk);
+
+        // Act
+        var result = await _clusterManager.GetSnapshotsInfoAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result.First().Source, Is.EqualTo(SnapshotSource.KubernetesStorage));
+        Assert.That(result.First().SnapshotName, Is.EqualTo("snapshot1.snapshot"));
+        Assert.That(result.First().CollectionName, Is.EqualTo("collection1"));
+    }
+
+    [Test]
+    public async Task GetSnapshotsInfoAsync_WhenNoPods_FallsBackToQdrantApi()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "", PodName = "" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // Mock ListCollections response
+        var listCollectionsResponse = new ListCollectionsResponse
+        {
+            Result = new ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
+                }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+        
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(listCollectionsResponse));
+
+        // Mock GetCollectionSnapshotsWithSizeAsync
+        var snapshotsWithSize = new List<(string Name, long Size)>
+        {
+            ("collection1-1001-snapshot.snapshot", 2048)
+        };
+
+        _collectionService
+            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection1", Arg.Any<CancellationToken>())
+            .Returns(snapshotsWithSize);
+
+        // Act
+        var result = await _clusterManager.GetSnapshotsInfoAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result.First().Source, Is.EqualTo(SnapshotSource.QdrantApi));
+        Assert.That(result.First().SnapshotName, Is.EqualTo("collection1-1001-snapshot.snapshot"));
+        Assert.That(result.First().SizeBytes, Is.EqualTo(2048));
+    }
+
+    [Test]
+    public async Task GetSnapshotsInfoAsync_WhenDiskReturnsEmpty_FallsBackToQdrantApi()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // Disk returns empty
+        _collectionService
+            .GetSnapshotsFromDiskForPodAsync("pod1", "ns1", "http://node1:6333", "1001", Arg.Any<CancellationToken>())
+            .Returns(new List<SnapshotInfo>());
+
+        // Mock ListCollections response
+        var listCollectionsResponse = new ListCollectionsResponse
+        {
+            Result = new ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
+                }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+        
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(listCollectionsResponse));
+
+        // Mock GetCollectionSnapshotsWithSizeAsync
+        var snapshotsWithSize = new List<(string Name, long Size)>
+        {
+            ("collection1-1001-snapshot.snapshot", 2048)
+        };
+
+        _collectionService
+            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection1", Arg.Any<CancellationToken>())
+            .Returns(snapshotsWithSize);
+
+        // Act
+        var result = await _clusterManager.GetSnapshotsInfoAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result.First().Source, Is.EqualTo(SnapshotSource.QdrantApi));
+    }
+
+    [Test]
+    public async Task GetSnapshotsInfoAsync_FiltersByPeerId_WhenSnapshotsContainPeerId()
+    {
+        // Arrange - simulate S3 storage where all nodes return same snapshots
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "", PodName = "" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // Mock ListCollections response
+        var listCollectionsResponse = new ListCollectionsResponse
+        {
+            Result = new ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
+                }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+        
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(listCollectionsResponse));
+
+        // Return snapshots from multiple nodes (simulating S3 storage)
+        var snapshotsWithSize = new List<(string Name, long Size)>
+        {
+            ("collection1-1001-snapshot.snapshot", 2048), // Matches node1's PeerId
+            ("collection1-1002-snapshot.snapshot", 2048), // Different PeerId - should be filtered out
+            ("collection1-1003-snapshot.snapshot", 2048)  // Different PeerId - should be filtered out
+        };
+
+        _collectionService
+            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection1", Arg.Any<CancellationToken>())
+            .Returns(snapshotsWithSize);
+
+        // Act
+        var result = await _clusterManager.GetSnapshotsInfoAsync(CancellationToken.None);
+
+        // Assert - should only return the snapshot matching this node's PeerId
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result.First().SnapshotName, Is.EqualTo("collection1-1001-snapshot.snapshot"));
+        Assert.That(result.First().PeerId, Is.EqualTo("1001"));
+    }
+
+    [Test]
+    public async Task GetSnapshotsInfoAsync_HandlesMultipleCollections()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "", PodName = "" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // Mock ListCollections with multiple collections
+        var listCollectionsResponse = new ListCollectionsResponse
+        {
+            Result = new ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1"),
+                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection2")
+                }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+        
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(listCollectionsResponse));
+
+        // Mock snapshots for collection1
+        _collectionService
+            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection1", Arg.Any<CancellationToken>())
+            .Returns(new List<(string Name, long Size)>
+            {
+                ("collection1-1001-snapshot.snapshot", 2048)
+            });
+
+        // Mock snapshots for collection2
+        _collectionService
+            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection2", Arg.Any<CancellationToken>())
+            .Returns(new List<(string Name, long Size)>
+            {
+                ("collection2-1001-snapshot.snapshot", 4096)
+            });
+
+        // Act
+        var result = await _clusterManager.GetSnapshotsInfoAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(2));
+        Assert.That(result.Any(s => s.CollectionName == "collection1"), Is.True);
+        Assert.That(result.Any(s => s.CollectionName == "collection2"), Is.True);
+        Assert.That(result.First(s => s.CollectionName == "collection1").SizeBytes, Is.EqualTo(2048));
+        Assert.That(result.First(s => s.CollectionName == "collection2").SizeBytes, Is.EqualTo(4096));
+    }
+
+    [Test]
+    public async Task GetSnapshotsInfoAsync_WhenQdrantApiFailsForOneCollection_ContinuesWithOthers()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "", PodName = "" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var listCollectionsResponse = new ListCollectionsResponse
+        {
+            Result = new ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1"),
+                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection2")
+                }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+        
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(listCollectionsResponse));
+
+        // collection1 throws exception
+        _collectionService
+            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection1", Arg.Any<CancellationToken>())
+            .Returns<List<(string, long)>>(_ => throw new Exception("Collection1 failed"));
+
+        // collection2 succeeds
+        _collectionService
+            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection2", Arg.Any<CancellationToken>())
+            .Returns(new List<(string Name, long Size)>
+            {
+                ("collection2-1001-snapshot.snapshot", 4096)
+            });
+
+        // Act
+        var result = await _clusterManager.GetSnapshotsInfoAsync(CancellationToken.None);
+
+        // Assert - should still get snapshots from collection2
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result.First().CollectionName, Is.EqualTo("collection2"));
+    }
+
+    #endregion
+
+    #region DeleteSnapshotAsync Tests
+
+    [Test]
+    public async Task DeleteSnapshotAsync_FromKubernetesStorage_Success()
+    {
+        // Arrange
+        var collectionName = "test-collection";
+        var snapshotName = "test-snapshot.snapshot";
+        var podName = "test-pod";
+        var podNamespace = "test-namespace";
+
+        _collectionService
+            .DeleteSnapshotFromDiskAsync(podName, podNamespace, collectionName, snapshotName, Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _clusterManager.DeleteSnapshotAsync(
+            collectionName,
+            snapshotName,
+            SnapshotSource.KubernetesStorage,
+            nodeUrl: null,
+            podName: podName,
+            podNamespace: podNamespace,
+            CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.True);
+        await _collectionService.Received(1).DeleteSnapshotFromDiskAsync(
+            podName, podNamespace, collectionName, snapshotName, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DeleteSnapshotAsync_FromKubernetesStorage_MissingPodName_ReturnsFalse()
+    {
+        // Arrange
+        var collectionName = "test-collection";
+        var snapshotName = "test-snapshot.snapshot";
+
+        // Act
+        var result = await _clusterManager.DeleteSnapshotAsync(
+            collectionName,
+            snapshotName,
+            SnapshotSource.KubernetesStorage,
+            nodeUrl: null,
+            podName: null,
+            podNamespace: "test-namespace",
+            CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.False);
+        await _collectionService.DidNotReceive().DeleteSnapshotFromDiskAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DeleteSnapshotAsync_FromQdrantApi_Success()
+    {
+        // Arrange
+        var collectionName = "test-collection";
+        var snapshotName = "test-snapshot.snapshot";
+        var nodeUrl = "http://test-node:6333";
+
+        _collectionService
+            .DeleteCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _clusterManager.DeleteSnapshotAsync(
+            collectionName,
+            snapshotName,
+            SnapshotSource.QdrantApi,
+            nodeUrl: nodeUrl,
+            podName: null,
+            podNamespace: null,
+            CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.True);
+        await _collectionService.Received(1).DeleteCollectionSnapshotAsync(
+            nodeUrl, collectionName, snapshotName, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DeleteSnapshotAsync_FromQdrantApi_MissingNodeUrl_ReturnsFalse()
+    {
+        // Arrange
+        var collectionName = "test-collection";
+        var snapshotName = "test-snapshot.snapshot";
+
+        // Act
+        var result = await _clusterManager.DeleteSnapshotAsync(
+            collectionName,
+            snapshotName,
+            SnapshotSource.QdrantApi,
+            nodeUrl: null,
+            podName: null,
+            podNamespace: null,
+            CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.False);
+        await _collectionService.DidNotReceive().DeleteCollectionSnapshotAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DeleteSnapshotAsync_FromQdrantApi_Failure()
+    {
+        // Arrange
+        var collectionName = "test-collection";
+        var snapshotName = "test-snapshot.snapshot";
+        var nodeUrl = "http://test-node:6333";
+
+        _collectionService
+            .DeleteCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        // Act
+        var result = await _clusterManager.DeleteSnapshotAsync(
+            collectionName,
+            snapshotName,
+            SnapshotSource.QdrantApi,
+            nodeUrl: nodeUrl,
+            podName: null,
+            podNamespace: null,
+            CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.False);
+        await _collectionService.Received(1).DeleteCollectionSnapshotAsync(
+            nodeUrl, collectionName, snapshotName, Arg.Any<CancellationToken>());
+    }
+
+    #endregion
 }
+
+
+

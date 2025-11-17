@@ -5,8 +5,6 @@ class VigilanteDashboard {
         this.snapshotsApiEndpoint = '/api/v1/cluster/snapshots-info';
         this.replicateShardsEndpoint = '/api/v1/cluster/replicate-shards';
         this.deleteCollectionEndpoint = '/api/v1/cluster/delete-collection';
-        this.deleteSnapshotFromDiskEndpoint = '/api/v1/cluster/snapshots/delete-from-disk';
-        this.recoverFromDiskSnapshotEndpoint = '/api/v1/cluster/snapshots/recover-from-disk';
         this.createSnapshotEndpoint = '/api/v1/cluster/create-snapshot';
         this.deleteSnapshotEndpoint = '/api/v1/cluster/delete-snapshot';
         this.downloadSnapshotEndpoint = '/api/v1/cluster/download-snapshot';
@@ -984,8 +982,8 @@ class VigilanteDashboard {
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'action-button action-button-danger action-button-sm';
                 deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
-                deleteBtn.title = 'Delete this snapshot from disk';
-                deleteBtn.onclick = () => this.deleteSnapshotFromNode(node.podName, node.podNamespace || 'qdrant', collection.collectionName, node.snapshotName);
+                deleteBtn.title = 'Delete this snapshot';
+                deleteBtn.onclick = () => this.deleteSnapshotFromNode(node);
                 
                 actionsContainer.appendChild(downloadBtn);
                 actionsContainer.appendChild(recoverBtn);
@@ -1030,7 +1028,7 @@ class VigilanteDashboard {
         const toastId = this.showToast(`Recovering ${collectionName} from ${snapshotName} on ${nodeUrl}...`, 'info', 0);
         
         try {
-            const response = await fetch(this.recoverFromDiskSnapshotEndpoint, {
+            const response = await fetch(this.recoverFromSnapshotEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1060,7 +1058,7 @@ class VigilanteDashboard {
         
         try {
             const promises = nodes.map(node => 
-                fetch(this.recoverFromDiskSnapshotEndpoint, {
+                fetch(this.recoverFromSnapshotEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1086,23 +1084,29 @@ class VigilanteDashboard {
         }
     }
 
-    async deleteSnapshotFromNode(podName, podNamespace, collectionName, snapshotName) {
-        if (!confirm(`Delete snapshot ${snapshotName} for ${collectionName} from ${podName}?`)) {
+    async deleteSnapshotFromNode(snapshot) {
+        const identifier = snapshot.source === 'KubernetesStorage' ? snapshot.podName : snapshot.nodeUrl;
+        if (!confirm(`Delete snapshot ${snapshot.snapshotName} for ${snapshot.collectionName} from ${identifier}?`)) {
             return;
         }
 
-        const toastId = this.showToast(`Deleting ${snapshotName} from ${podName}...`, 'info', 0);
+        const toastId = this.showToast(`Deleting ${snapshot.snapshotName} from ${identifier}...`, 'info', 0);
         
         try {
-            const response = await fetch(this.deleteSnapshotFromDiskEndpoint, {
-                method: 'POST',
+            const requestBody = {
+                collectionName: snapshot.collectionName,
+                snapshotName: snapshot.snapshotName,
+                singleNode: true,
+                source: snapshot.source,
+                nodeUrl: snapshot.nodeUrl,
+                podName: snapshot.podName,
+                podNamespace: snapshot.podNamespace
+            };
+
+            const response = await fetch(this.deleteSnapshotEndpoint, {
+                method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    podName,
-                    podNamespace,
-                    collectionName,
-                    snapshotName
-                })
+                body: JSON.stringify(requestBody)
             });
 
             const result = await response.json();
@@ -1130,14 +1134,17 @@ class VigilanteDashboard {
         
         try {
             const promises = nodes.map(node => 
-                fetch(this.deleteSnapshotFromDiskEndpoint, {
-                    method: 'POST',
+                fetch(this.deleteSnapshotEndpoint, {
+                    method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        podName: node.podName,
-                        podNamespace: node.podNamespace || 'qdrant',
                         collectionName: collection.collectionName,
-                        snapshotName: node.snapshotName // Each node has its own snapshot name
+                        snapshotName: node.snapshotName,
+                        singleNode: true,
+                        source: node.source,
+                        nodeUrl: node.nodeUrl,
+                        podName: node.podName,
+                        podNamespace: node.podNamespace
                     })
                 })
             );
@@ -1156,6 +1163,129 @@ class VigilanteDashboard {
         } catch (error) {
             this.removeToast(toastId);
             this.showToast(`✗ Error deleting snapshots: ${error.message}`, 'error', 5000);
+        }
+    }
+
+    showRecoverFromUrlDialog(nodeUrl) {
+        // Create modal overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        
+        // Create modal dialog
+        const modal = document.createElement('div');
+        modal.className = 'modal-dialog';
+        modal.innerHTML = `
+            <div class="modal-header">
+                <h3><i class="fas fa-cloud-download-alt"></i> Recover Collection from URL</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="recoverNodeUrl">Node URL:</label>
+                    <input type="text" id="recoverNodeUrl" value="${nodeUrl}" readonly class="form-input" />
+                </div>
+                <div class="form-group">
+                    <label for="recoverCollectionName">Collection Name:</label>
+                    <input type="text" id="recoverCollectionName" placeholder="Enter collection name" class="form-input" required />
+                </div>
+                <div class="form-group">
+                    <label for="recoverSnapshotUrl">Snapshot URL:</label>
+                    <input type="text" id="recoverSnapshotUrl" placeholder="Enter snapshot URL (e.g., s3://...)" class="form-input" required />
+                </div>
+                <div class="form-group">
+                    <label for="recoverSnapshotChecksum">Checksum (optional):</label>
+                    <input type="text" id="recoverSnapshotChecksum" placeholder="Enter snapshot checksum" class="form-input" />
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="recoverWaitForResult" checked />
+                        Wait for result
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary modal-cancel">Cancel</button>
+                <button class="btn-primary modal-submit"><i class="fas fa-cloud-download-alt"></i> Recover</button>
+            </div>
+        `;
+        
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+        
+        // Focus on collection name input
+        setTimeout(() => document.getElementById('recoverCollectionName').focus(), 100);
+        
+        // Close handlers
+        const closeModal = () => {
+            overlay.classList.add('closing');
+            setTimeout(() => overlay.remove(), 300);
+        };
+        
+        overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+        overlay.querySelector('.modal-cancel').addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeModal();
+        });
+        
+        // Submit handler
+        overlay.querySelector('.modal-submit').addEventListener('click', async () => {
+            const collectionName = document.getElementById('recoverCollectionName').value.trim();
+            const snapshotUrl = document.getElementById('recoverSnapshotUrl').value.trim();
+            const snapshotChecksum = document.getElementById('recoverSnapshotChecksum').value.trim() || null;
+            const waitForResult = document.getElementById('recoverWaitForResult').checked;
+            
+            if (!collectionName || !snapshotUrl) {
+                this.showToast('Collection name and snapshot URL are required', 'error', 5000);
+                return;
+            }
+            
+            closeModal();
+            await this.recoverCollectionFromUrl(nodeUrl, collectionName, snapshotUrl, snapshotChecksum, waitForResult);
+        });
+        
+        // Enter key handler for form inputs
+        ['recoverCollectionName', 'recoverSnapshotUrl', 'recoverSnapshotChecksum'].forEach(id => {
+            document.getElementById(id).addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    overlay.querySelector('.modal-submit').click();
+                }
+            });
+        });
+    }
+
+    async recoverCollectionFromUrl(nodeUrl, collectionName, snapshotUrl, snapshotChecksum, waitForResult) {
+        const toastId = this.showToast(
+            `Recovering collection '${collectionName}' from URL on node ${nodeUrl}...`, 
+            'info', 
+            0
+        );
+        
+        try {
+            const response = await fetch('/api/v1/cluster/recover-from-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    nodeUrl,
+                    collectionName,
+                    snapshotUrl,
+                    snapshotChecksum,
+                    waitForResult
+                })
+            });
+
+            const result = await response.json();
+            this.removeToast(toastId);
+
+            if (response.ok && result.success) {
+                this.showToast(`✓ ${result.message}`, 'success', 5000);
+                // Reload data to reflect changes
+                this.refresh();
+            } else {
+                this.showToast(`✗ ${result.message || 'Recovery failed'}`, 'error', 8000);
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`✗ Error recovering collection: ${error.message}`, 'error', 8000);
         }
     }
 
@@ -1380,6 +1510,16 @@ class VigilanteDashboard {
             window.open(dashboardUrl.toString(), '_blank');
         });
         details.appendChild(dashboardBtn);
+
+        // Recover from URL button
+        const recoverFromUrlBtn = document.createElement('button');
+        recoverFromUrlBtn.className = 'recover-from-url-button';
+        recoverFromUrlBtn.innerHTML = '<i class="fas fa-cloud-download-alt"></i> Recover from URL';
+        recoverFromUrlBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.showRecoverFromUrlDialog(node.url);
+        });
+        details.appendChild(recoverFromUrlBtn);
 
 
         card.appendChild(header);

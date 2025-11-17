@@ -7,13 +7,24 @@ public class V1GetSnapshotsInfoResponse
     public class SnapshotInfoDto
     {
         public string PodName { get; set; } = string.Empty;
+
         public string NodeUrl { get; set; } = string.Empty;
+
         public string PeerId { get; set; } = string.Empty;
+
         public string CollectionName { get; set; } = string.Empty;
+
         public string SnapshotName { get; set; } = string.Empty;
+
         public long SizeBytes { get; set; }
+
         public string PrettySize { get; set; } = string.Empty;
+
         public string PodNamespace { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// Source where snapshot was retrieved from: "KubernetesStorage" or "QdrantApi"
+        /// </summary>
+        public string Source { get; set; } = string.Empty;
     }
 }
-

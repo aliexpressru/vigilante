@@ -21,8 +21,24 @@ public class V1DeleteSnapshotRequest
     public bool SingleNode { get; set; }
 
     /// <summary>
-    /// Node URL (required if SingleNode is true)
+    /// Node URL (required if SingleNode is true for API deletion)
     /// </summary>
     public string? NodeUrl { get; set; }
+    
+    /// <summary>
+    /// Source where snapshot was retrieved from: "KubernetesStorage" or "QdrantApi"
+    /// Used to determine the deletion method
+    /// </summary>
+    public string? Source { get; set; }
+    
+    /// <summary>
+    /// Pod name (required if Source is KubernetesStorage)
+    /// </summary>
+    public string? PodName { get; set; }
+    
+    /// <summary>
+    /// Pod namespace (required if Source is KubernetesStorage)
+    /// </summary>
+    public string? PodNamespace { get; set; }
 }
 

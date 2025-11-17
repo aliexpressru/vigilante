@@ -1,6 +1,7 @@
 using k8s;
 using Aer.QdrantClient.Http.Abstractions;
 using Vigilante.Models;
+using Vigilante.Models.Enums;
 using Vigilante.Configuration;
 using Microsoft.Extensions.Options;
 using Vigilante.Services.Interfaces;
@@ -302,6 +303,7 @@ public class CollectionService : ICollectionService
             return null;
         }
     }
+    
     public async Task<List<string>> ListCollectionSnapshotsAsync(
         string nodeUrl,
         string collectionName,
@@ -332,6 +334,42 @@ public class CollectionService : ICollectionService
             return new List<string>();
         }
     }
+    public async Task<List<(string Name, long Size)>> GetCollectionSnapshotsWithSizeAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogDebug("Getting snapshots with size info for collection {CollectionName} on node {NodeUrl}", 
+                collectionName, nodeUrl);
+            var uri = new Uri(nodeUrl);
+            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            var result = await qdrantClient.ListCollectionSnapshots(collectionName, cancellationToken);
+            
+            if (result?.Status?.IsSuccess == true && result.Result != null)
+            {
+                var snapshots = result.Result
+                    .Select(s => (s.Name, s.Size))
+                    .ToList();
+                
+                _logger.LogDebug("Found {Count} snapshots with size info for collection {CollectionName} on node {NodeUrl}", 
+                    snapshots.Count, collectionName, nodeUrl);
+                return snapshots;
+            }
+            
+            _logger.LogWarning("Failed to get snapshots for collection {CollectionName}: {Error}",
+                collectionName, result?.Status?.Error ?? "Unknown error");
+            return new List<(string Name, long Size)>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get snapshots for collection {CollectionName} on node {NodeUrl}", 
+                collectionName, nodeUrl);
+            return new List<(string Name, long Size)>();
+        }
+    }
+
     public async Task<bool> DeleteCollectionSnapshotAsync(
         string nodeUrl,
         string collectionName,
@@ -524,6 +562,51 @@ public class CollectionService : ICollectionService
         {
             _logger.LogError(ex, "Failed to recover collection {CollectionName} from snapshot {SnapshotName} on node {NodeUrl}", 
                 collectionName, snapshotName, nodeUrl);
+            return false;
+        }
+    }
+
+    public async Task<bool> RecoverCollectionFromUrlAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotUrl,
+        string? snapshotChecksum,
+        bool waitForResult,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Recovering collection {CollectionName} from URL {SnapshotUrl} on node {NodeUrl}", 
+                collectionName, snapshotUrl, nodeUrl);
+            
+            var uri = new Uri(nodeUrl);
+            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            
+            var snapshotLocationUri = new Uri(snapshotUrl);
+            
+            var result = await qdrantClient.RecoverCollectionFromSnapshot(
+                collectionName, 
+                snapshotLocationUri, 
+                cancellationToken,
+                isWaitForResult: waitForResult,
+                snapshotChecksum: snapshotChecksum);
+            
+            if (result.IsAcceptedOrSuccess())
+            {
+                var statusText = result.IsAccepted() ? "recovery accepted" : "recovered successfully";
+                _logger.LogInformation("✅ Collection {CollectionName} {StatusText} from URL {SnapshotUrl} on node {NodeUrl}", 
+                    collectionName, statusText, snapshotUrl, nodeUrl);
+                return true;
+            }
+            
+            _logger.LogError("Failed to recover collection {CollectionName} from URL {SnapshotUrl}: {Error}",
+                collectionName, snapshotUrl, result?.Status?.Error ?? "Unknown error");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to recover collection {CollectionName} from URL {SnapshotUrl} on node {NodeUrl}", 
+                collectionName, snapshotUrl, nodeUrl);
             return false;
         }
     }
@@ -765,7 +848,8 @@ public class CollectionService : ICollectionService
                                 PeerId = peerId,
                                 CollectionName = collectionName,
                                 SnapshotName = snapshotFile,
-                                SizeBytes = sizeBytes.Value
+                                SizeBytes = sizeBytes.Value,
+                                PodNamespace = podNamespace
                             };
 
                             snapshots.Add(snapshotInfo);
