@@ -1,5 +1,5 @@
 # Build image
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0.101 AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 WORKDIR /src
@@ -25,7 +25,7 @@ RUN dotnet tool install --tool-path /tools dotnet-dump && \
     dotnet tool install --tool-path /tools dotnet-counters
 
 # Build runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:9.0.1
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
 # Copy diagnostic tools from build stage
