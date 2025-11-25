@@ -418,14 +418,16 @@ public class ClusterManager(
                 collectionName,
                 cancellationToken);
 
-            return (NodeUrl: node.Url, Success: success);
+            // Use podName if available and not empty, otherwise use URL
+            var nodeIdentifier = !string.IsNullOrEmpty(node.PodName) ? node.PodName : node.Url;
+            return (NodeIdentifier: nodeIdentifier, Success: success);
         });
 
         var deleteResults = await Task.WhenAll(deleteTasks);
 
         foreach (var result in deleteResults)
         {
-            results[result.NodeUrl] = result.Success;
+            results[result.NodeIdentifier] = result.Success;
         }
 
         var successCount = results.Values.Count(s => s);

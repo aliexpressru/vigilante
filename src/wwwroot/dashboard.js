@@ -779,7 +779,7 @@ class VigilanteDashboard {
                         if (createSnapshotBtn) {
                             createSnapshotBtn.addEventListener('click', async (e) => {
                                 e.stopPropagation();
-                                await this.createSnapshot(collection.name, nodeInfo.nodeUrl, false);
+                                await this.createSnapshot(collection.name, nodeInfo.nodeUrl, false, nodeInfo.podName);
                             });
                         }
 
@@ -977,7 +977,7 @@ class VigilanteDashboard {
                 recoverBtn.className = 'action-button action-button-success action-button-sm';
                 recoverBtn.innerHTML = '<i class="fas fa-undo"></i>';
                 recoverBtn.title = 'Recover from this snapshot';
-                recoverBtn.onclick = () => this.recoverSnapshotFromNode(node.nodeUrl, collection.collectionName, node.snapshotName);
+                recoverBtn.onclick = () => this.recoverSnapshotFromNode(node.nodeUrl, collection.collectionName, node.snapshotName, node.podName);
                 
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'action-button action-button-danger action-button-sm';
@@ -1024,8 +1024,10 @@ class VigilanteDashboard {
         container.appendChild(table);
     }
 
-    async recoverSnapshotFromNode(nodeUrl, collectionName, snapshotName) {
-        const toastId = this.showToast(`Recovering ${collectionName} from ${snapshotName} on ${nodeUrl}...`, 'info', 0);
+    async recoverSnapshotFromNode(nodeUrl, collectionName, snapshotName, podName = null) {
+        // Show podName if available and not 'unknown', otherwise show nodeUrl
+        const nodeIdentifier = podName && podName !== 'unknown' ? podName : nodeUrl;
+        const toastId = this.showToast(`Recovering ${collectionName} from ${snapshotName} on ${nodeIdentifier}...`, 'info', 0);
         
         try {
             const response = await fetch(this.recoverFromSnapshotEndpoint, {
@@ -1085,7 +1087,8 @@ class VigilanteDashboard {
     }
 
     async deleteSnapshotFromNode(snapshot) {
-        const identifier = snapshot.source === 'KubernetesStorage' ? snapshot.podName : snapshot.nodeUrl;
+        // Show podName if available and not 'unknown', otherwise show nodeUrl
+        const identifier = snapshot.podName && snapshot.podName !== 'unknown' ? snapshot.podName : snapshot.nodeUrl;
         if (!confirm(`Delete snapshot ${snapshot.snapshotName} for ${snapshot.collectionName} from ${identifier}?`)) {
             return;
         }
@@ -1589,7 +1592,9 @@ class VigilanteDashboard {
 
     async deleteCollection(collectionName, deletionType, singleNode = false, nodeUrl = null, podName = null, podNamespace = null) {
         const typeLabel = deletionType === 'Api' ? 'API' : 'Disk';
-        const scopeLabel = singleNode ? `on ${podName || nodeUrl}` : 'on all nodes';
+        // Show podName if available and not 'unknown', otherwise show nodeUrl
+        const nodeIdentifier = podName && podName !== 'unknown' ? podName : nodeUrl;
+        const scopeLabel = singleNode ? `on ${nodeIdentifier}` : 'on all nodes';
         
         if (!confirm(`Are you sure you want to delete collection '${collectionName}' via ${typeLabel} ${scopeLabel}?\n\nThis action cannot be undone!`)) {
             return;
@@ -1692,8 +1697,10 @@ class VigilanteDashboard {
     }
 
     // Snapshot management methods
-    async createSnapshot(collectionName, nodeUrl, onAllNodes = false) {
-        const target = onAllNodes ? 'all nodes' : 'node';
+    async createSnapshot(collectionName, nodeUrl, onAllNodes = false, podName = null) {
+        // Show podName if available and not 'unknown', otherwise show 'node'
+        const nodeIdentifier = podName && podName !== 'unknown' ? podName : (onAllNodes ? null : 'node');
+        const target = onAllNodes ? 'all nodes' : nodeIdentifier;
         const toastId = this.showToast(
             `Creating snapshot for collection '${collectionName}' on ${target}...`,
             'info',
