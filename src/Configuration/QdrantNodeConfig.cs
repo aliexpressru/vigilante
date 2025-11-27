@@ -9,4 +9,6 @@ public class QdrantNodeConfig
     public string? Namespace { get; set; }
     
     public string? PodName { get; set; }
+    
+    public string? StatefulSetName { get; set; }
 }

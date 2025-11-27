@@ -15,11 +15,11 @@ public class ClusterManager(
     TestDataProvider testDataProvider,
     IOptions<QdrantOptions> options,
     ILogger<ClusterManager> logger,
-    IMeterService meterService) : IClusterManager
+    IMeterService meterService,
+    IKubernetes? kubernetes) : IClusterManager
 {
     private readonly QdrantOptions _options = options.Value;
     private readonly ClusterPeerState _clusterState = new();
-    private readonly Lazy<IKubernetes?> _kubernetes = new(() => InitializeKubernetesClient(logger));
 
     public async Task<ClusterState> GetClusterStateAsync(CancellationToken cancellationToken = default)
     {
@@ -32,6 +32,7 @@ public class ClusterManager(
                 Url = $"http://{node.Host}:{node.Port}",
                 Namespace = node.Namespace,
                 PodName = node.PodName,
+                StatefulSetName = node.StatefulSetName,
                 LastSeen = DateTime.UtcNow
             };
 
@@ -475,21 +476,6 @@ public class ClusterManager(
 
     // Private methods
 
-    private static IKubernetes? InitializeKubernetesClient(ILogger<ClusterManager> logger)
-    {
-        try
-        {
-            var client = new Kubernetes(KubernetesClientConfiguration.InClusterConfig());
-            logger.LogInformation("Kubernetes client initialized successfully in ClusterManager");
-            return client;
-        }
-        catch (k8s.Exceptions.KubeConfigException)
-        {
-            logger.LogInformation("Not running in Kubernetes cluster, pod name resolution will be disabled");
-            return null;
-        }
-    }
-
     private void DetectClusterSplits(NodeInfo[] nodes)
     {
         var healthyNodes = nodes.Where(n => n.IsHealthy && n.CurrentPeerIds.Count > 0).ToList();
@@ -542,13 +528,13 @@ public class ClusterManager(
         
         logger.LogInformation("Getting pod name for IP {PodIp} in namespace {Namespace}", podIp, podNamespace);
 
-        if (_kubernetes.Value == null)
+        if (kubernetes == null)
         {
             logger.LogDebug("Kubernetes client not available, cannot resolve pod name");
             return null;
         }
 
-        var pods = await _kubernetes.Value.CoreV1.ListNamespacedPodAsync(
+        var pods = await kubernetes.CoreV1.ListNamespacedPodAsync(
             namespaceParameter: podNamespace,
             fieldSelector: $"status.podIP=={podIp}",
             cancellationToken: cancellationToken);

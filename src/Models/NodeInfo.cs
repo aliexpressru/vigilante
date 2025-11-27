@@ -29,6 +29,8 @@ public class NodeInfo
     public NodeErrorType ErrorType { get; set; } = NodeErrorType.None;
     
     public string? PodName { get; set; }
+    
+    public string? StatefulSetName { get; set; }
 
     public HashSet<string> CurrentPeerIds { get; set; } = new();
 }

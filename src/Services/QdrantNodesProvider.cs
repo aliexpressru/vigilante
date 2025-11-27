@@ -9,23 +9,12 @@ namespace Vigilante.Services;
 /// Implements IDisposable to properly cleanup Kubernetes client.
 /// </summary>
 public class QdrantNodesProvider(
-    IConfiguration configuration, 
+    IConfiguration configuration,
+    IKubernetes? kubernetes,
     ILogger<QdrantNodesProvider> logger)
-    : IQdrantNodesProvider, IDisposable
+    : IQdrantNodesProvider
 {
-    private readonly Lazy<IKubernetes> _kubernetes = new(() => new Kubernetes(KubernetesClientConfiguration.InClusterConfig()));
     private const string NamespaceFilePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace";
-    private bool _disposed;
-
-    private string GetCurrentNamespace()
-    {
-        if (File.Exists(NamespaceFilePath))
-        {
-            return File.ReadAllText(NamespaceFilePath).Trim();
-        }
-        
-        return "qdrant";
-    }
 
     public async Task<IReadOnlyList<QdrantNodeConfig>> GetNodesAsync(CancellationToken cancellationToken)
     {
@@ -60,23 +49,60 @@ public class QdrantNodesProvider(
         return [];
     }
 
+    private string GetCurrentNamespace()
+    {
+        if (File.Exists(NamespaceFilePath))
+        {
+            return File.ReadAllText(NamespaceFilePath).Trim();
+        }
+        
+        return "qdrant";
+    }
+
     private async Task<IReadOnlyList<QdrantNodeConfig>> GetNodesFromK8sAsync(CancellationToken cancellationToken)
     {
+        if (kubernetes == null)
+        {
+            logger.LogDebug("Kubernetes client is not available, skipping K8s discovery");
+            return [];
+        }
+        
         var currentNamespace = GetCurrentNamespace();
         
-        var pods = await _kubernetes.Value.CoreV1.ListNamespacedPodAsync(
+        var pods = await kubernetes.CoreV1.ListNamespacedPodAsync(
             namespaceParameter: currentNamespace,
             labelSelector: "app=qdrant",
             cancellationToken: cancellationToken);
 
         var nodes = pods.Items
             .Where(pod => pod.Status.Phase == "Running")
-            .Select(pod => new QdrantNodeConfig
+            .Select(pod =>
             {
-                Host = pod.Status.PodIP,
-                Port = 6333, // Default Qdrant port
-                Namespace = pod.Metadata.NamespaceProperty,
-                PodName = pod.Metadata.Name
+                // Try to get StatefulSet name from owner references
+                var statefulSetOwner = pod.Metadata.OwnerReferences?
+                    .FirstOrDefault(o => o.Kind == "StatefulSet");
+                
+                string? statefulSetName = statefulSetOwner?.Name;
+                
+                // If no owner reference found, try to infer from pod name
+                // StatefulSet pods are typically named like: <statefulset-name>-<ordinal>
+                if (statefulSetName == null && pod.Metadata.Name != null)
+                {
+                    var lastDashIndex = pod.Metadata.Name.LastIndexOf('-');
+                    if (lastDashIndex > 0 && int.TryParse(pod.Metadata.Name.Substring(lastDashIndex + 1), out _))
+                    {
+                        statefulSetName = pod.Metadata.Name.Substring(0, lastDashIndex);
+                    }
+                }
+                
+                return new QdrantNodeConfig
+                {
+                    Host = pod.Status.PodIP,
+                    Port = 6333, // Default Qdrant port
+                    Namespace = pod.Metadata.NamespaceProperty,
+                    PodName = pod.Metadata.Name,
+                    StatefulSetName = statefulSetName
+                };
             })
             .ToList();
 
@@ -116,25 +142,5 @@ public class QdrantNodesProvider(
         }
 
         return nodes;
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-        
-        if (_kubernetes.IsValueCreated)
-        {
-            try
-            {
-                _kubernetes.Value.Dispose();
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error disposing Kubernetes client");
-            }
-        }
-        
-        _disposed = true;
-        GC.SuppressFinalize(this);
     }
 }

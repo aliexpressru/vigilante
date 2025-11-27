@@ -17,6 +17,22 @@ public class Startup(IConfiguration configuration)
         services.Configure<QdrantOptions>(configuration.GetSection("Qdrant"));
         services.AddSingleton<IQdrantNodesProvider, QdrantNodesProvider>();
         services.AddSingleton<IQdrantClientFactory, DefaultQdrantClientFactory>();
+        
+        // Kubernetes client - only available when running in cluster
+        services.AddSingleton<k8s.IKubernetes>(sp => 
+        {
+            try
+            {
+                return new k8s.Kubernetes(k8s.KubernetesClientConfiguration.InClusterConfig());
+            }
+            catch
+            {
+                // Not running in Kubernetes cluster - return null
+                // KubernetesManager will handle null check
+                return null!;
+            }
+        });
+        services.AddSingleton<IKubernetesManager, KubernetesManager>();
 
         // Add health checks
         services.AddHealthChecks();

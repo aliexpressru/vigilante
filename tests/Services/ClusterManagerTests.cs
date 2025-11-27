@@ -60,6 +60,8 @@ public class ClusterManagerTests
                 return _mockClients.GetOrAdd(key, _ => Substitute.For<IQdrantHttpClient>());
             });
         
+        var kubernetes = Substitute.For<k8s.IKubernetes>();
+        
         _clusterManager = new ClusterManager(
             _nodesProvider,
             _clientFactory,
@@ -67,7 +69,8 @@ public class ClusterManagerTests
             _testDataProvider,
             _options,
             _logger,
-            _meterService);
+            _meterService,
+            kubernetes);
     }
 
     [Test]
