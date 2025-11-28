@@ -35,7 +35,19 @@ export CLUSTER_DOMAIN="your-cluster-domain.com"     # Your cluster domain for In
 kubectl config use-context <context-name>
 ```
 
-### 3. Deploy to your environment
+### 3. Apply RBAC permissions (first time or after updates)
+Vigilante requires specific Kubernetes permissions to manage pods and StatefulSets:
+
+```bash
+kubectl apply -f rbac.yaml -n qdrant
+```
+
+**Required permissions:**
+- `pods`: `list`, `get`, `watch`, `delete` - for pod management and monitoring
+- `pods/exec`: `create`, `get`, `watch` - for executing commands in pods
+- `statefulsets`: `get`, `list`, `patch` - for StatefulSet operations (rollout, scale)
+
+### 4. Deploy to your environment
 The deploy.sh script performs a complete redeployment of the application:
 - Removes existing deployment
 - Recreates all resources from scratch
