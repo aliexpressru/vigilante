@@ -9,6 +9,8 @@ class VigilanteDashboard {
         this.deleteSnapshotEndpoint = '/api/v1/snapshots';
         this.downloadSnapshotEndpoint = '/api/v1/snapshots/download';
         this.recoverFromSnapshotEndpoint = '/api/v1/snapshots/recover';
+        this.deletePodEndpoint = '/api/v1/kubernetes/delete-pod';
+        this.manageStatefulSetEndpoint = '/api/v1/kubernetes/manage-statefulset';
         this.refreshInterval = 0;
         this.intervalId = null;
         this.openSnapshots = new Set();
@@ -16,6 +18,7 @@ class VigilanteDashboard {
         this.toastIdCounter = 0; // Counter for unique toast IDs
         this.clusterIssues = []; // Issues from cluster/status
         this.collectionIssues = []; // Issues from collections-info
+        this.clusterNodes = []; // Store cluster nodes for StatefulSet management
         this.init();
         this.setupRefreshControls();
     }
@@ -54,6 +57,14 @@ class VigilanteDashboard {
         this.loadClusterStatus();
         this.loadCollectionSizes();
         this.loadSnapshots();
+        
+        // Setup StatefulSet management button
+        const manageStatefulSetBtn = document.getElementById('manageStatefulSetBtn');
+        if (manageStatefulSetBtn) {
+            manageStatefulSetBtn.addEventListener('click', () => {
+                this.showStatefulSetDialog();
+            });
+        }
     }
 
     setupRefreshControls() {
@@ -1399,8 +1410,17 @@ class VigilanteDashboard {
             return;
         }
 
+        // Store nodes for StatefulSet management
+        this.clusterNodes = nodes;
+
         console.log(`Creating cards for ${nodes.length} nodes`);
         nodes.forEach(node => {
+            console.log('Node data:', {
+                peerId: node.peerId,
+                podName: node.podName,
+                namespace: node.namespace,
+                statefulSetName: node.statefulSetName
+            });
             const nodeCard = this.createNodeCard(node);
             nodesGrid.appendChild(nodeCard);
         });
@@ -1524,6 +1544,19 @@ class VigilanteDashboard {
         });
         details.appendChild(recoverFromUrlBtn);
 
+        // Delete Pod button (always show)
+        const deletePodBtn = document.createElement('button');
+        deletePodBtn.className = 'delete-pod-button';
+        deletePodBtn.innerHTML = '<i class="fas fa-trash-alt"></i> Delete Pod';
+        deletePodBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!node.podName) {
+                alert('Cannot delete pod: Not running in Kubernetes cluster.\n\nPod information is not available.');
+                return;
+            }
+            this.deletePod(node.podName, node.namespace);
+        });
+        details.appendChild(deletePodBtn);
 
         card.appendChild(header);
         card.appendChild(details);
@@ -1874,6 +1907,209 @@ class VigilanteDashboard {
                 'error',
                 'Download Failed'
             );
+        }
+    }
+
+    async deletePod(podName, namespace = null) {
+        const namespaceText = namespace ? ` in namespace ${namespace}` : '';
+        if (!confirm(`Are you sure you want to delete pod '${podName}'${namespaceText}?\n\nThis action will restart the pod.`)) {
+            return;
+        }
+
+        const toastId = this.showToast(
+            `Deleting pod '${podName}'...`,
+            'info',
+            'Pod Deletion',
+            0,
+            true
+        );
+
+        try {
+            const response = await fetch(this.deletePodEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    podName: podName,
+                    namespace: namespace
+                })
+            });
+
+            const result = await response.json();
+            this.removeToast(toastId);
+
+            if (response.ok) {
+                this.showToast(result.message || `Pod '${podName}' deletion initiated successfully`, 'success', 'Success', 5000);
+                // Refresh after a short delay to allow pod to be deleted
+                setTimeout(() => this.refresh(), 2000);
+            } else {
+                this.showToast(result.error || result.details || 'Failed to delete pod', 'error', 'Deletion Failed', 5000);
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`Error deleting pod: ${error.message}`, 'error', 'Error', 5000);
+        }
+    }
+
+    showStatefulSetDialog() {
+        // Get StatefulSet name and namespace from first node
+        const firstNode = this.clusterNodes && this.clusterNodes.length > 0 ? this.clusterNodes[0] : null;
+        const statefulSetName = firstNode?.statefulSetName || 'qdrant';
+        const namespace = firstNode?.namespace || 'qdrant';
+        const currentReplicas = this.clusterNodes?.length || 3;
+
+        console.log('Opening StatefulSet dialog with:', {
+            statefulSetName,
+            namespace,
+            currentReplicas,
+            firstNode
+        });
+
+        // Create modal overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        
+        // Create modal dialog
+        const modal = document.createElement('div');
+        modal.className = 'modal-dialog statefulset-modal';
+        modal.innerHTML = `
+            <div class="modal-header">
+                <h3><i class="fas fa-cubes"></i> Manage StatefulSet</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="statefulset-info">
+                    <div class="info-item">
+                        <span class="info-label">StatefulSet:</span>
+                        <span class="info-value">${statefulSetName}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Namespace:</span>
+                        <span class="info-value">${namespace}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Current Replicas:</span>
+                        <span class="info-value">${currentReplicas}</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Operation Type:</label>
+                    <div class="operation-type-buttons">
+                        <button type="button" class="operation-type-btn active" data-operation="rollout">
+                            <i class="fas fa-redo"></i> Rollout Restart
+                        </button>
+                        <button type="button" class="operation-type-btn" data-operation="scale">
+                            <i class="fas fa-expand-arrows-alt"></i> Scale
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group scale-group" style="display: none;">
+                    <label for="replicaCount">New Replica Count:</label>
+                    <input type="number" id="replicaCount" min="0" value="${currentReplicas}" class="form-input" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-button modal-button-secondary" id="cancelStatefulSetBtn">Cancel</button>
+                <button class="modal-button modal-button-primary" id="executeStatefulSetBtn">Execute</button>
+            </div>
+        `;
+        
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        let selectedOperation = 'rollout';
+
+        // Setup operation type toggle
+        const operationButtons = modal.querySelectorAll('.operation-type-btn');
+        const scaleGroup = modal.querySelector('.scale-group');
+        
+        operationButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                operationButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedOperation = btn.dataset.operation;
+                
+                if (selectedOperation === 'scale') {
+                    scaleGroup.style.display = 'block';
+                } else {
+                    scaleGroup.style.display = 'none';
+                }
+            });
+        });
+
+        // Close handlers
+        const closeModal = () => {
+            overlay.remove();
+        };
+
+        modal.querySelector('.modal-close').addEventListener('click', closeModal);
+        modal.querySelector('#cancelStatefulSetBtn').addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeModal();
+        });
+
+        // Execute handler
+        modal.querySelector('#executeStatefulSetBtn').addEventListener('click', async () => {
+            const replicas = selectedOperation === 'scale' 
+                ? parseInt(modal.querySelector('#replicaCount').value)
+                : null;
+
+            if (selectedOperation === 'scale' && (replicas === null || isNaN(replicas) || replicas < 0)) {
+                alert('Valid replica count is required for scale operation');
+                return;
+            }
+
+            closeModal();
+            await this.manageStatefulSet(statefulSetName, selectedOperation, replicas, namespace);
+        });
+    }
+
+    async manageStatefulSet(statefulSetName, operationType, replicas = null, namespace = null) {
+        const operationTypeEnum = operationType === 'rollout' ? 0 : 1; // Rollout = 0, Scale = 1
+        const operationLabel = operationType === 'rollout' ? 'Rollout restart' : `Scale to ${replicas} replicas`;
+        const namespaceText = namespace ? ` in namespace ${namespace}` : '';
+
+        const toastId = this.showToast(
+            `${operationLabel} for StatefulSet '${statefulSetName}'${namespaceText}...`,
+            'info',
+            'StatefulSet Management',
+            0,
+            true
+        );
+
+        try {
+            const requestBody = {
+                statefulSetName: statefulSetName,
+                namespace: namespace,
+                operationType: operationTypeEnum
+            };
+
+            if (operationType === 'scale') {
+                requestBody.replicas = replicas;
+            }
+
+            const response = await fetch(this.manageStatefulSetEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const result = await response.json();
+            this.removeToast(toastId);
+
+            if (response.ok) {
+                this.showToast(result.message || `StatefulSet operation completed successfully`, 'success', 'Success', 5000);
+                // Refresh after a delay to allow operation to take effect
+                setTimeout(() => this.refresh(), 3000);
+            } else {
+                this.showToast(result.error || result.details || 'Failed to manage StatefulSet', 'error', 'Operation Failed', 5000);
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`Error managing StatefulSet: ${error.message}`, 'error', 'Error', 5000);
         }
     }
 }

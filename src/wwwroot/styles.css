@@ -1403,214 +1403,6 @@ body {
     font-size: 0.85rem;
 }
 
-/* Delete buttons for collections */
-.collection-delete-buttons {
-    display: flex;
-    gap: 6px;
-    flex-shrink: 0;
-}
-
-.delete-all-api-button,
-.delete-all-disk-button {
-    padding: 4px 10px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.8rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.delete-all-api-button {
-    background: #ff9800;
-    color: white;
-}
-
-.delete-all-api-button:hover {
-    background: #f57c00;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
-.delete-all-disk-button {
-    background: #f44336;
-    color: white;
-}
-
-.delete-all-disk-button:hover {
-    background: #d32f2f;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
-/* Delete buttons for individual nodes */
-.node-deletion-controls {
-    display: flex;
-    gap: 8px;
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid #e0e0e0;
-}
-
-.delete-api-button,
-.delete-disk-button {
-    flex: 1;
-    padding: 8px 12px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-}
-
-.delete-api-button {
-    background: #ff9800;
-    color: white;
-}
-
-.delete-api-button:hover {
-    background: #f57c00;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
-.delete-disk-button {
-    background: #f44336;
-    color: white;
-}
-
-.delete-disk-button:hover {
-    background: #d32f2f;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
-.delete-api-button:active,
-.delete-disk-button:active,
-.delete-all-api-button:active,
-.delete-all-disk-button:active {
-    transform: translateY(0);
-}
-
-/* Deletion result messages */
-.deletion-message {
-    background: white;
-    border-radius: 8px;
-    padding: 16px;
-    margin: 20px 0;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    animation: slideIn 0.3s ease-out;
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.deletion-message.success {
-    border-left: 4px solid #4caf50;
-}
-
-.deletion-message.error {
-    border-left: 4px solid #f44336;
-}
-
-.deletion-message-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-}
-
-.deletion-message-header strong {
-    font-size: 1rem;
-}
-
-.deletion-message.success .deletion-message-header strong {
-    color: #4caf50;
-}
-
-.deletion-message.error .deletion-message-header strong {
-    color: #f44336;
-}
-
-.close-button {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    color: #999;
-    cursor: pointer;
-    padding: 0;
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: color 0.2s;
-}
-
-.close-button:hover {
-    color: #333;
-}
-
-.deletion-results {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    font-size: 0.9rem;
-}
-
-.node-deletion-result {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px;
-    border-radius: 4px;
-}
-
-.node-deletion-result.success {
-    background: #e8f5e9;
-}
-
-.node-deletion-result.error {
-    background: #ffebee;
-}
-
-.result-icon {
-    font-weight: bold;
-    font-size: 1.1rem;
-}
-
-.node-deletion-result.success .result-icon {
-    color: #4caf50;
-}
-
-.node-deletion-result.error .result-icon {
-    color: #f44336;
-}
-
-.result-node {
-    font-weight: 500;
-    color: #333;
-    flex: 1;
-}
-
-.result-error {
-    color: #d32f2f;
-    font-size: 0.85rem;
-}
-
 /* Create Snapshot Section in Collections Overview */
 .create-snapshot-section {
     margin-top: 16px;
@@ -2123,6 +1915,44 @@ body {
     background: #5a6268;
 }
 
+/* Alternative modal button styles */
+.modal-button {
+    padding: 10px 20px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
+}
+
+.modal-button-primary {
+    background: #667eea;
+    color: white;
+}
+
+.modal-button-primary:hover {
+    background: #5568d3;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.modal-button-primary:active {
+    transform: translateY(0);
+}
+
+.modal-button-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.modal-button-secondary:hover {
+    background: #5a6268;
+}
+
 /* Toast Notifications */
 .toast-container {
     position: fixed;
@@ -2564,73 +2394,194 @@ body {
     cursor: not-allowed;
 }
 
-/* Responsive adjustments for smaller screens */
-@media (max-width: 1400px) {
-    .nodes-table {
-        font-size: 0.75rem;
-    }
-    
-    .nodes-table th,
-    .nodes-table td {
-        padding: 6px 8px;
-    }
-    
-    .action-button-sm {
-        padding: 3px 6px;
-        font-size: 0.65rem;
-        height: 24px;
-    }
-    
-    .nodes-table th:nth-child(1) { width: 12%; }
-    .nodes-table th:nth-child(2) { width: 8%; }
-    .nodes-table th:nth-child(3) { width: 8%; }
-    .nodes-table th:nth-child(4) { width: 34%; }
-    .nodes-table th:nth-child(5) { width: 8%; }
-    .nodes-table th:nth-child(6) { width: 30%; }
+/* Cluster Actions */
+.cluster-actions {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
 }
 
-@media (max-width: 1200px) {
-    .nodes-table {
-        display: block;
-        overflow-x: auto;
-        white-space: nowrap;
-    }
-    
-    .action-button-sm {
-        padding: 3px 5px;
-        font-size: 0.6rem;
-        height: 22px;
-    }
-    
-    .snapshot-actions-cell {
-        gap: 3px;
-    }
-}
-
-/* Action button small variant */
-.action-button-sm {
-    padding: 4px 8px;
-    font-size: 0.7rem;
-    margin: 0;
-    min-width: auto;
-    height: 26px;
+.cluster-action-button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    white-space: nowrap;
+    gap: 8px;
 }
 
-.action-button-sm i {
-    font-size: 0.8rem;
-    margin: 0;
+.cluster-action-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
-.action-button:active {
+.cluster-action-button:active {
     transform: translateY(0);
 }
 
-.action-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+.cluster-action-button i {
+    font-size: 1rem;
+}
+
+/* Pod Details Container */
+.pod-details-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
+.kubectl-exec-button {
+    padding: 6px 12px;
+    background: linear-gradient(135deg, #00897b, #00695c);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.8rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.kubectl-exec-button:hover {
+    background: linear-gradient(135deg, #00796b, #004d40);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 137, 123, 0.3);
+}
+
+.kubectl-exec-button:active {
+    transform: translateY(0);
+}
+
+.kubectl-exec-button.copied {
+    background: linear-gradient(135deg, #4caf50, #45a049);
+}
+
+/* Delete Pod Button */
+.delete-pod-button {
+    width: 100%;
+    background: linear-gradient(135deg, #f44336 0%, #e91e63 100%);
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.delete-pod-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+}
+
+.delete-pod-button:active {
+    transform: translateY(0);
+}
+
+/* StatefulSet Modal Specific Styles */
+.statefulset-modal .modal-body {
+    padding: 20px;
+}
+
+.statefulset-info {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+    border: 1px solid #e0e0e0;
+}
+
+.info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.info-item:last-child {
+    border-bottom: none;
+}
+
+.info-label {
+    font-weight: 600;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.info-value {
+    font-weight: 500;
+    color: #333;
+    font-size: 0.95rem;
+    font-family: 'Courier New', monospace;
+}
+
+.operation-type-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.operation-type-btn {
+    flex: 1;
+    padding: 12px 20px;
+    border: 2px solid #e0e0e0;
+    background: white;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 0.95rem;
+    color: #666;
+}
+
+.operation-type-btn:hover {
+    border-color: #667eea;
+    background: #f5f7ff;
+}
+
+.operation-type-btn.active {
+    border-color: #667eea;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.operation-type-btn i {
+    font-size: 1.1rem;
+}
+
+.scale-group {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }

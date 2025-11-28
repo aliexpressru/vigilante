@@ -12,7 +12,7 @@ public class KubernetesController(
     ILogger<KubernetesController> logger)
     : ControllerBase
 {
-    [HttpPost("pods/delete")]
+    [HttpPost("delete-pod")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
@@ -46,7 +46,7 @@ public class KubernetesController(
         }
     }
 
-    [HttpPost("statefulsets/manage")]
+    [HttpPost("manage-statefulset")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
