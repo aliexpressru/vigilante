@@ -264,7 +264,7 @@ public class SnapshotServiceTests
         var pod1Id = 1001UL;
         var mockClient = Substitute.For<IQdrantHttpClient>();
         
-        _clientFactory.CreateClient(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>())
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(mockClient);
             
         mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
@@ -323,7 +323,7 @@ public class SnapshotServiceTests
         var pod1Id = 1001UL;
         var mockClient = Substitute.For<IQdrantHttpClient>();
         
-        _clientFactory.CreateClient(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>())
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(mockClient);
 
         mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
@@ -389,7 +389,7 @@ public class SnapshotServiceTests
         var pod1Id = 1001UL;
         var mockClient = Substitute.For<IQdrantHttpClient>();
         
-        _clientFactory.CreateClient(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>())
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(mockClient);
 
         mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
@@ -458,7 +458,7 @@ public class SnapshotServiceTests
         var pod1Id = 1001UL;
         var mockClient = Substitute.For<IQdrantHttpClient>();
         
-        _clientFactory.CreateClient(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>())
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(mockClient);
 
         mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
@@ -525,7 +525,7 @@ public class SnapshotServiceTests
         var pod1Id = 1001UL;
         var mockClient = Substitute.For<IQdrantHttpClient>();
         
-        _clientFactory.CreateClient(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>())
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(mockClient);
 
         mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
@@ -597,7 +597,7 @@ public class SnapshotServiceTests
         var pod1Id = 1001UL;
         var mockClient = Substitute.For<IQdrantHttpClient>();
         
-        _clientFactory.CreateClient(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>())
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(mockClient);
 
         mockClient.GetClusterInfo(Arg.Any<CancellationToken>())

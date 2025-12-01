@@ -1,5 +1,7 @@
+using Aer.QdrantClient.Http.Abstractions;
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
+using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;

@@ -1,3 +1,4 @@
+using Aer.QdrantClient.Http.Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;

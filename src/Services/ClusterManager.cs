@@ -1,10 +1,13 @@
+using Aer.QdrantClient.Http.Abstractions;
 using k8s;
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
+using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
 using System.Text.Json;
+using Aer.QdrantClient.Http.Configuration;
 
 namespace Vigilante.Services;
 

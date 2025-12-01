@@ -51,12 +51,17 @@ public class ClusterManagerTests
         
         // Setup client factory to return mocked clients
         _clientFactory
-            .CreateClient(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>())
+            .CreateClient(
+                Arg.Any<Uri>(), 
+                Arg.Any<string>(), 
+                Arg.Any<TimeSpan?>(), 
+                Arg.Any<ILogger>(), 
+                Arg.Any<bool>(), 
+                Arg.Any<bool>())
             .Returns(info =>
             {
-                var host = info.ArgAt<string>(0);
-                var port = info.ArgAt<int>(1);
-                var key = host + ":" + port;
+                var uri = info.ArgAt<Uri>(0);
+                var key = uri.Host + ":" + uri.Port;
                 return _mockClients.GetOrAdd(key, _ => Substitute.For<IQdrantHttpClient>());
             });
         

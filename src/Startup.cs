@@ -1,3 +1,5 @@
+using Aer.QdrantClient.Http.Abstractions;
+using Aer.QdrantClient.Http.DependencyInjection;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using OpenTelemetry.Metrics;
@@ -16,7 +18,7 @@ public class Startup(IConfiguration configuration)
         // Configuration
         services.Configure<QdrantOptions>(configuration.GetSection("Qdrant"));
         services.AddSingleton<IQdrantNodesProvider, QdrantNodesProvider>();
-        services.AddSingleton<IQdrantClientFactory, DefaultQdrantClientFactory>();
+        services.AddQdrantClientFactory();
         
         // Kubernetes client - only available when running in cluster
         services.AddSingleton<k8s.IKubernetes>(sp => 

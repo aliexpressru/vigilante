@@ -1,11 +1,11 @@
-using k8s;
 using Aer.QdrantClient.Http.Abstractions;
+using k8s;
+using Microsoft.Extensions.Options;
+using Vigilante.Configuration;
+using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
-using Vigilante.Configuration;
-using Microsoft.Extensions.Options;
 using Vigilante.Services.Interfaces;
-using Vigilante.Extensions;
 
 namespace Vigilante.Services;
 
