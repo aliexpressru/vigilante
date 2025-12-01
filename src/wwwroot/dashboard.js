@@ -18,6 +18,7 @@ class VigilanteDashboard {
         this.toastIdCounter = 0; // Counter for unique toast IDs
         this.clusterIssues = []; // Issues from cluster/status
         this.collectionIssues = []; // Issues from collections-info
+        this.nodeWarnings = []; // Warnings from nodes
         this.clusterNodes = []; // Store cluster nodes for StatefulSet management
         this.init();
         this.setupRefreshControls();
@@ -1307,8 +1308,11 @@ class VigilanteDashboard {
         this.updateOverallStatus(clusterState);
         // Store cluster issues
         this.clusterIssues = clusterState.health.issues || [];
-        // Update combined issues display
+        // Collect warnings from all nodes
+        this.collectNodeWarnings(clusterState.nodes);
+        // Update combined issues and warnings display
         this.updateCombinedIssues();
+        this.updateWarnings();
         this.updateNodes(clusterState.nodes);
     }
 
@@ -1397,6 +1401,40 @@ class VigilanteDashboard {
         // Legacy method - kept for compatibility
         // Now handled by updateCombinedIssues
         console.warn('updateIssues is deprecated, use updateCombinedIssues instead');
+    }
+
+    collectNodeWarnings(nodes) {
+        this.nodeWarnings = [];
+        if (!nodes || nodes.length === 0) return;
+        
+        nodes.forEach(node => {
+            if (node.warnings && node.warnings.length > 0) {
+                const nodeName = node.podName || node.url;
+                node.warnings.forEach(warning => {
+                    this.nodeWarnings.push(`${nodeName}: ${warning}`);
+                });
+            }
+        });
+    }
+
+    updateWarnings() {
+        const warningsCard = document.getElementById('warningsCard');
+        const warningsList = document.getElementById('warningsList');
+
+        if (this.nodeWarnings.length === 0) {
+            warningsCard.style.display = 'none';
+            return;
+        }
+
+        warningsCard.style.display = 'block';
+        warningsList.innerHTML = '';
+
+        this.nodeWarnings.forEach(warning => {
+            const li = document.createElement('li');
+            li.className = 'warning-item';
+            li.textContent = warning;
+            warningsList.appendChild(li);
+        });
     }
 
     updateNodes(nodes) {

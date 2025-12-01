@@ -1653,5 +1653,297 @@ public class ClusterManagerTests
     }
 
     #endregion
+
+    #region MessageSendFailures with Timestamp Tests
+
+    [Test]
+    public async Task GetClusterStateAsync_WithStaleMessageSendFailures_AddsWarningNotError()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var peerId = 1001UL;
+        var consensusUpdateTime = DateTime.UtcNow;
+        var staleErrorTime = consensusUpdateTime.AddMinutes(-5); // 5 minutes before consensus update
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = peerId,
+                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    {
+                        ConsensusThreadStatus = "working",
+                        LastUpdate = consensusUpdateTime,
+                        Err = null
+                    },
+                    MessageSendFailures = new Dictionary<string, GetClusterInfoResponse.MessageSendFailureUnit>
+                    {
+                        ["1002"] = new GetClusterInfoResponse.MessageSendFailureUnit
+                        {
+                            Count = 3,
+                            LatestError = "Connection timeout",
+                            LatestErrorTimestamp = staleErrorTime
+                        }
+                    },
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                }
+            }));
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        var node = state.Nodes[0];
+        Assert.That(node.IsHealthy, Is.True, "Node should be healthy - stale failures don't mark it unhealthy");
+        Assert.That(node.ErrorType, Is.EqualTo(NodeErrorType.None), "Node should have no error type");
+        Assert.That(node.Warnings, Has.Count.EqualTo(1), "Node should have one warning");
+        Assert.That(node.Warnings[0], Does.Contain("Stale message send failures"));
+        Assert.That(node.Warnings[0], Does.Contain("1002"));
+        Assert.That(node.Warnings[0], Does.Contain("Connection timeout"));
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WithActiveMessageSendFailures_MarksNodeUnhealthy()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var peerId = 1001UL;
+        var consensusUpdateTime = DateTime.UtcNow.AddMinutes(-5);
+        var recentErrorTime = DateTime.UtcNow; // Recent error after consensus update
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = peerId,
+                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    {
+                        ConsensusThreadStatus = "working",
+                        LastUpdate = consensusUpdateTime,
+                        Err = null
+                    },
+                    MessageSendFailures = new Dictionary<string, GetClusterInfoResponse.MessageSendFailureUnit>
+                    {
+                        ["1002"] = new GetClusterInfoResponse.MessageSendFailureUnit
+                        {
+                            Count = 5,
+                            LatestError = "Network unreachable",
+                            LatestErrorTimestamp = recentErrorTime
+                        }
+                    },
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                }
+            }));
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        var node = state.Nodes[0];
+        Assert.That(node.IsHealthy, Is.False, "Node should be unhealthy - active failures mark it unhealthy");
+        Assert.That(node.ErrorType, Is.EqualTo(NodeErrorType.MessageSendFailures));
+        Assert.That(node.Error, Does.Contain("Message send failures"));
+        Assert.That(node.Error, Does.Contain("1002"));
+        Assert.That(node.Error, Does.Contain("Network unreachable"));
+        Assert.That(node.Warnings, Is.Empty, "No warnings for active failures");
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WithMixedMessageSendFailures_SeparatesActiveAndStale()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var peerId = 1001UL;
+        var consensusUpdateTime = DateTime.UtcNow;
+        var staleErrorTime = consensusUpdateTime.AddMinutes(-10);
+        var recentErrorTime = consensusUpdateTime.AddMinutes(2);
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = peerId,
+                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    {
+                        ConsensusThreadStatus = "working",
+                        LastUpdate = consensusUpdateTime,
+                        Err = null
+                    },
+                    MessageSendFailures = new Dictionary<string, GetClusterInfoResponse.MessageSendFailureUnit>
+                    {
+                        ["1002"] = new()
+                        {
+                            Count = 3,
+                            LatestError = "Old timeout",
+                            LatestErrorTimestamp = staleErrorTime
+                        },
+                        ["1003"] = new()
+                        {
+                            Count = 2,
+                            LatestError = "Current error",
+                            LatestErrorTimestamp = recentErrorTime
+                        }
+                    },
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                }
+            }));
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        var node = state.Nodes[0];
+        
+        Assert.That(node.IsHealthy, Is.False, "Node should be unhealthy due to recent failure");
+        Assert.That(node.ErrorType, Is.EqualTo(NodeErrorType.MessageSendFailures));
+        Assert.That(node.Error, Does.Contain("1003"), "Error should mention peer with recent failure");
+        Assert.That(node.Error, Does.Contain("Current error"));
+        Assert.That(node.Error, Does.Not.Contain("1002"), "Error should not mention peer with stale failure");
+        
+        Assert.That(node.Warnings, Has.Count.EqualTo(1), "Should have warning for stale failure");
+        Assert.That(node.Warnings[0], Does.Contain("1002"), "Warning should mention peer with stale failure");
+        Assert.That(node.Warnings[0], Does.Contain("Old timeout"));
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WithNoConsensusTimestamp_TreatsAllFailuresAsActive()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var peerId = 1001UL;
+        var errorTime = DateTime.UtcNow.AddMinutes(-10);
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = peerId,
+                    ConsensusThreadStatus = null, // No consensus status
+                    MessageSendFailures = new Dictionary<string, GetClusterInfoResponse.MessageSendFailureUnit>
+                    {
+                        ["1002"] = new()
+                        {
+                            Count = 3,
+                            LatestError = "Connection failed",
+                            LatestErrorTimestamp = errorTime
+                        }
+                    },
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                }
+            }));
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        var node = state.Nodes[0];
+        
+        Assert.That(node.IsHealthy, Is.False, "Without consensus timestamp, all failures are treated as active");
+        Assert.That(node.ErrorType, Is.EqualTo(NodeErrorType.MessageSendFailures));
+        Assert.That(node.Error, Does.Contain("Message send failures"));
+        Assert.That(node.Error, Does.Contain("1002"));
+        Assert.That(node.Warnings, Is.Empty, "No warnings when no consensus timestamp available");
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_StaleFailuresAppearInClusterHealthIssues()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var peerId = 1001UL;
+        var consensusUpdateTime = DateTime.UtcNow;
+        var staleErrorTime = consensusUpdateTime.AddHours(-1);
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = peerId,
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = peerId },
+                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    {
+                        ConsensusThreadStatus = "working",
+                        LastUpdate = consensusUpdateTime,
+                        Err = null
+                    },
+                    MessageSendFailures = new Dictionary<string, GetClusterInfoResponse.MessageSendFailureUnit>
+                    {
+                        ["1002"] = new()
+                        {
+                            Count = 5,
+                            LatestError = "Historical timeout",
+                            LatestErrorTimestamp = staleErrorTime
+                        }
+                    },
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                }
+            }));
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Health.IsHealthy, Is.True, "Cluster should be healthy");
+        Assert.That(state.Health.Issues, Has.Count.EqualTo(1), "Should have one issue (warning)");
+        Assert.That(state.Health.Issues[0], Does.Contain("[Warning]"));
+        Assert.That(state.Health.Issues[0], Does.Contain("pod1"));
+        Assert.That(state.Health.Issues[0], Does.Contain("Stale message send failures"));
+    }
+
+    #endregion
 }
 

@@ -26,6 +26,11 @@ public class NodeInfo
     /// </summary>
     public string? ShortError { get; set; }
     
+    /// <summary>
+    /// Warning messages that don't indicate critical failures
+    /// </summary>
+    public List<string> Warnings { get; set; } = new();
+    
     public NodeErrorType ErrorType { get; set; } = NodeErrorType.None;
     
     public string? PodName { get; set; }

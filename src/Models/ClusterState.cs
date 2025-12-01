@@ -61,6 +61,17 @@ public class ClusterState
         {
             issues.Add("No leader elected");
         }
+        
+        // Add warnings from all nodes (both healthy and unhealthy)
+        var nodesWithWarnings = Nodes.Where(n => n.Warnings.Count > 0);
+        foreach (var node in nodesWithWarnings)
+        {
+            var nodeName = !string.IsNullOrEmpty(node.PodName) ? node.PodName : node.Url;
+            foreach (var warning in node.Warnings)
+            {
+                issues.Add($"[Warning] {nodeName}: {warning}");
+            }
+        }
 
         health.Issues = issues;
 
