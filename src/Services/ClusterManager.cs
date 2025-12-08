@@ -466,16 +466,27 @@ public class ClusterManager(
 
     private async Task AddKubernetesWarningsIfNeededAsync(ClusterState state, CancellationToken cancellationToken)
     {
-        if (state.Status != ClusterStatus.Degraded || kubernetesManager == null)
+        if (kubernetesManager == null)
+        {
+            logger.LogDebug("KubernetesManager is not available, skipping K8s events");
             return;
+        }
+
+        if (state.Status != ClusterStatus.Degraded)
+        {
+            logger.LogDebug("Cluster status is {Status}, skipping K8s events (only fetch for Degraded)", state.Status);
+            return;
+        }
 
         logger.LogInformation("Cluster is degraded, fetching Kubernetes warning events");
 
         var namespaceToUse = state.Nodes.FirstOrDefault(n => !string.IsNullOrEmpty(n.Namespace))?.Namespace;
+        logger.LogInformation("Using namespace: {Namespace}", namespaceToUse ?? "default");
 
         try
         {
             var warningEvents = await kubernetesManager.GetWarningEventsAsync(namespaceToUse, cancellationToken);
+            logger.LogInformation("Fetched {Count} K8s warning events", warningEvents.Count);
 
             if (warningEvents.Count > 0)
             {
@@ -486,11 +497,24 @@ public class ClusterManager(
                     foreach (var warning in warningEvents)
                     {
                         targetNode.Warnings.Add($"K8s Event: {warning}");
+                        logger.LogDebug("Added K8s event to node {NodeUrl}: {Warning}", targetNode.Url, warning);
                     }
 
-                    logger.LogInformation("Added {Count} Kubernetes warning events to node {NodeUrl}",
-                        warningEvents.Count, targetNode.Url);
+                    logger.LogInformation("Added {Count} Kubernetes warning events to node {NodeUrl}. Total warnings on node: {TotalWarnings}",
+                        warningEvents.Count, targetNode.Url, targetNode.Warnings.Count);
+                    
+                    // Force recalculation of Health to include new warnings
+                    state.InvalidateCache();
+                    logger.LogDebug("Invalidated ClusterState cache to recalculate health with new warnings");
                 }
+                else
+                {
+                    logger.LogWarning("No target node found to attach {Count} K8s warning events", warningEvents.Count);
+                }
+            }
+            else
+            {
+                logger.LogInformation("No K8s warning events found in namespace {Namespace}", namespaceToUse ?? "default");
             }
         }
         catch (Exception ex)

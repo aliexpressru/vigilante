@@ -16,6 +16,16 @@ public class ClusterState
 
     public DateTime LastUpdated { get; set; }
 
+    /// <summary>
+    /// Invalidates cached health and status to force recalculation.
+    /// Call this after modifying node warnings or errors.
+    /// </summary>
+    public void InvalidateCache()
+    {
+        _health = null;
+        _status = null;
+    }
+
     private ClusterStatus CalculateStatus()
     {
         if (Health.HealthyNodes == 0)
@@ -62,18 +72,21 @@ public class ClusterState
             issues.Add("No leader elected");
         }
         
-        // Add warnings from all nodes (both healthy and unhealthy)
+        health.Issues = issues;
+        
+        // Collect warnings separately from all nodes (both healthy and unhealthy)
+        var warnings = new List<string>();
         var nodesWithWarnings = Nodes.Where(n => n.Warnings.Count > 0);
         foreach (var node in nodesWithWarnings)
         {
             var nodeName = !string.IsNullOrEmpty(node.PodName) ? node.PodName : node.Url;
             foreach (var warning in node.Warnings)
             {
-                issues.Add($"[Warning] {nodeName}: {warning}");
+                warnings.Add($"{nodeName}: {warning}");
             }
         }
-
-        health.Issues = issues;
+        
+        health.Warnings = warnings;
 
         return health;
     }

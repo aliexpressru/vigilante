@@ -1934,10 +1934,10 @@ public class ClusterManagerTests
 
         // Assert
         Assert.That(state.Health.IsHealthy, Is.True, "Cluster should be healthy");
-        Assert.That(state.Health.Issues, Has.Count.EqualTo(1), "Should have one issue (warning)");
-        Assert.That(state.Health.Issues[0], Does.Contain("[Warning]"));
-        Assert.That(state.Health.Issues[0], Does.Contain("pod1"));
-        Assert.That(state.Health.Issues[0], Does.Contain("Stale message send failures"));
+        Assert.That(state.Health.Issues, Has.Count.EqualTo(0), "Should have no issues (stale failures go to warnings)");
+        Assert.That(state.Health.Warnings, Has.Count.EqualTo(1), "Should have one warning for stale failures");
+        Assert.That(state.Health.Warnings[0], Does.Contain("pod1"));
+        Assert.That(state.Health.Warnings[0], Does.Contain("Stale message send failures"));
     }
 
     #endregion
@@ -2015,6 +2015,11 @@ public class ClusterManagerTests
         Assert.That(nodeWithWarnings!.Warnings.Count, Is.EqualTo(2), "Should have 2 K8s warnings");
         Assert.That(nodeWithWarnings.Warnings[0], Does.Contain("K8s Event:"));
         Assert.That(nodeWithWarnings.Warnings[0], Does.Contain("BackOff"));
+        
+        // Verify warnings appear in ClusterHealth.Warnings
+        Assert.That(state.Health.Warnings, Has.Count.EqualTo(2), "ClusterHealth should have 2 warnings");
+        Assert.That(state.Health.Warnings[0], Does.Contain("K8s Event:"));
+        Assert.That(state.Health.Warnings[0], Does.Contain("BackOff"));
     }
 
     [Test]

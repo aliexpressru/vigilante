@@ -12,6 +12,8 @@ public class ClusterHealth
 
     public List<string> Issues { get; set; } = new();
 
+    public List<string> Warnings { get; set; } = new();
+
     public double HealthPercentage => TotalNodes > 0 ? (double)HealthyNodes / TotalNodes * 100 : 0;
 
     public string StatusDescription => IsHealthy ? "All systems operational" : "Cluster degraded";

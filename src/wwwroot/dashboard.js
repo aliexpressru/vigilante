@@ -1308,8 +1308,8 @@ class VigilanteDashboard {
         this.updateOverallStatus(clusterState);
         // Store cluster issues
         this.clusterIssues = clusterState.health.issues || [];
-        // Collect warnings from all nodes
-        this.collectNodeWarnings(clusterState.nodes);
+        // Store warnings from cluster health
+        this.nodeWarnings = clusterState.health.warnings || [];
         // Update combined issues and warnings display
         this.updateCombinedIssues();
         this.updateWarnings();
@@ -1403,19 +1403,6 @@ class VigilanteDashboard {
         console.warn('updateIssues is deprecated, use updateCombinedIssues instead');
     }
 
-    collectNodeWarnings(nodes) {
-        this.nodeWarnings = [];
-        if (!nodes || nodes.length === 0) return;
-        
-        nodes.forEach(node => {
-            if (node.warnings && node.warnings.length > 0) {
-                const nodeName = node.podName || node.url;
-                node.warnings.forEach(warning => {
-                    this.nodeWarnings.push(`${nodeName}: ${warning}`);
-                });
-            }
-        });
-    }
 
     updateWarnings() {
         const warningsCard = document.getElementById('warningsCard');
