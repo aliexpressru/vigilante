@@ -2,6 +2,7 @@ using Aer.QdrantClient.Http.Abstractions;
 using k8s;
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
+using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
@@ -105,7 +106,7 @@ public class CollectionService : ICollectionService
             var collections = await _commandExecutor.ListDirectoriesAsync(
                 podName,
                 podNamespace,
-                "/qdrant/storage/collections",
+                QdrantConstants.StoragePath,
                 cancellationToken);
 
             _logger.LogDebug("Found {Count} collections on pod {PodName}", collections.Count, podName);
@@ -115,7 +116,7 @@ public class CollectionService : ICollectionService
                 var sizeBytes = await _commandExecutor.GetSizeAsync(
                     podName,
                     podNamespace,
-                    "/qdrant/storage/collections",
+                    QdrantConstants.StoragePath,
                     collection,
                     cancellationToken);
 
@@ -258,7 +259,7 @@ public class CollectionService : ICollectionService
             return false;
         }
 
-        var fullPath = $"/qdrant/storage/collections/{collectionName}";
+        var fullPath = $"{QdrantConstants.StoragePath}/{collectionName}";
         return await _commandExecutor.DeleteAndVerifyAsync(
             podName, 
             podNamespace, 

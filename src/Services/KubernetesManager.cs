@@ -1,5 +1,6 @@
 using k8s;
 using k8s.Models;
+using Vigilante.Constants;
 using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services;
@@ -9,22 +10,21 @@ namespace Vigilante.Services;
 /// </summary>
 public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManager> logger) : IKubernetesManager
 {
-    private const string DefaultNamespace = "qdrant";
 
     public async Task<bool> DeletePodAsync(string podName, string? namespaceParameter = null, CancellationToken cancellationToken = default)
     {
         if (kubernetes == null)
         {
-            logger.LogWarning("Kubernetes client is not available. Running outside Kubernetes cluster?");
+            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             return false;
         }
         
         if (string.IsNullOrEmpty(namespaceParameter))
         {
-            logger.LogWarning("Namespace not provided for pod {PodName}, using default '{DefaultNamespace}'", podName, DefaultNamespace);
+            logger.LogWarning("Namespace not provided for pod {PodName}, using default '{DefaultNamespace}'", podName, KubernetesConstants.DefaultNamespace);
         }
         
-        var ns = namespaceParameter ?? DefaultNamespace;
+        var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
         
         try
         {
@@ -49,16 +49,16 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
     {
         if (kubernetes == null)
         {
-            logger.LogWarning("Kubernetes client is not available. Running outside Kubernetes cluster?");
+            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             return false;
         }
         
         if (string.IsNullOrEmpty(namespaceParameter))
         {
-            logger.LogWarning("Namespace not provided for StatefulSet {StatefulSetName}, using default '{DefaultNamespace}'", statefulSetName, DefaultNamespace);
+            logger.LogWarning("Namespace not provided for StatefulSet {StatefulSetName}, using default '{DefaultNamespace}'", statefulSetName, KubernetesConstants.DefaultNamespace);
         }
         
-        var ns = namespaceParameter ?? DefaultNamespace;
+        var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
         
         try
         {
@@ -75,7 +75,7 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
             var now = DateTime.UtcNow.ToString("o");
             statefulSet.Spec.Template.Metadata ??= new V1ObjectMeta();
             statefulSet.Spec.Template.Metadata.Annotations ??= new Dictionary<string, string>();
-            statefulSet.Spec.Template.Metadata.Annotations["vigilante.aer.io/restartedAt"] = now;
+            statefulSet.Spec.Template.Metadata.Annotations[KubernetesConstants.RestartedAtAnnotationKey] = now;
             
             // Update StatefulSet
             await kubernetes.AppsV1.ReplaceNamespacedStatefulSetAsync(
@@ -99,16 +99,16 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
     {
         if (kubernetes == null)
         {
-            logger.LogWarning("Kubernetes client is not available. Running outside Kubernetes cluster?");
+            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             return false;
         }
         
         if (string.IsNullOrEmpty(namespaceParameter))
         {
-            logger.LogWarning("Namespace not provided for StatefulSet {StatefulSetName}, using default '{DefaultNamespace}'", statefulSetName, DefaultNamespace);
+            logger.LogWarning("Namespace not provided for StatefulSet {StatefulSetName}, using default '{DefaultNamespace}'", statefulSetName, KubernetesConstants.DefaultNamespace);
         }
         
-        var ns = namespaceParameter ?? DefaultNamespace;
+        var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
         
         try
         {
@@ -147,11 +147,11 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
     {
         if (kubernetes == null)
         {
-            logger.LogWarning("Kubernetes client is not available. Running outside Kubernetes cluster?");
+            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             return new List<string>();
         }
 
-        var ns = namespaceParameter ?? DefaultNamespace;
+        var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
         var warnings = new List<string>();
 
         try
@@ -203,11 +203,11 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
     {
         if (kubernetes == null)
         {
-            logger.LogWarning("Kubernetes client is not available. Running outside Kubernetes cluster?");
+            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             return null;
         }
 
-        var ns = namespaceParameter ?? DefaultNamespace;
+        var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
 
         try
         {

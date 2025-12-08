@@ -1,5 +1,6 @@
 using k8s;
 using Vigilante.Configuration;
+using Vigilante.Constants;
 using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services;
@@ -14,7 +15,6 @@ public class QdrantNodesProvider(
     ILogger<QdrantNodesProvider> logger)
     : IQdrantNodesProvider
 {
-    private const string NamespaceFilePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace";
 
     public async Task<IReadOnlyList<QdrantNodeConfig>> GetNodesAsync(CancellationToken cancellationToken)
     {
@@ -39,7 +39,7 @@ public class QdrantNodesProvider(
         }
 
         // Try to get nodes from configuration
-        var nodesFromConfig = configuration.GetSection("Qdrant:Nodes").Get<List<QdrantNodeConfig>>();
+        var nodesFromConfig = configuration.GetSection(QdrantConstants.NodesConfigurationPath).Get<List<QdrantNodeConfig>>();
         if (nodesFromConfig != null && nodesFromConfig.Any())
         {
             return nodesFromConfig;
@@ -51,12 +51,12 @@ public class QdrantNodesProvider(
 
     private string GetCurrentNamespace()
     {
-        if (File.Exists(NamespaceFilePath))
+        if (File.Exists(KubernetesConstants.ServiceAccountNamespacePath))
         {
-            return File.ReadAllText(NamespaceFilePath).Trim();
+            return File.ReadAllText(KubernetesConstants.ServiceAccountNamespacePath).Trim();
         }
         
-        return "qdrant";
+        return KubernetesConstants.DefaultNamespace;
     }
 
     private async Task<IReadOnlyList<QdrantNodeConfig>> GetNodesFromK8sAsync(CancellationToken cancellationToken)
@@ -71,16 +71,16 @@ public class QdrantNodesProvider(
         
         var pods = await kubernetes.CoreV1.ListNamespacedPodAsync(
             namespaceParameter: currentNamespace,
-            labelSelector: "app=qdrant",
+            labelSelector: KubernetesConstants.QdrantAppLabelSelector,
             cancellationToken: cancellationToken);
 
         var nodes = pods.Items
-            .Where(pod => pod.Status.Phase == "Running")
+            .Where(pod => pod.Status.Phase == KubernetesConstants.PodPhaseRunning)
             .Select(pod =>
             {
                 // Try to get StatefulSet name from owner references
                 var statefulSetOwner = pod.Metadata.OwnerReferences?
-                    .FirstOrDefault(o => o.Kind == "StatefulSet");
+                    .FirstOrDefault(o => o.Kind == KubernetesConstants.StatefulSetKind);
                 
                 string? statefulSetName = statefulSetOwner?.Name;
                 
@@ -98,7 +98,7 @@ public class QdrantNodesProvider(
                 return new QdrantNodeConfig
                 {
                     Host = pod.Status.PodIP,
-                    Port = 6333, // Default Qdrant port
+                    Port = QdrantConstants.DefaultPort,
                     Namespace = pod.Metadata.NamespaceProperty,
                     PodName = pod.Metadata.Name,
                     StatefulSetName = statefulSetName
@@ -117,7 +117,7 @@ public class QdrantNodesProvider(
 
     private IReadOnlyList<QdrantNodeConfig> GetNodesFromEnvironment()
     {
-        var nodesEnv = Environment.GetEnvironmentVariable("QDRANT_NODES");
+        var nodesEnv = Environment.GetEnvironmentVariable(QdrantConstants.NodesEnvironmentVariable);
         
         if (string.IsNullOrEmpty(nodesEnv))
         {
@@ -131,7 +131,7 @@ public class QdrantNodesProvider(
                 return new QdrantNodeConfig
                 {
                     Host = parts[0],
-                    Port = parts.Length > 1 ? int.Parse(parts[1]) : 6333
+                    Port = parts.Length > 1 ? int.Parse(parts[1]) : QdrantConstants.DefaultPort
                 };
             })
             .ToList();

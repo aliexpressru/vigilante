@@ -3,6 +3,7 @@ using Aer.QdrantClient.Http.Models.Responses;
 using k8s;
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
+using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
@@ -33,7 +34,7 @@ public class ClusterManager(
         {
             var nodeInfo = new NodeInfo
             {
-                Url = $"http://{node.Host}:{node.Port}",
+                Url = $"{QdrantConstants.HttpProtocol}{node.Host}:{node.Port}",
                 Namespace = node.Namespace,
                 PodName = node.PodName,
                 StatefulSetName = node.StatefulSetName,

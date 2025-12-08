@@ -1,6 +1,7 @@
 using k8s;
 using System.Net.WebSockets;
 using System.Text;
+using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Services.Interfaces;
 
@@ -222,7 +223,7 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
     {
         if (kubernetes == null)
         {
-            logger.LogWarning("Kubernetes client is not available. Running outside Kubernetes cluster?");
+            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             throw new InvalidOperationException("Kubernetes client is not available");
         }
         
@@ -230,7 +231,7 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
             podName,
             podNamespace,
             new[] { "sh", "-c", command },
-            "qdrant",
+            QdrantConstants.ContainerName,
             cancellationToken: cancellationToken);
 
         var buffer = new byte[4096];
@@ -510,7 +511,7 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
             
             if (kubernetes == null)
             {
-                logger.LogWarning("Kubernetes client is not available. Running outside Kubernetes cluster?");
+                logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
                 throw new InvalidOperationException("Kubernetes client is not available");
             }
             
@@ -518,7 +519,7 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
                 podName,
                 podNamespace,
                 new[] { "sh", "-c", command },
-                "qdrant",
+                QdrantConstants.ContainerName,
                 cancellationToken: cancellationToken);
 
             // Create a stream that will read from WebSocket (base64 encoded)

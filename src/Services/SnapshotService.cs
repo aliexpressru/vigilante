@@ -1,6 +1,7 @@
 using Aer.QdrantClient.Http.Abstractions;
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
+using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
@@ -31,7 +32,7 @@ public class SnapshotService(
 
         var createTasks = nodes.Select(async node =>
         {
-            var nodeUrl = $"http://{node.Host}:{node.Port}";
+            var nodeUrl = $"{QdrantConstants.HttpProtocol}{node.Host}:{node.Port}";
             var snapshotName = await collectionService.CreateCollectionSnapshotAsync(
                 nodeUrl,
                 collectionName,
@@ -67,7 +68,7 @@ public class SnapshotService(
 
         var deleteTasks = nodes.Select(async node =>
         {
-            var nodeUrl = $"http://{node.Host}:{node.Port}";
+            var nodeUrl = $"{QdrantConstants.HttpProtocol}{node.Host}:{node.Port}";
             var success = await collectionService.DeleteCollectionSnapshotAsync(
                 nodeUrl,
                 collectionName,
@@ -226,7 +227,7 @@ public class SnapshotService(
         var nodes = new List<NodeInfo>();
         foreach (var nodeConfig in nodeConfigs)
         {
-            var nodeUrl = $"http://{nodeConfig.Host}:{nodeConfig.Port}";
+            var nodeUrl = $"{QdrantConstants.HttpProtocol}{nodeConfig.Host}:{nodeConfig.Port}";
             
             // Get PeerId from cluster info
             string? peerId = null;
