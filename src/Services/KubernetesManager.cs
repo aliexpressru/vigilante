@@ -158,19 +158,60 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         {
             logger.LogInformation("Fetching warning events for namespace {Namespace}", ns);
 
-            // Fetch warning events from the namespace with limit
+            // Try events.k8s.io/v1 API first (newer Kubernetes versions)
+            try
+            {
+                var eventsListV1 = await kubernetes.EventsV1.ListNamespacedEventAsync(
+                    namespaceParameter: ns,
+                    fieldSelector: "type=Warning",
+                    limit: 20,
+                    cancellationToken: cancellationToken);
+
+                if (eventsListV1?.Items != null && eventsListV1.Items.Count > 0)
+                {
+                    logger.LogInformation("Found {Count} warning events in namespace {Namespace} using Events v1 API", 
+                        eventsListV1.Items.Count, ns);
+
+                    var sortedEvents = eventsListV1.Items
+                        .OrderByDescending(e => e.EventTime ?? DateTime.MinValue);
+
+                    foreach (var evt in sortedEvents)
+                    {
+                        var timestamp = evt.EventTime;
+                        var timestampStr = timestamp.HasValue ? timestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "Unknown time";
+                        var involvedObject = evt.Regarding != null 
+                            ? $"{evt.Regarding.Kind}/{evt.Regarding.Name}" 
+                            : "Unknown object";
+                        var reason = evt.Reason ?? "Unknown reason";
+                        var message = evt.Note ?? "No message";
+
+                        warnings.Add($"[{timestampStr}] {involvedObject}: {reason} - {message}");
+                    }
+
+                    logger.LogInformation("Formatted {Count} warning events from namespace {Namespace}", warnings.Count, ns);
+                    return warnings;
+                }
+            }
+            catch (Exception exV1)
+            {
+                logger.LogDebug(exV1, "Events v1 API not available or failed, falling back to CoreV1 Events");
+            }
+
+            // Fallback to CoreV1 Events API (older Kubernetes versions)
             var eventsList = await kubernetes.CoreV1.ListNamespacedEventAsync(
                 namespaceParameter: ns,
                 fieldSelector: "type=Warning",
-                limit: 10,
-                pretty: true,
+                limit: 20,
                 cancellationToken: cancellationToken);
 
             if (eventsList?.Items == null || eventsList.Items.Count == 0)
             {
-                logger.LogInformation("No warning events found in namespace {Namespace}", ns);
+                logger.LogInformation("No warning events found in namespace {Namespace} (checked both v1 and CoreV1 APIs)", ns);
                 return warnings;
             }
+
+            logger.LogInformation("Found {Count} warning events in namespace {Namespace} using CoreV1 API", 
+                eventsList.Items.Count, ns);
 
             // Sort by last timestamp (most recent first) and format
             var warningEvents = eventsList.Items
@@ -189,7 +230,7 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
                 warnings.Add($"[{timestampStr}] {involvedObject}: {reason} - {message}");
             }
 
-            logger.LogInformation("Found {Count} warning events in namespace {Namespace}", warnings.Count, ns);
+            logger.LogInformation("Formatted {Count} warning events from namespace {Namespace}", warnings.Count, ns);
         }
         catch (Exception ex)
         {
