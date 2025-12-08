@@ -9,6 +9,8 @@ namespace Vigilante.Services;
 /// </summary>
 public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManager> logger) : IKubernetesManager
 {
+    private const string DefaultNamespace = "qdrant";
+
     public async Task<bool> DeletePodAsync(string podName, string? namespaceParameter = null, CancellationToken cancellationToken = default)
     {
         if (kubernetes == null)
@@ -19,10 +21,10 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         
         if (string.IsNullOrEmpty(namespaceParameter))
         {
-            logger.LogWarning("Namespace not provided for pod {PodName}, using default 'qdrant'", podName);
+            logger.LogWarning("Namespace not provided for pod {PodName}, using default '{DefaultNamespace}'", podName, DefaultNamespace);
         }
         
-        var ns = namespaceParameter ?? "qdrant";
+        var ns = namespaceParameter ?? DefaultNamespace;
         
         try
         {
@@ -53,10 +55,10 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         
         if (string.IsNullOrEmpty(namespaceParameter))
         {
-            logger.LogWarning("Namespace not provided for StatefulSet {StatefulSetName}, using default 'qdrant'", statefulSetName);
+            logger.LogWarning("Namespace not provided for StatefulSet {StatefulSetName}, using default '{DefaultNamespace}'", statefulSetName, DefaultNamespace);
         }
         
-        var ns = namespaceParameter ?? "qdrant";
+        var ns = namespaceParameter ?? DefaultNamespace;
         
         try
         {
@@ -103,10 +105,10 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         
         if (string.IsNullOrEmpty(namespaceParameter))
         {
-            logger.LogWarning("Namespace not provided for StatefulSet {StatefulSetName}, using default 'qdrant'", statefulSetName);
+            logger.LogWarning("Namespace not provided for StatefulSet {StatefulSetName}, using default '{DefaultNamespace}'", statefulSetName, DefaultNamespace);
         }
         
-        var ns = namespaceParameter ?? "qdrant";
+        var ns = namespaceParameter ?? DefaultNamespace;
         
         try
         {
@@ -138,6 +140,92 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
             logger.LogError(ex, "Failed to scale StatefulSet {StatefulSetName} to {Replicas} replicas in namespace {Namespace}", 
                 statefulSetName, replicas, ns);
             return false;
+        }
+    }
+
+    public async Task<List<string>> GetWarningEventsAsync(string? namespaceParameter = null, CancellationToken cancellationToken = default)
+    {
+        if (kubernetes == null)
+        {
+            logger.LogWarning("Kubernetes client is not available. Running outside Kubernetes cluster?");
+            return new List<string>();
+        }
+
+        var ns = namespaceParameter ?? DefaultNamespace;
+        var warnings = new List<string>();
+
+        try
+        {
+            logger.LogInformation("Fetching warning events for namespace {Namespace}", ns);
+
+            // Fetch warning events from the namespace with limit
+            var eventsList = await kubernetes.CoreV1.ListNamespacedEventAsync(
+                namespaceParameter: ns,
+                fieldSelector: "type=Warning",
+                limit: 10,
+                pretty: true,
+                cancellationToken: cancellationToken);
+
+            if (eventsList?.Items == null || eventsList.Items.Count == 0)
+            {
+                logger.LogInformation("No warning events found in namespace {Namespace}", ns);
+                return warnings;
+            }
+
+            // Sort by last timestamp (most recent first) and format
+            var warningEvents = eventsList.Items
+                .OrderByDescending(e => e.LastTimestamp ?? e.EventTime ?? DateTime.MinValue);
+
+            foreach (var evt in warningEvents)
+            {
+                var timestamp = evt.LastTimestamp ?? evt.EventTime;
+                var timestampStr = timestamp.HasValue ? timestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "Unknown time";
+                var involvedObject = evt.InvolvedObject != null 
+                    ? $"{evt.InvolvedObject.Kind}/{evt.InvolvedObject.Name}" 
+                    : "Unknown object";
+                var reason = evt.Reason ?? "Unknown reason";
+                var message = evt.Message ?? "No message";
+
+                warnings.Add($"[{timestampStr}] {involvedObject}: {reason} - {message}");
+            }
+
+            logger.LogInformation("Found {Count} warning events in namespace {Namespace}", warnings.Count, ns);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to fetch warning events for namespace {Namespace}", ns);
+        }
+
+        return warnings;
+    }
+
+    public async Task<string?> GetPodNameByIpAsync(string podIp, string? namespaceParameter = null, CancellationToken cancellationToken = default)
+    {
+        if (kubernetes == null)
+        {
+            logger.LogWarning("Kubernetes client is not available. Running outside Kubernetes cluster?");
+            return null;
+        }
+
+        var ns = namespaceParameter ?? DefaultNamespace;
+
+        try
+        {
+            logger.LogInformation("Getting pod name for IP {PodIp} in namespace {Namespace}", podIp, ns);
+
+            var pods = await kubernetes.CoreV1.ListNamespacedPodAsync(
+                namespaceParameter: ns,
+                fieldSelector: $"status.podIP=={podIp}",
+                cancellationToken: cancellationToken);
+
+            logger.LogInformation("Found {PodsCount} pods matching IP {PodIp}", pods.Items.Count, podIp);
+
+            return pods.Items.FirstOrDefault()?.Metadata.Name;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to get pod name for IP {PodIp} in namespace {Namespace}", podIp, ns);
+            return null;
         }
     }
 }

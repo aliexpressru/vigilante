@@ -19,5 +19,14 @@ public interface IKubernetesManager
     /// Scales a StatefulSet to the specified number of replicas
     /// </summary>
     Task<bool> ScaleStatefulSetAsync(string statefulSetName, int replicas, string? namespaceParameter = null, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets warning events from Kubernetes for the specified namespace
+    /// </summary>
+    Task<List<string>> GetWarningEventsAsync(string? namespaceParameter = null, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets pod name by its IP address in the specified namespace
+    /// </summary>
+    Task<string?> GetPodNameByIpAsync(string podIp, string? namespaceParameter = null, CancellationToken cancellationToken = default);
 }
-

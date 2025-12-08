@@ -53,11 +53,7 @@ public class ClusterManagerTests
         _clientFactory
             .CreateClient(
                 Arg.Any<Uri>(), 
-                Arg.Any<string>(), 
-                Arg.Any<TimeSpan?>(), 
-                Arg.Any<ILogger>(), 
-                Arg.Any<bool>(), 
-                Arg.Any<bool>())
+                Arg.Any<string?>())
             .Returns(info =>
             {
                 var uri = info.ArgAt<Uri>(0);
@@ -65,7 +61,7 @@ public class ClusterManagerTests
                 return _mockClients.GetOrAdd(key, _ => Substitute.For<IQdrantHttpClient>());
             });
         
-        var kubernetes = Substitute.For<k8s.IKubernetes>();
+        var kubernetesManager = Substitute.For<IKubernetesManager>();
         
         _clusterManager = new ClusterManager(
             _nodesProvider,
@@ -75,7 +71,7 @@ public class ClusterManagerTests
             _options,
             _logger,
             _meterService,
-            kubernetes);
+            kubernetesManager);
     }
 
     [Test]
@@ -1942,6 +1938,267 @@ public class ClusterManagerTests
         Assert.That(state.Health.Issues[0], Does.Contain("[Warning]"));
         Assert.That(state.Health.Issues[0], Does.Contain("pod1"));
         Assert.That(state.Health.Issues[0], Does.Contain("Stale message send failures"));
+    }
+
+    #endregion
+
+    #region Kubernetes Warnings Integration Tests
+
+    [Test]
+    public async Task GetClusterStateAsync_WhenClusterDegraded_ShouldFetchKubernetesWarnings()
+    {
+        // Arrange
+        var kubernetesManager = Substitute.For<IKubernetesManager>();
+        var clusterManager = new ClusterManager(
+            _nodesProvider,
+            _clientFactory,
+            _collectionService,
+            _testDataProvider,
+            _options,
+            _logger,
+            _meterService,
+            kubernetesManager);
+
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "qdrant", PodName = "pod1" },
+            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "qdrant", PodName = "pod2" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        // Setup node1 as healthy
+        var node1Key = nodes[0].Host + ":" + nodes[0].Port;
+        var node1Client = _mockClients.GetOrAdd(node1Key, _ => Substitute.For<IQdrantHttpClient>());
+        node1Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // Setup node2 as unhealthy (timeout)
+        var node2Key = nodes[1].Host + ":" + nodes[1].Port;
+        var node2Client = _mockClients.GetOrAdd(node2Key, _ => Substitute.For<IQdrantHttpClient>());
+        node2Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns<GetClusterInfoResponse>(_ => throw new OperationCanceledException());
+
+        // Setup Kubernetes warnings
+        var k8sWarnings = new List<string>
+        {
+            "[2024-12-05 10:00:00] Pod/qdrant-1: BackOff - Back-off restarting failed container",
+            "[2024-12-05 09:58:00] Pod/qdrant-1: Unhealthy - Readiness probe failed"
+        };
+        kubernetesManager.GetWarningEventsAsync("qdrant", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(k8sWarnings));
+
+        // Act
+        var state = await clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Status, Is.EqualTo(ClusterStatus.Degraded), "Cluster should be degraded");
+        
+        // Verify Kubernetes warnings were fetched
+        await kubernetesManager.Received(1).GetWarningEventsAsync("qdrant", Arg.Any<CancellationToken>());
+        
+        // Verify warnings were added to a node
+        var nodeWithWarnings = state.Nodes.FirstOrDefault(n => n.Warnings.Any());
+        Assert.That(nodeWithWarnings, Is.Not.Null, "At least one node should have warnings");
+        Assert.That(nodeWithWarnings!.Warnings.Count, Is.EqualTo(2), "Should have 2 K8s warnings");
+        Assert.That(nodeWithWarnings.Warnings[0], Does.Contain("K8s Event:"));
+        Assert.That(nodeWithWarnings.Warnings[0], Does.Contain("BackOff"));
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WhenClusterHealthy_ShouldNotFetchKubernetesWarnings()
+    {
+        // Arrange
+        var kubernetesManager = Substitute.For<IKubernetesManager>();
+        var clusterManager = new ClusterManager(
+            _nodesProvider,
+            _clientFactory,
+            _collectionService,
+            _testDataProvider,
+            _options,
+            _logger,
+            _meterService,
+            kubernetesManager);
+
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "qdrant", PodName = "pod1" },
+            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "qdrant", PodName = "pod2" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+        var pod2Id = 1002UL;
+
+        // Setup both nodes as healthy
+        var node1Key = nodes[0].Host + ":" + nodes[0].Port;
+        var node1Client = _mockClients.GetOrAdd(node1Key, _ => Substitute.For<IQdrantHttpClient>());
+        node1Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+                    {
+                        { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+                    },
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var node2Key = nodes[1].Host + ":" + nodes[1].Port;
+        var node2Client = _mockClients.GetOrAdd(node2Key, _ => Substitute.For<IQdrantHttpClient>());
+        node2Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod2Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+                    {
+                        { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+                    },
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // Act
+        var state = await clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Status, Is.EqualTo(ClusterStatus.Healthy), "Cluster should be healthy");
+        
+        // Verify Kubernetes warnings were NOT fetched
+        await kubernetesManager.DidNotReceive().GetWarningEventsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WhenClusterDegradedButNoK8sManager_ShouldNotThrow()
+    {
+        // Arrange - No Kubernetes manager (null)
+        var clusterManager = new ClusterManager(
+            _nodesProvider,
+            _clientFactory,
+            _collectionService,
+            _testDataProvider,
+            _options,
+            _logger,
+            _meterService,
+            null); // No Kubernetes manager
+
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "qdrant", PodName = "pod1" },
+            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "qdrant", PodName = "pod2" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        // Setup node1 as healthy
+        var node1Key = nodes[0].Host + ":" + nodes[0].Port;
+        var node1Client = _mockClients.GetOrAdd(node1Key, _ => Substitute.For<IQdrantHttpClient>());
+        node1Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // Setup node2 as unhealthy
+        var node2Key = nodes[1].Host + ":" + nodes[1].Port;
+        var node2Client = _mockClients.GetOrAdd(node2Key, _ => Substitute.For<IQdrantHttpClient>());
+        node2Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns<GetClusterInfoResponse>(_ => throw new OperationCanceledException());
+
+        // Act & Assert - should not throw
+        var state = await clusterManager.GetClusterStateAsync(CancellationToken.None);
+        
+        Assert.That(state.Status, Is.EqualTo(ClusterStatus.Degraded), "Cluster should be degraded");
+        Assert.That(state.Nodes.All(n => n.Warnings.Count == 0), Is.True, "No warnings should be added without K8s manager");
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WhenK8sManagerThrows_ShouldContinueGracefully()
+    {
+        // Arrange
+        var kubernetesManager = Substitute.For<IKubernetesManager>();
+        var clusterManager = new ClusterManager(
+            _nodesProvider,
+            _clientFactory,
+            _collectionService,
+            _testDataProvider,
+            _options,
+            _logger,
+            _meterService,
+            kubernetesManager);
+
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "qdrant", PodName = "pod1" },
+            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "qdrant", PodName = "pod2" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+
+        // Setup node1 as healthy
+        var node1Key = nodes[0].Host + ":" + nodes[0].Port;
+        var node1Client = _mockClients.GetOrAdd(node1Key, _ => Substitute.For<IQdrantHttpClient>());
+        node1Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // Setup node2 as unhealthy
+        var node2Key = nodes[1].Host + ":" + nodes[1].Port;
+        var node2Client = _mockClients.GetOrAdd(node2Key, _ => Substitute.For<IQdrantHttpClient>());
+        node2Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns<GetClusterInfoResponse>(_ => throw new OperationCanceledException());
+
+        // Setup Kubernetes manager to throw exception
+        kubernetesManager.GetWarningEventsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<List<string>>(_ => throw new Exception("K8s API Error"));
+
+        // Act & Assert - should not throw, should handle exception gracefully
+        var state = await clusterManager.GetClusterStateAsync(CancellationToken.None);
+        
+        Assert.That(state.Status, Is.EqualTo(ClusterStatus.Degraded), "Cluster should be degraded");
+        // Should still return valid state even if K8s warnings fetch failed
+        Assert.That(state.Nodes, Has.Count.EqualTo(2));
     }
 
     #endregion

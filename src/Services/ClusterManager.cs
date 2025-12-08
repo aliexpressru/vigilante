@@ -20,7 +20,7 @@ public class ClusterManager(
     IOptions<QdrantOptions> options,
     ILogger<ClusterManager> logger,
     IMeterService meterService,
-    IKubernetes? kubernetes) : IClusterManager
+    IKubernetesManager? kubernetesManager) : IClusterManager
 {
     private readonly QdrantOptions _options = options.Value;
     private readonly ClusterPeerState _clusterState = new();
@@ -263,13 +263,47 @@ public class ClusterManager(
         };
 
         meterService.UpdateAliveNodes(state.Nodes.Count(n => n.IsHealthy));
+        // If cluster is degraded and we're running in Kubernetes, fetch warning events
+        if (state.Status == ClusterStatus.Degraded && kubernetesManager != null)
+        {
+            logger.LogInformation("Cluster is degraded, fetching Kubernetes warning events");
+            
+            // Get the namespace from the first node that has it
+            var namespaceToUse = state.Nodes.FirstOrDefault(n => !string.IsNullOrEmpty(n.Namespace))?.Namespace;
+            
+            try
+            {
+                var warningEvents = await kubernetesManager.GetWarningEventsAsync(namespaceToUse, cancellationToken);
+                
+                if (warningEvents.Count > 0)
+                {
+                    // Add warnings to all nodes or create a synthetic entry
+                    // For simplicity, we'll add them to the first unhealthy node if any, 
+                    // or the first node otherwise
+                    var targetNode = state.Nodes.FirstOrDefault(n => !n.IsHealthy) ?? state.Nodes.FirstOrDefault();
+                    
+                    if (targetNode != null)
+                    {
+                        foreach (var warning in warningEvents)
+                        {
+                            targetNode.Warnings.Add($"K8s Event: {warning}");
+                        }
+                        
+                        logger.LogInformation("Added {Count} Kubernetes warning events to node {NodeUrl}", 
+                            warningEvents.Count, targetNode.Url);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to fetch Kubernetes warning events");
+            }
+        }
 
         return state;
     }
 
-
-    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Starting GetCollectionsInfoAsync");
 
@@ -600,21 +634,13 @@ public class ClusterManager(
 
         logger.LogInformation("Getting pod name for IP {PodIp} in namespace {Namespace}", podIp, podNamespace);
 
-        if (kubernetes == null)
+        if (kubernetesManager == null)
         {
-            logger.LogDebug("Kubernetes client not available, cannot resolve pod name");
-
+            logger.LogDebug("Kubernetes manager not available, cannot resolve pod name");
             return null;
         }
 
-        var pods = await kubernetes.CoreV1.ListNamespacedPodAsync(
-            namespaceParameter: podNamespace,
-            fieldSelector: $"status.podIP=={podIp}",
-            cancellationToken: cancellationToken);
-
-        logger.LogInformation("Found {PodsCount} pods matching IP {PodIp}", pods.Items.Count, podIp);
-
-        return pods.Items.FirstOrDefault()?.Metadata.Name;
+        return await kubernetesManager.GetPodNameByIpAsync(podIp, podNamespace, cancellationToken);
     }
 
     private static string GetShortErrorMessage(NodeErrorType errorType) => errorType switch
@@ -636,7 +662,6 @@ public class ClusterManager(
 
         try
         {
-            // Serialize to JSON and parse to extract key information
             var json = JsonSerializer.Serialize(failure);
             var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;

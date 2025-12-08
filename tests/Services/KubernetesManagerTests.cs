@@ -1,4 +1,5 @@
 using k8s;
+using k8s.Autorest;
 using k8s.Models;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -119,5 +120,295 @@ public class KubernetesManagerTests
     }
 
     #endregion
+
+    #region GetWarningEventsAsync Tests
+
+    [Test]
+    public async Task GetWarningEventsAsync_WithNullKubernetes_ShouldReturnEmptyList()
+    {
+        // Arrange
+        var manager = new KubernetesManager(null, _logger);
+
+        // Act
+        var result = await manager.GetWarningEventsAsync("qdrant");
+
+        // Assert
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result, Is.Empty);
+    }
+
+    [Test]
+    public async Task GetWarningEventsAsync_WithWarningEvents_ShouldReturnFormattedList()
+    {
+        // Arrange
+        var namespace1 = "qdrant";
+        var coreV1 = Substitute.For<ICoreV1Operations>();
+        _kubernetes.CoreV1.Returns(coreV1);
+        
+        var warningEvent1 = new Corev1Event
+        {
+            Type = "Warning",
+            Reason = "FailedScheduling",
+            Message = "0/3 nodes are available",
+            LastTimestamp = DateTime.UtcNow,
+            InvolvedObject = new V1ObjectReference
+            {
+                Kind = "Pod",
+                Name = "qdrant-0"
+            }
+        };
+        var warningEvent2 = new Corev1Event
+        {
+            Type = "Warning",
+            Reason = "BackOff",
+            Message = "Back-off restarting failed container",
+            LastTimestamp = DateTime.UtcNow.AddMinutes(-1),
+            InvolvedObject = new V1ObjectReference
+            {
+                Kind = "Pod",
+                Name = "qdrant-1"
+            }
+        };
+
+        var eventList = new Corev1EventList
+        {
+            Items = new List<Corev1Event> { warningEvent1, warningEvent2 }
+        };
+
+        var httpResponse = new HttpOperationResponse<Corev1EventList>
+        {
+            Body = eventList
+        };
+
+        coreV1.ListNamespacedEventWithHttpMessagesAsync(default, default, default, default, default, default, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(httpResponse));
+
+        // Act
+        var result = await _manager.GetWarningEventsAsync(namespace1);
+
+        // Assert
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result.Count, Is.EqualTo(2));
+        Assert.That(result[0], Does.Contain("Pod/qdrant-0"));
+        Assert.That(result[0], Does.Contain("FailedScheduling"));
+        Assert.That(result[1], Does.Contain("Pod/qdrant-1"));
+        Assert.That(result[1], Does.Contain("BackOff"));
+    }
+
+    [Test]
+    public async Task GetWarningEventsAsync_WithNoEvents_ShouldReturnEmptyList()
+    {
+        // Arrange
+        var namespace1 = "qdrant";
+        var coreV1 = Substitute.For<ICoreV1Operations>();
+        _kubernetes.CoreV1.Returns(coreV1);
+        
+        var eventList = new Corev1EventList
+        {
+            Items = new List<Corev1Event>()
+        };
+
+        var httpResponse = new HttpOperationResponse<Corev1EventList>
+        {
+            Body = eventList
+        };
+
+        coreV1.ListNamespacedEventWithHttpMessagesAsync(default, default, default, default, default, default, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(httpResponse));
+
+        // Act
+        var result = await _manager.GetWarningEventsAsync(namespace1);
+
+        // Assert
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result, Is.Empty);
+    }
+
+    [Test]
+    public async Task GetWarningEventsAsync_WithException_ShouldReturnEmptyListAndLogError()
+    {
+        // Arrange
+        var namespace1 = "qdrant";
+        var coreV1 = Substitute.For<ICoreV1Operations>();
+        _kubernetes.CoreV1.Returns(coreV1);
+        
+        coreV1.ListNamespacedEventWithHttpMessagesAsync(default, default, default, default, default, default, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(Task.FromException<HttpOperationResponse<Corev1EventList>>(new Exception("API Error")));
+
+        // Act
+        var result = await _manager.GetWarningEventsAsync(namespace1);
+
+        // Assert
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result, Is.Empty);
+    }
+
+    [Test]
+    public async Task GetWarningEventsAsync_WithNullNamespace_ShouldUseDefaultNamespace()
+    {
+        // Arrange
+        var coreV1 = Substitute.For<ICoreV1Operations>();
+        _kubernetes.CoreV1.Returns(coreV1);
+        
+        var eventList = new Corev1EventList
+        {
+            Items = new List<Corev1Event>()
+        };
+
+        var httpResponse = new HttpOperationResponse<Corev1EventList>
+        {
+            Body = eventList
+        };
+
+        coreV1.ListNamespacedEventWithHttpMessagesAsync(default, default, default, default, default, default, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(httpResponse));
+
+        // Act
+        var result = await _manager.GetWarningEventsAsync(null);
+
+        // Assert
+        Assert.That(result, Is.Not.Null);
+        await coreV1.ReceivedWithAnyArgs(1).ListNamespacedEventWithHttpMessagesAsync(default, default, default, default, default, default, default, default, default, default, default, default, default);
+    }
+
+    #endregion
+
+    #region GetPodNameByIpAsync Tests
+
+    [Test]
+    public async Task GetPodNameByIpAsync_WithNullKubernetes_ShouldReturnNull()
+    {
+        // Arrange
+        var manager = new KubernetesManager(null, _logger);
+        var podIp = "10.0.0.1";
+
+        // Act
+        var result = await manager.GetPodNameByIpAsync(podIp, "qdrant");
+
+        // Assert
+        Assert.That(result, Is.Null);
+    }
+
+    [Test]
+    public async Task GetPodNameByIpAsync_WithValidIp_ShouldReturnPodName()
+    {
+        // Arrange
+        var podIp = "10.0.0.1";
+        var podName = "qdrant-0";
+        var namespace1 = "qdrant";
+        var coreV1 = Substitute.For<ICoreV1Operations>();
+        _kubernetes.CoreV1.Returns(coreV1);
+
+        var podList = new V1PodList
+        {
+            Items = new List<V1Pod>
+            {
+                new V1Pod
+                {
+                    Metadata = new V1ObjectMeta
+                    {
+                        Name = podName
+                    },
+                    Status = new V1PodStatus
+                    {
+                        PodIP = podIp
+                    }
+                }
+            }
+        };
+
+        var httpResponse = new HttpOperationResponse<V1PodList>
+        {
+            Body = podList
+        };
+
+        coreV1.ListNamespacedPodWithHttpMessagesAsync(default, default, default, default, default, default, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(httpResponse));
+
+        // Act
+        var result = await _manager.GetPodNameByIpAsync(podIp, namespace1);
+
+        // Assert
+        Assert.That(result, Is.EqualTo(podName));
+    }
+
+    [Test]
+    public async Task GetPodNameByIpAsync_WithNoPodFound_ShouldReturnNull()
+    {
+        // Arrange
+        var podIp = "10.0.0.1";
+        var namespace1 = "qdrant";
+        var coreV1 = Substitute.For<ICoreV1Operations>();
+        _kubernetes.CoreV1.Returns(coreV1);
+
+        var podList = new V1PodList
+        {
+            Items = new List<V1Pod>()
+        };
+
+        var httpResponse = new HttpOperationResponse<V1PodList>
+        {
+            Body = podList
+        };
+
+        coreV1.ListNamespacedPodWithHttpMessagesAsync(default, default, default, default, default, default, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(httpResponse));
+
+        // Act
+        var result = await _manager.GetPodNameByIpAsync(podIp, namespace1);
+
+        // Assert
+        Assert.That(result, Is.Null);
+    }
+
+    [Test]
+    public async Task GetPodNameByIpAsync_WithException_ShouldReturnNullAndLogError()
+    {
+        // Arrange
+        var podIp = "10.0.0.1";
+        var namespace1 = "qdrant";
+        var coreV1 = Substitute.For<ICoreV1Operations>();
+        _kubernetes.CoreV1.Returns(coreV1);
+
+        coreV1.ListNamespacedPodWithHttpMessagesAsync(default, default, default, default, default, default, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(Task.FromException<HttpOperationResponse<V1PodList>>(new Exception("API Error")));
+
+        // Act
+        var result = await _manager.GetPodNameByIpAsync(podIp, namespace1);
+
+        // Assert
+        Assert.That(result, Is.Null);
+    }
+
+    [Test]
+    public async Task GetPodNameByIpAsync_WithNullNamespace_ShouldUseDefaultNamespace()
+    {
+        // Arrange
+        var podIp = "10.0.0.1";
+        var coreV1 = Substitute.For<ICoreV1Operations>();
+        _kubernetes.CoreV1.Returns(coreV1);
+        
+        var podList = new V1PodList
+        {
+            Items = new List<V1Pod>()
+        };
+
+        var httpResponse = new HttpOperationResponse<V1PodList>
+        {
+            Body = podList
+        };
+
+        coreV1.ListNamespacedPodWithHttpMessagesAsync(default, default, default, default, default, default, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(httpResponse));
+
+        // Act
+        var result = await _manager.GetPodNameByIpAsync(podIp, null);
+
+        // Assert
+        await coreV1.ReceivedWithAnyArgs(1).ListNamespacedPodWithHttpMessagesAsync(default, default, default, default, default, default, default, default, default, default, default, default, default);
+    }
+
+    #endregion
 }
+
 
