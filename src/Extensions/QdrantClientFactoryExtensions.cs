@@ -27,5 +27,22 @@ public static class QdrantClientFactoryExtensions
         var uri = new Uri($"{scheme}://{host}:{port}");
         return factory.CreateClient(uri, apiKey);
     }
+
+    /// <summary>
+    /// Creates a Qdrant HTTP client from a URL string.
+    /// Simplifies the common pattern of parsing URL and creating client.
+    /// </summary>
+    /// <param name="factory">The client factory.</param>
+    /// <param name="nodeUrl">The full node URL (e.g., "http://host:port").</param>
+    /// <param name="apiKey">Optional API key for authentication.</param>
+    /// <returns>A configured Qdrant HTTP client.</returns>
+    public static IQdrantHttpClient CreateClientFromUrl(
+        this IQdrantClientFactory factory,
+        string nodeUrl,
+        string? apiKey = null)
+    {
+        var uri = new Uri(nodeUrl);
+        return factory.CreateClient(uri.Host, uri.Port, apiKey);
+    }
 }
 

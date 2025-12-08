@@ -7,6 +7,7 @@ using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
 using System.Text.Json;
+using ClusterInfoResult = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.ClusterInfo;
 using MessageSendFailureUnit = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.MessageSendFailureUnit;
 
 namespace Vigilante.Services;
@@ -43,6 +44,164 @@ public class ClusterManager(
         await AddKubernetesWarningsIfNeededAsync(state, cancellationToken);
 
         return state;
+    }
+
+    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation("Starting GetCollectionsInfoAsync");
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var peerToPodMap = CreatePeerToPodMap(state.Nodes);
+
+        logger.LogInformation("Found {NodesCount} nodes to process. Healthy nodes: {HealthyCount}",
+            state.Nodes.Count, state.Nodes.Count(n => n.IsHealthy));
+
+        var result = await FetchCollectionsFromApiAsync(state.Nodes, cancellationToken);
+
+        if (result.Count == 0)
+        {
+            logger.LogDebug("No collections found from API, returning test data");
+            return testDataProvider.GenerateTestCollectionData();
+        }
+
+        if (HasPodsWithNames(state.Nodes))
+        {
+            await EnrichCollectionsWithStorageInfoAsync(state.Nodes, result, cancellationToken);
+        }
+
+        await EnrichCollectionsWithClusteringInfoAsync(state.Nodes, result, peerToPodMap, cancellationToken);
+
+        LogCompletionSummary(result);
+
+        return result;
+    }
+
+    public async Task<bool> ReplicateShardsAsync(
+        ulong sourcePeerId,
+        ulong targetPeerId,
+        string collectionName,
+        uint[] shardIds,
+        bool isMove,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "Starting shard replication. Source: {SourcePeerId}, Target: {TargetPeerId}, Collection: {Collection}, " +
+            "Shards: {ShardIds}, Move: {IsMove}",
+            sourcePeerId, targetPeerId, collectionName, string.Join(", ", shardIds), isMove);
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
+
+        if (healthyNode == null)
+        {
+            logger.LogError("No healthy nodes found to perform replication");
+            return false;
+        }
+
+        return await collectionService.ReplicateShardsAsync(
+            healthyNode.Url,
+            sourcePeerId,
+            targetPeerId,
+            collectionName,
+            shardIds,
+            isMove,
+            cancellationToken);
+    }
+
+    public async Task<bool> DeleteCollectionViaApiAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Deleting collection {CollectionName} via API on node {NodeUrl}",
+            collectionName, nodeUrl);
+
+        return await collectionService.DeleteCollectionViaApiAsync(nodeUrl, collectionName, cancellationToken);
+    }
+
+    public async Task<bool> DeleteCollectionFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "Deleting collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}",
+            collectionName, podName, podNamespace);
+
+        return await collectionService.DeleteCollectionFromDiskAsync(podName, podNamespace, collectionName,
+            cancellationToken);
+    }
+
+    public async Task<Dictionary<string, bool>> DeleteCollectionViaApiOnAllNodesAsync(
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Deleting collection {CollectionName} via API on all nodes", collectionName);
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var results = new Dictionary<string, bool>();
+
+        var deleteTasks = state.Nodes.Select(async node =>
+        {
+            var success = await collectionService.DeleteCollectionViaApiAsync(
+                node.Url,
+                collectionName,
+                cancellationToken);
+
+            var nodeIdentifier = !string.IsNullOrEmpty(node.PodName) ? node.PodName : node.Url;
+
+            return (NodeIdentifier: nodeIdentifier, Success: success);
+        });
+
+        var deleteResults = await Task.WhenAll(deleteTasks);
+
+        foreach (var result in deleteResults)
+        {
+            results[result.NodeIdentifier] = result.Success;
+        }
+
+        var successCount = results.Values.Count(s => s);
+        logger.LogInformation("Collection {CollectionName} deleted via API: {SuccessCount}/{TotalCount} nodes",
+            collectionName, successCount, results.Count);
+
+        return results;
+    }
+
+    public async Task<Dictionary<string, bool>> DeleteCollectionFromDiskOnAllNodesAsync(
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Deleting collection {CollectionName} from disk on all nodes", collectionName);
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var results = new Dictionary<string, bool>();
+
+        var deleteTasks = state.Nodes
+            .Where(n => !string.IsNullOrEmpty(n.PodName) && !string.IsNullOrEmpty(n.Namespace))
+            .Select(async node =>
+            {
+                var success = await collectionService.DeleteCollectionFromDiskAsync(
+                    node.PodName!,
+                    node.Namespace!,
+                    collectionName,
+                    cancellationToken);
+
+                return (PodName: node.PodName!, Success: success);
+            });
+
+        var deleteResults = await Task.WhenAll(deleteTasks);
+
+        foreach (var result in deleteResults)
+        {
+            results[result.PodName] = result.Success;
+        }
+
+        var successCount = results.Values.Count(s => s);
+        logger.LogInformation("Collection {CollectionName} deleted from disk: {SuccessCount}/{TotalCount} pods",
+            collectionName, successCount, results.Count);
+
+        return results;
     }
 
     private async Task<NodeInfo> GetNodeInfoAsync(QdrantNodeConfig node, CancellationToken cancellationToken)
@@ -88,7 +247,7 @@ public class ClusterManager(
 
     private async Task ProcessClusterInfoResultAsync(
         NodeInfo nodeInfo,
-        Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.ClusterInfo clusterInfoResult,
+        ClusterInfoResult clusterInfoResult,
         IQdrantHttpClient client,
         CancellationToken linkedToken,
         CancellationToken timeoutToken,
@@ -100,7 +259,6 @@ public class ClusterManager(
                             clusterInfoResult.RaftInfo.Leader.ToString() == clusterInfoResult.PeerId.ToString();
 
         var errors = new List<string>();
-
         CheckConsensusErrors(nodeInfo, clusterInfoResult, errors);
         CheckMessageSendFailures(nodeInfo, clusterInfoResult, errors);
         CollectPeerInformation(nodeInfo, clusterInfoResult);
@@ -113,7 +271,7 @@ public class ClusterManager(
         }
     }
 
-    private void CheckConsensusErrors(NodeInfo nodeInfo, Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.ClusterInfo clusterInfoResult, List<string> errors)
+    private void CheckConsensusErrors(NodeInfo nodeInfo, ClusterInfoResult clusterInfoResult, List<string> errors)
     {
         if (clusterInfoResult.ConsensusThreadStatus?.Err != null)
         {
@@ -124,16 +282,29 @@ public class ClusterManager(
         }
     }
 
-    private void CheckMessageSendFailures(NodeInfo nodeInfo, Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.ClusterInfo clusterInfoResult, List<string> errors)
+    private void CheckMessageSendFailures(NodeInfo nodeInfo, ClusterInfoResult clusterInfoResult, List<string> errors)
     {
         if (clusterInfoResult.MessageSendFailures == null || clusterInfoResult.MessageSendFailures.Count == 0)
             return;
 
         var consensusLastUpdate = clusterInfoResult.ConsensusThreadStatus?.LastUpdate;
+        var (activeFailures, staleFailures) = CategorizeMessageSendFailures(
+            clusterInfoResult.MessageSendFailures, 
+            consensusLastUpdate);
+
+        ProcessActiveFailures(nodeInfo, activeFailures, errors);
+        ProcessStaleFailures(nodeInfo, staleFailures);
+    }
+
+    private (List<(string PeerId, MessageSendFailureUnit Failure)> Active, List<(string PeerId, MessageSendFailureUnit Failure)> Stale) 
+        CategorizeMessageSendFailures(
+            Dictionary<string, MessageSendFailureUnit> failures, 
+            DateTime? consensusLastUpdate)
+    {
         var activeFailures = new List<(string PeerId, MessageSendFailureUnit Failure)>();
         var staleFailures = new List<(string PeerId, MessageSendFailureUnit Failure)>();
 
-        foreach (var failure in clusterInfoResult.MessageSendFailures)
+        foreach (var failure in failures)
         {
             if (consensusLastUpdate.HasValue && failure.Value.LatestErrorTimestamp < consensusLastUpdate.Value)
             {
@@ -145,30 +316,43 @@ public class ClusterManager(
             }
         }
 
-        if (activeFailures.Count > 0)
-        {
-            var failuresStr = string.Join(", ", activeFailures.Select(f => 
-                $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
-            errors.Add($"Message send failures: {failuresStr}");
-            
-            if (nodeInfo.ErrorType == NodeErrorType.None)
-            {
-                nodeInfo.ErrorType = NodeErrorType.MessageSendFailures;
-            }
-
-            logger.LogWarning("Node {NodeUrl} has message send failures: {Failures}", nodeInfo.Url, failuresStr);
-        }
-
-        if (staleFailures.Count > 0)
-        {
-            var staleFailuresStr = string.Join(", ", staleFailures.Select(f => 
-                $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
-            nodeInfo.Warnings.Add($"Stale message send failures (older than consensus update): {staleFailuresStr}");
-            logger.LogInformation("Node {NodeUrl} has stale message send failures: {Failures}", nodeInfo.Url, staleFailuresStr);
-        }
+        return (activeFailures, staleFailures);
     }
 
-    private void CollectPeerInformation(NodeInfo nodeInfo, Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.ClusterInfo clusterInfoResult)
+    private void ProcessActiveFailures(
+        NodeInfo nodeInfo, 
+        List<(string PeerId, MessageSendFailureUnit Failure)> activeFailures, 
+        List<string> errors)
+    {
+        if (activeFailures.Count == 0)
+            return;
+
+        var failuresStr = string.Join(", ", activeFailures.Select(f => 
+            $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
+        errors.Add($"Message send failures: {failuresStr}");
+        
+        if (nodeInfo.ErrorType == NodeErrorType.None)
+        {
+            nodeInfo.ErrorType = NodeErrorType.MessageSendFailures;
+        }
+
+        logger.LogWarning("Node {NodeUrl} has message send failures: {Failures}", nodeInfo.Url, failuresStr);
+    }
+
+    private void ProcessStaleFailures(
+        NodeInfo nodeInfo, 
+        List<(string PeerId, MessageSendFailureUnit Failure)> staleFailures)
+    {
+        if (staleFailures.Count == 0)
+            return;
+
+        var staleFailuresStr = string.Join(", ", staleFailures.Select(f => 
+            $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
+        nodeInfo.Warnings.Add($"Stale message send failures (older than consensus update): {staleFailuresStr}");
+        logger.LogInformation("Node {NodeUrl} has stale message send failures: {Failures}", nodeInfo.Url, staleFailuresStr);
+    }
+
+    private void CollectPeerInformation(NodeInfo nodeInfo, ClusterInfoResult clusterInfoResult)
     {
         if (clusterInfoResult.Peers != null)
         {
@@ -315,37 +499,6 @@ public class ClusterManager(
         }
     }
 
-
-    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(CancellationToken cancellationToken = default)
-    {
-        logger.LogInformation("Starting GetCollectionsInfoAsync");
-
-        var state = await GetClusterStateAsync(cancellationToken);
-        var peerToPodMap = CreatePeerToPodMap(state.Nodes);
-
-        logger.LogInformation("Found {NodesCount} nodes to process. Healthy nodes: {HealthyCount}",
-            state.Nodes.Count, state.Nodes.Count(n => n.IsHealthy));
-
-        var result = await FetchCollectionsFromApiAsync(state.Nodes, cancellationToken);
-
-        if (result.Count == 0)
-        {
-            logger.LogDebug("No collections found from API, returning test data");
-            return testDataProvider.GenerateTestCollectionData();
-        }
-
-        if (HasPodsWithNames(state.Nodes))
-        {
-            await EnrichCollectionsWithStorageInfoAsync(state.Nodes, result, cancellationToken);
-        }
-
-        await EnrichCollectionsWithClusteringInfoAsync(state.Nodes, result, peerToPodMap, cancellationToken);
-
-        LogCompletionSummary(result);
-
-        return result;
-    }
-
     private Dictionary<string, string> CreatePeerToPodMap(IReadOnlyList<NodeInfo> nodes)
     {
         return nodes
@@ -451,8 +604,8 @@ public class ClusterManager(
 
             if (storageCollections.TryGetValue(key, out var storageInfo))
             {
-                collection.Metrics["prettySize"] = storageInfo.PrettySize;
-                collection.Metrics["sizeBytes"] = storageInfo.SizeBytes;
+                collection.Metrics[MetricConstants.PrettySizeKey] = storageInfo.PrettySize;
+                collection.Metrics[MetricConstants.SizeBytesKey] = storageInfo.SizeBytes;
 
                 logger.LogDebug("Enriched collection {CollectionName} on {NodeUrl} with storage data: {Size}",
                     collection.CollectionName, collection.NodeUrl, storageInfo.PrettySize);
@@ -502,137 +655,6 @@ public class ClusterManager(
             collections.Count, collectionsWithIssues);
     }
 
-    public async Task<bool> ReplicateShardsAsync(
-        ulong sourcePeerId,
-        ulong targetPeerId,
-        string collectionName,
-        uint[] shardIds,
-        bool isMove,
-        CancellationToken cancellationToken)
-    {
-        logger.LogInformation(
-            "Starting shard replication. Source: {SourcePeerId}, Target: {TargetPeerId}, Collection: {Collection}, " +
-            "Shards: {ShardIds}, Move: {IsMove}",
-            sourcePeerId, targetPeerId, collectionName, string.Join(", ", shardIds), isMove);
-
-        var state = await GetClusterStateAsync(cancellationToken);
-        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
-
-        if (healthyNode == null)
-        {
-            logger.LogError("No healthy nodes found to perform replication");
-
-            return false;
-        }
-
-        return await collectionService.ReplicateShardsAsync(
-            healthyNode.Url,
-            sourcePeerId,
-            targetPeerId,
-            collectionName,
-            shardIds,
-            isMove,
-            cancellationToken);
-    }
-
-    public async Task<bool> DeleteCollectionViaApiAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        logger.LogInformation("Deleting collection {CollectionName} via API on node {NodeUrl}",
-            collectionName, nodeUrl);
-
-        return await collectionService.DeleteCollectionViaApiAsync(nodeUrl, collectionName, cancellationToken);
-    }
-
-    public async Task<bool> DeleteCollectionFromDiskAsync(
-        string podName,
-        string podNamespace,
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        logger.LogInformation(
-            "Deleting collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}",
-            collectionName, podName, podNamespace);
-
-        return await collectionService.DeleteCollectionFromDiskAsync(podName, podNamespace, collectionName,
-            cancellationToken);
-    }
-
-    public async Task<Dictionary<string, bool>> DeleteCollectionViaApiOnAllNodesAsync(
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        logger.LogInformation("Deleting collection {CollectionName} via API on all nodes", collectionName);
-
-        var state = await GetClusterStateAsync(cancellationToken);
-        var results = new Dictionary<string, bool>();
-
-        var deleteTasks = state.Nodes.Select(async node =>
-        {
-            var success = await collectionService.DeleteCollectionViaApiAsync(
-                node.Url,
-                collectionName,
-                cancellationToken);
-
-            // Use podName if available and not empty, otherwise use URL
-            var nodeIdentifier = !string.IsNullOrEmpty(node.PodName) ? node.PodName : node.Url;
-
-            return (NodeIdentifier: nodeIdentifier, Success: success);
-        });
-
-        var deleteResults = await Task.WhenAll(deleteTasks);
-
-        foreach (var result in deleteResults)
-        {
-            results[result.NodeIdentifier] = result.Success;
-        }
-
-        var successCount = results.Values.Count(s => s);
-        logger.LogInformation("Collection {CollectionName} deleted via API: {SuccessCount}/{TotalCount} nodes",
-            collectionName, successCount, results.Count);
-
-        return results;
-    }
-
-    public async Task<Dictionary<string, bool>> DeleteCollectionFromDiskOnAllNodesAsync(
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        logger.LogInformation("Deleting collection {CollectionName} from disk on all nodes", collectionName);
-
-        var state = await GetClusterStateAsync(cancellationToken);
-        var results = new Dictionary<string, bool>();
-
-        var deleteTasks = state.Nodes
-            .Where(n => !string.IsNullOrEmpty(n.PodName) && !string.IsNullOrEmpty(n.Namespace))
-            .Select(async node =>
-            {
-                var success = await collectionService.DeleteCollectionFromDiskAsync(
-                    node.PodName!,
-                    node.Namespace!,
-                    collectionName,
-                    cancellationToken);
-
-                return (PodName: node.PodName!, Success: success);
-            });
-
-        var deleteResults = await Task.WhenAll(deleteTasks);
-
-        foreach (var result in deleteResults)
-        {
-            results[result.PodName] = result.Success;
-        }
-
-        var successCount = results.Values.Count(s => s);
-        logger.LogInformation("Collection {CollectionName} deleted from disk: {SuccessCount}/{TotalCount} pods",
-            collectionName, successCount, results.Count);
-
-        return results;
-    }
-
-    // Private methods
 
     private void DetectClusterSplits(NodeInfo[] nodes)
     {
@@ -641,45 +663,57 @@ public class ClusterManager(
         if (healthyNodes.Count == 0)
         {
             logger.LogInformation("No healthy nodes with peer information to analyze for splits");
-
             return;
         }
 
-        // Try to establish the majority peer state
+        if (!EstablishMajorityClusterState(healthyNodes))
+        {
+            return;
+        }
+
+        CheckNodesAgainstMajorityState(healthyNodes);
+    }
+
+    private bool EstablishMajorityClusterState(List<NodeInfo> healthyNodes)
+    {
         if (!_clusterState.TryUpdateMajorityState(healthyNodes))
         {
             logger.LogWarning("Could not establish majority cluster state from {HealthyNodeCount} healthy nodes",
                 healthyNodes.Count);
-
-            return;
+            return false;
         }
 
         logger.LogInformation("Established majority cluster state with peer IDs: {PeerIds}",
             string.Join(", ", _clusterState.MajorityPeerIds));
+        return true;
+    }
 
-        // Check each healthy node against the majority state
+    private void CheckNodesAgainstMajorityState(List<NodeInfo> healthyNodes)
+    {
         foreach (var node in healthyNodes)
         {
             if (!_clusterState.IsNodeConsistentWithMajority(node, out var inconsistencyReason))
             {
-                node.IsHealthy = false;
-                node.Error = $"Potential cluster split detected: {inconsistencyReason}";
-                node.ShortError = GetShortErrorMessage(NodeErrorType.ClusterSplit);
-                node.ErrorType = NodeErrorType.ClusterSplit;
-
-                logger.LogWarning(
-                    "Node {NodeUrl} (PeerId={PeerId}) is inconsistent with majority cluster state. Reason: {Reason}",
-                    node.Url,
-                    node.PeerId,
-                    inconsistencyReason);
+                MarkNodeAsInconsistent(node, inconsistencyReason);
             }
             else
             {
                 logger.LogDebug("Node {NodeUrl} (PeerId={PeerId}) is consistent with majority cluster state",
-                    node.Url,
-                    node.PeerId);
+                    node.Url, node.PeerId);
             }
         }
+    }
+
+    private void MarkNodeAsInconsistent(NodeInfo node, string inconsistencyReason)
+    {
+        node.IsHealthy = false;
+        node.Error = $"Potential cluster split detected: {inconsistencyReason}";
+        node.ShortError = GetShortErrorMessage(NodeErrorType.ClusterSplit);
+        node.ErrorType = NodeErrorType.ClusterSplit;
+
+        logger.LogWarning(
+            "Node {NodeUrl} (PeerId={PeerId}) is inconsistent with majority cluster state. Reason: {Reason}",
+            node.Url, node.PeerId, inconsistencyReason);
     }
 
     private async Task<string?> GetPodNameFromIpAsync(string podUrl, string podNamespace,

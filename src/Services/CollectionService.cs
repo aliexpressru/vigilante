@@ -54,8 +54,7 @@ public class CollectionService : ICollectionService
     {
         try
         {
-            var uri = new Uri(healthyNodeUrl);
-            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodeUrl, _options.ApiKey);
 
             var result = await qdrantClient.ReplicateShards(
                 sourcePeerId: sourcePeerId,
@@ -219,8 +218,7 @@ public class CollectionService : ICollectionService
             _logger.LogInformation("Deleting collection {CollectionName} via API on node {NodeUrl}", 
                 collectionName, nodeUrl);
 
-            var uri = new Uri(nodeUrl);
-            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
 
             var result = await qdrantClient.DeleteCollection(collectionName, cancellationToken);
 
@@ -277,8 +275,7 @@ public class CollectionService : ICollectionService
         {
             _logger.LogInformation("Creating snapshot for collection {CollectionName} on node {NodeUrl}", 
                 collectionName, nodeUrl);
-            var uri = new Uri(nodeUrl);
-            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             var result = await qdrantClient.CreateCollectionSnapshot(
                 collectionName, 
                 cancellationToken,
@@ -314,8 +311,7 @@ public class CollectionService : ICollectionService
         {
             _logger.LogDebug("Listing snapshots for collection {CollectionName} on node {NodeUrl}", 
                 collectionName, nodeUrl);
-            var uri = new Uri(nodeUrl);
-            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             var result = await qdrantClient.ListCollectionSnapshots(collectionName, cancellationToken);
             if (result?.Status?.IsSuccess == true && result.Result != null)
             {
@@ -344,8 +340,7 @@ public class CollectionService : ICollectionService
         {
             _logger.LogDebug("Getting snapshots with size info for collection {CollectionName} on node {NodeUrl}", 
                 collectionName, nodeUrl);
-            var uri = new Uri(nodeUrl);
-            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             var result = await qdrantClient.ListCollectionSnapshots(collectionName, cancellationToken);
             
             if (result?.Status?.IsSuccess == true && result.Result != null)
@@ -381,8 +376,7 @@ public class CollectionService : ICollectionService
         {
             _logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} on node {NodeUrl}", 
                 snapshotName, collectionName, nodeUrl);
-            var uri = new Uri(nodeUrl);
-            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             var result = await qdrantClient.DeleteCollectionSnapshot(
                 collectionName, 
                 snapshotName, 
@@ -418,8 +412,7 @@ public class CollectionService : ICollectionService
         {
             _logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from node {NodeUrl}", 
                 snapshotName, collectionName, nodeUrl);
-            var uri = new Uri(nodeUrl);
-            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             
             var result = await qdrantClient.DownloadCollectionSnapshot(
                 collectionName, 
@@ -539,8 +532,7 @@ public class CollectionService : ICollectionService
         {
             _logger.LogInformation("Recovering collection {CollectionName} from snapshot {SnapshotName} on node {NodeUrl}", 
                 collectionName, snapshotName, nodeUrl);
-            var uri = new Uri(nodeUrl);
-            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             var result = await qdrantClient.RecoverCollectionFromSnapshot(
                 collectionName, 
                 snapshotName, 
@@ -580,8 +572,7 @@ public class CollectionService : ICollectionService
             _logger.LogInformation("Recovering collection {CollectionName} from URL {SnapshotUrl} on node {NodeUrl}", 
                 collectionName, snapshotUrl, nodeUrl);
             
-            var uri = new Uri(nodeUrl);
-            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             
             var snapshotLocationUri = new Uri(snapshotUrl);
             
@@ -620,10 +611,8 @@ public class CollectionService : ICollectionService
     {
         try
         {
-            var uri = new Uri(healthyNodeUrl);
-            var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+            var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodeUrl, _options.ApiKey);
 
-            // Find the peer ID of the node we're querying
             var healthyNodePeerId = collectionInfos
                 .FirstOrDefault(c => c.NodeUrl == healthyNodeUrl)?.PeerId;
             
@@ -633,7 +622,6 @@ public class CollectionService : ICollectionService
                 return;
             }
 
-            // Get unique collection names for this specific node
             var collectionNames = collectionInfos
                 .Where(c => c.NodeUrl == healthyNodeUrl)
                 .Select(c => c.CollectionName)
@@ -641,63 +629,13 @@ public class CollectionService : ICollectionService
 
             foreach (var collectionName in collectionNames)
             {
-                try
-                {
-                    var clusteringInfo = await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
-                    if (clusteringInfo?.Status?.IsSuccess == true && clusteringInfo.Result != null)
-                    {
-                        // Update metrics only for this node's collection
-                        var info = collectionInfos.FirstOrDefault(c => 
-                            c.CollectionName == collectionName && c.NodeUrl == healthyNodeUrl);
-                        
-                        if (info == null)
-                            continue;
-
-                        var shards = new List<ulong>();
-                        var shardStates = new Dictionary<string, string>();
-
-                        // Use local shards for this node
-                        if (clusteringInfo.Result.LocalShards != null)
-                        {
-                            foreach (var shard in clusteringInfo.Result.LocalShards)
-                            {
-                                shards.Add(shard.ShardId);
-                                shardStates[shard.ShardId.ToString()] = shard.State.ToString();
-                            }
-                        }
-
-                        if (shards.Count != 0)
-                        {
-                            info.Metrics["shards"] = shards;
-                            info.Metrics["shardStates"] = shardStates;
-                        }
-
-                        // Add outgoing transfers information with pod names instead of PeerIds
-                        if (clusteringInfo.Result.ShardTransfers != null)
-                        {
-                            var outgoingTransfers = clusteringInfo.Result.ShardTransfers
-                                .Where(t => t.From.ToString() == info.PeerId)
-                                .Select(t => new
-                                {
-                                    t.ShardId,
-                                    To = peerToPodMap.TryGetValue(t.To.ToString(), out var podName) ? podName : t.To.ToString(),
-                                    ToPeerId = t.To.ToString(),
-                                    IsSync = t.Sync
-                                })
-                                .ToList();
-
-                            if (outgoingTransfers.Count != 0)
-                            {
-                                info.Metrics["outgoingTransfers"] = outgoingTransfers;
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to get clustering info for collection {Collection} on node {NodeUrl}", 
-                        collectionName, healthyNodeUrl);
-                }
+                await ProcessCollectionClusteringInfoAsync(
+                    qdrantClient, 
+                    healthyNodeUrl, 
+                    collectionName, 
+                    collectionInfos, 
+                    peerToPodMap, 
+                    cancellationToken);
             }
         }
         catch (Exception ex)
@@ -720,8 +658,7 @@ public class CollectionService : ICollectionService
             {
                 _logger.LogDebug("Getting collections from node {NodeUrl}", node.Url);
                 
-                var uri = new Uri(node.Url);
-                var qdrantClient = _clientFactory.CreateClient(uri.Host, uri.Port, _options.ApiKey);
+                var qdrantClient = _clientFactory.CreateClientFromUrl(node.Url, _options.ApiKey);
                 
                 // Get list of collections
                 var collectionsResponse = await qdrantClient.ListCollections(cancellationToken);
@@ -744,8 +681,8 @@ public class CollectionService : ICollectionService
                         
                         var metrics = new Dictionary<string, object>
                         {
-                            { "prettySize", "N/A" },
-                            { "sizeBytes", 0L },
+                            { MetricConstants.PrettySizeKey, "N/A" },
+                            { MetricConstants.SizeBytesKey, 0L },
                             { "snapshots", snapshots }
                         };
 
@@ -813,62 +750,14 @@ public class CollectionService : ICollectionService
 
             foreach (var collectionName in collectionFolders)
             {
-                try
-                {
-                    _logger.LogInformation("Listing snapshot files in /qdrant/snapshots/{CollectionName} on pod {PodName}", 
-                        collectionName, podName);
-                    
-                    var snapshotFiles = await _commandExecutor.ListFilesAsync(
-                        podName,
-                        podNamespace,
-                        $"/qdrant/snapshots/{collectionName}",
-                        "*.snapshot",
-                        cancellationToken);
-
-                    _logger.LogInformation("Found {Count} snapshot files for collection {CollectionName} on pod {PodName}: {Files}", 
-                        snapshotFiles.Count, collectionName, podName, string.Join(", ", snapshotFiles));
-
-                    foreach (var snapshotFile in snapshotFiles.Where(f => f.EndsWith(".snapshot")))
-                    {
-                        _logger.LogDebug("Getting size for snapshot {SnapshotFile} in {CollectionName}", 
-                            snapshotFile, collectionName);
-                        
-                        var sizeBytes = await _commandExecutor.GetSizeAsync(
-                            podName,
-                            podNamespace,
-                            $"/qdrant/snapshots/{collectionName}",
-                            snapshotFile,
-                            cancellationToken);
-
-                        if (sizeBytes.HasValue)
-                        {
-                            var snapshotInfo = new SnapshotInfo
-                            {
-                                PodName = podName,
-                                NodeUrl = nodeUrl,
-                                PeerId = peerId,
-                                CollectionName = collectionName,
-                                SnapshotName = snapshotFile,
-                                SizeBytes = sizeBytes.Value,
-                                PodNamespace = podNamespace
-                            };
-
-                            snapshots.Add(snapshotInfo);
-                            _logger.LogInformation("Added snapshot {SnapshotName} for collection {CollectionName}: {Size} bytes ({PrettySize})", 
-                                snapshotFile, collectionName, sizeBytes.Value, snapshotInfo.PrettySize);
-                        }
-                        else
-                        {
-                            _logger.LogWarning("Could not get size for snapshot {SnapshotFile} in collection {CollectionName}", 
-                                snapshotFile, collectionName);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to get snapshots for collection {Collection} on pod {PodName}",
-                        collectionName, podName);
-                }
+                await ProcessCollectionSnapshotsFromDiskAsync(
+                    podName, 
+                    podNamespace, 
+                    nodeUrl, 
+                    peerId, 
+                    collectionName, 
+                    snapshots, 
+                    cancellationToken);
             }
         }
         catch (Exception ex)
@@ -905,6 +794,171 @@ public class CollectionService : ICollectionService
             isDirectory: false, 
             $"Snapshot {snapshotName}", 
             cancellationToken);
+    }
+
+    private async Task ProcessCollectionClusteringInfoAsync(
+        IQdrantHttpClient qdrantClient,
+        string healthyNodeUrl,
+        string collectionName,
+        IList<CollectionInfo> collectionInfos,
+        Dictionary<string, string> peerToPodMap,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var clusteringInfo = await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
+            
+            if (clusteringInfo?.Status?.IsSuccess != true || clusteringInfo.Result == null)
+                return;
+
+            var info = collectionInfos.FirstOrDefault(c => 
+                c.CollectionName == collectionName && c.NodeUrl == healthyNodeUrl);
+            
+            if (info == null)
+                return;
+
+            UpdateShardMetrics(info, clusteringInfo.Result);
+            UpdateTransferMetrics(info, clusteringInfo.Result, peerToPodMap);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get clustering info for collection {Collection} on node {NodeUrl}", 
+                collectionName, healthyNodeUrl);
+        }
+    }
+
+    private void UpdateShardMetrics(CollectionInfo info, Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo clusteringResult)
+    {
+        if (clusteringResult.LocalShards == null)
+            return;
+
+        var shards = new List<ulong>();
+        var shardStates = new Dictionary<string, string>();
+
+        foreach (var shard in clusteringResult.LocalShards)
+        {
+            shards.Add(shard.ShardId);
+            shardStates[shard.ShardId.ToString()] = shard.State.ToString();
+        }
+
+        if (shards.Count != 0)
+        {
+            info.Metrics["shards"] = shards;
+            info.Metrics["shardStates"] = shardStates;
+        }
+    }
+
+    private void UpdateTransferMetrics(
+        CollectionInfo info, 
+        Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo clusteringResult,
+        Dictionary<string, string> peerToPodMap)
+    {
+        if (clusteringResult.ShardTransfers == null)
+            return;
+
+        var outgoingTransfers = clusteringResult.ShardTransfers
+            .Where(t => t.From.ToString() == info.PeerId)
+            .Select(t => new
+            {
+                t.ShardId,
+                To = peerToPodMap.TryGetValue(t.To.ToString(), out var podName) ? podName : t.To.ToString(),
+                ToPeerId = t.To.ToString(),
+                IsSync = t.Sync
+            })
+            .ToList();
+
+        if (outgoingTransfers.Count != 0)
+        {
+            info.Metrics["outgoingTransfers"] = outgoingTransfers;
+        }
+    }
+
+    private async Task ProcessCollectionSnapshotsFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string nodeUrl,
+        string peerId,
+        string collectionName,
+        List<SnapshotInfo> snapshots,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Listing snapshot files in /qdrant/snapshots/{CollectionName} on pod {PodName}", 
+                collectionName, podName);
+            
+            var snapshotFiles = await _commandExecutor!.ListFilesAsync(
+                podName,
+                podNamespace,
+                $"/qdrant/snapshots/{collectionName}",
+                "*.snapshot",
+                cancellationToken);
+
+            _logger.LogInformation("Found {Count} snapshot files for collection {CollectionName} on pod {PodName}: {Files}", 
+                snapshotFiles.Count, collectionName, podName, string.Join(", ", snapshotFiles));
+
+            foreach (var snapshotFile in snapshotFiles.Where(f => f.EndsWith(".snapshot")))
+            {
+                await ProcessSingleSnapshotFromDiskAsync(
+                    podName, 
+                    podNamespace, 
+                    nodeUrl, 
+                    peerId, 
+                    collectionName, 
+                    snapshotFile, 
+                    snapshots, 
+                    cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get snapshots for collection {Collection} on pod {PodName}",
+                collectionName, podName);
+        }
+    }
+
+    private async Task ProcessSingleSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string nodeUrl,
+        string peerId,
+        string collectionName,
+        string snapshotFile,
+        List<SnapshotInfo> snapshots,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogDebug("Getting size for snapshot {SnapshotFile} in {CollectionName}", 
+            snapshotFile, collectionName);
+        
+        var sizeBytes = await _commandExecutor!.GetSizeAsync(
+            podName,
+            podNamespace,
+            $"/qdrant/snapshots/{collectionName}",
+            snapshotFile,
+            cancellationToken);
+
+        if (sizeBytes.HasValue)
+        {
+            var snapshotInfo = new SnapshotInfo
+            {
+                PodName = podName,
+                NodeUrl = nodeUrl,
+                PeerId = peerId,
+                CollectionName = collectionName,
+                SnapshotName = snapshotFile,
+                SizeBytes = sizeBytes.Value,
+                PodNamespace = podNamespace
+            };
+
+            snapshots.Add(snapshotInfo);
+            _logger.LogInformation("Added snapshot {SnapshotName} for collection {CollectionName}: {Size} bytes ({PrettySize})", 
+                snapshotFile, collectionName, sizeBytes.Value, snapshotInfo.PrettySize);
+        }
+        else
+        {
+            _logger.LogWarning("Could not get size for snapshot {SnapshotFile} in collection {CollectionName}", 
+                snapshotFile, collectionName);
+        }
     }
 }
 

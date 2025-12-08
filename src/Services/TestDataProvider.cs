@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
+using Vigilante.Constants;
 using Vigilante.Models;
 
 namespace Vigilante.Services;
@@ -9,11 +10,7 @@ namespace Vigilante.Services;
 /// </summary>
 public class TestDataProvider
 {
-    private const string PrettySizeMetricKey = "prettySize";
-    private const string SizeBytesMetricKey = "sizeBytes";
-    private const string ShardsMetricKey = "shards";
-    private const string OutgoingTransfersKey = "outgoingTransfers";
-    private const string ShardStatesKey = "shardStates";
+
 
     private readonly QdrantOptions _options;
 
@@ -108,11 +105,11 @@ public class TestDataProvider
 
                 var metrics = new Dictionary<string, object>
                 {
-                    { PrettySizeMetricKey, prettySize },
-                    { SizeBytesMetricKey, sizeBytes },
-                    { ShardsMetricKey, shards },
-                    { OutgoingTransfersKey, transfers },
-                    { ShardStatesKey, shardStates }
+                    { MetricConstants.PrettySizeKey, prettySize },
+                    { MetricConstants.SizeBytesKey, sizeBytes },
+                    { MetricConstants.ShardsKey, shards },
+                    { MetricConstants.OutgoingTransfersKey, transfers },
+                    { MetricConstants.ShardStatesKey, shardStates }
                 };
 
                 testData.Add(new CollectionInfo
