@@ -17,7 +17,7 @@ public class QdrantMonitorService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("🚀 Vigilante is now watching over Qdrant cluster");
+        logger.LogInformation("Vigilante is now watching over Qdrant cluster");
         
         try
         {
@@ -32,7 +32,7 @@ public class QdrantMonitorService(
                     // Log only if there are issues or important status changes
                     if (!state.Health.IsHealthy || state.Health.Issues.Any())
                     {
-                        logger.LogWarning("⚠️ Cluster Status: {Status} | Healthy: {HealthyNodes}/{TotalNodes} | Issues: {Issues}",
+                        logger.LogWarning("Cluster Status: {Status} | Healthy: {HealthyNodes}/{TotalNodes} | Issues: {Issues}",
                             state.Status,
                             state.Health.HealthyNodes,
                             state.Health.TotalNodes,
@@ -46,7 +46,7 @@ public class QdrantMonitorService(
 
                     if (_options.EnableAutoRecovery && !state.Health.IsHealthy)
                     {
-                        logger.LogWarning("🔧 Auto-recovery is enabled but not yet implemented");
+                        logger.LogWarning("Auto-recovery is enabled but not yet implemented");
                         // TODO: Implement auto-recovery logic
                     }
                 }
@@ -56,7 +56,7 @@ public class QdrantMonitorService(
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "❌ Error during cluster monitoring");
+                    logger.LogError(ex, "Error during cluster monitoring");
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(_options.MonitoringIntervalSeconds), stoppingToken);
@@ -64,24 +64,24 @@ public class QdrantMonitorService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "❌ Fatal error in QdrantMonitorService");
+            logger.LogError(ex, "Fatal error in QdrantMonitorService");
             throw;
         }
         finally
         {
-            logger.LogInformation("🛑 Vigilante watch duty completed");
+            logger.LogInformation("Vigilante watch duty completed");
         }
     }
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
-        logger.LogInformation("🎯 Vigilante starting");
+        logger.LogInformation("Vigilante starting");
         await base.StartAsync(cancellationToken);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        logger.LogInformation("🛑 Vigilante stopping");
+        logger.LogInformation("Vigilante stopping");
         await base.StopAsync(cancellationToken);
     }
 
@@ -95,7 +95,7 @@ public class QdrantMonitorService(
                 case ClusterStatus.Healthy when 
                     (currentStatus == ClusterStatus.Degraded || currentStatus == ClusterStatus.Unavailable):
                     // Cluster degraded from Healthy - needs attention!
-                    logger.LogWarning("🚨 Cluster status changed from {PreviousStatus} to {CurrentStatus} - NEEDS ATTENTION",
+                    logger.LogWarning("Cluster status changed from {PreviousStatus} to {CurrentStatus} - NEEDS ATTENTION",
                         _previousStatus.Value, currentStatus);
                     meterService.UpdateClusterNeedsAttention(true);
 
@@ -103,14 +103,14 @@ public class QdrantMonitorService(
                 case ClusterStatus.Degraded or ClusterStatus.Unavailable
                     when currentStatus == ClusterStatus.Healthy:
                     // Cluster recovered to Healthy - clear attention flag
-                    logger.LogInformation("✅ Cluster status changed from {PreviousStatus} to {CurrentStatus} - recovered!",
+                    logger.LogInformation("Cluster status changed from {PreviousStatus} to {CurrentStatus} - recovered!",
                         _previousStatus.Value, currentStatus);
                     meterService.UpdateClusterNeedsAttention(false);
 
                     break;
                 default:
                     // Other status transitions
-                    logger.LogInformation("📊 Cluster status changed from {PreviousStatus} to {CurrentStatus}",
+                    logger.LogInformation("Cluster status changed from {PreviousStatus} to {CurrentStatus}",
                         _previousStatus.Value, currentStatus);
 
                     break;
@@ -121,12 +121,12 @@ public class QdrantMonitorService(
             // First time - set initial state
             if (currentStatus == ClusterStatus.Degraded || currentStatus == ClusterStatus.Unavailable)
             {
-                logger.LogWarning("🚨 Initial cluster status is {Status} - NEEDS ATTENTION", currentStatus);
+                logger.LogWarning("Initial cluster status is {Status} - NEEDS ATTENTION", currentStatus);
                 meterService.UpdateClusterNeedsAttention(true);
             }
             else
             {
-                logger.LogInformation("✅ Initial cluster status is {Status}", currentStatus);
+                logger.LogInformation("Initial cluster status is {Status}", currentStatus);
                 meterService.UpdateClusterNeedsAttention(false);
             }
         }

@@ -95,7 +95,7 @@ internal class WebSocketStream : Stream
                 if (_stdoutMessages == 0 && _stderrMessages == 0 && _otherMessages == 0)
                 {
                     var first20Bytes = string.Join(" ", tempBuffer.Take(Math.Min(21, result.Count)).Select(b => b.ToString("X2")));
-                    _logger.LogInformation("🔵 VERY FIRST WebSocket message (before processing): Channel={Channel}, Count={Count}, First20BytesWithChannel=[{Bytes}]",
+                    _logger.LogInformation("VERY FIRST WebSocket message (before processing): Channel={Channel}, Count={Count}, First20BytesWithChannel=[{Bytes}]",
                         channel, result.Count, first20Bytes);
                 }
                 
@@ -140,7 +140,7 @@ internal class WebSocketStream : Stream
                 if (_stdoutMessages == 1)
                 {
                     var first20Bytes = string.Join(" ", tempBuffer.Skip(1).Take(Math.Min(20, dataLength)).Select(b => b.ToString("X2")));
-                    _logger.LogInformation("📦 FIRST stdout message #1: Channel={Channel}, Count={Count}, DataLength={DataLength}, First20Bytes=[{Bytes}]",
+                    _logger.LogInformation("FIRST stdout message #1: Channel={Channel}, Count={Count}, DataLength={DataLength}, First20Bytes=[{Bytes}]",
                         channel, result.Count, dataLength, first20Bytes);
                 }
                 
@@ -148,7 +148,7 @@ internal class WebSocketStream : Stream
                 if (_stdoutMessages == 2)
                 {
                     var first10Bytes = string.Join(" ", tempBuffer.Skip(1).Take(Math.Min(10, dataLength)).Select(b => b.ToString("X2")));
-                    _logger.LogInformation("📦 SECOND stdout message #2: Count={Count}, DataLength={DataLength}, First10Bytes=[{Bytes}]",
+                    _logger.LogInformation("SECOND stdout message #2: Count={Count}, DataLength={DataLength}, First10Bytes=[{Bytes}]",
                         result.Count, dataLength, first10Bytes);
                 }
                 
@@ -219,33 +219,33 @@ internal class WebSocketStream : Stream
                 if (_expectedSize.HasValue)
                 {
                     var extraBytes = _totalBytesRead - _expectedSize.Value;
-                    var status = extraBytes == 0 ? "✅" : "⚠️";
+                    var status = extraBytes == 0 ? "OK" : "WARNING";
                     
                     _logger.LogInformation(
                         "{Status} Download completed: {FilePath} from {PodName}\n" +
-                        "   📏 Expected file size: {ExpectedSize} bytes ({ExpectedSizeFormatted})\n" +
-                        "   📊 Data bytes (stdout only): {DataBytes} bytes ({FormattedDataSize})\n" +
-                        "   📦 Total WebSocket bytes: {TotalWSBytes} bytes ({FormattedWSSize})\n" +
-                        "   🔧 Channel overhead: {Overhead} bytes ({OverheadPercent:F2}%)\n" +
+                        "   Expected file size: {ExpectedSize} bytes ({ExpectedSizeFormatted})\n" +
+                        "   Data bytes (stdout only): {DataBytes} bytes ({FormattedDataSize})\n" +
+                        "   Total WebSocket bytes: {TotalWSBytes} bytes ({FormattedWSSize})\n" +
+                        "   Channel overhead: {Overhead} bytes ({OverheadPercent:F2}%)\n" +
                         "   {ExtraStatus} Extra data read: {ExtraBytes} bytes ({ExtraSizeFormatted})\n" +
-                        "   📨 Messages: stdout={StdoutCount}, stderr={StderrCount}, other={OtherCount}",
+                        "   Messages: stdout={StdoutCount}, stderr={StderrCount}, other={OtherCount}",
                         status, _filePath, _podName,
                         _expectedSize.Value, _expectedSize.Value.ToPrettySize(),
                         _totalBytesRead, _totalBytesRead.ToPrettySize(),
                         _totalWebSocketBytes, _totalWebSocketBytes.ToPrettySize(),
                         _totalWebSocketBytes - _totalBytesRead, 
                         (_totalWebSocketBytes - _totalBytesRead) * 100.0 / Math.Max(_totalWebSocketBytes, 1),
-                        extraBytes >= 0 ? "❌" : "✅", extraBytes, Math.Abs(extraBytes).ToPrettySize(),
+                        extraBytes >= 0 ? "ERROR" : "OK", extraBytes, Math.Abs(extraBytes).ToPrettySize(),
                         _stdoutMessages, _stderrMessages, _otherMessages);
                 }
                 else
                 {
                     _logger.LogInformation(
-                        "✅ Download completed: {FilePath} from {PodName}\n" +
-                        "   📊 Data bytes (stdout only): {DataBytes} bytes ({FormattedDataSize})\n" +
-                        "   📦 Total WebSocket bytes: {TotalWSBytes} bytes ({FormattedWSSize})\n" +
-                        "   🔧 Channel overhead: {Overhead} bytes ({OverheadPercent:F2}%)\n" +
-                        "   📨 Messages: stdout={StdoutCount}, stderr={StderrCount}, other={OtherCount}",
+                        "Download completed: {FilePath} from {PodName}\n" +
+                        "   Data bytes (stdout only): {DataBytes} bytes ({FormattedDataSize})\n" +
+                        "   Total WebSocket bytes: {TotalWSBytes} bytes ({FormattedWSSize})\n" +
+                        "   Channel overhead: {Overhead} bytes ({OverheadPercent:F2}%)\n" +
+                        "   Messages: stdout={StdoutCount}, stderr={StderrCount}, other={OtherCount}",
                         _filePath, _podName,
                         _totalBytesRead, _totalBytesRead.ToPrettySize(),
                         _totalWebSocketBytes, _totalWebSocketBytes.ToPrettySize(),

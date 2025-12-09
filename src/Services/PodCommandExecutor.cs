@@ -197,7 +197,7 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
 
             if (verifyResult.Contains("deleted"))
             {
-                logger.LogInformation("✅ {Description} deleted successfully from disk on pod {PodName}", 
+                logger.LogInformation("{Description} deleted successfully from disk on pod {PodName}", 
                     itemDescription, podName);
                 return true;
             }
@@ -325,16 +325,16 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
             
             if (long.TryParse(trimmedOutput, out var size))
             {
-                logger.LogInformation("✅ Got file size for {FilePath}: {Size} bytes", filePath, size);
+                logger.LogInformation("Got file size for {FilePath}: {Size} bytes", filePath, size);
                 return size;
             }
             
-            logger.LogWarning("❌ Could not parse file size. Output: '{Output}'", trimmedOutput);
+            logger.LogWarning("Could not parse file size. Output: '{Output}'", trimmedOutput);
             return null;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "❌ Failed to get file size for {FilePath} on pod {PodName}", filePath, podName);
+            logger.LogError(ex, "Failed to get file size for {FilePath} on pod {PodName}", filePath, podName);
             return null;
         }
     }
@@ -441,7 +441,7 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
                 }
 
                 var fileInfo = new FileInfo(tempFile);
-                logger.LogInformation("✅ Downloaded {Size} bytes to {TempFile} using kubectl cp",
+                logger.LogInformation("Downloaded {Size} bytes to {TempFile} using kubectl cp",
                     fileInfo.Length, tempFile);
 
                 // Open file stream with DeleteOnClose option
@@ -532,7 +532,7 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
                 base64Transform, 
                 System.Security.Cryptography.CryptoStreamMode.Read);
             
-            logger.LogInformation("✅ Started streaming file {FilePath} from pod {PodName} (base64 encoded)",
+            logger.LogInformation("Started streaming file {FilePath} from pod {PodName} (base64 encoded)",
                 filePath, podName);
             
             return decodingStream;

@@ -638,7 +638,7 @@ public class ClusterManager(
             {
                 collection.Issues.Add("Collection exists in API but not found in storage");
 
-                logger.LogWarning("⚠️ Collection {CollectionName} on node {NodeUrl} exists in API but not in storage!",
+                logger.LogWarning("Collection {CollectionName} on node {NodeUrl} exists in API but not in storage!",
                     collection.CollectionName, collection.NodeUrl);
             }
         }

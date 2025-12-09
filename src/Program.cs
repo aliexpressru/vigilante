@@ -28,7 +28,7 @@ builder.Host.UseSerilog();
 
 try
 {
-    Log.Information("🛡️ Starting Vigilante - Qdrant Cluster Guardian");
+    Log.Information("Starting Vigilante - Qdrant Cluster Guardian");
     
     var startup = new Startup(builder.Configuration);
     startup.ConfigureServices(builder.Services);
@@ -39,7 +39,7 @@ try
 }
 catch (Exception ex)
 {
-    Log.Fatal(ex, "❌ Vigilante service terminated unexpectedly");
+    Log.Fatal(ex, "Vigilante service terminated unexpectedly");
 }
 finally
 {

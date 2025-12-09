@@ -114,7 +114,7 @@ public class Startup(IConfiguration configuration)
         app.UseSwaggerUI(c =>
         {
             c.SwaggerEndpoint("/swagger/v1/swagger.json", "Vigilante API v1");
-            c.DocumentTitle = "🛡️ Vigilante - Qdrant Cluster Guardian";
+            c.DocumentTitle = "Vigilante - Qdrant Cluster Guardian";
         });
 
         // Basic security
@@ -149,8 +149,8 @@ public class Startup(IConfiguration configuration)
         // Graceful shutdown logging
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
         lifetime.ApplicationStopping.Register(() => 
-            app.Logger.LogInformation("🛡️ Vigilante is shutting down gracefully..."));
+            app.Logger.LogInformation("Vigilante is shutting down gracefully..."));
         lifetime.ApplicationStopped.Register(() => 
-            app.Logger.LogInformation("🛡️ Vigilante has stopped. Cluster is no longer monitored."));
+            app.Logger.LogInformation("Vigilante has stopped. Cluster is no longer monitored."));
     }
 }

@@ -66,7 +66,7 @@ public class CollectionService : ICollectionService
 
             if (result?.Status?.IsSuccess == true)
             {
-                _logger.LogInformation("✅ Shard replication initiated: {Collection} [{SourcePeer}→{TargetPeer}]", 
+                _logger.LogInformation("Shard replication initiated: {Collection} [{SourcePeer}→{TargetPeer}]", 
                     collectionName, sourcePeerId, targetPeerId);
                 return true;
             }
@@ -224,7 +224,7 @@ public class CollectionService : ICollectionService
 
             if (result?.Status?.IsSuccess == true)
             {
-                _logger.LogInformation("✅ Collection {CollectionName} deleted successfully via API on node {NodeUrl}", 
+                _logger.LogInformation("Collection {CollectionName} deleted successfully via API on node {NodeUrl}", 
                     collectionName, nodeUrl);
                 return true;
             }
@@ -285,7 +285,7 @@ public class CollectionService : ICollectionService
             {
                 var snapshotName = result.Result?.Name ?? $"{collectionName}-snapshot-{DateTime.UtcNow:yyyyMMddHHmmss}";
                 var statusText = result.IsAccepted() ? "accepted" : "created successfully";
-                _logger.LogInformation("✅ Snapshot {StatusText} for collection {CollectionName} on node {NodeUrl}", 
+                _logger.LogInformation("Snapshot {StatusText} for collection {CollectionName} on node {NodeUrl}", 
                     statusText, collectionName, nodeUrl);
                 return snapshotName;
             }
@@ -386,7 +386,7 @@ public class CollectionService : ICollectionService
             if (result.IsAcceptedOrSuccess())
             {
                 var statusText = result.IsAccepted() ? "deletion accepted" : "deleted successfully";
-                _logger.LogInformation("✅ Snapshot {SnapshotName} {StatusText} for collection {CollectionName} on node {NodeUrl}", 
+                _logger.LogInformation("Snapshot {SnapshotName} {StatusText} for collection {CollectionName} on node {NodeUrl}", 
                     snapshotName, statusText, collectionName, nodeUrl);
                 return true;
             }
@@ -421,7 +421,7 @@ public class CollectionService : ICollectionService
             
             if (result?.Result?.SnapshotDataStream != null)
             {
-                _logger.LogInformation("✅ Snapshot {SnapshotName} downloaded successfully for collection {CollectionName} from node {NodeUrl}", 
+                _logger.LogInformation("Snapshot {SnapshotName} downloaded successfully for collection {CollectionName} from node {NodeUrl}", 
                     snapshotName, collectionName, nodeUrl);
                 return result.Result.SnapshotDataStream;
             }
@@ -472,12 +472,12 @@ public class CollectionService : ICollectionService
 
             if (expectedSize.HasValue)
             {
-                _logger.LogInformation("📏 Got expected file size: {Size} bytes ({FormattedSize})", 
+                _logger.LogInformation("Got expected file size: {Size} bytes ({FormattedSize})", 
                     expectedSize.Value, expectedSize.Value.ToPrettySize());
             }
             else
             {
-                _logger.LogWarning("⚠️ Could not get file size from pod - will download without size limit!");
+                _logger.LogWarning("Could not get file size from pod - will download without size limit!");
             }
 
             // Get checksum for verification
@@ -490,7 +490,7 @@ public class CollectionService : ICollectionService
 
             if (!string.IsNullOrEmpty(expectedChecksum))
             {
-                _logger.LogInformation("📋 Expected checksum: {Checksum}", expectedChecksum);
+                _logger.LogInformation("Expected checksum: {Checksum}", expectedChecksum);
             }
 
             // Download file using cat command
@@ -508,7 +508,7 @@ public class CollectionService : ICollectionService
                 return null;
             }
 
-            _logger.LogInformation("✅ Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
+            _logger.LogInformation("Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
                 snapshotName, podName, podNamespace);
 
             return snapshotStream;
@@ -542,7 +542,7 @@ public class CollectionService : ICollectionService
             if (result.IsAcceptedOrSuccess())
             {
                 var statusText = result.IsAccepted() ? "recovery accepted" : "recovered successfully";
-                _logger.LogInformation("✅ Collection {CollectionName} {StatusText} from snapshot {SnapshotName} on node {NodeUrl}", 
+                _logger.LogInformation("Collection {CollectionName} {StatusText} from snapshot {SnapshotName} on node {NodeUrl}", 
                     collectionName, statusText, snapshotName, nodeUrl);
                 return true;
             }
@@ -586,7 +586,7 @@ public class CollectionService : ICollectionService
             if (result.IsAcceptedOrSuccess())
             {
                 var statusText = result.IsAccepted() ? "recovery accepted" : "recovered successfully";
-                _logger.LogInformation("✅ Collection {CollectionName} {StatusText} from URL {SnapshotUrl} on node {NodeUrl}", 
+                _logger.LogInformation("Collection {CollectionName} {StatusText} from URL {SnapshotUrl} on node {NodeUrl}", 
                     collectionName, statusText, snapshotUrl, nodeUrl);
                 return true;
             }
