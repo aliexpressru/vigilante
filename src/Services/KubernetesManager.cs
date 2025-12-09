@@ -234,7 +234,17 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to fetch warning events for namespace {Namespace}", ns);
+            // Check if it's a Forbidden error (RBAC issue)
+            if (ex.Message.Contains("Forbidden") || ex.Message.Contains("403"))
+            {
+                logger.LogWarning("Access denied to read events in namespace {Namespace}. " +
+                    "ServiceAccount may be missing RBAC permissions for 'events' resource. " +
+                    "Please apply updated k8s/rbac.yaml to grant necessary permissions.", ns);
+            }
+            else
+            {
+                logger.LogError(ex, "Failed to fetch warning events for namespace {Namespace}", ns);
+            }
         }
 
         return warnings;
