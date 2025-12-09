@@ -6,5 +6,6 @@ public interface IMeterService
 {
     void UpdateAliveNodes(int count);
     void UpdateCollectionSize(CollectionSize collectionSize);
+    void UpdateClusterNeedsAttention(bool needsAttention);
 }
 

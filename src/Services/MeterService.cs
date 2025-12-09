@@ -9,6 +9,7 @@ public class MeterService : IMeterService
 {
     public const string MeterName = "vigilante";
     private int _aliveNodesCount;
+    private int _clusterNeedsAttention;
     private readonly ConcurrentDictionary<(string Pod, string Collection), (long Size, DateTime LastUpdated)> _collectionSizes = new();
     private readonly TimeSpan _staleDataThreshold = TimeSpan.FromMinutes(5);
     
@@ -21,6 +22,12 @@ public class MeterService : IMeterService
             observeValue: () => _aliveNodesCount,
             unit: "{nodes}",
             description: "Current number of alive nodes in the cluster");
+
+        meter.CreateObservableGauge(
+            name: $"{MeterName}_cluster_needs_attention",
+            observeValue: () => _clusterNeedsAttention,
+            unit: "{status}",
+            description: "Indicates if the cluster needs attention (1 = needs attention, 0 = healthy). Set to 1 when cluster transitions from Healthy to Degraded or Unavailable.");
 
         meter.CreateObservableGauge(
             name: $"{MeterName}_collection_size_bytes",
@@ -55,6 +62,11 @@ public class MeterService : IMeterService
     public void UpdateAliveNodes(int count)
     {
         Interlocked.Exchange(ref _aliveNodesCount, count);
+    }
+
+    public void UpdateClusterNeedsAttention(bool needsAttention)
+    {
+        Interlocked.Exchange(ref _clusterNeedsAttention, needsAttention ? 1 : 0);
     }
 
     public void UpdateCollectionSize(CollectionSize collectionSize)

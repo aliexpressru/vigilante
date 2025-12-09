@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Aer.Vigilante.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Aerx.QdrantClient.Http" Version="1.16.0-pre9" />
     <PackageReference Include="FluentValidation" Version="12.1.0" />
     <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
