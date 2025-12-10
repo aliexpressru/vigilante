@@ -166,7 +166,7 @@ public class ClusterManagerTests
         // Assert
         Assert.That(result.Nodes, Has.Count.EqualTo(3));
         Assert.That(result.Nodes.Count(n => n.IsHealthy), Is.EqualTo(3));
-        Assert.That(result.Nodes.All(n => string.IsNullOrEmpty(n.Error)), Is.True);
+        Assert.That(result.Nodes.All(n => n.Issues.Count == 0), Is.True);
         Assert.That(result.Nodes.Count(n => n.IsLeader), Is.EqualTo(1));
         Assert.That(result.Nodes.Single(n => n.IsLeader).PodName, Is.EqualTo("pod1"));
     }
@@ -1760,10 +1760,11 @@ public class ClusterManagerTests
         var node = state.Nodes[0];
         Assert.That(node.IsHealthy, Is.False, "Node should be unhealthy - active failures mark it unhealthy");
         Assert.That(node.ErrorType, Is.EqualTo(NodeErrorType.MessageSendFailures));
-        Assert.That(node.Error, Does.Contain("Message send failures"));
-        Assert.That(node.Error, Does.Contain("1002"));
-        Assert.That(node.Error, Does.Contain("Network unreachable"));
-        Assert.That(node.Warnings, Is.Empty, "No warnings for active failures");
+        Assert.That(node.Issues, Has.Count.GreaterThan(0), "Node should have issues");
+        var issuesText = string.Join(" ", node.Issues);
+        Assert.That(issuesText, Does.Contain("Message send failures"));
+        Assert.That(issuesText, Does.Contain("1002"));
+        Assert.That(issuesText, Does.Contain("Network unreachable"));
     }
 
     [Test]
@@ -1825,13 +1826,11 @@ public class ClusterManagerTests
         
         Assert.That(node.IsHealthy, Is.False, "Node should be unhealthy due to recent failure");
         Assert.That(node.ErrorType, Is.EqualTo(NodeErrorType.MessageSendFailures));
-        Assert.That(node.Error, Does.Contain("1003"), "Error should mention peer with recent failure");
-        Assert.That(node.Error, Does.Contain("Current error"));
-        Assert.That(node.Error, Does.Not.Contain("1002"), "Error should not mention peer with stale failure");
-        
-        Assert.That(node.Warnings, Has.Count.EqualTo(1), "Should have warning for stale failure");
-        Assert.That(node.Warnings[0], Does.Contain("1002"), "Warning should mention peer with stale failure");
-        Assert.That(node.Warnings[0], Does.Contain("Old timeout"));
+        Assert.That(node.Issues, Has.Count.GreaterThan(0), "Node should have issues");
+        var issuesText = string.Join(" ", node.Issues);
+        Assert.That(issuesText, Does.Contain("1003"), "Issues should mention peer with recent failure");
+        Assert.That(issuesText, Does.Contain("Current error"));
+        Assert.That(issuesText, Does.Not.Contain("1002"), "Issues should not mention peer with stale failure");
     }
 
     [Test]
@@ -1880,8 +1879,10 @@ public class ClusterManagerTests
         
         Assert.That(node.IsHealthy, Is.False, "Without consensus timestamp, all failures are treated as active");
         Assert.That(node.ErrorType, Is.EqualTo(NodeErrorType.MessageSendFailures));
-        Assert.That(node.Error, Does.Contain("Message send failures"));
-        Assert.That(node.Error, Does.Contain("1002"));
+        Assert.That(node.Issues, Has.Count.GreaterThan(0), "Node should have issues");
+        var issuesText = string.Join(" ", node.Issues);
+        Assert.That(issuesText, Does.Contain("Message send failures"));
+        Assert.That(issuesText, Does.Contain("1002"));
         Assert.That(node.Warnings, Is.Empty, "No warnings when no consensus timestamp available");
     }
 
@@ -2204,6 +2205,300 @@ public class ClusterManagerTests
         Assert.That(state.Status, Is.EqualTo(ClusterStatus.Degraded), "Cluster should be degraded");
         // Should still return valid state even if K8s warnings fetch failed
         Assert.That(state.Nodes, Has.Count.EqualTo(2));
+    }
+
+    #endregion
+
+    #region Qdrant ReportIssues Tests
+
+    [Test]
+    public async Task GetClusterStateAsync_WithQdrantIssues_ShouldAddIssuesToNode()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var peerId = 1001UL;
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = peerId,
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = peerId },
+                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    {
+                        ConsensusThreadStatus = "working",
+                        LastUpdate = DateTime.UtcNow,
+                        Err = null
+                    },
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                }
+            }));
+
+        // Mock ReportIssues response
+        var reportIssuesResponse = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+            Result = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint
+            {
+                Issues = new[]
+                {
+                    new KeyValuePair<string, string>("disk_usage", "Disk usage is above 80%"),
+                    new KeyValuePair<string, string>("memory_usage", "Memory usage is above 90%")
+                }
+            }
+        };
+        
+#pragma warning disable QD0001
+        mockClient.ReportIssues(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(reportIssuesResponse));
+#pragma warning restore QD0001
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        var node = state.Nodes[0];
+        Assert.That(node.IsHealthy, Is.True, "Node should be healthy even with Qdrant issues (they are informational)");
+        Assert.That(node.Issues, Has.Count.EqualTo(2), "Should have 2 issues from Qdrant");
+        Assert.That(node.Issues[0], Is.EqualTo("disk_usage: Disk usage is above 80%"));
+        Assert.That(node.Issues[1], Is.EqualTo("memory_usage: Memory usage is above 90%"));
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WithQdrantIssuesWithoutValues_ShouldAddIssuesWithKeyOnly()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var peerId = 1001UL;
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = peerId,
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = peerId },
+                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    {
+                        ConsensusThreadStatus = "working",
+                        LastUpdate = DateTime.UtcNow,
+                        Err = null
+                    },
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                }
+            }));
+
+        // Mock ReportIssues response with issues without values
+        var reportIssuesResponse = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+            Result = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint
+            {
+                Issues = new[]
+                {
+                    new KeyValuePair<string, string>("warning_detected", ""),
+                    new KeyValuePair<string, string>("performance_issue", null!)
+                }
+            }
+        };
+        
+#pragma warning disable QD0001
+        mockClient.ReportIssues(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(reportIssuesResponse));
+#pragma warning restore QD0001
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        var node = state.Nodes[0];
+        Assert.That(node.Issues, Has.Count.EqualTo(2), "Should have 2 issues from Qdrant");
+        Assert.That(node.Issues[0], Is.EqualTo("warning_detected"));
+        Assert.That(node.Issues[1], Is.EqualTo("performance_issue"));
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WithEmptyQdrantIssues_ShouldNotAddIssues()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var peerId = 1001UL;
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = peerId,
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = peerId },
+                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    {
+                        ConsensusThreadStatus = "working",
+                        LastUpdate = DateTime.UtcNow,
+                        Err = null
+                    },
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                }
+            }));
+
+        // Mock ReportIssues response with empty issues
+        var reportIssuesResponse = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+            Result = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint
+            {
+                Issues = Array.Empty<KeyValuePair<string, string>>()
+            }
+        };
+        
+#pragma warning disable QD0001
+        mockClient.ReportIssues(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(reportIssuesResponse));
+#pragma warning restore QD0001
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        var node = state.Nodes[0];
+        Assert.That(node.IsHealthy, Is.True, "Node should be healthy");
+        Assert.That(node.Issues, Is.Empty, "Should have no issues");
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WhenReportIssuesFails_ShouldHandleGracefully()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var peerId = 1001UL;
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = peerId,
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = peerId },
+                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    {
+                        ConsensusThreadStatus = "working",
+                        LastUpdate = DateTime.UtcNow,
+                        Err = null
+                    },
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                }
+            }));
+
+        // Mock ReportIssues to throw exception
+#pragma warning disable QD0001
+        mockClient.ReportIssues(Arg.Any<CancellationToken>())
+            .Returns<Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse>(_ => 
+                throw new Exception("Failed to fetch issues"));
+#pragma warning restore QD0001
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert - should not throw, node should still be healthy
+        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        var node = state.Nodes[0];
+        Assert.That(node.IsHealthy, Is.True, "Node should still be healthy even if ReportIssues fails");
+        Assert.That(node.Issues, Is.Empty, "Should have no issues since ReportIssues failed");
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WhenReportIssuesReturnsError_ShouldHandleGracefully()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var peerId = 1001UL;
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = peerId,
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = peerId },
+                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    {
+                        ConsensusThreadStatus = "working",
+                        LastUpdate = DateTime.UtcNow,
+                        Err = null
+                    },
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                }
+            }));
+
+        // Mock ReportIssues to return error status
+        var reportIssuesResponse = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Error),
+            Result = null
+        };
+        
+#pragma warning disable QD0001
+        mockClient.ReportIssues(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(reportIssuesResponse));
+#pragma warning restore QD0001
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        var node = state.Nodes[0];
+        Assert.That(node.IsHealthy, Is.True, "Node should be healthy even if ReportIssues returns error");
+        Assert.That(node.Issues, Is.Empty, "Should have no issues since ReportIssues returned error");
     }
 
     #endregion

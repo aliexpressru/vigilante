@@ -76,7 +76,7 @@ public class ClusterControllerTests
                     PeerId = "peer1",
                     IsHealthy = false,
                     IsLeader = false,
-                    Error = "Connection timeout",
+                    Issues = new List<string> { "Connection timeout" },
                     PodName = "pod1",
                     Namespace = "default"
                 },
@@ -86,7 +86,7 @@ public class ClusterControllerTests
                     PeerId = "peer2",
                     IsHealthy = false,
                     IsLeader = false,
-                    Error = "Network error",
+                    Issues = new List<string> { "Network error" },
                     PodName = "pod2",
                     Namespace = "default"
                 }

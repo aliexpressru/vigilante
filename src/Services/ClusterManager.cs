@@ -34,11 +34,9 @@ public class ClusterManager(
         DetectClusterSplits(nodeStatuses);
         FinalizeNodeHealthStatus(nodeStatuses);
 
-        var state = new ClusterState
-        {
-            Nodes = nodeStatuses.ToList(),
-            LastUpdated = DateTime.UtcNow
-        };
+        var state = new ClusterState();
+        state.Nodes = nodeStatuses.ToList();
+        state.LastUpdated = DateTime.UtcNow;
 
         meterService.UpdateAliveNodes(state.Nodes.Count(n => n.IsHealthy));
         await AddKubernetesWarningsIfNeededAsync(state, cancellationToken);
@@ -258,31 +256,30 @@ public class ClusterManager(
         nodeInfo.IsLeader = clusterInfoResult.RaftInfo?.Leader != null &&
                             clusterInfoResult.RaftInfo.Leader.ToString() == clusterInfoResult.PeerId.ToString();
 
-        var errors = new List<string>();
-        CheckConsensusErrors(nodeInfo, clusterInfoResult, errors);
-        CheckMessageSendFailures(nodeInfo, clusterInfoResult, errors);
+        CheckConsensusErrors(nodeInfo, clusterInfoResult);
+        CheckMessageSendFailures(nodeInfo, clusterInfoResult);
         CollectPeerInformation(nodeInfo, clusterInfoResult);
-        await CheckCollectionsHealthAsync(nodeInfo, client, linkedToken, timeoutToken, originalToken, errors);
+        await CheckCollectionsHealthAsync(nodeInfo, client, linkedToken, timeoutToken, originalToken);
+        await FetchQdrantIssuesAsync(nodeInfo, client, linkedToken);
 
-        if (errors.Count > 0)
+        if (nodeInfo.Issues.Count > 0)
         {
-            nodeInfo.Error = string.Join("; ", errors);
             nodeInfo.ShortError = GetShortErrorMessage(nodeInfo.ErrorType);
         }
     }
 
-    private void CheckConsensusErrors(NodeInfo nodeInfo, ClusterInfoResult clusterInfoResult, List<string> errors)
+    private void CheckConsensusErrors(NodeInfo nodeInfo, ClusterInfoResult clusterInfoResult)
     {
         if (clusterInfoResult.ConsensusThreadStatus?.Err != null)
         {
             var consensusError = clusterInfoResult.ConsensusThreadStatus.Err;
-            errors.Add("Consensus thread error: " + consensusError);
+            nodeInfo.Issues.Add("Consensus thread error: " + consensusError);
             nodeInfo.ErrorType = NodeErrorType.ConsensusThreadError;
             logger.LogWarning("Node {NodeUrl} has consensus thread error: {Error}", nodeInfo.Url, consensusError);
         }
     }
 
-    private void CheckMessageSendFailures(NodeInfo nodeInfo, ClusterInfoResult clusterInfoResult, List<string> errors)
+    private void CheckMessageSendFailures(NodeInfo nodeInfo, ClusterInfoResult clusterInfoResult)
     {
         if (clusterInfoResult.MessageSendFailures == null || clusterInfoResult.MessageSendFailures.Count == 0)
             return;
@@ -292,7 +289,7 @@ public class ClusterManager(
             clusterInfoResult.MessageSendFailures, 
             consensusLastUpdate);
 
-        ProcessActiveFailures(nodeInfo, activeFailures, errors);
+        ProcessActiveFailures(nodeInfo, activeFailures);
         ProcessStaleFailures(nodeInfo, staleFailures);
     }
 
@@ -321,15 +318,14 @@ public class ClusterManager(
 
     private void ProcessActiveFailures(
         NodeInfo nodeInfo, 
-        List<(string PeerId, MessageSendFailureUnit Failure)> activeFailures, 
-        List<string> errors)
+        List<(string PeerId, MessageSendFailureUnit Failure)> activeFailures)
     {
         if (activeFailures.Count == 0)
             return;
 
         var failuresStr = string.Join(", ", activeFailures.Select(f => 
             $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
-        errors.Add($"Message send failures: {failuresStr}");
+        nodeInfo.Issues.Add($"Message send failures: {failuresStr}");
         
         if (nodeInfo.ErrorType == NodeErrorType.None)
         {
@@ -369,8 +365,7 @@ public class ClusterManager(
         IQdrantHttpClient client,
         CancellationToken linkedToken,
         CancellationToken timeoutToken,
-        CancellationToken originalToken,
-        List<string> errors)
+        CancellationToken originalToken)
     {
         try
         {
@@ -380,7 +375,7 @@ public class ClusterManager(
 
             if (!isHealthy)
             {
-                errors.Add(errorMessage ?? "Failed to fetch collections");
+                nodeInfo.Issues.Add(errorMessage ?? "Failed to fetch collections");
                 
                 if (nodeInfo.ErrorType == NodeErrorType.None)
                 {
@@ -397,7 +392,7 @@ public class ClusterManager(
                 throw;
 
             logger.LogWarning(ex, "Collections request timed out for node {NodeUrl}", nodeInfo.Url);
-            errors.Add("Collections request timed out");
+            nodeInfo.Issues.Add("Collections request timed out");
             
             if (nodeInfo.ErrorType == NodeErrorType.None)
             {
@@ -409,7 +404,7 @@ public class ClusterManager(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to fetch collections for node {NodeUrl}", nodeInfo.Url);
-            errors.Add($"Failed to fetch collections: {ex.Message}");
+            nodeInfo.Issues.Add($"Failed to fetch collections: {ex.Message}");
             
             if (nodeInfo.ErrorType == NodeErrorType.None)
             {
@@ -420,11 +415,52 @@ public class ClusterManager(
         }
     }
 
-    private void HandleInvalidClusterInfoResponse(NodeInfo nodeInfo, QdrantNodeConfig node, string? errorDetails)
+    private async Task FetchQdrantIssuesAsync(
+        NodeInfo nodeInfo,
+        IQdrantHttpClient client,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+#pragma warning disable QD0001
+            var issuesResponse = await client.ReportIssues(cancellationToken);
+#pragma warning restore QD0001
+            
+            if (issuesResponse.Status.IsSuccess && issuesResponse.Result?.Issues != null)
+            {
+                var qdrantIssues = issuesResponse.Result.Issues;
+                
+                if (qdrantIssues.Length > 0)
+                {
+                    foreach (var issue in qdrantIssues)
+                    {
+                        var issueMessage = string.IsNullOrEmpty(issue.Value) 
+                            ? issue.Key 
+                            : $"{issue.Key}: {issue.Value}";
+                        nodeInfo.Issues.Add(issueMessage);
+                    }
+                    
+                    logger.LogInformation(
+                        "Node {NodeUrl} reported {Count} Qdrant issues",
+                        nodeInfo.Url,
+                        qdrantIssues.Length);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to fetch Qdrant issues for node {NodeUrl}", nodeInfo.Url);
+        }
+    }
+
+    private void HandleInvalidClusterInfoResponse(
+        NodeInfo nodeInfo,
+        QdrantNodeConfig node,
+        string? errorDetails)
     {
         nodeInfo.PeerId = $"{node.Host}:{node.Port}";
         nodeInfo.IsHealthy = false;
-        nodeInfo.Error = $"Failed to get cluster info: {errorDetails ?? "Invalid response"}";
+        nodeInfo.Issues.Add($"Failed to get cluster info: {errorDetails ?? "Invalid response"}");
         nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.InvalidResponse);
         nodeInfo.ErrorType = NodeErrorType.InvalidResponse;
         logger.LogWarning("Node {NodeUrl} returned invalid cluster info response. Error: {Error}", 
@@ -445,7 +481,7 @@ public class ClusterManager(
         logger.LogWarning(ex, "Failed to get status for node {NodeUrl}", nodeInfo.Url);
         nodeInfo.PeerId = $"{node.Host}:{node.Port}";
         nodeInfo.IsHealthy = false;
-        nodeInfo.Error = errorMessage;
+        nodeInfo.Issues.Add(errorMessage);
         nodeInfo.ShortError = GetShortErrorMessage(errorType);
         nodeInfo.ErrorType = errorType;
     }
@@ -454,7 +490,7 @@ public class ClusterManager(
     {
         foreach (var node in nodeStatuses)
         {
-            if (node.IsHealthy && !string.IsNullOrEmpty(node.Error) &&
+            if (node.IsHealthy && node.Issues.Count > 0 &&
                 (node.ErrorType == NodeErrorType.ConsensusThreadError ||
                  node.ErrorType == NodeErrorType.MessageSendFailures))
             {
@@ -578,12 +614,12 @@ public class ClusterManager(
 
                 logger.LogInformation("Found pod {PodName} for IP {NodeUrl}, fetching storage info", podName, node.Url);
 
-                var collectionSizes = await collectionService.GetCollectionsSizesForPodAsync(
+                var collectionSizes = (await collectionService.GetCollectionsSizesForPodAsync(
                     podName,
                     node.Namespace ?? "",
                     node.Url,
                     node.PeerId,
-                    cancellationToken);
+                    cancellationToken)).ToList();
 
                 foreach (var size in collectionSizes)
                 {
@@ -591,7 +627,7 @@ public class ClusterManager(
                 }
 
                 logger.LogInformation("Retrieved {SizesCount} collection sizes from pod {PodName}",
-                    collectionSizes.Count(), podName);
+                    collectionSizes.Count, podName);
             }
             catch (Exception ex)
             {
@@ -718,7 +754,7 @@ public class ClusterManager(
         {
             if (!_clusterState.IsNodeConsistentWithMajority(node, out var inconsistencyReason))
             {
-                MarkNodeAsInconsistent(node, inconsistencyReason);
+                MarkNodeAsInconsistent(node, inconsistencyReason ?? "Unknown inconsistency");
             }
             else
             {
@@ -731,7 +767,7 @@ public class ClusterManager(
     private void MarkNodeAsInconsistent(NodeInfo node, string inconsistencyReason)
     {
         node.IsHealthy = false;
-        node.Error = $"Potential cluster split detected: {inconsistencyReason}";
+        node.Issues.Add($"Potential cluster split detected: {inconsistencyReason}");
         node.ShortError = GetShortErrorMessage(NodeErrorType.ClusterSplit);
         node.ErrorType = NodeErrorType.ClusterSplit;
 

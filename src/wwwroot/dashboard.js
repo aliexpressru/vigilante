@@ -1306,10 +1306,12 @@ class VigilanteDashboard {
 
     updateUI(clusterState) {
         this.updateOverallStatus(clusterState);
-        // Store cluster issues
+        // Store cluster issues (already includes issues from all nodes, aggregated by backend)
         this.clusterIssues = clusterState.health.issues || [];
-        // Store warnings from cluster health
-        this.nodeWarnings = clusterState.health.warnings || [];
+        
+        // Store warnings (already includes warnings from all nodes, aggregated by backend)
+        this.clusterWarnings = clusterState.health.warnings || [];
+        
         // Update combined issues and warnings display
         this.updateCombinedIssues();
         this.updateWarnings();
@@ -1350,7 +1352,7 @@ class VigilanteDashboard {
         issuesCard.style.display = 'block';
         issuesList.innerHTML = '';
 
-        // Add cluster issues section
+        // Add cluster issues section (includes node issues aggregated by backend)
         if (this.clusterIssues.length > 0) {
             const clusterSection = document.createElement('div');
             clusterSection.className = 'issues-section';
@@ -1408,7 +1410,8 @@ class VigilanteDashboard {
         const warningsCard = document.getElementById('warningsCard');
         const warningsList = document.getElementById('warningsList');
 
-        if (this.nodeWarnings.length === 0) {
+        // Warnings already include all node warnings aggregated by backend
+        if (!this.clusterWarnings || this.clusterWarnings.length === 0) {
             warningsCard.style.display = 'none';
             return;
         }
@@ -1416,7 +1419,7 @@ class VigilanteDashboard {
         warningsCard.style.display = 'block';
         warningsList.innerHTML = '';
 
-        this.nodeWarnings.forEach(warning => {
+        this.clusterWarnings.forEach(warning => {
             const li = document.createElement('li');
             li.className = 'warning-item';
             li.textContent = warning;
@@ -1586,7 +1589,7 @@ class VigilanteDashboard {
         card.appendChild(header);
         card.appendChild(details);
 
-        // Error message (if any) - show short error in node card
+        // Short error message (if any) - show on node card
         if (node.shortError) {
             const errorDiv = document.createElement('div');
             errorDiv.className = 'node-error';

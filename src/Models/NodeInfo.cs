@@ -17,9 +17,9 @@ public class NodeInfo
     public DateTime LastSeen { get; set; }
 
     /// <summary>
-    /// Detailed error message for Issues section
+    /// Issues and errors found on this node
     /// </summary>
-    public string? Error { get; set; }
+    public List<string> Issues { get; set; } = new();
     
     /// <summary>
     /// Short error message for cluster nodes UI display
