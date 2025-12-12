@@ -10,7 +10,8 @@ public interface IS3ConfigurationProvider
     /// <summary>
     /// Gets S3 configuration combining Kubernetes secret and appsettings
     /// Secrets (EndpointUrl, AccessKey, SecretKey): K8s Secret > appsettings
-    /// Other settings (BucketName, Region, UsePathStyle): appsettings only
+    /// Other settings (BucketName, Region): appsettings only
+    /// ForcePathStyle is always true for S3-compatible storage
     /// </summary>
     Task<S3Options?> GetS3ConfigurationAsync(
         string? namespaceParameter = null,

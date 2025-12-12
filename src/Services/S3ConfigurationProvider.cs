@@ -22,7 +22,8 @@ public class S3ConfigurationProvider(
     /// <summary>
     /// Gets S3 configuration combining Kubernetes secret and appsettings
     /// Secrets (EndpointUrl, AccessKey, SecretKey): K8s Secret > appsettings
-    /// Other settings (BucketName, Region, UsePathStyle): appsettings only
+    /// Other settings (BucketName, Region): appsettings only
+    /// ForcePathStyle is always true for S3-compatible storage
     /// </summary>
     public async Task<S3Options?> GetS3ConfigurationAsync(
         string? namespaceParameter = null,
@@ -47,8 +48,7 @@ public class S3ConfigurationProvider(
             var config = new S3Options
             {
                 BucketName = _options.S3?.BucketName,
-                Region = _options.S3?.Region,
-                UsePathStyle = _options.S3?.UsePathStyle ?? true
+                Region = _options.S3?.Region
             };
 
             // Try to load secrets from Kubernetes secret

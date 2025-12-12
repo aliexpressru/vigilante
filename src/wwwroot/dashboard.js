@@ -66,6 +66,9 @@ class VigilanteDashboard {
                 this.showStatefulSetDialog();
             });
         }
+        
+        // Setup recovery modal after DOM is ready
+        this.setupRecoveryModal();
     }
 
     setupRefreshControls() {
@@ -99,20 +102,169 @@ class VigilanteDashboard {
         this.loadSnapshots();
     }
 
-    startAutoRefresh() {
-        if (this.intervalId) {
-            clearInterval(this.intervalId);
+    setupRecoveryModal() {
+        console.log('Setting up recovery modal');
+        const modal = document.getElementById('recoveryModal');
+        const closeBtn = modal?.querySelector('.modal-close');
+        const cancelBtn = document.getElementById('cancelRecovery');
+        const confirmBtn = document.getElementById('confirmRecovery');
+
+        console.log('Modal elements found:', { modal, closeBtn, cancelBtn, confirmBtn });
+
+        if (!modal || !closeBtn || !cancelBtn || !confirmBtn) {
+            console.error('Recovery modal elements not found! Modal will not work.');
+            console.error('Missing elements:', {
+                modal: !modal ? 'recoveryModal' : null,
+                closeBtn: !closeBtn ? '.modal-close' : null,
+                cancelBtn: !cancelBtn ? 'cancelRecovery' : null,
+                confirmBtn: !confirmBtn ? 'confirmRecovery' : null
+            });
+            return;
         }
-        if (this.refreshInterval > 0) {
-            this.intervalId = setInterval(() => this.refresh(), this.refreshInterval);
-        }
+
+        // Close modal when clicking X or Cancel
+        closeBtn.onclick = () => {
+            console.log('Close button clicked');
+            this.closeRecoveryModal();
+        };
+        cancelBtn.onclick = () => {
+            console.log('Cancel button clicked');
+            this.closeRecoveryModal();
+        };
+
+        // Close modal when clicking outside (use addEventListener instead of overwriting window.onclick)
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                console.log('Clicked outside modal content');
+                this.closeRecoveryModal();
+            }
+        });
+
+        // Handle recovery confirmation
+        confirmBtn.onclick = () => {
+            console.log('Confirm button clicked');
+            this.confirmRecovery();
+        };
+        
+        console.log('Recovery modal setup complete');
     }
 
-    stopAutoRefresh() {
-        if (this.intervalId) {
-            clearInterval(this.intervalId);
-            this.intervalId = null;
+    openRecoveryModal(sourceSnapshot, originalCollectionName, snapshotName) {
+        console.log('openRecoveryModal called with:', { sourceSnapshot, originalCollectionName, snapshotName });
+        
+        const modal = document.getElementById('recoveryModal');
+        const targetNodeSelect = document.getElementById('recoverTargetNode');
+        const collectionNameInput = document.getElementById('recoverCollectionName');
+        const sourceSnapshotInput = document.getElementById('recoverSourceSnapshot');
+
+        console.log('Modal form elements:', { modal, targetNodeSelect, collectionNameInput, sourceSnapshotInput });
+
+        // Set source snapshot display
+        sourceSnapshotInput.value = snapshotName;
+
+        // Populate target nodes from cluster data
+        targetNodeSelect.innerHTML = '<option value="">Select target node...</option>';
+        if (this.clusterNodes && this.clusterNodes.length > 0) {
+            this.clusterNodes.forEach(node => {
+                const option = document.createElement('option');
+                option.value = node.nodeUrl || node.url;
+                
+                // Build display text: prefer podName, fallback to URL and peer ID
+                let displayText = '';
+                if (node.podName && node.podName !== 'unknown') {
+                    displayText = node.podName;
+                    if (node.peerId) {
+                        displayText += ` (${node.peerId.substring(0, 12)}...)`;
+                    }
+                } else {
+                    // Use URL and peer ID
+                    const url = node.nodeUrl || node.url || '';
+                    const peerId = node.peerId ? node.peerId.substring(0, 12) + '...' : '';
+                    displayText = peerId ? `${url} (${peerId})` : url;
+                }
+                
+                option.textContent = displayText;
+                targetNodeSelect.appendChild(option);
+            });
         }
+
+        // Set default collection name (editable)
+        collectionNameInput.value = originalCollectionName;
+
+        // Store recovery context
+        this.recoveryContext = {
+            sourceSnapshot,
+            originalCollectionName,
+            snapshotName,
+            source: sourceSnapshot.source || 'QdrantApi' // Default to QdrantApi if not specified
+        };
+
+        console.log('Recovery context stored:', this.recoveryContext);
+        console.log('Cluster nodes available:', this.clusterNodes);
+
+        // Show modal
+        modal.classList.add('show');
+        console.log('Modal shown, classList:', modal.classList);
+    }
+
+    closeRecoveryModal() {
+        const modal = document.getElementById('recoveryModal');
+        modal.classList.remove('show');
+        this.recoveryContext = null;
+    }
+
+    async confirmRecovery() {
+        console.log('confirmRecovery called');
+        
+        const targetNodeSelect = document.getElementById('recoverTargetNode');
+        const collectionNameInput = document.getElementById('recoverCollectionName');
+
+        const targetNodeUrl = targetNodeSelect.value;
+        const collectionName = collectionNameInput.value.trim();
+
+        console.log('Recovery params:', { targetNodeUrl, collectionName, recoveryContext: this.recoveryContext });
+
+        // Validation
+        if (!targetNodeUrl) {
+            this.showToast('Please select a target node', 'error', null, 3000);
+            return;
+        }
+
+        if (!collectionName) {
+            this.showToast('Please enter a collection name', 'error', null, 3000);
+            return;
+        }
+
+        if (!this.recoveryContext) {
+            this.showToast('Recovery context lost', 'error', null, 3000);
+            return;
+        }
+
+        // Get data from recovery context BEFORE closing modal
+        const { snapshotName, source, originalCollectionName } = this.recoveryContext;
+        const targetNode = this.clusterNodes.find(n => (n.nodeUrl || n.url) === targetNodeUrl);
+        const podName = targetNode ? targetNode.podName : null;
+
+        console.log('Calling recoverSnapshotFromNode with:', { 
+            targetNodeUrl, 
+            collectionName, 
+            snapshotName, 
+            podName, 
+            source,
+            originalCollectionName 
+        });
+
+        // Close modal AFTER getting all data
+        this.closeRecoveryModal();
+        
+        await this.recoverSnapshotFromNode(
+            targetNodeUrl, 
+            collectionName, 
+            snapshotName, 
+            podName, 
+            source,
+            originalCollectionName  // Pass original collection name for S3 lookups
+        );
     }
 
     // Toast notification methods
@@ -971,7 +1123,7 @@ class VigilanteDashboard {
                 recoverBtn.className = 'action-button action-button-success action-button-sm';
                 recoverBtn.innerHTML = '<i class="fas fa-undo"></i>';
                 recoverBtn.title = 'Recover from this snapshot';
-                recoverBtn.onclick = () => this.recoverSnapshotFromNode(snapshot.nodeUrl, collection.collectionName, snapshot.snapshotName, snapshot.podName);
+                recoverBtn.onclick = () => this.openRecoveryModal(snapshot, collection.collectionName, snapshot.snapshotName);
                 
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'action-button action-button-danger action-button-sm';
@@ -1041,33 +1193,56 @@ class VigilanteDashboard {
         container.appendChild(table);
     }
 
-    async recoverSnapshotFromNode(nodeUrl, collectionName, snapshotName, podName = null) {
+    async recoverSnapshotFromNode(nodeUrl, collectionName, snapshotName, podName = null, source = 'QdrantApi', sourceCollectionName = null) {
         // Show podName if available and not 'unknown', otherwise show nodeUrl
         const nodeIdentifier = podName && podName !== 'unknown' ? podName : nodeUrl;
-        const toastId = this.showToast(`Recovering ${collectionName} from ${snapshotName} on ${nodeIdentifier}...`, 'info', 0);
+        const toastId = this.showToast(`Recovering ${collectionName} from ${snapshotName} on ${nodeIdentifier}...`, 'info', null, 0);
+        
+        const requestBody = {
+            TargetNodeUrl: nodeUrl,
+            CollectionName: collectionName,
+            SnapshotName: snapshotName,
+            Source: source
+        };
+        
+        // Add SourceCollectionName for S3 snapshots to help locate the file
+        if (sourceCollectionName && source === 'S3Storage') {
+            requestBody.SourceCollectionName = sourceCollectionName;
+        }
+        
+        console.log('Recovery request body:', requestBody);
         
         try {
             const response = await fetch(this.recoverFromSnapshotEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    nodeUrl,
-                    collectionName,
-                    snapshotName
-                })
+                body: JSON.stringify(requestBody)
             });
 
             const result = await response.json();
+            console.log('Recovery response:', { status: response.status, result });
             this.removeToast(toastId);
 
             if (response.ok && result.success) {
-                this.showToast(`✓ ${result.message}`, 'success', 5000);
+                this.showToast(`✓ ${result.message}`, 'success', null, 5000);
+                // Refresh data after successful recovery
+                setTimeout(() => this.refresh(), 2000);
             } else {
-                this.showToast(`✗ ${result.message || 'Recovery failed'}`, 'error', 5000);
+                // Handle validation errors
+                let errorMessage = result.message || 'Recovery failed';
+                if (result.errors) {
+                    const errorDetails = Object.entries(result.errors)
+                        .map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages.join(', ') : messages}`)
+                        .join('\n');
+                    errorMessage += `\n\n${errorDetails}`;
+                    console.error('Validation errors:', result.errors);
+                }
+                this.showToast(`✗ ${errorMessage}`, 'error', null, 8000);
             }
         } catch (error) {
+            console.error('Recovery error:', error);
             this.removeToast(toastId);
-            this.showToast(`✗ Error recovering snapshot: ${error.message}`, 'error', 5000);
+            this.showToast(`✗ Error recovering snapshot: ${error.message}`, 'error', null, 5000);
         }
     }
 
@@ -1113,15 +1288,48 @@ class VigilanteDashboard {
         const toastId = this.showToast(`Deleting ${snapshot.snapshotName} from ${identifier}...`, 'info', 0);
         
         try {
-            const requestBody = {
+            console.log('Snapshot object:', {
                 collectionName: snapshot.collectionName,
                 snapshotName: snapshot.snapshotName,
-                singleNode: true,
                 source: snapshot.source,
-                nodeUrl: snapshot.nodeUrl || null,
-                podName: snapshot.podName || null,
-                podNamespace: snapshot.podNamespace || null
+                nodeUrl: snapshot.nodeUrl,
+                nodeUrlType: typeof snapshot.nodeUrl,
+                nodeUrlLength: snapshot.nodeUrl?.length,
+                podName: snapshot.podName,
+                podNamespace: snapshot.podNamespace
+            });
+
+            const requestBody = {
+                CollectionName: snapshot.collectionName,
+                SnapshotName: snapshot.snapshotName,
+                SingleNode: true,
+                Source: snapshot.source
             };
+
+            // For S3Storage, we don't need NodeUrl, PodName, or PodNamespace
+            // For other sources, add optional fields only if they have valid values
+            if (snapshot.source !== 'S3Storage') {
+                if (snapshot.nodeUrl && snapshot.nodeUrl.trim() !== '' && snapshot.nodeUrl !== 'S3') {
+                    requestBody.NodeUrl = snapshot.nodeUrl;
+                    console.log('Added NodeUrl to request:', snapshot.nodeUrl);
+                } else {
+                    console.log('NodeUrl NOT added - value:', snapshot.nodeUrl);
+                }
+                
+                if (snapshot.podName && snapshot.podName.trim() !== '' && snapshot.podName !== 'S3') {
+                    requestBody.PodName = snapshot.podName;
+                    console.log('Added PodName to request:', snapshot.podName);
+                }
+                
+                if (snapshot.podNamespace && snapshot.podNamespace.trim() !== '' && snapshot.podNamespace !== 'S3') {
+                    requestBody.PodNamespace = snapshot.podNamespace;
+                    console.log('Added PodNamespace to request:', snapshot.podNamespace);
+                }
+            } else {
+                console.log('S3Storage snapshot - skipping NodeUrl, PodName, PodNamespace');
+            }
+
+            console.log('Delete snapshot request:', requestBody);
 
             const response = await fetch(this.deleteSnapshotEndpoint, {
                 method: 'DELETE',
@@ -1130,17 +1338,19 @@ class VigilanteDashboard {
             });
 
             const result = await response.json();
+            console.log('Delete snapshot response:', { status: response.status, result });
             this.removeToast(toastId);
 
             if (response.ok && result.success) {
-                this.showToast(`✓ ${result.message}`, 'success', 5000);
+                this.showToast(`✓ ${result.message}`, 'success', null, 5000);
                 this.loadSnapshots(); // Reload to update UI
             } else {
-                this.showToast(`✗ ${result.message || 'Deletion failed'}`, 'error', 5000);
+                this.showToast(`✗ ${result.message || 'Deletion failed'}`, 'error', null, 5000);
             }
         } catch (error) {
+            console.error('Delete snapshot error:', error);
             this.removeToast(toastId);
-            this.showToast(`✗ Error deleting snapshot: ${error.message}`, 'error', 5000);
+            this.showToast(`✗ Error deleting snapshot: ${error.message}`, 'error', null, 5000);
         }
     }
 
@@ -1153,36 +1363,49 @@ class VigilanteDashboard {
         const toastId = this.showToast(`Deleting snapshots for ${collection.collectionName} (${snapshots.length} snapshots)...`, 'info', 0);
         
         try {
-            const promises = snapshots.map(snapshot => 
-                fetch(this.deleteSnapshotEndpoint, {
+            const promises = snapshots.map(snapshot => {
+                const requestBody = {
+                    CollectionName: collection.collectionName,
+                    SnapshotName: snapshot.snapshotName,
+                    SingleNode: true,
+                    Source: snapshot.source
+                };
+
+                // For S3Storage, we don't need NodeUrl, PodName, or PodNamespace
+                // For other sources, add optional fields only if they have valid values
+                if (snapshot.source !== 'S3Storage') {
+                    if (snapshot.nodeUrl && snapshot.nodeUrl.trim() !== '' && snapshot.nodeUrl !== 'S3') {
+                        requestBody.NodeUrl = snapshot.nodeUrl;
+                    }
+                    if (snapshot.podName && snapshot.podName.trim() !== '' && snapshot.podName !== 'S3') {
+                        requestBody.PodName = snapshot.podName;
+                    }
+                    if (snapshot.podNamespace && snapshot.podNamespace.trim() !== '' && snapshot.podNamespace !== 'S3') {
+                        requestBody.PodNamespace = snapshot.podNamespace;
+                    }
+                }
+
+                return fetch(this.deleteSnapshotEndpoint, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        collectionName: collection.collectionName,
-                        snapshotName: snapshot.snapshotName,
-                        singleNode: true,
-                        source: snapshot.source,
-                        nodeUrl: snapshot.nodeUrl,
-                        podName: snapshot.podName,
-                        podNamespace: snapshot.podNamespace
-                    })
-                })
-            );
+                    body: JSON.stringify(requestBody)
+                });
+            });
 
             const results = await Promise.all(promises);
             this.removeToast(toastId);
 
             const successCount = results.filter(r => r.ok).length;
             if (successCount === results.length) {
-                this.showToast(`✓ Successfully deleted snapshots for ${collection.collectionName} (${snapshots.length} snapshots)`, 'success', 5000);
+                this.showToast(`✓ Successfully deleted snapshots for ${collection.collectionName} (${snapshots.length} snapshots)`, 'success', null, 5000);
                 this.loadSnapshots(); // Reload to update UI
             } else {
-                this.showToast(`⚠ Deleted ${successCount}/${snapshots.length} snapshots`, 'warning', 5000);
+                this.showToast(`⚠ Deleted ${successCount}/${snapshots.length} snapshots`, 'warning', null, 5000);
                 this.loadSnapshots(); // Reload to update UI
             }
         } catch (error) {
             this.removeToast(toastId);
-            this.showToast(`✗ Error deleting snapshots: ${error.message}`, 'error', 5000);
+            this.showToast(`✗ Error deleting snapshots: ${error.message}`, 'error', null, 5000);
         }
     }
 
@@ -1201,24 +1424,24 @@ class VigilanteDashboard {
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label for="recoverNodeUrl">Node URL:</label>
-                    <input type="text" id="recoverNodeUrl" value="${nodeUrl}" readonly class="form-input" />
+                    <label for="recoverFromUrlNodeUrl">Node URL:</label>
+                    <input type="text" id="recoverFromUrlNodeUrl" value="${nodeUrl}" readonly class="form-input" />
                 </div>
                 <div class="form-group">
-                    <label for="recoverCollectionName">Collection Name:</label>
-                    <input type="text" id="recoverCollectionName" placeholder="Enter collection name" class="form-input" required />
+                    <label for="recoverFromUrlCollectionName">Collection Name:</label>
+                    <input type="text" id="recoverFromUrlCollectionName" placeholder="Enter collection name" class="form-input" required />
                 </div>
                 <div class="form-group">
-                    <label for="recoverSnapshotUrl">Snapshot URL:</label>
-                    <input type="text" id="recoverSnapshotUrl" placeholder="Enter snapshot URL (e.g., s3://...)" class="form-input" required />
+                    <label for="recoverFromUrlSnapshotUrl">Snapshot URL:</label>
+                    <input type="text" id="recoverFromUrlSnapshotUrl" placeholder="Enter snapshot URL (e.g., s3://...)" class="form-input" required />
                 </div>
                 <div class="form-group">
-                    <label for="recoverSnapshotChecksum">Checksum (optional):</label>
-                    <input type="text" id="recoverSnapshotChecksum" placeholder="Enter snapshot checksum" class="form-input" />
+                    <label for="recoverFromUrlChecksum">Checksum (optional):</label>
+                    <input type="text" id="recoverFromUrlChecksum" placeholder="Enter snapshot checksum" class="form-input" />
                 </div>
                 <div class="form-group">
                     <label class="checkbox-label">
-                        <input type="checkbox" id="recoverWaitForResult" checked />
+                        <input type="checkbox" id="recoverFromUrlWaitForResult" checked />
                         Wait for result
                     </label>
                 </div>
@@ -1233,7 +1456,12 @@ class VigilanteDashboard {
         document.body.appendChild(overlay);
         
         // Focus on collection name input
-        setTimeout(() => document.getElementById('recoverCollectionName').focus(), 100);
+        setTimeout(() => {
+            const collectionNameInput = overlay.querySelector('#recoverFromUrlCollectionName');
+            if (collectionNameInput) {
+                collectionNameInput.focus();
+            }
+        }, 100);
         
         // Close handlers
         const closeModal = () => {
@@ -1248,62 +1476,146 @@ class VigilanteDashboard {
         });
         
         // Submit handler
-        overlay.querySelector('.modal-submit').addEventListener('click', async () => {
-            const collectionName = document.getElementById('recoverCollectionName').value.trim();
-            const snapshotUrl = document.getElementById('recoverSnapshotUrl').value.trim();
-            const snapshotChecksum = document.getElementById('recoverSnapshotChecksum').value.trim() || null;
-            const waitForResult = document.getElementById('recoverWaitForResult').checked;
-            
-            if (!collectionName || !snapshotUrl) {
-                this.showToast('Collection name and snapshot URL are required', 'error', 5000);
+        let isSubmitting = false;
+        const submitButton = overlay.querySelector('.modal-submit');
+        
+        submitButton.addEventListener('click', async () => {
+            if (isSubmitting) {
+                console.log('Already submitting, ignoring click');
                 return;
             }
             
+            isSubmitting = true;
+            submitButton.disabled = true;
+            
+            console.log('Submit button clicked');
+            
+            // Use overlay.querySelector to avoid conflicts with other modals
+            const collectionNameInput = overlay.querySelector('#recoverFromUrlCollectionName');
+            const snapshotUrlInput = overlay.querySelector('#recoverFromUrlSnapshotUrl');
+            const snapshotChecksumInput = overlay.querySelector('#recoverFromUrlChecksum');
+            const waitForResultInput = overlay.querySelector('#recoverFromUrlWaitForResult');
+            
+            console.log('Form elements:', {
+                collectionNameInput,
+                snapshotUrlInput,
+                snapshotChecksumInput,
+                waitForResultInput
+            });
+            
+
+            if (!collectionNameInput || !snapshotUrlInput) {
+                console.error('Form elements not found in DOM!');
+                this.showToast('Form error - please try again', 'error', null, 5000);
+                isSubmitting = false;
+                submitButton.disabled = false;
+                return;
+            }
+            
+            const collectionName = collectionNameInput.value.trim();
+            const snapshotUrl = snapshotUrlInput.value.trim();
+            const snapshotChecksum = snapshotChecksumInput?.value.trim() || null;
+            const waitForResult = waitForResultInput?.checked ?? true;
+            
+            console.log('Recover from URL form values:', {
+                collectionName,
+                collectionNameLength: collectionName.length,
+                snapshotUrl,
+                snapshotUrlLength: snapshotUrl.length,
+                snapshotChecksum,
+                waitForResult,
+                nodeUrl
+            });
+            
+            if (!collectionName || !snapshotUrl) {
+                console.log('Validation failed - missing required fields');
+                
+                const missingFields = [];
+                if (!collectionName) missingFields.push('Collection Name');
+                if (!snapshotUrl) missingFields.push('Snapshot URL');
+                
+                this.showToast(
+                    `Please fill in: ${missingFields.join(', ')}`, 
+                    'error', 
+                    'Missing Required Fields',
+                    5000
+                );
+                isSubmitting = false;
+                submitButton.disabled = false;
+                
+                // Focus on first empty field
+                if (!collectionName) {
+                    collectionNameInput.focus();
+                    collectionNameInput.classList.add('input-error');
+                    setTimeout(() => collectionNameInput.classList.remove('input-error'), 2000);
+                } else if (!snapshotUrl) {
+                    snapshotUrlInput.focus();
+                    snapshotUrlInput.classList.add('input-error');
+                    setTimeout(() => snapshotUrlInput.classList.remove('input-error'), 2000);
+                }
+                return;
+            }
+            
+            console.log('Validation passed, closing modal and calling recoverCollectionFromUrl');
             closeModal();
             await this.recoverCollectionFromUrl(nodeUrl, collectionName, snapshotUrl, snapshotChecksum, waitForResult);
         });
         
         // Enter key handler for form inputs
-        ['recoverCollectionName', 'recoverSnapshotUrl', 'recoverSnapshotChecksum'].forEach(id => {
-            document.getElementById(id).addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    overlay.querySelector('.modal-submit').click();
-                }
-            });
+        ['#recoverFromUrlCollectionName', '#recoverFromUrlSnapshotUrl', '#recoverFromUrlChecksum'].forEach(selector => {
+            const input = overlay.querySelector(selector);
+            if (input) {
+                input.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        submitButton.click();
+                    }
+                });
+            }
         });
     }
 
     async recoverCollectionFromUrl(nodeUrl, collectionName, snapshotUrl, snapshotChecksum, waitForResult) {
         const toastId = this.showToast(
             `Recovering collection '${collectionName}' from URL on node ${nodeUrl}...`, 
-            'info', 
+            'info',
+            null,
             0
         );
         
         try {
+            const requestBody = {
+                NodeUrl: nodeUrl,
+                CollectionName: collectionName,
+                SnapshotUrl: snapshotUrl,
+                WaitForResult: waitForResult
+            };
+
+            // Add SnapshotChecksum only if it has a value
+            if (snapshotChecksum && snapshotChecksum.trim() !== '') {
+                requestBody.SnapshotChecksum = snapshotChecksum;
+            }
+
+            console.log('Recover from URL request:', requestBody);
+
             const response = await fetch('/api/v1/snapshots/recover-from-url', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    nodeUrl,
-                    collectionName,
-                    snapshotUrl,
-                    snapshotChecksum,
-                    waitForResult
-                })
+                body: JSON.stringify(requestBody)
             });
 
             const result = await response.json();
+            console.log('Recover from URL response:', { status: response.status, result });
             this.removeToast(toastId);
 
             if (response.ok && result.success) {
-                this.showToast(`✓ ${result.message}`, 'success', 5000);
+                this.showToast(`✓ ${result.message}`, 'success', null, 5000);
                 // Reload data to reflect changes
-                this.refresh();
+                setTimeout(() => this.refresh(), 2000);
             } else {
-                this.showToast(`✗ ${result.message || 'Recovery failed'}`, 'error', 8000);
+                this.showToast(`✗ ${result.message || 'Recovery failed'}`, 'error', null, 8000);
             }
         } catch (error) {
+            console.error('Recover from URL error:', error);
             this.removeToast(toastId);
             this.showToast(`✗ Error recovering collection: ${error.message}`, 'error', 8000);
         }
@@ -1676,19 +1988,27 @@ class VigilanteDashboard {
 
         try {
             const requestBody = {
-                collectionName: collectionName,
-                deletionType: deletionType,
-                singleNode: singleNode
+                CollectionName: collectionName,
+                DeletionType: deletionType,
+                SingleNode: singleNode
             };
 
             if (singleNode) {
                 if (deletionType === 'Api') {
-                    requestBody.nodeUrl = nodeUrl;
+                    if (nodeUrl && nodeUrl.trim() !== '') {
+                        requestBody.NodeUrl = nodeUrl;
+                    }
                 } else {
-                    requestBody.podName = podName;
-                    requestBody.podNamespace = podNamespace;
+                    if (podName && podName.trim() !== '') {
+                        requestBody.PodName = podName;
+                    }
+                    if (podNamespace && podNamespace.trim() !== '') {
+                        requestBody.PodNamespace = podNamespace;
+                    }
                 }
             }
+
+            console.log('Delete collection request:', requestBody);
 
             const response = await fetch(this.deleteCollectionEndpoint, {
                 method: 'DELETE',
@@ -1699,6 +2019,7 @@ class VigilanteDashboard {
             });
 
             const result = await response.json();
+            console.log('Delete collection response:', { status: response.status, result });
             
             if (response.ok && result.success) {
                 this.showDeletionResultToast(toastId, collectionName, result, true);
@@ -1777,10 +2098,16 @@ class VigilanteDashboard {
 
         try {
             const requestBody = {
-                collectionName: collectionName,
-                singleNode: !onAllNodes,
-                nodeUrl: onAllNodes ? null : nodeUrl
+                CollectionName: collectionName,
+                SingleNode: !onAllNodes
             };
+
+            // Add NodeUrl only for single node creation and if it has a valid value
+            if (!onAllNodes && nodeUrl && nodeUrl.trim() !== '') {
+                requestBody.NodeUrl = nodeUrl;
+            }
+
+            console.log('Create snapshot request:', requestBody);
 
             const response = await fetch(this.createSnapshotEndpoint, {
                 method: 'POST',
@@ -1791,6 +2118,7 @@ class VigilanteDashboard {
             });
 
             const result = await response.json();
+            console.log('Create snapshot response:', { status: response.status, result });
 
             if (result.success) {
                 this.updateToast(
@@ -1831,13 +2159,23 @@ class VigilanteDashboard {
 
         try {
             const requestBody = {
-                collectionName: collectionName,
-                snapshotName: snapshotName,
-                nodeUrl: nodeUrl && nodeUrl.trim() !== '' ? nodeUrl : null,
-                podName: podName && podName.trim() !== '' ? podName : null,
-                podNamespace: podNamespace && podNamespace.trim() !== '' ? podNamespace : null,
-                source: source
+                CollectionName: collectionName,
+                SnapshotName: snapshotName,
+                Source: source
             };
+
+            // Add optional fields only if they have valid values
+            if (nodeUrl && nodeUrl.trim() !== '') {
+                requestBody.NodeUrl = nodeUrl;
+            }
+            if (podName && podName.trim() !== '') {
+                requestBody.PodName = podName;
+            }
+            if (podNamespace && podNamespace.trim() !== '') {
+                requestBody.PodNamespace = podNamespace;
+            }
+
+            console.log('Download snapshot request:', requestBody);
 
             const response = await fetch(this.downloadSnapshotEndpoint, {
                 method: 'POST',

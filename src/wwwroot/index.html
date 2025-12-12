@@ -114,6 +114,37 @@
     <!-- Toast notifications container -->
     <div id="toast-container" class="toast-container"></div>
 
+    <!-- Recovery Modal -->
+    <div id="recoveryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-undo"></i> Recover Snapshot</h2>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="recoverSourceSnapshot">Source Snapshot:</label>
+                    <input type="text" id="recoverSourceSnapshot" class="form-input" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="recoverTargetNode">Target Node:</label>
+                    <select id="recoverTargetNode" class="form-select">
+                        <option value="">Select target node...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="recoverCollectionName">Collection Name:</label>
+                    <input type="text" id="recoverCollectionName" class="form-input" placeholder="Enter collection name">
+                    <small class="form-hint">Enter the name for the recovered collection (can be different from original)</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelRecovery" class="modal-button modal-button-secondary">Cancel</button>
+                <button id="confirmRecovery" class="modal-button modal-button-primary">Recover</button>
+            </div>
+        </div>
+    </div>
+
     <script src="dashboard.js"></script>
 </body>
 </html>

@@ -484,7 +484,7 @@ public class S3SnapshotService(
             var config = new AmazonS3Config
             {
                 ServiceURL = s3Options.EndpointUrl,
-                ForcePathStyle = true,
+                ForcePathStyle = true, // Required for S3-compatible storage (MinIO, Ceph, etc.)
                 UseHttp = s3Options.EndpointUrl?.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ?? false,
                 // For S3-compatible storage, only set AuthenticationRegion, NOT RegionEndpoint
                 // Setting RegionEndpoint causes AWS-specific auth that breaks custom S3 storage

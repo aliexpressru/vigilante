@@ -159,9 +159,14 @@ public class SnapshotsController(
                     request.PodNamespace,
                     cancellationToken);
 
-                var identifier = source == SnapshotSource.KubernetesStorage 
-                    ? request.PodName 
-                    : request.NodeUrl;
+                // Determine identifier based on source type
+                var identifier = source switch
+                {
+                    SnapshotSource.KubernetesStorage => request.PodName ?? "unknown-pod",
+                    SnapshotSource.S3Storage => "S3",
+                    SnapshotSource.QdrantApi => request.NodeUrl ?? "unknown-node",
+                    _ => "unknown"
+                };
 
                 var response = new V1DeleteSnapshotResponse
                 {
@@ -171,7 +176,7 @@ public class SnapshotsController(
                         : $"Failed to delete snapshot '{request.SnapshotName}' for collection '{request.CollectionName}'",
                     Results = new Dictionary<string, NodeSnapshotDeletionResult>
                     {
-                        [identifier!] = new NodeSnapshotDeletionResult
+                        [identifier] = new NodeSnapshotDeletionResult
                         {
                             Success = success,
                             Error = success ? null : "Deletion failed"
@@ -299,9 +304,15 @@ public class SnapshotsController(
 
             if (source == SnapshotSource.S3Storage)
             {
+                // For S3 snapshots, use SourceCollectionName to locate the file (if provided)
+                // Otherwise, fallback to CollectionName
+                var sourceCollectionName = !string.IsNullOrWhiteSpace(request.SourceCollectionName) 
+                    ? request.SourceCollectionName 
+                    : request.CollectionName;
+                
                 // For S3 snapshots, generate presigned URL and use recover-from-url endpoint
                 var presignedUrl = await s3SnapshotService.GetPresignedDownloadUrlAsync(
-                    request.CollectionName,
+                    sourceCollectionName,  // Use source collection name to find the snapshot in S3
                     request.SnapshotName,
                     TimeSpan.FromHours(1), // URL valid for 1 hour
                     null,
@@ -317,9 +328,10 @@ public class SnapshotsController(
                     });
                 }
 
+                // Recover to target collection name (which may be different from source)
                 success = await collectionService.RecoverCollectionFromUrlAsync(
                     request.TargetNodeUrl,
-                    request.CollectionName,
+                    request.CollectionName,  // Use target collection name for recovery
                     presignedUrl,
                     snapshotChecksum: null,
                     waitForResult: true,

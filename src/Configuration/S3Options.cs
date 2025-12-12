@@ -31,11 +31,6 @@ public class S3Options
     public string? Region { get; set; }
     
     /// <summary>
-    /// Whether to use path-style addressing (required for MinIO and some S3-compatible services)
-    /// </summary>
-    public bool UsePathStyle { get; set; } = true;
-    
-    /// <summary>
     /// Checks if S3 is properly configured
     /// </summary>
     public bool IsConfigured() =>
