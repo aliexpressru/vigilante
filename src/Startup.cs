@@ -17,8 +17,6 @@ public class Startup(IConfiguration configuration)
     {
         // Configuration
         services.Configure<QdrantOptions>(configuration.GetSection("Qdrant"));
-        services.AddSingleton<IQdrantNodesProvider, QdrantNodesProvider>();
-        services.AddQdrantClientFactory();
         
         // Kubernetes client - only available when running in cluster
         services.AddSingleton<k8s.IKubernetes>(sp => 
@@ -35,6 +33,7 @@ public class Startup(IConfiguration configuration)
             }
         });
         services.AddSingleton<IKubernetesManager, KubernetesManager>();
+        services.AddSingleton<IPodCommandExecutor, PodCommandExecutor>();
 
         // Add health checks
         services.AddHealthChecks();
@@ -42,13 +41,22 @@ public class Startup(IConfiguration configuration)
         // Metrics service
         services.AddSingleton<IMeterService, MeterService>();
         
-        // Test data provider for local development
-        services.AddSingleton<TestDataProvider>();
+        // Qdrant client setup
+        services.AddSingleton<IQdrantNodesProvider, QdrantNodesProvider>();
+        services.AddQdrantClientFactory();
         
-        // Core services - CollectionService has no dependencies on ClusterManager anymore
+        // Core services
         services.AddSingleton<ICollectionService, CollectionService>();
         services.AddSingleton<ISnapshotService, SnapshotService>();
         services.AddSingleton<IClusterManager, ClusterManager>();
+        
+        // Test data provider for local development
+        services.AddSingleton<TestDataProvider>();
+        
+        // S3 services
+        services.AddSingleton<IS3ConfigurationProvider, S3ConfigurationProvider>();
+        services.AddSingleton<IS3SnapshotService, S3SnapshotService>();
+        
         services.AddHostedService<QdrantMonitorService>();
 
         // OpenTelemetry with Prometheus exporter

@@ -7,8 +7,11 @@ Monitoring and management service for Qdrant vector database clusters with real-
 - 🔍 Cluster health monitoring
 - 🔄 Automatic recovery from cluster issues
 - 📊 Collection metrics and shard management
+- 📸 **S3-compatible snapshot storage** (AWS S3, MinIO, etc.)
+- 💾 Local snapshot management
 - 📈 Prometheus metrics export
 - 🌐 REST API and web dashboard
+- ☸️ Kubernetes integration (pod management, StatefulSet operations)
 
 ## Quick Start
 
@@ -34,6 +37,8 @@ kubectl apply -f k8s/
 
 ## Configuration
 
+### Basic Configuration
+
 ```json
 {
   "Qdrant": {
@@ -47,11 +52,69 @@ kubectl apply -f k8s/
 }
 ```
 
+### S3 Snapshot Storage (Optional)
+
+Vigilante supports S3-compatible storage for snapshots.
+
+**Configuration:**
+- **Secret data** (EndpointUrl, AccessKey, SecretKey): Kubernetes Secret (recommended) or appsettings.json
+- **Other settings** (BucketName, Region, UsePathStyle): appsettings.json only
+
+**Create Kubernetes Secret** (recommended for production):
+```bash
+kubectl create secret generic qdrant-s3-credentials \
+  --from-literal=endpoint-url='https://s3.ae-rus.net' \
+  --from-literal=access-key='your-access-key' \
+  --from-literal=secret-key='your-secret-key' \
+  -n qdrant
+```
+
+**Configure appsettings.json:**
+```json
+{
+  "Qdrant": {
+    "S3": {
+      "BucketName": "snapshots",
+      "Region": "us-east-1",
+      "UsePathStyle": true
+    }
+  }
+}
+```
+
+**For local development** (without Kubernetes), you can specify all settings in appsettings:
+```json
+{
+  "Qdrant": {
+    "S3": {
+      "EndpointUrl": "https://s3.amazonaws.com",
+      "AccessKey": "your-access-key",
+      "SecretKey": "your-secret-key",
+      "BucketName": "snapshots",
+      "Region": "us-east-1",
+      "UsePathStyle": true
+    }
+  }
+}
+```
+
+
 ## API
 
+### Cluster Operations
 - `GET /api/v1/cluster/status` - Cluster health and status
-- `GET /api/v1/cluster/collections-info` - Collection metrics
+- `GET /api/v1/collections/info` - Collection metrics
 - `POST /api/v1/cluster/replicate-shards` - Shard replication
+
+### Snapshot Management
+- `GET /api/v1/snapshots/info` - List snapshots (S3 → Local → API priority)
+- `POST /api/v1/snapshots/{collectionName}` - Create snapshot
+- `POST /api/v1/snapshots/download` - Download snapshot
+- `POST /api/v1/snapshots/delete-from-disk` - Delete snapshot
+
+### Kubernetes Operations
+- `POST /api/v1/kubernetes/delete-pod` - Delete pod (triggers restart)
+- `POST /api/v1/kubernetes/manage-statefulset` - Rollout/Scale StatefulSet
 
 Swagger UI: http://localhost:8080/swagger
 

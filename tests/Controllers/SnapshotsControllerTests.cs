@@ -15,6 +15,7 @@ namespace Aer.Vigilante.Tests.Controllers;
 public class SnapshotsControllerTests
 {
     private ISnapshotService _snapshotService = null!;
+    private IS3SnapshotService _s3SnapshotService = null!;
     private ICollectionService _collectionService = null!;
     private ILogger<SnapshotsController> _logger = null!;
     private SnapshotsController _controller = null!;
@@ -23,10 +24,10 @@ public class SnapshotsControllerTests
     public void Setup()
     {
         _snapshotService = Substitute.For<ISnapshotService>();
+        _s3SnapshotService = Substitute.For<IS3SnapshotService>();
         _collectionService = Substitute.For<ICollectionService>();
         _logger = Substitute.For<ILogger<SnapshotsController>>();
-        
-        _controller = new SnapshotsController(_snapshotService, _collectionService, _logger);
+        _controller = new SnapshotsController(_snapshotService, _s3SnapshotService, _collectionService, _logger);
     }
 
     #region GetSnapshotsInfo Tests
@@ -324,13 +325,14 @@ public class SnapshotsControllerTests
         // Arrange
         var request = new V1RecoverFromSnapshotRequest
         {
-            NodeUrl = "http://node1:6333",
             CollectionName = "test_collection",
-            SnapshotName = "snapshot.snapshot"
+            SnapshotName = "snapshot.snapshot",
+            Source = "KubernetesStorage",
+            TargetNodeUrl = "http://node1:6333"
         };
 
         _collectionService.RecoverCollectionFromSnapshotAsync(
-            request.NodeUrl,
+            request.TargetNodeUrl,
             request.CollectionName,
             request.SnapshotName,
             Arg.Any<CancellationToken>())
@@ -352,9 +354,10 @@ public class SnapshotsControllerTests
         // Arrange
         var request = new V1RecoverFromSnapshotRequest
         {
-            NodeUrl = "http://node1:6333",
             CollectionName = "test_collection",
-            SnapshotName = "snapshot.snapshot"
+            SnapshotName = "snapshot.snapshot",
+            Source = "KubernetesStorage",
+            TargetNodeUrl = "http://node1:6333"
         };
 
         _collectionService.RecoverCollectionFromSnapshotAsync(

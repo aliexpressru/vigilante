@@ -6,7 +6,6 @@ using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Responses;
 using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Configuration;
-using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
@@ -22,6 +21,7 @@ public class SnapshotServiceTests
     private ICollectionService _collectionService = null!;
     private IOptions<QdrantOptions> _options = null!;
     private ILogger<SnapshotService> _logger = null!;
+    private IS3SnapshotService _s3SnapshotService = null!;
     private SnapshotService _snapshotManager = null!;
 
     [SetUp]
@@ -35,12 +35,22 @@ public class SnapshotServiceTests
         
         _options.Value.Returns(new QdrantOptions { HttpTimeoutSeconds = 5 });
         
+        // Mock S3SnapshotService to avoid real S3 dependencies in tests
+        _s3SnapshotService = Substitute.For<IS3SnapshotService>();
+        
         _snapshotManager = new SnapshotService(
             _nodesProvider,
             _clientFactory,
             _collectionService,
             _options,
+            _s3SnapshotService,
             _logger);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        // No need to dispose mocked service
     }
 
     #region DeleteSnapshotAsync Tests

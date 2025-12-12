@@ -1,3 +1,5 @@
+using Vigilante.Models.Enums;
+
 namespace Vigilante.Models.Requests;
 
 /// <summary>
@@ -16,18 +18,23 @@ public class V1DownloadSnapshotRequest
     public required string SnapshotName { get; set; }
     
     /// <summary>
-    /// Node URL for download
+    /// Node URL for download (required for Qdrant API/Disk sources)
     /// </summary>
-    public required string NodeUrl { get; set; }
+    public string? NodeUrl { get; set; }
     
     /// <summary>
-    /// Pod name for fallback disk download
+    /// Pod name for fallback disk download (required for Disk source)
     /// </summary>
-    public required string PodName { get; set; }
+    public string? PodName { get; set; }
     
     /// <summary>
-    /// Pod namespace for fallback disk download
+    /// Pod namespace for fallback disk download (required for Disk source)
     /// </summary>
-    public required string PodNamespace { get; set; }
+    public string? PodNamespace { get; set; }
+    
+    /// <summary>
+    /// Source where the snapshot is stored
+    /// </summary>
+    public SnapshotSource Source { get; set; }
 }
 

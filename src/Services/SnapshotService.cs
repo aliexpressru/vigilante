@@ -17,6 +17,7 @@ public class SnapshotService(
     IQdrantClientFactory clientFactory,
     ICollectionService collectionService,
     IOptions<QdrantOptions> options,
+    IS3SnapshotService s3SnapshotService,
     ILogger<SnapshotService> logger) : ISnapshotService
 {
     private readonly QdrantOptions _options = options.Value;
@@ -104,7 +105,18 @@ public class SnapshotService(
         logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} (source: {Source})", 
             snapshotName, collectionName, source);
 
-        if (source == SnapshotSource.KubernetesStorage)
+        if (source == SnapshotSource.S3Storage)
+        {
+            // Delete from S3 storage
+            logger.LogInformation("Deleting snapshot {SnapshotName} from S3 storage", snapshotName);
+
+            return await s3SnapshotService.DeleteSnapshotAsync(
+                collectionName,
+                snapshotName,
+                podNamespace,
+                cancellationToken);
+        }
+        else if (source == SnapshotSource.KubernetesStorage)
         {
             // Delete from Kubernetes storage (disk)
             if (string.IsNullOrEmpty(podName) || string.IsNullOrEmpty(podNamespace))
@@ -152,13 +164,40 @@ public class SnapshotService(
         CancellationToken cancellationToken = default)
     {
         logger.LogInformation(
-            "Downloading snapshot {SnapshotName} for collection {CollectionName} from {NodeUrl} with fallback",
-            snapshotName, collectionName, nodeUrl);
+            "Downloading snapshot {SnapshotName} for collection {CollectionName} with fallback (S3 → API → Disk)",
+            snapshotName, collectionName);
 
-        // Try API first
+        // Priority 1: Try S3 first if available
+        var isS3Available = await s3SnapshotService.IsAvailableAsync(podNamespace, cancellationToken);
+        if (isS3Available)
+        {
+            try
+            {
+                logger.LogDebug("Attempting to download snapshot from S3");
+                var s3Stream = await s3SnapshotService.DownloadSnapshotAsync(
+                    collectionName,
+                    snapshotName,
+                    podNamespace,
+                    cancellationToken);
+
+                if (s3Stream != null)
+                {
+                    logger.LogInformation("Successfully downloaded snapshot from S3");
+                    return s3Stream;
+                }
+
+                logger.LogWarning("S3 download returned null, trying API fallback");
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "S3 download failed, trying API fallback");
+            }
+        }
+
+        // Priority 2: Try API
         try
         {
-            logger.LogDebug("Attempting to download snapshot via API");
+            logger.LogDebug("Attempting to download snapshot via API from {NodeUrl}", nodeUrl);
             var apiStream = await collectionService.DownloadCollectionSnapshotAsync(
                 nodeUrl,
                 collectionName,
@@ -178,7 +217,7 @@ public class SnapshotService(
             logger.LogWarning(ex, "API download failed, trying disk fallback");
         }
 
-        // Fallback to disk if API fails
+        // Priority 3: Fallback to disk if API fails
         if (!string.IsNullOrEmpty(podName) && !string.IsNullOrEmpty(podNamespace))
         {
             try
@@ -224,17 +263,33 @@ public class SnapshotService(
         logger.LogInformation("Found {NodesCount} nodes to process", nodes.Count);
         
         var result = new List<SnapshotInfo>();
-        bool hasPodsWithNames = nodes.Any(n => !string.IsNullOrEmpty(n.PodName));
         
-        // Priority 1: Try to get snapshots from Kubernetes storage (if we have pod names)
-        if (hasPodsWithNames)
+        // Priority 1: Try to get snapshots from S3 (if configured)
+        var isS3Available = await s3SnapshotService.IsAvailableAsync(
+            nodes.FirstOrDefault()?.Namespace, 
+            cancellationToken);
+            
+        if (isS3Available)
         {
-            await GetSnapshotsFromKubernetesStorageAsync(nodes, result, cancellationToken);
+            logger.LogInformation("S3 storage is available, fetching snapshots from S3");
+            await GetSnapshotsFromS3Async(nodes, result, cancellationToken);
         }
         
-        // Priority 2: If we didn't get any snapshots from k8s storage, try to get them from Qdrant API
+        // Priority 2: If S3 not available or no snapshots found, try Kubernetes storage (if we have pod names)
         if (result.Count == 0)
         {
+            bool hasPodsWithNames = nodes.Any(n => !string.IsNullOrEmpty(n.PodName));
+            if (hasPodsWithNames)
+            {
+                logger.LogInformation("Fetching snapshots from Kubernetes storage");
+                await GetSnapshotsFromKubernetesStorageAsync(nodes, result, cancellationToken);
+            }
+        }
+        
+        // Priority 3: If still no snapshots, try Qdrant API
+        if (result.Count == 0)
+        {
+            logger.LogInformation("Fetching snapshots from Qdrant API");
             await GetSnapshotsFromQdrantApiAsync(nodes, result, cancellationToken);
         }
 
@@ -350,6 +405,53 @@ public class SnapshotService(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to get snapshots for node {NodeUrl}", node.Url);
+        }
+    }
+
+    private async Task GetSnapshotsFromS3Async(
+        List<NodeInfo> nodes,
+        List<SnapshotInfo> result,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Fetching snapshots from S3 storage");
+
+        try
+        {
+            var firstNode = nodes.FirstOrDefault();
+            if (firstNode == null)
+            {
+                logger.LogWarning("No nodes available to get namespace");
+                return;
+            }
+
+            // Get ALL snapshots from S3, not just for current collections
+            // This way we show snapshots even for deleted/old collections
+            var allSnapshots = await s3SnapshotService.ListAllSnapshotsAsync(
+                firstNode.Namespace,
+                cancellationToken);
+
+            logger.LogInformation("Found {Count} snapshots in S3 storage", allSnapshots.Count);
+
+            foreach (var (collectionName, snapshotName, sizeBytes) in allSnapshots)
+            {
+                var snapshotInfo = new SnapshotInfo
+                {
+                    PodName = "S3",
+                    NodeUrl = "S3",
+                    PeerId = "S3",
+                    CollectionName = collectionName,
+                    SnapshotName = snapshotName,
+                    SizeBytes = sizeBytes,
+                    PodNamespace = firstNode.Namespace ?? "qdrant",
+                    Source = SnapshotSource.S3Storage
+                };
+
+                result.Add(snapshotInfo);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to fetch snapshots from S3");
         }
     }
 

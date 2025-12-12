@@ -1,4 +1,5 @@
 using FluentValidation;
+using Vigilante.Models.Enums;
 using Vigilante.Models.Requests;
 
 namespace Vigilante.Validators;
@@ -15,19 +16,26 @@ public class V1DownloadSnapshotRequestValidator : AbstractValidator<V1DownloadSn
             .NotEmpty()
             .WithMessage("Snapshot name is required");
         
-        RuleFor(x => x.NodeUrl)
-            .NotEmpty()
-            .WithMessage("Node URL is required")
-            .Must(uri => Uri.TryCreate(uri, UriKind.Absolute, out _))
-            .WithMessage("Node URL must be a valid URL");
+        // NodeUrl is required for QdrantApi and KubernetesStorage sources
+        When(x => x.Source == SnapshotSource.QdrantApi || x.Source == SnapshotSource.KubernetesStorage, () =>
+        {
+            RuleFor(x => x.NodeUrl)
+                .NotEmpty()
+                .WithMessage("Node URL is required for Qdrant API and Kubernetes storage sources")
+                .Must(uri => Uri.TryCreate(uri, UriKind.Absolute, out _))
+                .WithMessage("Node URL must be a valid URL");
+        });
         
+        // PodName and PodNamespace are required for KubernetesStorage source
         RuleFor(x => x.PodName)
             .NotEmpty()
-            .WithMessage("Pod name is required");
+            .WithMessage("Pod name is required for Kubernetes storage source")
+            .When(x => x.Source == SnapshotSource.KubernetesStorage);
         
         RuleFor(x => x.PodNamespace)
             .NotEmpty()
-            .WithMessage("Pod namespace is required");
+            .WithMessage("Pod namespace is required for Kubernetes storage source")
+            .When(x => x.Source == SnapshotSource.KubernetesStorage);
     }
 }
 

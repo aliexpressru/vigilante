@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Vigilante.Models;
+using Vigilante.Extensions;
+using Vigilante.Models.Enums;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
 using Vigilante.Services.Interfaces;
@@ -10,6 +11,7 @@ namespace Vigilante.Controllers;
 [Route("api/v1/snapshots")]
 public class SnapshotsController(
     ISnapshotService snapshotService,
+    IS3SnapshotService s3SnapshotService,
     ICollectionService collectionService,
     ILogger<SnapshotsController> logger)
     : ControllerBase
@@ -22,24 +24,40 @@ public class SnapshotsController(
         {
             var result = await snapshotService.GetSnapshotsInfoAsync(cancellationToken);
 
+            var snapshotDtos = result
+                .Select(snapshot => new V1GetSnapshotsInfoResponse.SnapshotInfoDto
+                {
+                    PodName = snapshot.PodName,
+                    NodeUrl = snapshot.NodeUrl,
+                    PeerId = snapshot.PeerId,
+                    CollectionName = snapshot.CollectionName,
+                    SnapshotName = snapshot.SnapshotName,
+                    SizeBytes = snapshot.SizeBytes,
+                    PrettySize = snapshot.PrettySize,
+                    PodNamespace = snapshot.PodNamespace,
+                    Source = snapshot.Source.ToString()
+                })
+                .OrderBy(x => x.CollectionName)
+                .ThenBy(x => x.SnapshotName)
+                .ToArray();
+
+            // Group snapshots by collection name
+            var groupedSnapshots = snapshotDtos
+                .GroupBy(s => s.CollectionName)
+                .Select(g => new V1GetSnapshotsInfoResponse.SnapshotCollectionGroup
+                {
+                    CollectionName = g.Key,
+                    TotalSize = g.Sum(s => s.SizeBytes),
+                    PrettyTotalSize = g.Sum(s => s.SizeBytes).ToPrettySize(),
+                    Snapshots = g.ToArray()
+                })
+                .OrderBy(g => g.CollectionName)
+                .ToArray();
+
             return Ok(new V1GetSnapshotsInfoResponse
             {
-                Snapshots = result
-                    .Select(snapshot => new V1GetSnapshotsInfoResponse.SnapshotInfoDto
-                    {
-                        PodName = snapshot.PodName,
-                        NodeUrl = snapshot.NodeUrl,
-                        PeerId = snapshot.PeerId,
-                        CollectionName = snapshot.CollectionName,
-                        SnapshotName = snapshot.SnapshotName,
-                        SizeBytes = snapshot.SizeBytes,
-                        PrettySize = snapshot.PrettySize,
-                        PodNamespace = snapshot.PodNamespace,
-                        Source = snapshot.Source.ToString()
-                    })
-                    .OrderBy(x => x.CollectionName)
-                    .ThenBy(x => x.SnapshotName)
-                    .ToArray()
+                Snapshots = snapshotDtos,
+                GroupedSnapshots = groupedSnapshots
             });
         }
         catch (Exception ex)
@@ -121,12 +139,12 @@ public class SnapshotsController(
             if (request.SingleNode)
             {
                 // Parse source from request
-                if (!Enum.TryParse<Models.Enums.SnapshotSource>(request.Source, out var source))
+                if (!Enum.TryParse<SnapshotSource>(request.Source, out var source))
                 {
                     return BadRequest(new V1DeleteSnapshotResponse
                     {
                         Success = false,
-                        Message = "Invalid Source value. Must be 'KubernetesStorage' or 'QdrantApi'",
+                        Message = "Invalid Source value. Must be 'KubernetesStorage', 'QdrantApi', or 'S3Storage'",
                         Results = new Dictionary<string, NodeSnapshotDeletionResult>()
                     });
                 }
@@ -141,7 +159,7 @@ public class SnapshotsController(
                     request.PodNamespace,
                     cancellationToken);
 
-                var identifier = source == Models.Enums.SnapshotSource.KubernetesStorage 
+                var identifier = source == SnapshotSource.KubernetesStorage 
                     ? request.PodName 
                     : request.NodeUrl;
 
@@ -221,17 +239,30 @@ public class SnapshotsController(
     {
         try
         {
-            var snapshotStream = await snapshotService.DownloadSnapshotWithFallbackAsync(
-                request.NodeUrl!,
-                request.CollectionName,
-                request.SnapshotName,
-                request.PodName,
-                request.PodNamespace,
-                cancellationToken);
+            Stream snapshotStream;
+
+            if (request.Source == SnapshotSource.S3Storage)
+            {
+                snapshotStream = await s3SnapshotService.DownloadSnapshotAsync(
+                    request.CollectionName,
+                    request.SnapshotName,
+                    string.Empty,
+                    cancellationToken);
+            }
+            else
+            {
+                snapshotStream = await snapshotService.DownloadSnapshotWithFallbackAsync(
+                    request.NodeUrl!,
+                    request.CollectionName,
+                    request.SnapshotName,
+                    request.PodName ?? string.Empty,
+                    request.PodNamespace ?? string.Empty,
+                    cancellationToken);
+            }
 
             if (snapshotStream == null)
             {
-                return StatusCode(500, new { error = "Failed to download snapshot via both API and disk" });
+                return StatusCode(500, new { error = "Failed to download snapshot" });
             }
 
             return File(snapshotStream, "application/octet-stream", request.SnapshotName);
@@ -253,18 +284,63 @@ public class SnapshotsController(
     {
         try
         {
-            var success = await collectionService.RecoverCollectionFromSnapshotAsync(
-                request.NodeUrl,
-                request.CollectionName,
-                request.SnapshotName,
-                cancellationToken);
+            bool success;
+            
+            // Parse source from request
+            if (!Enum.TryParse<SnapshotSource>(request.Source, out var source))
+            {
+                return BadRequest(new V1RecoverFromSnapshotResponse
+                {
+                    Success = false,
+                    Message = "Invalid Source value. Must be 'KubernetesStorage', 'QdrantApi', or 'S3Storage'",
+                    Error = "Invalid source"
+                });
+            }
+
+            if (source == SnapshotSource.S3Storage)
+            {
+                // For S3 snapshots, generate presigned URL and use recover-from-url endpoint
+                var presignedUrl = await s3SnapshotService.GetPresignedDownloadUrlAsync(
+                    request.CollectionName,
+                    request.SnapshotName,
+                    TimeSpan.FromHours(1), // URL valid for 1 hour
+                    null,
+                    cancellationToken);
+
+                if (string.IsNullOrEmpty(presignedUrl))
+                {
+                    return StatusCode(500, new V1RecoverFromSnapshotResponse
+                    {
+                        Success = false,
+                        Message = $"Failed to generate S3 download URL for snapshot '{request.SnapshotName}'",
+                        Error = "Failed to generate S3 URL"
+                    });
+                }
+
+                success = await collectionService.RecoverCollectionFromUrlAsync(
+                    request.TargetNodeUrl,
+                    request.CollectionName,
+                    presignedUrl,
+                    snapshotChecksum: null,
+                    waitForResult: true,
+                    cancellationToken);
+            }
+            else
+            {
+                // For local snapshots (KubernetesStorage or QdrantApi), use standard recovery
+                success = await collectionService.RecoverCollectionFromSnapshotAsync(
+                    request.TargetNodeUrl,
+                    request.CollectionName,
+                    request.SnapshotName,
+                    cancellationToken);
+            }
 
             var response = new V1RecoverFromSnapshotResponse
             {
                 Success = success,
                 Message = success
-                    ? $"Collection '{request.CollectionName}' recovered successfully from snapshot '{request.SnapshotName}' on {request.NodeUrl}"
-                    : $"Failed to recover collection '{request.CollectionName}' from snapshot '{request.SnapshotName}' on {request.NodeUrl}",
+                    ? $"Collection '{request.CollectionName}' recovered successfully from snapshot '{request.SnapshotName}' on {request.TargetNodeUrl}"
+                    : $"Failed to recover collection '{request.CollectionName}' from snapshot '{request.SnapshotName}' on {request.TargetNodeUrl}",
                 Error = success ? null : "Recovery failed"
             };
 
@@ -278,6 +354,51 @@ public class SnapshotsController(
                 Success = false,
                 Message = "Internal server error during snapshot recovery",
                 Error = ex.Message
+            });
+        }
+    }
+
+    [HttpPost("get-download-url")]
+    [ProducesResponseType(typeof(V1GetDownloadUrlResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1GetDownloadUrlResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1GetDownloadUrlResponse>> GetDownloadUrl(
+        [FromBody] V1GetDownloadUrlRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = await s3SnapshotService.GetPresignedDownloadUrlAsync(
+                request.CollectionName,
+                request.SnapshotName,
+                TimeSpan.FromHours(request.ExpirationHours),
+                cancellationToken: cancellationToken);
+
+            if (string.IsNullOrEmpty(url))
+            {
+                return StatusCode(500, new V1GetDownloadUrlResponse
+                {
+                    Success = false,
+                    Message = $"Failed to generate download URL for snapshot '{request.SnapshotName}'",
+                    Url = null
+                });
+            }
+
+            return Ok(new V1GetDownloadUrlResponse
+            {
+                Success = true,
+                Message = $"Download URL generated successfully, expires in {request.ExpirationHours} hour(s)",
+                Url = url
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error generating download URL");
+            return StatusCode(500, new V1GetDownloadUrlResponse
+            {
+                Success = false,
+                Message = "Internal server error while generating download URL",
+                Url = null
             });
         }
     }

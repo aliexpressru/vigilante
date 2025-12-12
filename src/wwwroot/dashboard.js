@@ -831,41 +831,25 @@ class VigilanteDashboard {
             }
             
             const data = await response.json();
-            const snapshots = Array.isArray(data) ? data : (data.snapshots || []);
-            this.updateSnapshotsTable(snapshots);
+            // Use groupedSnapshots from backend if available, otherwise fall back to old format
+            const groupedSnapshots = data.groupedSnapshots || [];
+            this.updateSnapshotsTable(groupedSnapshots);
             
         } catch (error) {
             console.error('Error fetching snapshots:', error);
         }
     }
 
-    updateSnapshotsTable(snapshots) {
-        if (!snapshots || snapshots.length === 0) {
+    updateSnapshotsTable(groupedSnapshots) {
+        if (!groupedSnapshots || groupedSnapshots.length === 0) {
             const container = document.getElementById('snapshotsTable');
             container.innerHTML = '<p style="color: #999; padding: 20px; text-align: center;">No snapshots found</p>';
             document.getElementById('totalSnapshotsSize').textContent = 'Total: 0 B';
             return;
         }
 
-        // Group by collection name only (each node can have unique snapshot name)
-        const grouped = {};
-        let totalSize = 0;
-
-        snapshots.forEach(snapshot => {
-            const key = snapshot.collectionName;
-            if (!grouped[key]) {
-                grouped[key] = {
-                    collectionName: snapshot.collectionName,
-                    totalSize: 0,
-                    nodes: {}
-                };
-            }
-            grouped[key].totalSize += snapshot.sizeBytes;
-            totalSize += snapshot.sizeBytes;
-            
-            // Store snapshot info per node URL
-            grouped[key].nodes[snapshot.nodeUrl] = snapshot;
-        });
+        // Calculate total size from all groups
+        const totalSize = groupedSnapshots.reduce((sum, group) => sum + group.totalSize, 0);
 
         // Update total size display
         document.getElementById('totalSnapshotsSize').textContent = `Total: ${this.formatSize(totalSize)}`;
@@ -874,7 +858,7 @@ class VigilanteDashboard {
         const table = document.createElement('table');
         const tbody = document.createElement('tbody');
 
-        Object.values(grouped).forEach(collection => {
+        groupedSnapshots.forEach(collection => {
             // Main collection row
             const row = document.createElement('tr');
             row.className = 'snapshot-row';
@@ -950,24 +934,23 @@ class VigilanteDashboard {
             `;
             nodesTable.appendChild(nodesHeader);
 
-            Object.values(collection.nodes).forEach(node => {
+            collection.snapshots.forEach(snapshot => {
                 const nodeRow = document.createElement('tr');
-                // Escape quotes in snapshot name for onclick attributes
                 // Create cells
                 const cellNode = document.createElement('td');
-                cellNode.textContent = node.nodeUrl;
+                cellNode.textContent = snapshot.nodeUrl;
                 
                 const cellPeer = document.createElement('td');
-                cellPeer.innerHTML = `<code>${node.peerId}</code>`;
+                cellPeer.innerHTML = `<code>${snapshot.peerId}</code>`;
                 
                 const cellPod = document.createElement('td');
-                cellPod.textContent = node.podName;
+                cellPod.textContent = snapshot.podName;
                 
                 const cellSnapshot = document.createElement('td');
-                cellSnapshot.textContent = node.snapshotName;
+                cellSnapshot.textContent = snapshot.snapshotName;
                 
                 const cellSize = document.createElement('td');
-                cellSize.textContent = node.prettySize;
+                cellSize.textContent = snapshot.prettySize;
                 
                 const cellActions = document.createElement('td');
                 const actionsContainer = document.createElement('div');
@@ -979,23 +962,37 @@ class VigilanteDashboard {
                 downloadBtn.title = 'Download snapshot (tries API first, then disk fallback)';
                 downloadBtn.onclick = () => this.downloadSnapshot(
                     collection.collectionName, 
-                    node.snapshotName, 
-                    node.nodeUrl,
-                    node.podName, 
-                    node.podNamespace || 'qdrant'
+                    snapshot.snapshotName, 
+                    snapshot.nodeUrl,
+                    snapshot.podName, 
+                    snapshot.podNamespace || 'qdrant',
+                    snapshot.source
                 );
+                
+                // Add "Get Download URL" button for S3 snapshots
+                if (snapshot.source === 'S3Storage') {
+                    const getUrlBtn = document.createElement('button');
+                    getUrlBtn.className = 'action-button action-button-info action-button-sm';
+                    getUrlBtn.innerHTML = '<i class="fas fa-link"></i>';
+                    getUrlBtn.title = 'Get presigned download URL (valid for 1 hour)';
+                    getUrlBtn.onclick = () => this.getS3DownloadUrl(
+                        collection.collectionName,
+                        snapshot.snapshotName
+                    );
+                    actionsContainer.appendChild(getUrlBtn);
+                }
                 
                 const recoverBtn = document.createElement('button');
                 recoverBtn.className = 'action-button action-button-success action-button-sm';
                 recoverBtn.innerHTML = '<i class="fas fa-undo"></i>';
                 recoverBtn.title = 'Recover from this snapshot';
-                recoverBtn.onclick = () => this.recoverSnapshotFromNode(node.nodeUrl, collection.collectionName, node.snapshotName, node.podName);
+                recoverBtn.onclick = () => this.recoverSnapshotFromNode(snapshot.nodeUrl, collection.collectionName, snapshot.snapshotName, snapshot.podName);
                 
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'action-button action-button-danger action-button-sm';
                 deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
                 deleteBtn.title = 'Delete this snapshot';
-                deleteBtn.onclick = () => this.deleteSnapshotFromNode(node);
+                deleteBtn.onclick = () => this.deleteSnapshotFromNode(snapshot);
                 
                 actionsContainer.appendChild(downloadBtn);
                 actionsContainer.appendChild(recoverBtn);
@@ -1067,18 +1064,18 @@ class VigilanteDashboard {
     }
 
     async recoverSnapshotOnAllNodes(collection) {
-        const nodes = Object.values(collection.nodes);
-        const toastId = this.showToast(`Recovering ${collection.collectionName} on ${nodes.length} nodes...`, 'info', 0);
+        const snapshots = collection.snapshots;
+        const toastId = this.showToast(`Recovering ${collection.collectionName} on ${snapshots.length} snapshots...`, 'info', 0);
         
         try {
-            const promises = nodes.map(node => 
+            const promises = snapshots.map(snapshot => 
                 fetch(this.recoverFromSnapshotEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        nodeUrl: node.nodeUrl,
+                        nodeUrl: snapshot.nodeUrl,
                         collectionName: collection.collectionName,
-                        snapshotName: node.snapshotName // Each node has its own snapshot name
+                        snapshotName: snapshot.snapshotName
                     })
                 })
             );
@@ -1088,9 +1085,9 @@ class VigilanteDashboard {
 
             const successCount = results.filter(r => r.ok).length;
             if (successCount === results.length) {
-                this.showToast(`✓ Successfully recovered ${collection.collectionName} on all ${nodes.length} nodes`, 'success', 5000);
+                this.showToast(`✓ Successfully recovered ${collection.collectionName} on all ${snapshots.length} snapshots`, 'success', 5000);
             } else {
-                this.showToast(`⚠ Recovered on ${successCount}/${nodes.length} nodes`, 'warning', 5000);
+                this.showToast(`⚠ Recovered on ${successCount}/${snapshots.length} snapshots`, 'warning', 5000);
             }
         } catch (error) {
             this.removeToast(toastId);
@@ -1113,9 +1110,9 @@ class VigilanteDashboard {
                 snapshotName: snapshot.snapshotName,
                 singleNode: true,
                 source: snapshot.source,
-                nodeUrl: snapshot.nodeUrl,
-                podName: snapshot.podName,
-                podNamespace: snapshot.podNamespace
+                nodeUrl: snapshot.nodeUrl || null,
+                podName: snapshot.podName || null,
+                podNamespace: snapshot.podNamespace || null
             };
 
             const response = await fetch(this.deleteSnapshotEndpoint, {
@@ -1140,26 +1137,26 @@ class VigilanteDashboard {
     }
 
     async deleteSnapshotFromAllNodes(collection) {
-        const nodes = Object.values(collection.nodes);
-        if (!confirm(`Delete all snapshots for ${collection.collectionName} from all ${nodes.length} nodes?`)) {
+        const snapshots = collection.snapshots;
+        if (!confirm(`Delete all snapshots for ${collection.collectionName} (${snapshots.length} snapshots)?`)) {
             return;
         }
 
-        const toastId = this.showToast(`Deleting snapshots for ${collection.collectionName} from ${nodes.length} nodes...`, 'info', 0);
+        const toastId = this.showToast(`Deleting snapshots for ${collection.collectionName} (${snapshots.length} snapshots)...`, 'info', 0);
         
         try {
-            const promises = nodes.map(node => 
+            const promises = snapshots.map(snapshot => 
                 fetch(this.deleteSnapshotEndpoint, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         collectionName: collection.collectionName,
-                        snapshotName: node.snapshotName,
+                        snapshotName: snapshot.snapshotName,
                         singleNode: true,
-                        source: node.source,
-                        nodeUrl: node.nodeUrl,
-                        podName: node.podName,
-                        podNamespace: node.podNamespace
+                        source: snapshot.source,
+                        nodeUrl: snapshot.nodeUrl,
+                        podName: snapshot.podName,
+                        podNamespace: snapshot.podNamespace
                     })
                 })
             );
@@ -1169,10 +1166,10 @@ class VigilanteDashboard {
 
             const successCount = results.filter(r => r.ok).length;
             if (successCount === results.length) {
-                this.showToast(`✓ Successfully deleted snapshots for ${collection.collectionName} from all ${nodes.length} nodes`, 'success', 5000);
+                this.showToast(`✓ Successfully deleted snapshots for ${collection.collectionName} (${snapshots.length} snapshots)`, 'success', 5000);
                 this.loadSnapshots(); // Reload to update UI
             } else {
-                this.showToast(`⚠ Deleted from ${successCount}/${nodes.length} nodes`, 'warning', 5000);
+                this.showToast(`⚠ Deleted ${successCount}/${snapshots.length} snapshots`, 'warning', 5000);
                 this.loadSnapshots(); // Reload to update UI
             }
         } catch (error) {
@@ -1815,7 +1812,7 @@ class VigilanteDashboard {
         }
     }
 
-    async downloadSnapshot(collectionName, snapshotName, nodeUrl, podName, podNamespace) {
+    async downloadSnapshot(collectionName, snapshotName, nodeUrl, podName, podNamespace, source) {
         const toastId = this.showToast(
             `Preparing download of '${snapshotName}'...`,
             'info',
@@ -1828,9 +1825,10 @@ class VigilanteDashboard {
             const requestBody = {
                 collectionName: collectionName,
                 snapshotName: snapshotName,
-                nodeUrl: nodeUrl,
-                podName: podName,
-                podNamespace: podNamespace
+                nodeUrl: nodeUrl && nodeUrl.trim() !== '' ? nodeUrl : null,
+                podName: podName && podName.trim() !== '' ? podName : null,
+                podNamespace: podNamespace && podNamespace.trim() !== '' ? podNamespace : null,
+                source: source
             };
 
             const response = await fetch(this.downloadSnapshotEndpoint, {
@@ -1934,6 +1932,68 @@ class VigilanteDashboard {
                 error.message,
                 'error',
                 'Download Failed'
+            );
+        }
+    }
+
+    async getS3DownloadUrl(collectionName, snapshotName) {
+        const toastId = this.showToast(
+            `Generating download URL for '${snapshotName}'...`,
+            'info',
+            'Getting URL',
+            0,
+            true
+        );
+
+        try {
+            const requestBody = {
+                collectionName: collectionName,
+                snapshotName: snapshotName,
+                expirationHours: 1
+            };
+
+            const response = await fetch('/api/v1/snapshots/get-download-url', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Failed to generate download URL');
+            }
+
+            // Copy URL to clipboard
+            await navigator.clipboard.writeText(result.url);
+
+            // Show URL in a prompt dialog so user can also copy manually
+            const urlPreview = result.url.length > 100 
+                ? result.url.substring(0, 100) + '...' 
+                : result.url;
+            
+            this.updateToast(
+                toastId,
+                `URL copied to clipboard! Valid for 1 hour.\n\nURL: ${urlPreview}`,
+                'success',
+                'Download URL Generated',
+                100,
+                true
+            );
+
+            // Also show in an alert for easier copying on some browsers
+            setTimeout(() => {
+                alert(`Download URL (copied to clipboard, valid for 1 hour):\n\n${result.url}`);
+            }, 100);
+
+        } catch (error) {
+            this.updateToast(
+                toastId,
+                error.message,
+                'error',
+                'Failed to Generate URL'
             );
         }
     }
