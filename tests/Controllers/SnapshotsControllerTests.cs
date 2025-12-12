@@ -376,6 +376,164 @@ public class SnapshotsControllerTests
         Assert.That(objectResult.StatusCode, Is.EqualTo(500));
     }
 
+    [Test]
+    public async Task RecoverFromSnapshot_WithS3Storage_GeneratesPresignedUrl()
+    {
+        // Arrange
+        var request = new V1RecoverFromSnapshotRequest
+        {
+            CollectionName = "new_collection",
+            SnapshotName = "snapshot.snapshot",
+            Source = "S3Storage",
+            TargetNodeUrl = "http://node1:6333",
+            SourceCollectionName = "original_collection"
+        };
+
+        var presignedUrl = "https://s3.example.com/bucket/snapshots/original_collection/snapshot.snapshot?signature=xxx";
+        
+        _s3SnapshotService.GetPresignedDownloadUrlAsync(
+            "original_collection",  // Should use SourceCollectionName
+            request.SnapshotName,
+            Arg.Any<TimeSpan>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(presignedUrl);
+
+        _collectionService.RecoverCollectionFromUrlAsync(
+            request.TargetNodeUrl,
+            "new_collection",  // Should use CollectionName
+            presignedUrl,
+            Arg.Any<string?>(),
+            true,
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        
+        // Verify S3 service was called with SourceCollectionName
+        await _s3SnapshotService.Received(1).GetPresignedDownloadUrlAsync(
+            "original_collection",
+            request.SnapshotName,
+            Arg.Any<TimeSpan>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+        
+        // Verify collection service was called with target CollectionName
+        await _collectionService.Received(1).RecoverCollectionFromUrlAsync(
+            request.TargetNodeUrl,
+            "new_collection",
+            presignedUrl,
+            Arg.Any<string?>(),
+            true,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RecoverFromSnapshot_WithS3Storage_NoSourceCollectionName_UsesCollectionName()
+    {
+        // Arrange
+        var request = new V1RecoverFromSnapshotRequest
+        {
+            CollectionName = "test_collection",
+            SnapshotName = "snapshot.snapshot",
+            Source = "S3Storage",
+            TargetNodeUrl = "http://node1:6333"
+            // SourceCollectionName not provided
+        };
+
+        var presignedUrl = "https://s3.example.com/bucket/snapshots/test_collection/snapshot.snapshot?signature=xxx";
+        
+        _s3SnapshotService.GetPresignedDownloadUrlAsync(
+            "test_collection",  // Should fallback to CollectionName
+            request.SnapshotName,
+            Arg.Any<TimeSpan>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(presignedUrl);
+
+        _collectionService.RecoverCollectionFromUrlAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string?>(),
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        
+        // Verify S3 service was called with CollectionName as fallback
+        await _s3SnapshotService.Received(1).GetPresignedDownloadUrlAsync(
+            "test_collection",
+            request.SnapshotName,
+            Arg.Any<TimeSpan>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RecoverFromSnapshot_WithS3Storage_PresignedUrlFails_Returns500()
+    {
+        // Arrange
+        var request = new V1RecoverFromSnapshotRequest
+        {
+            CollectionName = "test_collection",
+            SnapshotName = "snapshot.snapshot",
+            Source = "S3Storage",
+            TargetNodeUrl = "http://node1:6333"
+        };
+
+        _s3SnapshotService.GetPresignedDownloadUrlAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>())
+            .Returns((string?)null);  // Presigned URL generation failed
+
+        // Act
+        var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result.Result!;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        var response = objectResult.Value as V1RecoverFromSnapshotResponse;
+        Assert.That(response!.Success, Is.False);
+        Assert.That(response.Message, Does.Contain("Failed to generate S3 download URL"));
+    }
+
+    [Test]
+    public async Task RecoverFromSnapshot_WithInvalidSource_ReturnsBadRequest()
+    {
+        // Arrange
+        var request = new V1RecoverFromSnapshotRequest
+        {
+            CollectionName = "test_collection",
+            SnapshotName = "snapshot.snapshot",
+            Source = "InvalidSource",
+            TargetNodeUrl = "http://node1:6333"
+        };
+
+        // Act
+        var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result.Result, Is.InstanceOf<BadRequestObjectResult>());
+        var badRequestResult = (BadRequestObjectResult)result.Result!;
+        var response = badRequestResult.Value as V1RecoverFromSnapshotResponse;
+        Assert.That(response!.Success, Is.False);
+        Assert.That(response.Message, Does.Contain("Invalid Source value"));
+    }
+
     #endregion
 
     #region RecoverFromUrl Tests
