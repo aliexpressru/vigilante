@@ -12,10 +12,6 @@ data:
         "HttpTimeoutSeconds": 5,
         "EnableAutoRecovery": true,
         "ApiKey": "test"
-      },
-      "S3": {
-        "BucketName": "snapshots",
-        "Region": "default"
       }
     }
 
