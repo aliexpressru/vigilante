@@ -61,14 +61,17 @@ public static class S3Constants
     public const string UnsignedPayload = "UNSIGNED-PAYLOAD";
     
     /// <summary>
-    /// HTTP method for presigned URLs
+    /// Environment variable name for S3 endpoint URL (Kubernetes secret injection)
     /// </summary>
-    public const string HttpMethodGet = "GET";
+    public const string EnvEndpointUrl = "S3__EndpointUrl";
     
     /// <summary>
-    /// AWS credential prefix
+    /// Environment variable name for S3 access key (Kubernetes secret injection)
     /// </summary>
-    public const string AwsSecretPrefix = "AWS4";
+    public const string EnvAccessKey = "S3__AccessKey";
+    
+    /// <summary>
+    /// Environment variable name for S3 secret key (Kubernetes secret injection)
+    /// </summary>
+    public const string EnvSecretKey = "S3__SecretKey";
 }
-
-

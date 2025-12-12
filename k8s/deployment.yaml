@@ -37,6 +37,25 @@ spec:
           value: "Development"
         - name: ASPNETCORE_URLS
           value: "http://+:8080"
+        # S3 credentials from Kubernetes secret
+        - name: S3__EndpointUrl
+          valueFrom:
+            secretKeyRef:
+              name: qdrant-s3-credentials
+              key: endpoint-url
+              optional: true
+        - name: S3__AccessKey
+          valueFrom:
+            secretKeyRef:
+              name: qdrant-s3-credentials
+              key: access-key
+              optional: true
+        - name: S3__SecretKey
+          valueFrom:
+            secretKeyRef:
+              name: qdrant-s3-credentials
+              key: secret-key
+              optional: true
         volumeMounts:
         - name: config-volume
           mountPath: /app/appsettings.json
