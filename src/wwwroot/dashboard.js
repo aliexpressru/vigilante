@@ -501,60 +501,23 @@ class VigilanteDashboard {
                 // Create a container for the entire collection header
                 const headerContainer = document.createElement('div');
                 headerContainer.className = 'collection-header-container';
+                headerContainer.style.display = 'flex';
+                headerContainer.style.justifyContent = 'space-between';
+                headerContainer.style.alignItems = 'center';
                 
-                // First line: collection name only
+                // Collection name
                 const nameDiv = document.createElement('div');
                 nameDiv.className = 'collection-name-line';
                 nameDiv.textContent = collection.name;
                 nameDiv.title = collection.name;
-                headerContainer.appendChild(nameDiv);
                 
-                // Second line: delete buttons and size
-                const actionsDiv = document.createElement('div');
-                actionsDiv.className = 'collection-actions-line';
-                
-                // Add collection-wide delete buttons
-                const deleteButtonsContainer = document.createElement('div');
-                deleteButtonsContainer.className = 'collection-delete-buttons';
-                
-                const deleteAllApiButton = document.createElement('button');
-                deleteAllApiButton.className = 'delete-all-api-button';
-                deleteAllApiButton.innerHTML = '🗑️ API';
-                deleteAllApiButton.title = 'Delete collection via API on all nodes';
-                deleteAllApiButton.onclick = async (e) => {
-                    e.stopPropagation();
-                    await this.deleteCollection(collection.name, 'Api', false);
-                };
-                
-                const deleteAllDiskButton = document.createElement('button');
-                deleteAllDiskButton.className = 'delete-all-disk-button';
-                deleteAllDiskButton.innerHTML = '🗑️ Disk';
-                deleteAllDiskButton.title = 'Delete collection from disk on all nodes';
-                deleteAllDiskButton.onclick = async (e) => {
-                    e.stopPropagation();
-                    await this.deleteCollection(collection.name, 'Disk', false);
-                };
-                
-                const createSnapshotAllButton = document.createElement('button');
-                createSnapshotAllButton.className = 'create-snapshot-all-button';
-                createSnapshotAllButton.innerHTML = '📸 Snapshot All';
-                createSnapshotAllButton.title = 'Create snapshot on all nodes';
-                createSnapshotAllButton.onclick = async (e) => {
-                    e.stopPropagation();
-                    await this.createSnapshot(collection.name, null, true);
-                };
-                
-                deleteButtonsContainer.appendChild(deleteAllApiButton);
-                deleteButtonsContainer.appendChild(deleteAllDiskButton);
-                deleteButtonsContainer.appendChild(createSnapshotAllButton);
-                actionsDiv.appendChild(deleteButtonsContainer);
-                
+                // Size span
                 const sizeSpan = document.createElement('span');
                 sizeSpan.className = 'collection-size';
                 sizeSpan.textContent = this.formatSize(collectionTotalSize);
-                actionsDiv.appendChild(sizeSpan);
                 
-                headerContainer.appendChild(actionsDiv);
+                headerContainer.appendChild(nameDiv);
+                headerContainer.appendChild(sizeSpan);
                 nameCell.appendChild(headerContainer);
                 row.appendChild(nameCell);
 
@@ -800,6 +763,48 @@ class VigilanteDashboard {
                     }
                 });
 
+                // Add "Delete All" and "Create Snapshot All" buttons at the bottom
+                const actionsFooter = document.createElement('div');
+                actionsFooter.className = 'collection-actions-footer';
+                actionsFooter.style.padding = '16px';
+                actionsFooter.style.backgroundColor = '#f5f5f5';
+                actionsFooter.style.borderTop = '2px solid #ddd';
+                actionsFooter.style.display = 'flex';
+                actionsFooter.style.gap = '8px';
+                actionsFooter.style.justifyContent = 'flex-end';
+                
+                const deleteAllApiButton = document.createElement('button');
+                deleteAllApiButton.className = 'action-button action-button-danger';
+                deleteAllApiButton.innerHTML = '<i class="fas fa-trash"></i> Delete All (API)';
+                deleteAllApiButton.title = 'Delete collection via API on all nodes';
+                deleteAllApiButton.onclick = async (e) => {
+                    e.stopPropagation();
+                    await this.deleteCollection(collection.name, 'Api', false);
+                };
+                
+                const deleteAllDiskButton = document.createElement('button');
+                deleteAllDiskButton.className = 'action-button action-button-danger';
+                deleteAllDiskButton.innerHTML = '<i class="fas fa-trash"></i> Delete All (Disk)';
+                deleteAllDiskButton.title = 'Delete collection from disk on all nodes';
+                deleteAllDiskButton.onclick = async (e) => {
+                    e.stopPropagation();
+                    await this.deleteCollection(collection.name, 'Disk', false);
+                };
+                
+                const createSnapshotAllButton = document.createElement('button');
+                createSnapshotAllButton.className = 'action-button action-button-primary';
+                createSnapshotAllButton.innerHTML = '<i class="fas fa-camera"></i> Create Snapshot All';
+                createSnapshotAllButton.title = 'Create snapshot on all nodes';
+                createSnapshotAllButton.onclick = async (e) => {
+                    e.stopPropagation();
+                    await this.createSnapshot(collection.name, null, true);
+                };
+                
+                actionsFooter.appendChild(deleteAllApiButton);
+                actionsFooter.appendChild(deleteAllDiskButton);
+                actionsFooter.appendChild(createSnapshotAllButton);
+                detailsContent.appendChild(actionsFooter);
+
                 detailsCell.appendChild(detailsContent);
                 detailsRow.appendChild(detailsCell);
 
@@ -872,46 +877,25 @@ class VigilanteDashboard {
             const container = document.createElement('div');
             container.className = 'snapshot-header-container';
             
-            const nameLine = document.createElement('div');
-            nameLine.className = 'snapshot-name-line';
-            nameLine.innerHTML = `
+            const headerLine = document.createElement('div');
+            headerLine.className = 'snapshot-header-line';
+            headerLine.style.display = 'flex';
+            headerLine.style.justifyContent = 'space-between';
+            headerLine.style.alignItems = 'center';
+            
+            const nameSection = document.createElement('div');
+            nameSection.innerHTML = `
                 <i class="fas fa-camera" style="color: #7b1fa2; margin-right: 8px;"></i>
                 <strong>${collection.collectionName}</strong>
             `;
             
-            const actionsLine = document.createElement('div');
-            actionsLine.className = 'snapshot-actions-line';
-            
-            const buttonsGroup = document.createElement('div');
-            buttonsGroup.className = 'snapshot-buttons-group';
-            
-            const recoverAllBtn = document.createElement('button');
-            recoverAllBtn.className = 'action-button action-button-success';
-            recoverAllBtn.innerHTML = '<i class="fas fa-undo"></i> Recover All';
-            recoverAllBtn.onclick = (e) => {
-                e.stopPropagation();
-                this.recoverSnapshotOnAllNodes(collection);
-            };
-            
-            const deleteAllBtn = document.createElement('button');
-            deleteAllBtn.className = 'action-button action-button-danger';
-            deleteAllBtn.innerHTML = '<i class="fas fa-trash"></i> Delete All';
-            deleteAllBtn.onclick = (e) => {
-                e.stopPropagation();
-                this.deleteSnapshotFromAllNodes(collection);
-            };
-            
-            buttonsGroup.appendChild(recoverAllBtn);
-            buttonsGroup.appendChild(deleteAllBtn);
-            actionsLine.appendChild(buttonsGroup);
-            
             const sizeSpan = document.createElement('span');
             sizeSpan.className = 'snapshot-size';
             sizeSpan.textContent = this.formatSize(collection.totalSize);
-            actionsLine.appendChild(sizeSpan);
             
-            container.appendChild(nameLine);
-            container.appendChild(actionsLine);
+            headerLine.appendChild(nameSection);
+            headerLine.appendChild(sizeSpan);
+            container.appendChild(headerLine);
             td.appendChild(container);
             row.appendChild(td);
 
@@ -923,6 +907,7 @@ class VigilanteDashboard {
             
             const nodesTable = document.createElement('table');
             nodesTable.className = 'nodes-table';
+            
             const nodesHeader = document.createElement('tr');
             nodesHeader.innerHTML = `
                 <th>Node</th>
@@ -1008,6 +993,29 @@ class VigilanteDashboard {
                 
                 nodesTable.appendChild(nodeRow);
             });
+
+            // Add "Delete All" row at the bottom
+            const deleteAllRow = document.createElement('tr');
+            deleteAllRow.className = 'delete-all-row';
+            const deleteAllCell = document.createElement('td');
+            deleteAllCell.colSpan = 6;
+            deleteAllCell.style.textAlign = 'right';
+            deleteAllCell.style.padding = '12px 8px';
+            deleteAllCell.style.backgroundColor = '#f5f5f5';
+            deleteAllCell.style.borderTop = '2px solid #ddd';
+            
+            const deleteAllBtn = document.createElement('button');
+            deleteAllBtn.className = 'action-button action-button-danger';
+            deleteAllBtn.innerHTML = '<i class="fas fa-trash"></i> Delete All Snapshots';
+            deleteAllBtn.title = 'Delete all snapshots for this collection from all nodes';
+            deleteAllBtn.onclick = (e) => {
+                e.stopPropagation();
+                this.deleteSnapshotFromAllNodes(collection);
+            };
+            
+            deleteAllCell.appendChild(deleteAllBtn);
+            deleteAllRow.appendChild(deleteAllCell);
+            nodesTable.appendChild(deleteAllRow);
 
             detailsTd.appendChild(nodesTable);
             detailsRow.appendChild(detailsTd);
