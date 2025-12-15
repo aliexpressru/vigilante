@@ -154,6 +154,7 @@ class VigilanteDashboard {
         
         const modal = document.getElementById('recoveryModal');
         const targetNodeSelect = document.getElementById('recoverTargetNode');
+        const targetNodeFormGroup = targetNodeSelect.closest('.form-group');
         const collectionNameInput = document.getElementById('recoverCollectionName');
         const sourceSnapshotInput = document.getElementById('recoverSourceSnapshot');
 
@@ -162,30 +163,43 @@ class VigilanteDashboard {
         // Set source snapshot display
         sourceSnapshotInput.value = snapshotName;
 
-        // Populate target nodes from cluster data
-        targetNodeSelect.innerHTML = '<option value="">Select target node...</option>';
-        if (this.clusterNodes && this.clusterNodes.length > 0) {
-            this.clusterNodes.forEach(node => {
-                const option = document.createElement('option');
-                option.value = node.nodeUrl || node.url;
-                
-                // Build display text: prefer podName, fallback to URL and peer ID
-                let displayText = '';
-                if (node.podName && node.podName !== 'unknown') {
-                    displayText = node.podName;
-                    if (node.peerId) {
-                        displayText += ` (${node.peerId.substring(0, 12)}...)`;
+        // Check if snapshot has a specific node URL (Kubernetes storage)
+        const snapshotNodeUrl = sourceSnapshot.nodeUrl;
+        const hasFixedNode = snapshotNodeUrl && snapshotNodeUrl !== 'unknown';
+        
+        if (hasFixedNode) {
+            // For Kubernetes storage - use the node where snapshot was created
+            // Hide node selector and auto-populate
+            targetNodeFormGroup.style.display = 'none';
+            targetNodeSelect.innerHTML = `<option value="${snapshotNodeUrl}" selected>Auto-selected: ${sourceSnapshot.podName || snapshotNodeUrl}</option>`;
+            console.log('Auto-selected target node (Kubernetes storage):', snapshotNodeUrl);
+        } else {
+            // For S3/other sources - show node selector
+            targetNodeFormGroup.style.display = 'block';
+            targetNodeSelect.innerHTML = '<option value="">Select target node...</option>';
+            if (this.clusterNodes && this.clusterNodes.length > 0) {
+                this.clusterNodes.forEach(node => {
+                    const option = document.createElement('option');
+                    option.value = node.nodeUrl || node.url;
+                    
+                    // Build display text: prefer podName, fallback to URL and peer ID
+                    let displayText = '';
+                    if (node.podName && node.podName !== 'unknown') {
+                        displayText = node.podName;
+                        if (node.peerId) {
+                            displayText += ` (${node.peerId.substring(0, 12)}...)`;
+                        }
+                    } else {
+                        // Use URL and peer ID
+                        const url = node.nodeUrl || node.url || '';
+                        const peerId = node.peerId ? node.peerId.substring(0, 12) + '...' : '';
+                        displayText = peerId ? `${url} (${peerId})` : url;
                     }
-                } else {
-                    // Use URL and peer ID
-                    const url = node.nodeUrl || node.url || '';
-                    const peerId = node.peerId ? node.peerId.substring(0, 12) + '...' : '';
-                    displayText = peerId ? `${url} (${peerId})` : url;
-                }
-                
-                option.textContent = displayText;
-                targetNodeSelect.appendChild(option);
-            });
+                    
+                    option.textContent = displayText;
+                    targetNodeSelect.appendChild(option);
+                });
+            }
         }
 
         // Set default collection name (editable)
