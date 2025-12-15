@@ -38,6 +38,7 @@ spec:
         - name: ASPNETCORE_URLS
           value: "http://+:8080"
         # S3 credentials from Kubernetes secret
+        # These are only used when S3.Enabled=true in ConfigMap
         - name: S3__EndpointUrl
           valueFrom:
             secretKeyRef:

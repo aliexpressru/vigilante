@@ -6,6 +6,11 @@ namespace Vigilante.Configuration;
 public class S3Options
 {
     /// <summary>
+    /// Whether S3 storage is enabled (feature flag)
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+    
+    /// <summary>
     /// S3 endpoint URL (e.g., https://s3.amazonaws.com)
     /// </summary>
     public string? EndpointUrl { get; set; }
@@ -31,9 +36,10 @@ public class S3Options
     public string? Region { get; set; }
     
     /// <summary>
-    /// Checks if S3 is properly configured
+    /// Checks if S3 is properly configured and enabled
     /// </summary>
     public bool IsConfigured() =>
+        Enabled &&
         !string.IsNullOrEmpty(EndpointUrl) &&
         !string.IsNullOrEmpty(AccessKey) &&
         !string.IsNullOrEmpty(SecretKey) &&

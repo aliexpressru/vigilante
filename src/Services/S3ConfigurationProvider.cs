@@ -77,9 +77,17 @@ public class S3ConfigurationProvider(
                 ? envSecretKey.Trim() 
                 : _options.S3?.SecretKey?.Trim();
             
-            // BucketName and Region ALWAYS come from ConfigMap (appsettings), never from environment
+            // BucketName, Region, and Enabled ALWAYS come from ConfigMap (appsettings), never from environment
+            var enabled = _options.S3?.Enabled ?? true; // Default to true for backward compatibility
             var bucketName = _options.S3?.BucketName?.Trim();
             var region = _options.S3?.Region?.Trim();
+            
+            // Check if S3 is disabled via feature flag
+            if (!enabled)
+            {
+                logger.LogInformation("S3 storage is disabled via configuration (Enabled=false)");
+                return null;
+            }
             
             // Log where each parameter came from
             var endpointSource = !string.IsNullOrWhiteSpace(envEndpoint) ? "environment" : "appsettings";
@@ -87,11 +95,12 @@ public class S3ConfigurationProvider(
                 ? "environment" 
                 : "appsettings";
             
-            logger.LogInformation("Loading S3 configuration - EndpointUrl: {EndpointSource}, Credentials: {CredentialsSource}, BucketName: configmap, Region: configmap",
+            logger.LogInformation("Loading S3 configuration - Enabled: true, EndpointUrl: {EndpointSource}, Credentials: {CredentialsSource}, BucketName: configmap, Region: configmap",
                 endpointSource, credentialsSource);
             
             var config = new S3Options
             {
+                Enabled = enabled,
                 EndpointUrl = endpointUrl,
                 AccessKey = accessKey,
                 SecretKey = secretKey,
@@ -102,7 +111,8 @@ public class S3ConfigurationProvider(
             // Log configuration status (without exposing secrets)
             if (!config.IsConfigured())
             {
-                logger.LogWarning("S3 configuration is incomplete - EndpointUrl: {HasEndpoint}, AccessKey: {HasAccessKey}, SecretKey: {HasSecretKey}, BucketName: {HasBucket}",
+                logger.LogWarning("S3 configuration is incomplete - Enabled: {Enabled}, EndpointUrl: {HasEndpoint}, AccessKey: {HasAccessKey}, SecretKey: {HasSecretKey}, BucketName: {HasBucket}",
+                    config.Enabled,
                     !string.IsNullOrEmpty(config.EndpointUrl),
                     !string.IsNullOrEmpty(config.AccessKey),
                     !string.IsNullOrEmpty(config.SecretKey),
