@@ -1205,8 +1205,9 @@ class VigilanteDashboard {
             Source: source
         };
         
-        // Add SourceCollectionName for S3 snapshots to help locate the file
-        if (sourceCollectionName && source === 'S3Storage') {
+        // Add SourceCollectionName to help locate the file in the correct directory
+        // This is important when recovering to a different collection name
+        if (sourceCollectionName) {
             requestBody.SourceCollectionName = sourceCollectionName;
         }
         

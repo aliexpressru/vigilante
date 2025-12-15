@@ -337,9 +337,45 @@ public class SnapshotsController(
                     waitForResult: true,
                     cancellationToken);
             }
+            else if (source == SnapshotSource.KubernetesStorage)
+            {
+                // For Kubernetes storage with different source/target collection names,
+                // we need to use file:// URL to specify the full path to the snapshot
+                var sourceCollectionName = !string.IsNullOrWhiteSpace(request.SourceCollectionName) 
+                    ? request.SourceCollectionName 
+                    : request.CollectionName;
+                
+                // If source and target collection names are different, use file:// URL
+                if (sourceCollectionName != request.CollectionName)
+                {
+                    // Construct file:// URL with full path to snapshot in source collection directory
+                    var snapshotPath = $"file:///qdrant/snapshots/{sourceCollectionName}/{request.SnapshotName}";
+                    
+                    logger.LogInformation(
+                        "Recovering collection {TargetCollection} from snapshot in source collection {SourceCollection} using path {SnapshotPath}",
+                        request.CollectionName, sourceCollectionName, snapshotPath);
+                    
+                    success = await collectionService.RecoverCollectionFromUrlAsync(
+                        request.TargetNodeUrl,
+                        request.CollectionName,
+                        snapshotPath,
+                        snapshotChecksum: null,
+                        waitForResult: true,
+                        cancellationToken);
+                }
+                else
+                {
+                    // Same collection name - use standard recovery (snapshot in same directory)
+                    success = await collectionService.RecoverCollectionFromSnapshotAsync(
+                        request.TargetNodeUrl,
+                        request.CollectionName,
+                        request.SnapshotName,
+                        cancellationToken);
+                }
+            }
             else
             {
-                // For local snapshots (KubernetesStorage or QdrantApi), use standard recovery
+                // For QdrantApi source, use standard recovery
                 success = await collectionService.RecoverCollectionFromSnapshotAsync(
                     request.TargetNodeUrl,
                     request.CollectionName,
