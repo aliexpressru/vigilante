@@ -468,7 +468,7 @@ public class S3SnapshotService(
             var s3Options = await configProvider.GetS3ConfigurationAsync(namespaceParameter, cancellationToken);
             if (s3Options == null || !s3Options.IsConfigured())
             {
-                logger.LogDebug("S3 not configured");
+                logger.LogInformation("S3 not configured or incomplete configuration");
                 return null;
             }
 

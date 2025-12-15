@@ -57,13 +57,14 @@ public class S3ConfigurationProvider(
             }
 
             // Load secrets from environment variables (Kubernetes) with fallback to appsettings
-            // Priority: Environment variables > appsettings
+            // Priority for secrets (EndpointUrl, AccessKey, SecretKey): Environment variables > appsettings
+            // Priority for non-secrets (BucketName, Region): ConfigMap (appsettings) ONLY
             
             var envEndpoint = Environment.GetEnvironmentVariable(S3Constants.EnvEndpointUrl);
             var envAccessKey = Environment.GetEnvironmentVariable(S3Constants.EnvAccessKey);
             var envSecretKey = Environment.GetEnvironmentVariable(S3Constants.EnvSecretKey);
             
-            // Use environment variables if available, otherwise fall back to appsettings
+            // Use environment variables for secrets if available, otherwise fall back to appsettings
             var endpointUrl = !string.IsNullOrWhiteSpace(envEndpoint) 
                 ? envEndpoint.Trim() 
                 : _options.S3?.EndpointUrl?.Trim();
@@ -76,17 +77,17 @@ public class S3ConfigurationProvider(
                 ? envSecretKey.Trim() 
                 : _options.S3?.SecretKey?.Trim();
             
-            // BucketName and Region always come from appsettings (not secrets)
+            // BucketName and Region ALWAYS come from ConfigMap (appsettings), never from environment
             var bucketName = _options.S3?.BucketName?.Trim();
             var region = _options.S3?.Region?.Trim();
             
-            // Log where credentials came from
+            // Log where each parameter came from
             var endpointSource = !string.IsNullOrWhiteSpace(envEndpoint) ? "environment" : "appsettings";
             var credentialsSource = !string.IsNullOrWhiteSpace(envAccessKey) && !string.IsNullOrWhiteSpace(envSecretKey) 
                 ? "environment" 
                 : "appsettings";
             
-            logger.LogInformation("Loading S3 configuration - EndpointUrl from: {EndpointSource}, Credentials from: {CredentialsSource}",
+            logger.LogInformation("Loading S3 configuration - EndpointUrl: {EndpointSource}, Credentials: {CredentialsSource}, BucketName: configmap, Region: configmap",
                 endpointSource, credentialsSource);
             
             var config = new S3Options
