@@ -1,6 +1,6 @@
 # 🛡️ Vigilante - Qdrant Cluster Guardian
 
-Monitoring and management service for Qdrant vector database clusters with real-time health monitoring, automatic recovery, and shard replication management.
+Monitoring and management service for Qdrant vector database clusters with real-time health monitoring, recovery and shard replication management.
 
 ## Features
 
