@@ -39,7 +39,7 @@ public class V1GetSnapshotsInfoResponse
     public class SnapshotCollectionGroup
     {
         /// <summary>
-        /// Collection name (e.g., "monetization.recs_vectors_with_item_segment_data_v3~~202512110748")
+        /// Collection name (e.g., "my-collection~~20251211")
         /// </summary>
         public string CollectionName { get; set; } = string.Empty;
         

@@ -142,7 +142,7 @@ Credentials are automatically loaded from environment variables (Kubernetes Secr
 ```bash
 # 1. Create secret with S3 credentials
 kubectl create secret generic qdrant-s3-credentials \
-  --from-literal=endpoint-url='https://s3.ae-rus.net' \
+  --from-literal=endpoint-url='https://s3.amazonaws.com' \
   --from-literal=access-key='your-access-key' \
   --from-literal=secret-key='your-secret-key' \
   -n qdrant
