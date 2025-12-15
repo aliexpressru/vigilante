@@ -58,7 +58,7 @@ spec:
               optional: true
         volumeMounts:
         - name: config-volume
-          mountPath: /app/appsettings.json
+          mountPath: /app/appsettings.Production.json
           subPath: appsettings.json
         resources:
           requests:

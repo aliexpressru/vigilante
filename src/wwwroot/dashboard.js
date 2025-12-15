@@ -2312,17 +2312,45 @@ class VigilanteDashboard {
                 throw new Error(result.message || 'Failed to generate download URL');
             }
 
-            // Copy URL to clipboard
-            await navigator.clipboard.writeText(result.url);
+            // Copy URL to clipboard with fallback for HTTP (non-secure context)
+            let copiedToClipboard = false;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(result.url);
+                    copiedToClipboard = true;
+                } else {
+                    // Fallback for HTTP contexts where Clipboard API is not available
+                    const textArea = document.createElement('textarea');
+                    textArea.value = result.url;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-999999px';
+                    textArea.style.top = '-999999px';
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    try {
+                        copiedToClipboard = document.execCommand('copy');
+                    } catch (err) {
+                        console.error('Fallback: Could not copy text', err);
+                    }
+                    document.body.removeChild(textArea);
+                }
+            } catch (err) {
+                console.error('Failed to copy to clipboard', err);
+            }
 
             // Show URL in a prompt dialog so user can also copy manually
             const urlPreview = result.url.length > 100 
                 ? result.url.substring(0, 100) + '...' 
                 : result.url;
             
+            const message = copiedToClipboard 
+                ? `URL copied to clipboard! Valid for 1 hour.\n\nURL: ${urlPreview}`
+                : `URL generated! Valid for 1 hour.\n\nPlease copy manually:\n${urlPreview}`;
+            
             this.updateToast(
                 toastId,
-                `URL copied to clipboard! Valid for 1 hour.\n\nURL: ${urlPreview}`,
+                message,
                 'success',
                 'Download URL Generated',
                 100,
