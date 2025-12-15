@@ -4,14 +4,16 @@ Monitoring and management service for Qdrant vector database clusters with real-
 
 ## Features
 
-- 🔍 Cluster health monitoring
-- 🔄 Automatic recovery from cluster issues
-- 📊 Collection metrics and shard management
-- 📸 **S3-compatible snapshot storage** (AWS S3, MinIO, etc.)
-- 💾 Local snapshot management
-- 📈 Prometheus metrics export
-- 🌐 REST API and web dashboard
-- ☸️ Kubernetes integration (pod management, StatefulSet operations)
+- 🔍 **Cluster Health Monitoring** - Real-time health checks and status tracking
+- 🔄 **Automatic Recovery** - Self-healing from cluster issues
+- 📊 **Collection Metrics** - Storage usage, shard distribution, replication status
+- 📸 **Flexible Snapshot Storage** - S3-compatible storage (AWS S3, MinIO) or Kubernetes volumes
+- 🔀 **Storage Backend Switching** - Toggle between S3 and Kubernetes storage via ConfigMap
+- 🔗 **Presigned URLs** - Secure, time-limited download links for S3 snapshots
+- 📈 **Prometheus Metrics** - Built-in metrics export for monitoring
+- 🌐 **Web Dashboard** - Modern UI for cluster management
+- ☸️ **Kubernetes Native** - Pod management, StatefulSet operations, RBAC support
+- 🔐 **Secure Credentials** - Kubernetes Secrets integration for S3 credentials
 
 ## Quick Start
 
@@ -43,14 +45,25 @@ kubectl apply -f k8s/
 {
   "Qdrant": {
     "MonitoringIntervalSeconds": 30,
+    "HttpTimeoutSeconds": 5,
     "EnableAutoRecovery": true,
     "ApiKey": "your-api-key",
     "Nodes": [
       { "Host": "localhost", "Port": 6333 }
-    ]
+    ],
+    "S3": {
+      "Enabled": false,
+      "BucketName": "snapshots",
+      "Region": "default"
+    }
   }
 }
 ```
+
+**Key settings:**
+- `MonitoringIntervalSeconds`: How often to check cluster health (default: 30)
+- `EnableAutoRecovery`: Enable automatic recovery from cluster issues (default: true)
+- `S3.Enabled`: Enable S3 storage for snapshots (default: true, set to false to use Kubernetes storage)
 
 ### S3 Snapshot Storage (Optional)
 
@@ -61,51 +74,88 @@ Vigilante supports S3-compatible storage for snapshots with flexible storage bac
 2. Kubernetes storage (pod volumes)
 3. Qdrant API (fallback)
 
-**Configuration:**
-- **Enabled flag** (S3.Enabled): Controls whether to use S3 storage - set via ConfigMap/appsettings
-- **Secret data** (EndpointUrl, AccessKey, SecretKey): Kubernetes Secret (recommended) or appsettings.json
-- **Other settings** (BucketName, Region, UsePathStyle): ConfigMap/appsettings.json only
+**Configuration Parameters:**
+
+| Parameter | Source | Description | Required |
+|-----------|--------|-------------|----------|
+| `Enabled` | ConfigMap | Enable/disable S3 storage | No (default: true) |
+| `EndpointUrl` | Secret → appsettings | S3 endpoint URL | Yes (when Enabled=true) |
+| `AccessKey` | Secret → appsettings | S3 access key | Yes (when Enabled=true) |
+| `SecretKey` | Secret → appsettings | S3 secret key | Yes (when Enabled=true) |
+| `BucketName` | ConfigMap only | S3 bucket name | Yes (when Enabled=true) |
+| `Region` | ConfigMap only | S3 region | No (default: "default") |
+
+**Priority:** Credentials from Environment Variables (Kubernetes Secret) override appsettings.json
 
 #### Switching Between S3 and Kubernetes Storage
 
-**To use Kubernetes storage** (default for dev):
+**To use Kubernetes storage** (default for dev environment):
+
+Edit ConfigMap (`k8s/dev/configmap.yaml`):
 ```json
 {
-  "S3": {
-    "Enabled": false,
-    "BucketName": "snapshots",
-    "Region": "default"
+  "Qdrant": {
+    "MonitoringIntervalSeconds": 120,
+    "HttpTimeoutSeconds": 3,
+    "EnableAutoRecovery": true,
+    "ApiKey": "test",
+    "S3": {
+      "Enabled": false,
+      "BucketName": "snapshots",
+      "Region": "default"
+    }
   }
 }
 ```
 
 **To use S3 storage** (default for production):
+
+Edit ConfigMap (`k8s/prod/configmap.yaml`):
 ```json
 {
-  "S3": {
-    "Enabled": true,
-    "BucketName": "snapshots",
-    "Region": "us-east-1",
-    "UsePathStyle": true
+  "Qdrant": {
+    "MonitoringIntervalSeconds": 30,
+    "HttpTimeoutSeconds": 5,
+    "EnableAutoRecovery": true,
+    "ApiKey": "your-api-key",
+    "S3": {
+      "Enabled": true,
+      "BucketName": "snapshots",
+      "Region": "us-east-1"
+    }
   }
 }
 ```
 
 **Quick switch in Kubernetes:**
 1. Edit ConfigMap: `kubectl edit configmap vigilante-config -n qdrant`
-2. Change `"Enabled": false` to `"Enabled": true` (or vice versa)
+2. Find the `"S3"` section inside `"Qdrant"` and change `"Enabled": false` to `"Enabled": true` (or vice versa)
 3. Restart deployment: `kubectl rollout restart deployment/vigilante -n qdrant`
+4. Verify: `kubectl logs -n qdrant -l app=vigilante --tail=50 | grep -E "S3 storage is disabled|S3 storage is available"`
 
 #### Setup S3 Credentials
 
-**Create Kubernetes Secret** (recommended for production):
+**Kubernetes (Production - Recommended):**
+
+Credentials are automatically loaded from environment variables (Kubernetes Secret):
+
 ```bash
+# 1. Create secret with S3 credentials
 kubectl create secret generic qdrant-s3-credentials \
   --from-literal=endpoint-url='https://s3.ae-rus.net' \
   --from-literal=access-key='your-access-key' \
   --from-literal=secret-key='your-secret-key' \
   -n qdrant
+
+# 2. Secret is mounted as environment variables in deployment.yaml:
+#    S3__EndpointUrl, S3__AccessKey, S3__SecretKey
+#
+# 3. Non-secret settings (BucketName, Region, Enabled) come from ConfigMap
 ```
+
+**Priority for S3 settings:**
+- **Credentials** (EndpointUrl, AccessKey, SecretKey): Environment variables (Secret) → appsettings.json
+- **Configuration** (BucketName, Region, Enabled): ConfigMap only
 
 **For local development** (without Kubernetes), you can specify all settings in appsettings.json:
 ```json
@@ -145,6 +195,61 @@ kubectl create secret generic qdrant-s3-credentials \
 - `POST /api/v1/kubernetes/manage-statefulset` - Rollout/Scale StatefulSet
 
 Swagger UI: http://localhost:8080/swagger
+
+## Troubleshooting
+
+### Verify S3 Storage Status
+
+```bash
+# Check which storage backend is being used
+kubectl logs -n qdrant -l app=vigilante --tail=50 | grep -E "S3 storage|Fetching snapshots"
+
+# Expected outputs:
+# - S3 enabled:  "S3 storage is available, fetching snapshots from S3"
+# - S3 disabled: "S3 storage is disabled via configuration (Enabled=false)"
+```
+
+### S3 Not Working (When Enabled=true)
+
+```bash
+# 1. Verify Enabled flag in ConfigMap
+kubectl get configmap vigilante-config -n qdrant -o jsonpath='{.data.appsettings\.json}' | jq '.Qdrant.S3.Enabled'
+# Should return: true
+
+# 2. Check S3 credentials secret exists
+kubectl get secret qdrant-s3-credentials -n qdrant
+kubectl get secret qdrant-s3-credentials -n qdrant -o jsonpath='{.data}' | jq 'keys'
+# Should show: ["access-key", "endpoint-url", "secret-key"]
+
+# 3. Verify environment variables are mounted in pod
+kubectl exec -n qdrant -l app=vigilante -- env | grep S3__
+# Should show: S3__EndpointUrl, S3__AccessKey, S3__SecretKey
+
+# 4. Check logs for S3 configuration errors
+kubectl logs -n qdrant -l app=vigilante --tail=100 | grep -i s3
+```
+
+### Switching Storage Backend
+
+```bash
+# Switch to Kubernetes storage (disable S3)
+kubectl patch configmap vigilante-config -n qdrant --type merge -p '
+{
+  "data": {
+    "appsettings.json": "{\"Qdrant\":{\"MonitoringIntervalSeconds\":120,\"HttpTimeoutSeconds\":3,\"EnableAutoRecovery\":true,\"ApiKey\":\"test\",\"S3\":{\"Enabled\":false,\"BucketName\":\"snapshots\",\"Region\":\"default\"}}}"
+  }
+}'
+kubectl rollout restart deployment/vigilante -n qdrant
+
+# Switch to S3 storage (enable S3)  
+kubectl patch configmap vigilante-config -n qdrant --type merge -p '
+{
+  "data": {
+    "appsettings.json": "{\"Qdrant\":{\"MonitoringIntervalSeconds\":30,\"HttpTimeoutSeconds\":5,\"EnableAutoRecovery\":true,\"ApiKey\":\"test\",\"S3\":{\"Enabled\":true,\"BucketName\":\"snapshots\",\"Region\":\"default\"}}}"
+  }
+}'
+kubectl rollout restart deployment/vigilante -n qdrant
+```
 
 ## Development
 

@@ -11,12 +11,12 @@ data:
         "MonitoringIntervalSeconds": 120,
         "HttpTimeoutSeconds": 3,
         "EnableAutoRecovery": true,
-        "ApiKey": "test"
-      },
-      "S3": {
-        "Enabled": false,
-        "BucketName": "snapshots",
-        "Region": "default"
+        "ApiKey": "test",
+        "S3": {
+          "Enabled": false,
+          "BucketName": "snapshots",
+          "Region": "default"
+        }
       }
     }
 
