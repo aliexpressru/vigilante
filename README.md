@@ -54,11 +54,49 @@ kubectl apply -f k8s/
 
 ### S3 Snapshot Storage (Optional)
 
-Vigilante supports S3-compatible storage for snapshots.
+Vigilante supports S3-compatible storage for snapshots with flexible storage backend selection.
+
+**Storage Priority:**
+1. S3 storage (if `Enabled: true` and credentials configured)
+2. Kubernetes storage (pod volumes)
+3. Qdrant API (fallback)
 
 **Configuration:**
+- **Enabled flag** (S3.Enabled): Controls whether to use S3 storage - set via ConfigMap/appsettings
 - **Secret data** (EndpointUrl, AccessKey, SecretKey): Kubernetes Secret (recommended) or appsettings.json
-- **Other settings** (BucketName, Region, UsePathStyle): appsettings.json only
+- **Other settings** (BucketName, Region, UsePathStyle): ConfigMap/appsettings.json only
+
+#### Switching Between S3 and Kubernetes Storage
+
+**To use Kubernetes storage** (default for dev):
+```json
+{
+  "S3": {
+    "Enabled": false,
+    "BucketName": "snapshots",
+    "Region": "default"
+  }
+}
+```
+
+**To use S3 storage** (default for production):
+```json
+{
+  "S3": {
+    "Enabled": true,
+    "BucketName": "snapshots",
+    "Region": "us-east-1",
+    "UsePathStyle": true
+  }
+}
+```
+
+**Quick switch in Kubernetes:**
+1. Edit ConfigMap: `kubectl edit configmap vigilante-config -n qdrant`
+2. Change `"Enabled": false` to `"Enabled": true` (or vice versa)
+3. Restart deployment: `kubectl rollout restart deployment/vigilante -n qdrant`
+
+#### Setup S3 Credentials
 
 **Create Kubernetes Secret** (recommended for production):
 ```bash
@@ -69,24 +107,12 @@ kubectl create secret generic qdrant-s3-credentials \
   -n qdrant
 ```
 
-**Configure appsettings.json:**
+**For local development** (without Kubernetes), you can specify all settings in appsettings.json:
 ```json
 {
   "Qdrant": {
     "S3": {
-      "BucketName": "snapshots",
-      "Region": "us-east-1",
-      "UsePathStyle": true
-    }
-  }
-}
-```
-
-**For local development** (without Kubernetes), you can specify all settings in appsettings:
-```json
-{
-  "Qdrant": {
-    "S3": {
+      "Enabled": true,
       "EndpointUrl": "https://s3.amazonaws.com",
       "AccessKey": "your-access-key",
       "SecretKey": "your-secret-key",
@@ -107,10 +133,12 @@ kubectl create secret generic qdrant-s3-credentials \
 - `POST /api/v1/cluster/replicate-shards` - Shard replication
 
 ### Snapshot Management
-- `GET /api/v1/snapshots/info` - List snapshots (S3 → Local → API priority)
+- `GET /api/v1/snapshots/info` - List snapshots (S3 [if Enabled] → Kubernetes → Qdrant API)
 - `POST /api/v1/snapshots/{collectionName}` - Create snapshot
+- `POST /api/v1/snapshots/get-download-url` - Generate presigned S3 download URL
+- `POST /api/v1/snapshots/recover` - Recover collection from snapshot
 - `POST /api/v1/snapshots/download` - Download snapshot
-- `POST /api/v1/snapshots/delete-from-disk` - Delete snapshot
+- `DELETE /api/v1/snapshots/delete` - Delete snapshot
 
 ### Kubernetes Operations
 - `POST /api/v1/kubernetes/delete-pod` - Delete pod (triggers restart)
