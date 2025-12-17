@@ -8,20 +8,16 @@ public class V1DeleteSnapshotFromDiskRequestValidator : AbstractValidator<V1Dele
     public V1DeleteSnapshotFromDiskRequestValidator()
     {
         RuleFor(x => x.PodName)
-            .NotEmpty()
-            .WithMessage("PodName is required");
+            .NotEmpty();
         
         RuleFor(x => x.PodNamespace)
-            .NotEmpty()
-            .WithMessage("PodNamespace is required");
+            .NotEmpty();
         
         RuleFor(x => x.CollectionName)
-            .NotEmpty()
-            .WithMessage("CollectionName is required");
+            .NotEmpty();
         
         RuleFor(x => x.SnapshotName)
             .NotEmpty()
-            .WithMessage("SnapshotName is required")
             .Must(name => name!.EndsWith(".snapshot"))
             .WithMessage("SnapshotName must end with .snapshot extension");
     }

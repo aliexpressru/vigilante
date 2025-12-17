@@ -24,6 +24,8 @@ public class ClusterManager(
 {
     private readonly QdrantOptions _options = options.Value;
     private readonly ClusterPeerState _clusterState = new();
+    private IReadOnlyList<CollectionInfo>? _cachedCollections;
+    private readonly object _cacheLock = new();
 
     public async Task<ClusterState> GetClusterStateAsync(CancellationToken cancellationToken = default)
     {
@@ -44,9 +46,26 @@ public class ClusterManager(
         return state;
     }
 
-    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(bool clearCache = false, CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("Starting GetCollectionsInfoAsync");
+        logger.LogInformation("Starting GetCollectionsInfoAsync (clearCache={ClearCache})", clearCache);
+
+        // Check cache first if not clearing
+        if (!clearCache)
+        {
+            lock (_cacheLock)
+            {
+                if (_cachedCollections != null)
+                {
+                    logger.LogInformation("Returning cached collections ({Count} items)", _cachedCollections.Count);
+                    return _cachedCollections;
+                }
+            }
+        }
+        else
+        {
+            logger.LogInformation("Clearing collections cache");
+        }
 
         var state = await GetClusterStateAsync(cancellationToken);
         var peerToPodMap = CreatePeerToPodMap(state.Nodes);
@@ -70,6 +89,13 @@ public class ClusterManager(
         await EnrichCollectionsWithClusteringInfoAsync(state.Nodes, result, peerToPodMap, cancellationToken);
 
         LogCompletionSummary(result);
+
+        // Cache the result
+        lock (_cacheLock)
+        {
+            _cachedCollections = result;
+            logger.LogInformation("Cached {Count} collections", result.Count);
+        }
 
         return result;
     }

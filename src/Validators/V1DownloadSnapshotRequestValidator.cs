@@ -9,32 +9,26 @@ public class V1DownloadSnapshotRequestValidator : AbstractValidator<V1DownloadSn
     public V1DownloadSnapshotRequestValidator()
     {
         RuleFor(x => x.CollectionName)
-            .NotEmpty()
-            .WithMessage("Collection name is required");
+            .NotEmpty();
         
         RuleFor(x => x.SnapshotName)
-            .NotEmpty()
-            .WithMessage("Snapshot name is required");
+            .NotEmpty();
         
         // NodeUrl is required for QdrantApi and KubernetesStorage sources
         When(x => x.Source == SnapshotSource.QdrantApi || x.Source == SnapshotSource.KubernetesStorage, () =>
         {
             RuleFor(x => x.NodeUrl)
                 .NotEmpty()
-                .WithMessage("Node URL is required for Qdrant API and Kubernetes storage sources")
-                .Must(uri => Uri.TryCreate(uri, UriKind.Absolute, out _))
-                .WithMessage("Node URL must be a valid URL");
+                .Must(uri => Uri.TryCreate(uri, UriKind.Absolute, out _));
         });
         
         // PodName and PodNamespace are required for KubernetesStorage source
         RuleFor(x => x.PodName)
             .NotEmpty()
-            .WithMessage("Pod name is required for Kubernetes storage source")
             .When(x => x.Source == SnapshotSource.KubernetesStorage);
         
         RuleFor(x => x.PodNamespace)
             .NotEmpty()
-            .WithMessage("Pod namespace is required for Kubernetes storage source")
             .When(x => x.Source == SnapshotSource.KubernetesStorage);
     }
 }

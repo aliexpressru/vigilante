@@ -1,10 +1,12 @@
 namespace Vigilante.Models.Responses;
 
-public class V1GetCollectionsInfoResponse
+public class V1GetCollectionsInfoPaginatedResponse
 {
     public CollectionInfo[] Collections { get; set; } = [];
     
     public string[] Issues { get; set; } = [];
+    
+    public PaginationInfo Pagination { get; set; } = new();
 
     public class CollectionInfo
     {
@@ -22,4 +24,13 @@ public class V1GetCollectionsInfoResponse
         
         public List<string> Issues { get; set; } = new();
     }
+    
+    public class PaginationInfo
+    {
+        public int CurrentPage { get; set; }
+        public int PageSize { get; set; }
+        public int TotalItems { get; set; }
+        public int TotalPages { get; set; }
+    }
 }
+

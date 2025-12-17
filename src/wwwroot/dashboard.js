@@ -1,7 +1,7 @@
 class VigilanteDashboard {
     constructor() {
         this.statusApiEndpoint = '/api/v1/cluster/status';
-        this.sizesApiEndpoint = '/api/v1/collections/info';
+        this.sizesPaginatedApiEndpoint = '/api/v1/collections/info';
         this.snapshotsApiEndpoint = '/api/v1/snapshots/info';
         this.replicateShardsEndpoint = '/api/v1/cluster/replicate-shards';
         this.deleteCollectionEndpoint = '/api/v1/collections';
@@ -12,16 +12,20 @@ class VigilanteDashboard {
         this.deletePodEndpoint = '/api/v1/kubernetes/delete-pod';
         this.manageStatefulSetEndpoint = '/api/v1/kubernetes/manage-statefulset';
         this.refreshInterval = 0;
-        this.intervalId = null;
         this.openSnapshots = new Set();
         this.selectedState = new Map();
         this.toastIdCounter = 0; // Counter for unique toast IDs
         this.clusterIssues = []; // Issues from cluster/status
         this.collectionIssues = []; // Issues from collections-info
-        this.nodeWarnings = []; // Warnings from nodes
         this.clusterNodes = []; // Store cluster nodes for StatefulSet management
+        // Pagination state
+        this.currentPage = 1;
+        this.pageSize = 10;
+        this.totalPages = 1;
+        this.collectionNameFilter = '';
         this.init();
         this.setupRefreshControls();
+        this.setupCollectionControls();
     }
 
     // Convert numeric status to string
@@ -85,7 +89,6 @@ class VigilanteDashboard {
             
             this.stopAutoRefresh();
             if (newInterval > 0) {
-                this.skipNextRefresh = true; // Skip the immediate refresh
                 this.startAutoRefresh();
             }
         });
@@ -96,9 +99,68 @@ class VigilanteDashboard {
         });
     }
 
+    setupCollectionControls() {
+        const filterInput = document.getElementById('collectionNameFilter');
+        const clearFilterBtn = document.getElementById('clearFilterBtn');
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+        const pageSizeSelect = document.getElementById('pageSizeSelect');
+
+        // Filter input with debounce
+        let filterTimeout;
+        filterInput.addEventListener('input', (e) => {
+            clearTimeout(filterTimeout);
+            filterTimeout = setTimeout(() => {
+                this.collectionNameFilter = e.target.value.trim();
+                this.currentPage = 1; // Reset to first page when filter changes
+                this.loadCollectionSizes();
+            }, 300);
+        });
+
+        // Clear filter button
+        clearFilterBtn.addEventListener('click', () => {
+            filterInput.value = '';
+            this.collectionNameFilter = '';
+            this.currentPage = 1;
+            this.loadCollectionSizes();
+        });
+
+        // Page size selector
+        pageSizeSelect.addEventListener('change', (e) => {
+            this.pageSize = parseInt(e.target.value);
+            this.currentPage = 1; // Reset to first page when page size changes
+            this.loadCollectionSizes();
+        });
+
+        // Pagination buttons
+        prevPageBtn.addEventListener('click', () => {
+            if (this.currentPage > 1) {
+                this.currentPage--;
+                this.loadCollectionSizes();
+            }
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            if (this.currentPage < this.totalPages) {
+                this.currentPage++;
+                this.loadCollectionSizes();
+            }
+        });
+    }
+
+    updatePaginationControls() {
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+        const pageInfo = document.getElementById('pageInfo');
+
+        prevPageBtn.disabled = this.currentPage <= 1;
+        nextPageBtn.disabled = this.currentPage >= this.totalPages;
+        pageInfo.textContent = `Page ${this.currentPage} of ${this.totalPages}`;
+    }
+
     refresh() {
         this.loadClusterStatus();
-        this.loadCollectionSizes();
+        this.loadCollectionSizes(true); // Clear cache on manual/auto refresh
         this.loadSnapshots();
     }
 
@@ -400,23 +462,51 @@ class VigilanteDashboard {
         }
     }
 
-    async loadCollectionSizes() {
+    async loadCollectionSizes(clearCache = false) {
         try {
-            const response = await fetch(this.sizesApiEndpoint);
+            // Build URL with pagination and filter parameters
+            const params = new URLSearchParams({
+                page: this.currentPage.toString(),
+                pageSize: this.pageSize.toString(),
+                clearCache: clearCache.toString()
+            });
+            
+            if (this.collectionNameFilter) {
+                params.append('nameFilter', this.collectionNameFilter);
+            }
+            
+            const url = `${this.sizesPaginatedApiEndpoint}?${params.toString()}`;
+            const response = await fetch(url);
             
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             
             const data = await response.json();
-            // Handle both direct array and nested collections property
-            const collections = Array.isArray(data) ? data : (data.collections || []);
+            
+            // Extract pagination info from pagination object
+            const pagination = data.pagination || {};
+            this.currentPage = pagination.currentPage || 1;
+            this.totalPages = pagination.totalPages || 1;
+            this.pageSize = pagination.pageSize || 10;
+            
+            // Extract collections
+            const collections = data.collections || [];
             
             // Extract collection issues if present
             this.collectionIssues = data.issues || [];
             
             // Update combined issues display
             this.updateCombinedIssues();
+            
+            // Update pagination controls
+            this.updatePaginationControls();
+            
+            // Update total count with actual total from pagination
+            const totalCountElement = document.getElementById('totalCollectionsCount');
+            if (totalCountElement) {
+                totalCountElement.textContent = `Collections: ${pagination.totalItems || 0}`;
+            }
             
             this.updateCollectionSizes(collections);
             
@@ -574,7 +664,7 @@ class VigilanteDashboard {
             collections = [];
         }
         
-        // Calculate total size
+        // Calculate total size for current page
         let totalSizeBytes = 0;
         collections.forEach(info => {
             if (info?.metrics?.sizeBytes) {
@@ -582,17 +672,7 @@ class VigilanteDashboard {
             }
         });
         
-        // Group collections by name to count unique collections
-        const uniqueCollections = new Set(collections.map(info => info.collectionName).filter(Boolean));
-        const collectionsCount = uniqueCollections.size;
-        
-        // Update collections count display
-        const totalCountElement = document.getElementById('totalCollectionsCount');
-        if (totalCountElement) {
-            totalCountElement.textContent = `Collections: ${collectionsCount}`;
-        }
-        
-        // Update total size display
+        // Update total size display (for current page)
         const totalSizeElement = document.getElementById('totalCollectionsSize');
         if (totalSizeElement) {
             totalSizeElement.textContent = `Total Size: ${this.formatSize(totalSizeBytes)}`;
@@ -1261,37 +1341,6 @@ class VigilanteDashboard {
         }
     }
 
-    async recoverSnapshotOnAllNodes(collection) {
-        const snapshots = collection.snapshots;
-        const toastId = this.showToast(`Recovering ${collection.collectionName} on ${snapshots.length} snapshots...`, 'info', 0);
-        
-        try {
-            const promises = snapshots.map(snapshot => 
-                fetch(this.recoverFromSnapshotEndpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        nodeUrl: snapshot.nodeUrl,
-                        collectionName: collection.collectionName,
-                        snapshotName: snapshot.snapshotName
-                    })
-                })
-            );
-
-            const results = await Promise.all(promises);
-            this.removeToast(toastId);
-
-            const successCount = results.filter(r => r.ok).length;
-            if (successCount === results.length) {
-                this.showToast(`✓ Successfully recovered ${collection.collectionName} on all ${snapshots.length} snapshots`, 'success', 5000);
-            } else {
-                this.showToast(`⚠ Recovered on ${successCount}/${snapshots.length} snapshots`, 'warning', 5000);
-            }
-        } catch (error) {
-            this.removeToast(toastId);
-            this.showToast(`✗ Error recovering snapshots: ${error.message}`, 'error', 5000);
-        }
-    }
 
     async deleteSnapshotFromNode(snapshot) {
         // Show podName if available and not 'unknown', otherwise show nodeUrl
@@ -1729,12 +1778,6 @@ class VigilanteDashboard {
             collectionSection.appendChild(collectionList);
             issuesList.appendChild(collectionSection);
         }
-    }
-
-    updateIssues(issues) {
-        // Legacy method - kept for compatibility
-        // Now handled by updateCombinedIssues
-        console.warn('updateIssues is deprecated, use updateCombinedIssues instead');
     }
 
 

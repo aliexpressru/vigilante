@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Vigilante.Models;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
 using Vigilante.Services.Interfaces;
@@ -14,51 +13,89 @@ public class CollectionsController(
     : ControllerBase
 {
     [HttpGet("info")]
-    public async Task<ActionResult<V1GetCollectionsInfoResponse>> GetCollectionsInfo(
+    [ProducesResponseType(typeof(V1GetCollectionsInfoPaginatedResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1GetCollectionsInfoPaginatedResponse>> GetCollectionsInfo(
+        [FromQuery] V1GetCollectionsInfoRequest request,
         CancellationToken cancellationToken)
     {
         try
         {
-            var result = await clusterManager.GetCollectionsInfoAsync(cancellationToken);
+            var result = await clusterManager.GetCollectionsInfoAsync(request.ClearCache, cancellationToken);
 
             // Collect all issues from collections into a general issues array
             var allIssues = new List<string>();
             
-            var collections = result
-                .Select(size =>
+            // Group by collection name first
+            var collectionGroups = result
+                .GroupBy(size => size.CollectionName)
+                .Select(group => new
                 {
-                    // Add formatted issues for collections with problems
-                    if (size.Issues.Count > 0)
+                    CollectionName = group.Key,
+                    Infos = group.Select(size =>
                     {
-                        foreach (var issue in size.Issues)
+                        // Add formatted issues for collections with problems
+                        if (size.Issues.Count > 0)
                         {
-                            allIssues.Add($"[{size.CollectionName}@{size.PodName}] {issue}");
+                            foreach (var issue in size.Issues)
+                            {
+                                allIssues.Add($"[{size.CollectionName}@{size.PodName}] {issue}");
+                            }
                         }
-                    }
-                    
-                    return new V1GetCollectionsInfoResponse.CollectionInfo
-                    {
-                        PodName = size.PodName,
-                        NodeUrl = size.NodeUrl,
-                        PeerId = size.PeerId,
-                        CollectionName = size.CollectionName,
-                        PodNamespace = size.PodNamespace,
-                        Metrics = size.Metrics,
-                        Issues = size.Issues
-                    };
+                        
+                        return new V1GetCollectionsInfoPaginatedResponse.CollectionInfo
+                        {
+                            PodName = size.PodName,
+                            NodeUrl = size.NodeUrl,
+                            PeerId = size.PeerId,
+                            CollectionName = size.CollectionName,
+                            PodNamespace = size.PodNamespace,
+                            Metrics = size.Metrics,
+                            Issues = size.Issues
+                        };
+                    }).ToList()
                 })
                 .OrderBy(x => x.CollectionName)
+                .ToList();
+
+            // Apply name filter if provided
+            if (!string.IsNullOrWhiteSpace(request.NameFilter))
+            {
+                collectionGroups = collectionGroups
+                    .Where(g => g.CollectionName.Contains(request.NameFilter, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+
+            // Calculate pagination on unique collections
+            var totalItems = collectionGroups.Count;
+            var totalPages = (int)Math.Ceiling(totalItems / (double)request.PageSize);
+            var skip = (request.Page - 1) * request.PageSize;
+
+            // Apply pagination to groups and flatten
+            var pagedCollections = collectionGroups
+                .Skip(skip)
+                .Take(request.PageSize)
+                .SelectMany(g => g.Infos)
                 .ToArray();
 
-            return Ok(new V1GetCollectionsInfoResponse
+            return Ok(new V1GetCollectionsInfoPaginatedResponse
             {
-                Collections = collections,
-                Issues = allIssues.ToArray()
+                Collections = pagedCollections,
+                Issues = allIssues.ToArray(),
+                Pagination = new V1GetCollectionsInfoPaginatedResponse.PaginationInfo
+                {
+                    CurrentPage = request.Page,
+                    PageSize = request.PageSize,
+                    TotalItems = totalItems,
+                    TotalPages = totalPages
+                }
             });
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { error = "Failed to get collection info", details = ex.Message });
+            logger.LogError(ex, "Failed to get paginated collection info");
+            return StatusCode(500, new { error = "Failed to get paginated collection info", details = ex.Message });
         }
     }
 

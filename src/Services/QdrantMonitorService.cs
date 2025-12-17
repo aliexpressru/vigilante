@@ -41,7 +41,8 @@ public class QdrantMonitorService(
 
                     if (state.Health.IsHealthy)
                     {
-                        await clusterManager.GetCollectionsInfoAsync(stoppingToken);
+                        // Clear cache on background refresh to ensure data is up-to-date
+                        await clusterManager.GetCollectionsInfoAsync(clearCache: true, stoppingToken);
                     }
 
                     if (_options.EnableAutoRecovery && !state.Health.IsHealthy)
