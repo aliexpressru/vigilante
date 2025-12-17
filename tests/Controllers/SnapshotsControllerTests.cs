@@ -33,7 +33,7 @@ public class SnapshotsControllerTests
     #region GetSnapshotsInfo Tests
 
     [Test]
-    public async Task GetSnapshotsInfo_WhenSuccessful_ReturnsOkWithSnapshots()
+    public async Task GetSnapshotsInfo_WhenSuccessful_ReturnsPaginatedSnapshots()
     {
         // Arrange
         var snapshots = new List<SnapshotInfo>
@@ -44,37 +44,178 @@ public class SnapshotsControllerTests
                 NodeUrl = "http://node1:6333",
                 PeerId = "peer1",
                 CollectionName = "collection1",
-                SnapshotName = "snapshot1.snapshot",
+                SnapshotName = "collection1-peer1-snapshot1.snapshot",
                 SizeBytes = 1024,
+                PodNamespace = "default",
+                Source = SnapshotSource.KubernetesStorage
+            },
+            new()
+            {
+                PodName = "pod2",
+                NodeUrl = "http://node2:6333",
+                PeerId = "peer2",
+                CollectionName = "collection2",
+                SnapshotName = "collection2-peer2-snapshot2.snapshot",
+                SizeBytes = 2048,
                 PodNamespace = "default",
                 Source = SnapshotSource.KubernetesStorage
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>())
             .Returns(snapshots);
 
+        var request = new V1GetSnapshotsInfoRequest
+        {
+            Page = 1,
+            PageSize = 10,
+            ClearCache = false
+        };
+
         // Act
-        var result = await _controller.GetSnapshotsInfo(CancellationToken.None);
+        var result = await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
         Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
         var okResult = (OkObjectResult)result.Result!;
-        var response = okResult.Value as V1GetSnapshotsInfoResponse;
+        var response = okResult.Value as V1GetSnapshotsInfoPaginatedResponse;
         Assert.That(response, Is.Not.Null);
-        Assert.That(response!.Snapshots, Has.Length.EqualTo(1));
-        Assert.That(response.Snapshots[0].SnapshotName, Is.EqualTo("snapshot1.snapshot"));
+        Assert.That(response!.GroupedSnapshots, Has.Length.EqualTo(2));
+        Assert.That(response.Pagination.TotalItems, Is.EqualTo(2));
+        Assert.That(response.Pagination.CurrentPage, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task GetSnapshotsInfo_WithFilter_ReturnsFilteredSnapshots()
+    {
+        // Arrange
+        var snapshots = new List<SnapshotInfo>
+        {
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "test_collection",
+                SnapshotName = "test_collection-peer1-snapshot.snapshot",
+                SizeBytes = 1024,
+                PodNamespace = "default",
+                Source = SnapshotSource.KubernetesStorage
+            },
+            new()
+            {
+                PodName = "pod2",
+                NodeUrl = "http://node2:6333",
+                PeerId = "peer2",
+                CollectionName = "other_collection",
+                SnapshotName = "other_collection-peer2-snapshot.snapshot",
+                SizeBytes = 2048,
+                PodNamespace = "default",
+                Source = SnapshotSource.KubernetesStorage
+            }
+        };
+
+        _snapshotService.GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>())
+            .Returns(snapshots);
+
+        var request = new V1GetSnapshotsInfoRequest
+        {
+            Page = 1,
+            PageSize = 10,
+            NameFilter = "test",
+            ClearCache = false
+        };
+
+        // Act
+        var result = await _controller.GetSnapshotsInfo(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        var okResult = (OkObjectResult)result.Result!;
+        var response = okResult.Value as V1GetSnapshotsInfoPaginatedResponse;
+        Assert.That(response, Is.Not.Null);
+        Assert.That(response!.GroupedSnapshots, Has.Length.EqualTo(1));
+        Assert.That(response.GroupedSnapshots[0].CollectionName, Is.EqualTo("test_collection"));
+    }
+
+    [Test]
+    public async Task GetSnapshotsInfo_WithPagination_ReturnsCorrectPage()
+    {
+        // Arrange
+        var snapshots = Enumerable.Range(1, 15).Select(i => new SnapshotInfo
+        {
+            PodName = $"pod{i}",
+            NodeUrl = $"http://node{i}:6333",
+            PeerId = $"peer{i}",
+            CollectionName = $"collection{i}",
+            SnapshotName = $"collection{i}-peer{i}-snapshot.snapshot",
+            SizeBytes = 1024 * i,
+            PodNamespace = "default",
+            Source = SnapshotSource.KubernetesStorage
+        }).ToList();
+
+        _snapshotService.GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>())
+            .Returns(snapshots);
+
+        var request = new V1GetSnapshotsInfoRequest
+        {
+            Page = 2,
+            PageSize = 5,
+            ClearCache = false
+        };
+
+        // Act
+        var result = await _controller.GetSnapshotsInfo(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        var okResult = (OkObjectResult)result.Result!;
+        var response = okResult.Value as V1GetSnapshotsInfoPaginatedResponse;
+        Assert.That(response, Is.Not.Null);
+        Assert.That(response!.GroupedSnapshots, Has.Length.EqualTo(5));
+        Assert.That(response.Pagination.CurrentPage, Is.EqualTo(2));
+        Assert.That(response.Pagination.PageSize, Is.EqualTo(5));
+        Assert.That(response.Pagination.TotalPages, Is.EqualTo(3));
+        Assert.That(response.Pagination.TotalItems, Is.EqualTo(15));
+    }
+
+    [Test]
+    public async Task GetSnapshotsInfo_WithClearCache_PassesTrueToService()
+    {
+        // Arrange
+        var snapshots = new List<SnapshotInfo>();
+        _snapshotService.GetSnapshotsInfoAsync(true, Arg.Any<CancellationToken>())
+            .Returns(snapshots);
+
+        var request = new V1GetSnapshotsInfoRequest
+        {
+            Page = 1,
+            PageSize = 10,
+            ClearCache = true
+        };
+
+        // Act
+        await _controller.GetSnapshotsInfo(request, CancellationToken.None);
+
+        // Assert
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(true, Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task GetSnapshotsInfo_WhenExceptionThrown_Returns500()
     {
         // Arrange
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<IReadOnlyList<SnapshotInfo>>(new Exception("Test error")));
 
+        var request = new V1GetSnapshotsInfoRequest
+        {
+            Page = 1,
+            PageSize = 10
+        };
+
         // Act
-        var result = await _controller.GetSnapshotsInfo(CancellationToken.None);
+        var result = await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
         Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
@@ -479,59 +620,112 @@ public class SnapshotsControllerTests
             Arg.Any<CancellationToken>());
     }
 
+    #endregion
+
+    #region Cache Reset Tests
+
     [Test]
-    public async Task RecoverFromSnapshot_WithS3Storage_PresignedUrlFails_Returns500()
+    public async Task GetSnapshotsInfo_WithClearCacheTrue_CallsGetSnapshotsInfoWithTrue()
     {
         // Arrange
-        var request = new V1RecoverFromSnapshotRequest
+        var snapshots = new List<SnapshotInfo>
         {
-            CollectionName = "test_collection",
-            SnapshotName = "snapshot.snapshot",
-            Source = "S3Storage",
-            TargetNodeUrl = "http://node1:6333"
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "collection1",
+                SnapshotName = "collection1-peer1-snapshot1.snapshot",
+                SizeBytes = 1024,
+                PodNamespace = "default",
+                Source = SnapshotSource.KubernetesStorage
+            }
         };
 
-        _s3SnapshotService.GetPresignedDownloadUrlAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<TimeSpan>(),
-            Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
-            .Returns((string?)null);  // Presigned URL generation failed
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(snapshots);
+
+        var request = new V1GetSnapshotsInfoRequest
+        {
+            ClearCache = true,
+            PageSize = 10
+        };
 
         // Act
-        var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
+        await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
-        var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
-        var response = objectResult.Value as V1RecoverFromSnapshotResponse;
-        Assert.That(response!.Success, Is.False);
-        Assert.That(response.Message, Does.Contain("Failed to generate S3 download URL"));
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(true, Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task RecoverFromSnapshot_WithInvalidSource_ReturnsBadRequest()
+    public async Task GetSnapshotsInfo_WithClearCacheFalse_CallsGetSnapshotsInfoWithFalse()
     {
         // Arrange
-        var request = new V1RecoverFromSnapshotRequest
+        var snapshots = new List<SnapshotInfo>
         {
-            CollectionName = "test_collection",
-            SnapshotName = "snapshot.snapshot",
-            Source = "InvalidSource",
-            TargetNodeUrl = "http://node1:6333"
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "collection1",
+                SnapshotName = "collection1-peer1-snapshot1.snapshot",
+                SizeBytes = 1024,
+                PodNamespace = "default",
+                Source = SnapshotSource.KubernetesStorage
+            }
+        };
+
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(snapshots);
+
+        var request = new V1GetSnapshotsInfoRequest
+        {
+            ClearCache = false,
+            PageSize = 10
         };
 
         // Act
-        var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
+        await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<BadRequestObjectResult>());
-        var badRequestResult = (BadRequestObjectResult)result.Result!;
-        var response = badRequestResult.Value as V1RecoverFromSnapshotResponse;
-        Assert.That(response!.Success, Is.False);
-        Assert.That(response.Message, Does.Contain("Invalid Source value"));
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GetSnapshotsInfo_DefaultClearCache_CallsGetSnapshotsInfoWithFalse()
+    {
+        // Arrange
+        var snapshots = new List<SnapshotInfo>
+        {
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "collection1",
+                SnapshotName = "collection1-peer1-snapshot1.snapshot",
+                SizeBytes = 1024,
+                PodNamespace = "default",
+                Source = SnapshotSource.KubernetesStorage
+            }
+        };
+
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(snapshots);
+
+        var request = new V1GetSnapshotsInfoRequest
+        {
+            PageSize = 10
+        };
+
+        // Act
+        await _controller.GetSnapshotsInfo(request, CancellationToken.None);
+
+        // Assert
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>());
     }
 
     #endregion

@@ -21,6 +21,86 @@ public class SnapshotService(
     ILogger<SnapshotService> logger) : ISnapshotService
 {
     private readonly QdrantOptions _options = options.Value;
+    private IReadOnlyList<SnapshotInfo>? _snapshotsCache;
+    private readonly SemaphoreSlim _cacheLock = new(1, 1);
+
+    /// <summary>
+    /// Clears the snapshots cache
+    /// </summary>
+    public void ClearCache()
+    {
+        _cacheLock.Wait();
+        try
+        {
+            _snapshotsCache = null;
+            logger.LogInformation("Snapshots cache cleared");
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Gets snapshots from cache or fetches them if cache is empty
+    /// </summary>
+    private async Task<IReadOnlyList<SnapshotInfo>> GetOrFetchSnapshotsAsync(
+        bool forceRefresh,
+        CancellationToken cancellationToken)
+    {
+        await _cacheLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (forceRefresh || _snapshotsCache == null)
+            {
+                logger.LogInformation("Fetching snapshots (ForceRefresh: {ForceRefresh}, CacheEmpty: {CacheEmpty})",
+                    forceRefresh, _snapshotsCache == null);
+                var snapshots = await GetSnapshotsInfoAsync(forceRefresh, cancellationToken);
+                _snapshotsCache = snapshots;
+            }
+
+            return _snapshotsCache;
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Gets paginated and filtered snapshots information
+    /// </summary>
+    public async Task<(IReadOnlyList<SnapshotInfo> Snapshots, int TotalCount)> GetSnapshotsInfoPaginatedAsync(
+        int page,
+        int pageSize,
+        string? filter,
+        bool forceRefresh,
+        CancellationToken cancellationToken = default)
+    {
+        var allSnapshots = await GetOrFetchSnapshotsAsync(forceRefresh, cancellationToken);
+
+        // Apply filter
+        var filteredSnapshots = string.IsNullOrWhiteSpace(filter)
+            ? allSnapshots
+            : allSnapshots.Where(s => s.CollectionName.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .ToList()
+                .AsReadOnly();
+
+        var totalCount = filteredSnapshots.Count;
+
+        // Apply pagination
+        var paginatedSnapshots = filteredSnapshots
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList()
+            .AsReadOnly();
+
+        logger.LogInformation(
+            "Returning page {Page} of snapshots (PageSize: {PageSize}, Filter: '{Filter}', TotalCount: {TotalCount}, PageCount: {PageCount})",
+            page, pageSize, filter ?? "(none)", totalCount, paginatedSnapshots.Count);
+
+        return (paginatedSnapshots, totalCount);
+    }
 
     public async Task<Dictionary<string, string?>> CreateCollectionSnapshotOnAllNodesAsync(
         string collectionName,
@@ -255,46 +335,107 @@ public class SnapshotService(
     }
 
     public async Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(
+        bool clearCache = false,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("Starting GetSnapshotsInfoAsync");
+        logger.LogInformation("Starting GetSnapshotsInfoAsync (ClearCache: {ClearCache})", clearCache);
 
-        var nodes = await BuildNodeInfoListAsync(cancellationToken);
-        logger.LogInformation("Found {NodesCount} nodes to process", nodes.Count);
-        
-        var result = new List<SnapshotInfo>();
-        
-        // Priority 1: Try to get snapshots from S3 (if configured)
-        var isS3Available = await s3SnapshotService.IsAvailableAsync(
-            nodes.FirstOrDefault()?.Namespace, 
-            cancellationToken);
-            
-        if (isS3Available)
+        await _cacheLock.WaitAsync(cancellationToken);
+        try
         {
-            logger.LogInformation("S3 storage is available, fetching snapshots from S3");
-            await GetSnapshotsFromS3Async(nodes, result, cancellationToken);
-        }
-        
-        // Priority 2: If S3 not available or no snapshots found, try Kubernetes storage (if we have pod names)
-        if (result.Count == 0)
-        {
-            bool hasPodsWithNames = nodes.Any(n => !string.IsNullOrEmpty(n.PodName));
-            if (hasPodsWithNames)
+            // Clear cache if requested
+            if (clearCache)
             {
-                logger.LogInformation("Fetching snapshots from Kubernetes storage");
-                await GetSnapshotsFromKubernetesStorageAsync(nodes, result, cancellationToken);
+                logger.LogInformation("Clearing snapshots cache");
+                _snapshotsCache = null;
             }
-        }
-        
-        // Priority 3: If still no snapshots, try Qdrant API
-        if (result.Count == 0)
-        {
-            logger.LogInformation("Fetching snapshots from Qdrant API");
-            await GetSnapshotsFromQdrantApiAsync(nodes, result, cancellationToken);
-        }
 
-        logger.LogInformation("GetSnapshotsInfoAsync completed. Total snapshots: {Count}", result.Count);
-        return result;
+            // Return cached data if available
+            if (_snapshotsCache != null)
+            {
+                logger.LogInformation("Returning {Count} snapshots from cache", _snapshotsCache.Count);
+                return _snapshotsCache;
+            }
+
+            // Fetch fresh data
+            var nodes = await BuildNodeInfoListAsync(cancellationToken);
+            logger.LogInformation("Found {NodesCount} nodes to process", nodes.Count);
+            
+            var result = new List<SnapshotInfo>();
+            bool hasErrors = false;
+            
+            // Priority 1: Try to get snapshots from S3 (if configured)
+            var isS3Available = await s3SnapshotService.IsAvailableAsync(
+                nodes.FirstOrDefault()?.Namespace, 
+                cancellationToken);
+                
+            if (isS3Available)
+            {
+                logger.LogInformation("S3 storage is available, fetching snapshots from S3");
+                try
+                {
+                    await GetSnapshotsFromS3Async(nodes, result, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error fetching snapshots from S3");
+                    hasErrors = true;
+                }
+            }
+            
+            // Priority 2: If S3 not available or no snapshots found, try Kubernetes storage (if we have pod names)
+            if (result.Count == 0 && !hasErrors)
+            {
+                bool hasPodsWithNames = nodes.Any(n => !string.IsNullOrEmpty(n.PodName));
+                if (hasPodsWithNames)
+                {
+                    logger.LogInformation("Fetching snapshots from Kubernetes storage");
+                    try
+                    {
+                        await GetSnapshotsFromKubernetesStorageAsync(nodes, result, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Error fetching snapshots from Kubernetes storage");
+                        hasErrors = true;
+                    }
+                }
+            }
+            
+            // Priority 3: If still no snapshots, try Qdrant API
+            if (result.Count == 0 && !hasErrors)
+            {
+                logger.LogInformation("Fetching snapshots from Qdrant API");
+                try
+                {
+                    await GetSnapshotsFromQdrantApiAsync(nodes, result, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error fetching snapshots from Qdrant API");
+                    hasErrors = true;
+                }
+            }
+
+            // Cache the result only if we successfully fetched data (even if empty but without errors)
+            // If there were errors, don't cache so next request will try again
+            if (!hasErrors)
+            {
+                _snapshotsCache = result;
+                logger.LogInformation("Cached {Count} snapshots", result.Count);
+            }
+            else
+            {
+                logger.LogWarning("Not caching snapshots due to errors during fetch");
+            }
+
+            logger.LogInformation("GetSnapshotsInfoAsync completed. Total snapshots: {Count}", result.Count);
+            return result;
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
     }
 
     private async Task<List<NodeInfo>> BuildNodeInfoListAsync(CancellationToken cancellationToken)
@@ -415,43 +556,36 @@ public class SnapshotService(
     {
         logger.LogInformation("Fetching snapshots from S3 storage");
 
-        try
+        var firstNode = nodes.FirstOrDefault();
+        if (firstNode == null)
         {
-            var firstNode = nodes.FirstOrDefault();
-            if (firstNode == null)
-            {
-                logger.LogWarning("No nodes available to get namespace");
-                return;
-            }
-
-            // Get ALL snapshots from S3, not just for current collections
-            // This way we show snapshots even for deleted/old collections
-            var allSnapshots = await s3SnapshotService.ListAllSnapshotsAsync(
-                firstNode.Namespace,
-                cancellationToken);
-
-            logger.LogInformation("Found {Count} snapshots in S3 storage", allSnapshots.Count);
-
-            foreach (var (collectionName, snapshotName, sizeBytes) in allSnapshots)
-            {
-                var snapshotInfo = new SnapshotInfo
-                {
-                    PodName = "S3",
-                    NodeUrl = "S3",
-                    PeerId = "S3",
-                    CollectionName = collectionName,
-                    SnapshotName = snapshotName,
-                    SizeBytes = sizeBytes,
-                    PodNamespace = firstNode.Namespace ?? "qdrant",
-                    Source = SnapshotSource.S3Storage
-                };
-
-                result.Add(snapshotInfo);
-            }
+            logger.LogWarning("No nodes available to get namespace");
+            return;
         }
-        catch (Exception ex)
+
+        // Get ALL snapshots from S3, not just for current collections
+        // This way we show snapshots even for deleted/old collections
+        var allSnapshots = await s3SnapshotService.ListAllSnapshotsAsync(
+            firstNode.Namespace,
+            cancellationToken);
+
+        logger.LogInformation("Found {Count} snapshots in S3 storage", allSnapshots.Count);
+
+        foreach (var (collectionName, snapshotName, sizeBytes) in allSnapshots)
         {
-            logger.LogError(ex, "Failed to fetch snapshots from S3");
+            var snapshotInfo = new SnapshotInfo
+            {
+                PodName = "S3",
+                NodeUrl = "S3",
+                PeerId = "S3",
+                CollectionName = collectionName,
+                SnapshotName = snapshotName,
+                SizeBytes = sizeBytes,
+                PodNamespace = firstNode.Namespace ?? "qdrant",
+                Source = SnapshotSource.S3Storage
+            };
+
+            result.Add(snapshotInfo);
         }
     }
 
@@ -463,13 +597,28 @@ public class SnapshotService(
         logger.LogInformation("No snapshots found in Kubernetes storage, trying to get them from Qdrant API");
         
         var uniqueSnapshots = new HashSet<string>();
+        var errors = new List<Exception>();
         
         foreach (var node in nodes)
         {
-            await ProcessNodeSnapshotsFromQdrantApiAsync(node, result, uniqueSnapshots, cancellationToken);
+            try
+            {
+                await ProcessNodeSnapshotsFromQdrantApiAsync(node, result, uniqueSnapshots, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to process node {NodeUrl} from Qdrant API", node.Url);
+                errors.Add(ex);
+            }
         }
         
         logger.LogInformation("Finished processing Qdrant API. Total snapshots collected: {Count}", result.Count);
+        
+        // If all nodes failed, throw to prevent caching empty result
+        if (errors.Count == nodes.Count && nodes.Count > 0)
+        {
+            throw new AggregateException("Failed to get snapshots from all nodes via Qdrant API", errors);
+        }
     }
 
     private async Task ProcessNodeSnapshotsFromQdrantApiAsync(
@@ -478,36 +627,29 @@ public class SnapshotService(
         HashSet<string> uniqueSnapshots, 
         CancellationToken cancellationToken)
     {
-        try
+        logger.LogInformation("Fetching snapshots from Qdrant API for node {NodeUrl}", node.Url);
+        
+        var qdrantClient = clientFactory.CreateClientFromUrl(node.Url, _options.ApiKey);
+        var collectionsResponse = await qdrantClient.ListCollections(cancellationToken);
+        
+        if (!collectionsResponse.Status.IsSuccess || collectionsResponse.Result?.Collections == null)
         {
-            logger.LogInformation("Fetching snapshots from Qdrant API for node {NodeUrl}", node.Url);
-            
-            var qdrantClient = clientFactory.CreateClientFromUrl(node.Url, _options.ApiKey);
-            var collectionsResponse = await qdrantClient.ListCollections(cancellationToken);
-            
-            if (!collectionsResponse.Status.IsSuccess || collectionsResponse.Result?.Collections == null)
-            {
-                logger.LogWarning("Failed to get collections from node {NodeUrl}: {Error}", 
-                    node.Url, collectionsResponse.Status?.Error ?? "Unknown error");
-                return;
-            }
-            
-            logger.LogInformation("Found {CollectionCount} collections on node {NodeUrl}", 
-                collectionsResponse.Result.Collections.Length, node.Url);
-            
-            foreach (var collection in collectionsResponse.Result.Collections)
-            {
-                await ProcessCollectionSnapshotsFromApiAsync(
-                    node, 
-                    collection.Name, 
-                    result, 
-                    uniqueSnapshots, 
-                    cancellationToken);
-            }
+            logger.LogWarning("Failed to get collections from node {NodeUrl}: {Error}", 
+                node.Url, collectionsResponse.Status?.Error ?? "Unknown error");
+            return;
         }
-        catch (Exception ex)
+        
+        logger.LogInformation("Found {CollectionCount} collections on node {NodeUrl}", 
+            collectionsResponse.Result.Collections.Length, node.Url);
+        
+        foreach (var collection in collectionsResponse.Result.Collections)
         {
-            logger.LogError(ex, "Failed to get snapshots from Qdrant API for node {NodeUrl}", node.Url);
+            await ProcessCollectionSnapshotsFromApiAsync(
+                node, 
+                collection.Name, 
+                result, 
+                uniqueSnapshots, 
+                cancellationToken);
         }
     }
 

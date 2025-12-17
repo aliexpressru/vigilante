@@ -2368,6 +2368,21 @@ body {
     margin-bottom: 1rem;
 }
 
+.snapshots-stats {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.snapshots-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
 .snapshots-table {
     width: 100%;
     border-collapse: collapse;

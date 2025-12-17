@@ -48,8 +48,34 @@ public interface ISnapshotService
 
     /// <summary>
     /// Gets information about all snapshots in the cluster (from both Kubernetes storage and Qdrant API)
+    /// Supports caching to improve performance
     /// </summary>
+    /// <param name="clearCache">Whether to clear the cache and fetch fresh data</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of all snapshots with their information</returns>
     Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(
+        bool clearCache = false,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets paginated and filtered snapshots information
+    /// </summary>
+    /// <param name="page">Page number (1-based)</param>
+    /// <param name="pageSize">Number of items per page</param>
+    /// <param name="filter">Filter by collection name (case-insensitive partial match)</param>
+    /// <param name="forceRefresh">Whether to force refresh the cache</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Tuple of paginated snapshots and total count</returns>
+    Task<(IReadOnlyList<SnapshotInfo> Snapshots, int TotalCount)> GetSnapshotsInfoPaginatedAsync(
+        int page,
+        int pageSize,
+        string? filter,
+        bool forceRefresh,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Clears the snapshots cache
+    /// </summary>
+    void ClearCache();
 }
 

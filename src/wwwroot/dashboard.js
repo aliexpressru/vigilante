@@ -18,14 +18,20 @@ class VigilanteDashboard {
         this.clusterIssues = []; // Issues from cluster/status
         this.collectionIssues = []; // Issues from collections-info
         this.clusterNodes = []; // Store cluster nodes for StatefulSet management
-        // Pagination state
+        // Pagination state for collections
         this.currentPage = 1;
         this.pageSize = 10;
         this.totalPages = 1;
         this.collectionNameFilter = '';
+        // Pagination state for snapshots
+        this.snapshotCurrentPage = 1;
+        this.snapshotPageSize = 10;
+        this.snapshotTotalPages = 1;
+        this.snapshotNameFilter = '';
         this.init();
         this.setupRefreshControls();
         this.setupCollectionControls();
+        this.setupSnapshotControls();
     }
 
     // Convert numeric status to string
@@ -148,6 +154,55 @@ class VigilanteDashboard {
         });
     }
 
+    setupSnapshotControls() {
+        const filterInput = document.getElementById('snapshotNameFilter');
+        const clearFilterBtn = document.getElementById('clearSnapshotFilterBtn');
+        const prevPageBtn = document.getElementById('prevSnapshotPageBtn');
+        const nextPageBtn = document.getElementById('nextSnapshotPageBtn');
+        const pageSizeSelect = document.getElementById('snapshotPageSizeSelect');
+
+        // Filter input with debounce
+        let filterTimeout;
+        filterInput.addEventListener('input', (e) => {
+            clearTimeout(filterTimeout);
+            filterTimeout = setTimeout(() => {
+                this.snapshotNameFilter = e.target.value.trim();
+                this.snapshotCurrentPage = 1; // Reset to first page when filter changes
+                this.loadSnapshots();
+            }, 300);
+        });
+
+        // Clear filter button
+        clearFilterBtn.addEventListener('click', () => {
+            filterInput.value = '';
+            this.snapshotNameFilter = '';
+            this.snapshotCurrentPage = 1;
+            this.loadSnapshots();
+        });
+
+        // Page size selector
+        pageSizeSelect.addEventListener('change', (e) => {
+            this.snapshotPageSize = parseInt(e.target.value);
+            this.snapshotCurrentPage = 1; // Reset to first page when page size changes
+            this.loadSnapshots();
+        });
+
+        // Pagination buttons
+        prevPageBtn.addEventListener('click', () => {
+            if (this.snapshotCurrentPage > 1) {
+                this.snapshotCurrentPage--;
+                this.loadSnapshots();
+            }
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            if (this.snapshotCurrentPage < this.snapshotTotalPages) {
+                this.snapshotCurrentPage++;
+                this.loadSnapshots();
+            }
+        });
+    }
+
     updatePaginationControls() {
         const prevPageBtn = document.getElementById('prevPageBtn');
         const nextPageBtn = document.getElementById('nextPageBtn');
@@ -158,10 +213,20 @@ class VigilanteDashboard {
         pageInfo.textContent = `Page ${this.currentPage} of ${this.totalPages}`;
     }
 
+    updateSnapshotPaginationControls() {
+        const prevPageBtn = document.getElementById('prevSnapshotPageBtn');
+        const nextPageBtn = document.getElementById('nextSnapshotPageBtn');
+        const pageInfo = document.getElementById('snapshotPageInfo');
+
+        prevPageBtn.disabled = this.snapshotCurrentPage <= 1;
+        nextPageBtn.disabled = this.snapshotCurrentPage >= this.snapshotTotalPages;
+        pageInfo.textContent = `Page ${this.snapshotCurrentPage} of ${this.snapshotTotalPages}`;
+    }
+
     refresh() {
         this.loadClusterStatus();
         this.loadCollectionSizes(true); // Clear cache on manual/auto refresh
-        this.loadSnapshots();
+        this.loadSnapshots(true); // Clear cache on manual/auto refresh
     }
 
     setupRecoveryModal() {
@@ -1073,16 +1138,37 @@ class VigilanteDashboard {
         container.appendChild(table);
     }
 
-    async loadSnapshots() {
+    async loadSnapshots(clearCache = false) {
         try {
-            const response = await fetch(this.snapshotsApiEndpoint);
+            const params = new URLSearchParams({
+                page: this.snapshotCurrentPage.toString(),
+                pageSize: this.snapshotPageSize.toString(),
+                clearCache: clearCache.toString()
+            });
+
+            if (this.snapshotNameFilter) {
+                params.append('nameFilter', this.snapshotNameFilter);
+            }
+
+            const response = await fetch(`${this.snapshotsApiEndpoint}?${params}`);
             
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             
             const data = await response.json();
-            // Use groupedSnapshots from backend if available, otherwise fall back to old format
+            
+            // Update pagination state
+            if (data.pagination) {
+                this.snapshotTotalPages = data.pagination.totalPages;
+                this.updateSnapshotPaginationControls();
+                
+                // Update total counts
+                const totalCount = data.pagination.totalItems;
+                document.getElementById('totalSnapshotsCount').textContent = `Collections: ${totalCount}`;
+            }
+            
+            // Use groupedSnapshots from backend
             const groupedSnapshots = data.groupedSnapshots || [];
             this.updateSnapshotsTable(groupedSnapshots);
             
@@ -1095,7 +1181,7 @@ class VigilanteDashboard {
         if (!groupedSnapshots || groupedSnapshots.length === 0) {
             const container = document.getElementById('snapshotsTable');
             container.innerHTML = '<p style="color: #999; padding: 20px; text-align: center;">No snapshots found</p>';
-            document.getElementById('totalSnapshotsSize').textContent = 'Total: 0 B';
+            document.getElementById('totalSnapshotsSize').textContent = 'Total Size: 0 B';
             return;
         }
 
@@ -1103,53 +1189,52 @@ class VigilanteDashboard {
         const totalSize = groupedSnapshots.reduce((sum, group) => sum + group.totalSize, 0);
 
         // Update total size display
-        document.getElementById('totalSnapshotsSize').textContent = `Total: ${this.formatSize(totalSize)}`;
+        document.getElementById('totalSnapshotsSize').textContent = `Total Size: ${this.formatSize(totalSize)}`;
 
         // Create table
         const table = document.createElement('table');
+        table.className = 'collections-table'; // Use same class as collections for consistent styling
         const tbody = document.createElement('tbody');
 
         groupedSnapshots.forEach(collection => {
             // Main collection row
             const row = document.createElement('tr');
-            row.className = 'snapshot-row';
+            row.className = 'collection-row'; // Use same class as collections
             
             const key = collection.collectionName;
             const isOpen = this.openSnapshots.has(key);
 
-            const td = document.createElement('td');
-            td.colSpan = 1;
+            const nameCell = document.createElement('td');
+            nameCell.className = 'collection-name'; // Use same class as collections
+            nameCell.colSpan = 1;
             
-            const container = document.createElement('div');
-            container.className = 'snapshot-header-container';
+            const headerContainer = document.createElement('div');
+            headerContainer.className = 'collection-header-container';
+            headerContainer.style.display = 'flex';
+            headerContainer.style.justifyContent = 'space-between';
+            headerContainer.style.alignItems = 'center';
             
-            const headerLine = document.createElement('div');
-            headerLine.className = 'snapshot-header-line';
-            headerLine.style.display = 'flex';
-            headerLine.style.justifyContent = 'space-between';
-            headerLine.style.alignItems = 'center';
-            
-            const nameSection = document.createElement('div');
-            nameSection.innerHTML = `
-                <i class="fas fa-camera" style="color: #7b1fa2; margin-right: 8px;"></i>
-                <strong>${collection.collectionName}</strong>
-            `;
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'collection-name-line';
+            nameDiv.innerHTML = `<i class="fas fa-camera" style="color: #7b1fa2; margin-right: 8px;"></i>${collection.collectionName}`;
+            nameDiv.title = collection.collectionName;
             
             const sizeSpan = document.createElement('span');
-            sizeSpan.className = 'snapshot-size';
+            sizeSpan.className = 'collection-size';
             sizeSpan.textContent = this.formatSize(collection.totalSize);
             
-            headerLine.appendChild(nameSection);
-            headerLine.appendChild(sizeSpan);
-            container.appendChild(headerLine);
-            td.appendChild(container);
-            row.appendChild(td);
+            headerContainer.appendChild(nameDiv);
+            headerContainer.appendChild(sizeSpan);
+            nameCell.appendChild(headerContainer);
+            row.appendChild(nameCell);
 
             // Details row for nodes
             const detailsRow = document.createElement('tr');
-            detailsRow.className = `snapshot-details ${isOpen ? 'visible' : ''}`;
-            const detailsTd = document.createElement('td');
-            detailsTd.colSpan = 1;
+            detailsRow.className = `collection-details ${isOpen ? 'visible' : ''}`;
+            const detailsCell = document.createElement('td');
+            detailsCell.colSpan = 1;
+            const detailsContent = document.createElement('div');
+            detailsContent.className = 'collection-details-content';
             
             const nodesTable = document.createElement('table');
             nodesTable.className = 'nodes-table';
@@ -1263,8 +1348,9 @@ class VigilanteDashboard {
             deleteAllRow.appendChild(deleteAllCell);
             nodesTable.appendChild(deleteAllRow);
 
-            detailsTd.appendChild(nodesTable);
-            detailsRow.appendChild(detailsTd);
+            detailsContent.appendChild(nodesTable);
+            detailsCell.appendChild(detailsContent);
+            detailsRow.appendChild(detailsCell);
 
             // Toggle details on click
             row.addEventListener('click', () => {
