@@ -367,17 +367,17 @@ class VigilanteDashboard {
 
         // Validation
         if (!targetNodeUrl) {
-            this.showToast('Please select a target node', 'error', null, 3000);
+            this.showToast('Please select a target node', 'error', null, 15000);
             return;
         }
 
         if (!collectionName) {
-            this.showToast('Please enter a collection name', 'error', null, 3000);
+            this.showToast('Please enter a collection name', 'error', null, 15000);
             return;
         }
 
         if (!this.recoveryContext) {
-            this.showToast('Recovery context lost', 'error', null, 3000);
+            this.showToast('Recovery context lost', 'error', null, 15000);
             return;
         }
 
@@ -409,7 +409,12 @@ class VigilanteDashboard {
     }
 
     // Toast notification methods
-    showToast(message, type = 'info', title = null, duration = 5000, isLoading = false) {
+    showToast(message, type = 'info', title = null, duration = null, isLoading = false) {
+        // Set default duration based on type if not specified
+        if (duration === null) {
+            duration = type === 'error' ? 15000 : 5000;
+        }
+        
         const container = document.getElementById('toast-container');
         if (!container) return null;
 
@@ -508,9 +513,15 @@ class VigilanteDashboard {
     }
 
     async loadClusterStatus() {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
         try {
             this.showRefreshAnimation();
-            const response = await fetch(this.statusApiEndpoint);
+            const response = await fetch(this.statusApiEndpoint, {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
             
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -520,14 +531,26 @@ class VigilanteDashboard {
             this.updateUI(data);
             
         } catch (error) {
+            clearTimeout(timeoutId);
             console.error('Error fetching cluster status:', error);
-            this.showError(error.message);
+            
+            // Add error to cluster issues instead of showing separate error message
+            let errorMessage;
+            if (error.name === 'AbortError') {
+                errorMessage = 'Request timed out after 30 seconds. Please check your connection to the cluster.';
+            } else {
+                errorMessage = this.getErrorMessage(error);
+            }
+            this.addClusterError(errorMessage);
         } finally {
             this.hideRefreshAnimation();
         }
     }
 
     async loadCollectionSizes(clearCache = false) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
         try {
             // Build URL with pagination and filter parameters
             const params = new URLSearchParams({
@@ -541,7 +564,10 @@ class VigilanteDashboard {
             }
             
             const url = `${this.sizesPaginatedApiEndpoint}?${params.toString()}`;
-            const response = await fetch(url);
+            const response = await fetch(url, {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
             
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -576,7 +602,21 @@ class VigilanteDashboard {
             this.updateCollectionSizes(collections);
             
         } catch (error) {
+            clearTimeout(timeoutId);
             console.error('Error fetching collection sizes:', error);
+            
+            // Add error message to collection issues
+            let errorMessage;
+            if (error.name === 'AbortError') {
+                errorMessage = 'Collections request timed out after 30 seconds. Please check your connection.';
+            } else {
+                errorMessage = `Error loading collections: ${this.getErrorMessage(error)}`;
+            }
+            
+            if (!this.collectionIssues.includes(errorMessage)) {
+                this.collectionIssues.push(errorMessage);
+                this.updateCombinedIssues();
+            }
         }
     }
 
@@ -1139,6 +1179,9 @@ class VigilanteDashboard {
     }
 
     async loadSnapshots(clearCache = false) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
         try {
             const params = new URLSearchParams({
                 page: this.snapshotCurrentPage.toString(),
@@ -1150,7 +1193,10 @@ class VigilanteDashboard {
                 params.append('nameFilter', this.snapshotNameFilter);
             }
 
-            const response = await fetch(`${this.snapshotsApiEndpoint}?${params}`);
+            const response = await fetch(`${this.snapshotsApiEndpoint}?${params}`, {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
             
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -1173,7 +1219,17 @@ class VigilanteDashboard {
             this.updateSnapshotsTable(groupedSnapshots);
             
         } catch (error) {
+            clearTimeout(timeoutId);
             console.error('Error fetching snapshots:', error);
+            
+            // Show error as toast notification
+            let errorMessage;
+            if (error.name === 'AbortError') {
+                errorMessage = 'Snapshots request timed out after 30 seconds. Please check your connection.';
+            } else {
+                errorMessage = this.getErrorMessage(error);
+            }
+            this.showToast(`Error loading snapshots: ${errorMessage}`, 'error', 'Snapshot Load Error', 15000);
         }
     }
 
@@ -1418,12 +1474,13 @@ class VigilanteDashboard {
                     errorMessage += `\n\n${errorDetails}`;
                     console.error('Validation errors:', result.errors);
                 }
-                this.showToast(`✗ ${errorMessage}`, 'error', null, 8000);
+                this.showToast(`✗ ${errorMessage}`, 'error', null, 15000);
             }
         } catch (error) {
             console.error('Recovery error:', error);
             this.removeToast(toastId);
-            this.showToast(`✗ Error recovering snapshot: ${error.message}`, 'error', null, 5000);
+            const errorMessage = this.getErrorMessage(error);
+            this.showToast(`✗ Error recovering snapshot: ${errorMessage}`, 'error', null, 15000);
         }
     }
 
@@ -1495,12 +1552,12 @@ class VigilanteDashboard {
                 this.showToast(`✓ ${result.message}`, 'success', null, 5000);
                 this.loadSnapshots(); // Reload to update UI
             } else {
-                this.showToast(`✗ ${result.message || 'Deletion failed'}`, 'error', null, 5000);
+                this.showToast(`✗ ${result.message || 'Deletion failed'}`, 'error', null, 15000);
             }
         } catch (error) {
             console.error('Delete snapshot error:', error);
             this.removeToast(toastId);
-            this.showToast(`✗ Error deleting snapshot: ${error.message}`, 'error', null, 5000);
+            this.showToast(`✗ Error deleting snapshot: ${error.message}`, 'error', null, 15000);
         }
     }
 
@@ -1555,7 +1612,7 @@ class VigilanteDashboard {
             }
         } catch (error) {
             this.removeToast(toastId);
-            this.showToast(`✗ Error deleting snapshots: ${error.message}`, 'error', null, 5000);
+            this.showToast(`✗ Error deleting snapshots: ${error.message}`, 'error', null, 15000);
         }
     }
 
@@ -1656,7 +1713,7 @@ class VigilanteDashboard {
 
             if (!collectionNameInput || !snapshotUrlInput) {
                 console.error('Form elements not found in DOM!');
-                this.showToast('Form error - please try again', 'error', null, 5000);
+                this.showToast('Form error - please try again', 'error', null, 15000);
                 isSubmitting = false;
                 submitButton.disabled = false;
                 return;
@@ -1688,7 +1745,7 @@ class VigilanteDashboard {
                     `Please fill in: ${missingFields.join(', ')}`, 
                     'error', 
                     'Missing Required Fields',
-                    5000
+                    15000
                 );
                 isSubmitting = false;
                 submitButton.disabled = false;
@@ -1762,12 +1819,12 @@ class VigilanteDashboard {
                 // Reload data to reflect changes
                 setTimeout(() => this.refresh(), 2000);
             } else {
-                this.showToast(`✗ ${result.message || 'Recovery failed'}`, 'error', null, 8000);
+                this.showToast(`✗ ${result.message || 'Recovery failed'}`, 'error', null, 15000);
             }
         } catch (error) {
             console.error('Recover from URL error:', error);
             this.removeToast(toastId);
-            this.showToast(`✗ Error recovering collection: ${error.message}`, 'error', 8000);
+            this.showToast(`✗ Error recovering collection: ${error.message}`, 'error', 15000);
         }
     }
 
@@ -2005,6 +2062,12 @@ class VigilanteDashboard {
         const urlDetail = this.createNodeDetail('URL', node.url);
         details.appendChild(urlDetail);
 
+        // Version (if available)
+        if (node.version) {
+            const versionDetail = this.createNodeDetail('Version', node.version);
+            details.appendChild(versionDetail);
+        }
+
         // Namespace (if available)
         if (node.namespace) {
             const namespaceDetail = this.createNodeDetail('Namespace', node.namespace);
@@ -2174,7 +2237,7 @@ class VigilanteDashboard {
             }
         } catch (error) {
             this.removeToast(toastId);
-            this.showToast(`Error deleting collection: ${error.message}`, 'error', 'Deletion failed', 5000);
+            this.showToast(`Error deleting collection: ${error.message}`, 'error', 'Deletion failed', 15000);
         }
     }
 
@@ -2199,32 +2262,56 @@ class VigilanteDashboard {
         this.updateToast(toastId, message, type, title);
     }
 
-    showError(message) {
-        // Remove any existing error messages
-        const existingError = document.querySelector('.error-message');
-        if (existingError) {
-            existingError.remove();
+    // Helper to detect and format timeout errors
+    getErrorMessage(error) {
+        // Check for timeout/network errors
+        if (error.name === 'AbortError') {
+            return 'Request timeout - server took too long to respond';
         }
+        
+        // Check for common network error patterns
+        if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
+            // Check if it might be a timeout (browser doesn't always expose this)
+            return 'Network error or request timeout - unable to connect to server';
+        }
+        
+        if (error.message.includes('timeout')) {
+            return 'Request timeout - server took too long to respond';
+        }
+        
+        // For HTTP errors, provide more detail
+        if (error.message.includes('HTTP error')) {
+            return error.message;
+        }
+        
+        // Generic error message
+        return error.message || 'Unknown error occurred';
+    }
 
-        // Create new error message
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'error-message';
-        errorDiv.innerHTML = `
-            <strong>Error loading cluster status:</strong> ${message}
-            <br>
-            <small>Retrying in ${this.refreshInterval / 1000} seconds...</small>
-        `;
-
-        // Insert after header
-        const header = document.querySelector('.header');
-        header.insertAdjacentElement('afterend', errorDiv);
-
-        // Auto-remove after 4 seconds
-        setTimeout(() => {
-            if (errorDiv.parentNode) {
-                errorDiv.remove();
-            }
-        }, 4000);
+    addClusterError(message) {
+        // Create error message with retry info if auto-refresh is enabled
+        let errorMessage = `Error loading cluster status: ${message}`;
+        if (this.refreshInterval > 0) {
+            errorMessage += ` (Retrying in ${this.refreshInterval / 1000} seconds)`;
+        }
+        
+        // Add to cluster issues if not already present
+        if (!this.clusterIssues.includes(errorMessage)) {
+            this.clusterIssues.push(errorMessage);
+            this.updateCombinedIssues();
+        }
+        
+        // Auto-remove after 10 seconds if auto-refresh is enabled
+        // (it will be re-added if the error persists on next refresh)
+        if (this.refreshInterval > 0) {
+            setTimeout(() => {
+                const index = this.clusterIssues.indexOf(errorMessage);
+                if (index > -1) {
+                    this.clusterIssues.splice(index, 1);
+                    this.updateCombinedIssues();
+                }
+            }, 10000);
+        }
     }
 
     // Snapshot management methods
@@ -2550,11 +2637,11 @@ class VigilanteDashboard {
                 // Refresh after a short delay to allow pod to be deleted
                 setTimeout(() => this.refresh(), 2000);
             } else {
-                this.showToast(result.error || result.details || 'Failed to delete pod', 'error', 'Deletion Failed', 5000);
+                this.showToast(result.error || result.details || 'Failed to delete pod', 'error', 'Deletion Failed', 15000);
             }
         } catch (error) {
             this.removeToast(toastId);
-            this.showToast(`Error deleting pod: ${error.message}`, 'error', 'Error', 5000);
+            this.showToast(`Error deleting pod: ${error.message}`, 'error', 'Error', 15000);
         }
     }
 
@@ -2711,11 +2798,11 @@ class VigilanteDashboard {
                 // Refresh after a delay to allow operation to take effect
                 setTimeout(() => this.refresh(), 3000);
             } else {
-                this.showToast(result.error || result.details || 'Failed to manage StatefulSet', 'error', 'Operation Failed', 5000);
+                this.showToast(result.error || result.details || 'Failed to manage StatefulSet', 'error', 'Operation Failed', 15000);
             }
         } catch (error) {
             this.removeToast(toastId);
-            this.showToast(`Error managing StatefulSet: ${error.message}`, 'error', 'Error', 5000);
+            this.showToast(`Error managing StatefulSet: ${error.message}`, 'error', 'Error', 15000);
         }
     }
 }

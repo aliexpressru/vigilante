@@ -282,6 +282,7 @@ public class ClusterManager(
         nodeInfo.IsLeader = clusterInfoResult.RaftInfo?.Leader != null &&
                             clusterInfoResult.RaftInfo.Leader.ToString() == clusterInfoResult.PeerId.ToString();
 
+        await FetchQdrantVersionAsync(nodeInfo, client, linkedToken);
         CheckConsensusErrors(nodeInfo, clusterInfoResult);
         CheckMessageSendFailures(nodeInfo, clusterInfoResult);
         CollectPeerInformation(nodeInfo, clusterInfoResult);
@@ -291,6 +292,27 @@ public class ClusterManager(
         if (nodeInfo.Issues.Count > 0)
         {
             nodeInfo.ShortError = GetShortErrorMessage(nodeInfo.ErrorType);
+        }
+    }
+
+    private async Task FetchQdrantVersionAsync(NodeInfo nodeInfo, IQdrantHttpClient client, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var instanceDetails = await client.GetInstanceDetails(cancellationToken);
+            if (instanceDetails != null)
+            {
+                nodeInfo.Version = instanceDetails.Version;
+                logger.LogDebug("Node {NodeUrl} is running Qdrant version {Version}", nodeInfo.Url, nodeInfo.Version);
+            }
+            else
+            {
+                logger.LogWarning("Failed to get version for node {NodeUrl}: response was null", nodeInfo.Url);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to fetch version for node {NodeUrl}", nodeInfo.Url);
         }
     }
 
