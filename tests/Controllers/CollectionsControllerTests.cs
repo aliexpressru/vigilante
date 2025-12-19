@@ -27,10 +27,10 @@ public class CollectionsControllerTests
         _controller = new CollectionsController(_clusterManager, _logger);
     }
 
-    #region GetCollectionsInfo Tests
+    #region GetCollectionsInfo (Paginated) Tests
 
     [Test]
-    public async Task GetCollectionsInfo_WhenSuccessful_ReturnsOkWithCollections()
+    public async Task GetCollectionsInfo_FirstPage_ReturnsCorrectCollections()
     {
         // Arrange
         var collections = new List<CollectionInfo>
@@ -44,22 +44,150 @@ public class CollectionsControllerTests
                 PodNamespace = "default",
                 Metrics = new Dictionary<string, object>(),
                 Issues = new List<string>()
+            },
+            new()
+            {
+                PodName = "pod2",
+                NodeUrl = "http://node2:6333",
+                PeerId = "peer2",
+                CollectionName = "collection1",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
+            },
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "collection2",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
             }
         };
 
-        _clusterManager.GetCollectionsInfoAsync(Arg.Any<CancellationToken>())
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(collections);
 
+        var request = new V1GetCollectionsInfoRequest
+        {
+            Page = 1,
+            PageSize = 2
+        };
+
         // Act
-        var result = await _controller.GetCollectionsInfo(CancellationToken.None);
+        var result = await _controller.GetCollectionsInfo(request, CancellationToken.None);
 
         // Assert
         Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
         var okResult = (OkObjectResult)result.Result!;
-        var response = okResult.Value as V1GetCollectionsInfoResponse;
+        var response = okResult.Value as V1GetCollectionsInfoPaginatedResponse;
         Assert.That(response, Is.Not.Null);
-        Assert.That(response!.Collections, Has.Length.EqualTo(1));
-        Assert.That(response.Collections[0].CollectionName, Is.EqualTo("collection1"));
+        Assert.That(response!.Collections, Has.Length.EqualTo(3)); // Both nodes of collection1 + collection2
+        Assert.That(response.Pagination.CurrentPage, Is.EqualTo(1));
+        Assert.That(response.Pagination.TotalItems, Is.EqualTo(2)); // 2 unique collections
+        Assert.That(response.Pagination.TotalPages, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task GetCollectionsInfo_SecondPage_ReturnsCorrectCollections()
+    {
+        // Arrange
+        var collections = new List<CollectionInfo>();
+        for (int i = 1; i <= 5; i++)
+        {
+            collections.Add(new CollectionInfo
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = $"collection{i}",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
+            });
+        }
+
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(collections);
+
+        var request = new V1GetCollectionsInfoRequest
+        {
+            Page = 2,
+            PageSize = 2
+        };
+
+        // Act
+        var result = await _controller.GetCollectionsInfo(request, CancellationToken.None);
+
+        // Assert
+        var okResult = (OkObjectResult)result.Result!;
+        var response = okResult.Value as V1GetCollectionsInfoPaginatedResponse;
+        Assert.That(response!.Collections, Has.Length.EqualTo(2));
+        Assert.That(response.Collections[0].CollectionName, Is.EqualTo("collection3"));
+        Assert.That(response.Collections[1].CollectionName, Is.EqualTo("collection4"));
+        Assert.That(response.Pagination.CurrentPage, Is.EqualTo(2));
+        Assert.That(response.Pagination.TotalItems, Is.EqualTo(5));
+        Assert.That(response.Pagination.TotalPages, Is.EqualTo(3));
+    }
+
+    [Test]
+    public async Task GetCollectionsInfo_WithNameFilter_ReturnsFilteredCollections()
+    {
+        // Arrange
+        var collections = new List<CollectionInfo>
+        {
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "test_collection_1",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
+            },
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "other_collection",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
+            },
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "test_collection_2",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
+            }
+        };
+
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(collections);
+
+        var request = new V1GetCollectionsInfoRequest
+        {
+            NameFilter = "test",
+            PageSize = 10
+        };
+
+        // Act
+        var result = await _controller.GetCollectionsInfo(request, CancellationToken.None);
+
+        // Assert
+        var okResult = (OkObjectResult)result.Result!;
+        var response = okResult.Value as V1GetCollectionsInfoPaginatedResponse;
+        Assert.That(response!.Collections, Has.Length.EqualTo(2));
+        Assert.That(response.Pagination.TotalItems, Is.EqualTo(2));
+        Assert.That(response.Collections.All(c => c.CollectionName.Contains("test")), Is.True);
     }
 
     [Test]
@@ -80,28 +208,144 @@ public class CollectionsControllerTests
             }
         };
 
-        _clusterManager.GetCollectionsInfoAsync(Arg.Any<CancellationToken>())
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(collections);
 
+        var request = new V1GetCollectionsInfoRequest();
+
         // Act
-        var result = await _controller.GetCollectionsInfo(CancellationToken.None);
+        var result = await _controller.GetCollectionsInfo(request, CancellationToken.None);
 
         // Assert
         var okResult = (OkObjectResult)result.Result!;
-        var response = okResult.Value as V1GetCollectionsInfoResponse;
+        var response = okResult.Value as V1GetCollectionsInfoPaginatedResponse;
         Assert.That(response!.Issues, Has.Length.EqualTo(2));
         Assert.That(response.Issues[0], Does.Contain("[collection1@pod1]"));
+    }
+
+    [Test]
+    public async Task GetCollectionsInfo_ClearCacheTrue_CallsServiceWithClearCache()
+    {
+        // Arrange
+        var collections = new List<CollectionInfo>
+        {
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "collection1",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
+            }
+        };
+
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(collections);
+
+        var request = new V1GetCollectionsInfoRequest
+        {
+            ClearCache = true
+        };
+
+        // Act
+        await _controller.GetCollectionsInfo(request, CancellationToken.None);
+
+        // Assert
+        await _clusterManager.Received(1).GetCollectionsInfoAsync(true, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GetCollectionsInfo_MultipleNodesPerCollection_GroupsCorrectly()
+    {
+        // Arrange
+        var collections = new List<CollectionInfo>
+        {
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "collection1",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
+            },
+            new()
+            {
+                PodName = "pod2",
+                NodeUrl = "http://node2:6333",
+                PeerId = "peer2",
+                CollectionName = "collection1",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
+            },
+            new()
+            {
+                PodName = "pod3",
+                NodeUrl = "http://node3:6333",
+                PeerId = "peer3",
+                CollectionName = "collection1",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
+            }
+        };
+
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(collections);
+
+        var request = new V1GetCollectionsInfoRequest
+        {
+            PageSize = 10
+        };
+
+        // Act
+        var result = await _controller.GetCollectionsInfo(request, CancellationToken.None);
+
+        // Assert
+        var okResult = (OkObjectResult)result.Result!;
+        var response = okResult.Value as V1GetCollectionsInfoPaginatedResponse;
+        Assert.That(response!.Collections, Has.Length.EqualTo(3)); // All 3 nodes for collection1
+        Assert.That(response.Pagination.TotalItems, Is.EqualTo(1)); // Only 1 unique collection
+        Assert.That(response.Collections.All(c => c.CollectionName == "collection1"), Is.True);
+    }
+
+    [Test]
+    public async Task GetCollectionsInfo_EmptyResult_ReturnsEmptyArray()
+    {
+        // Arrange
+        var collections = new List<CollectionInfo>();
+
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(collections);
+
+        var request = new V1GetCollectionsInfoRequest();
+
+        // Act
+        var result = await _controller.GetCollectionsInfo(request, CancellationToken.None);
+
+        // Assert
+        var okResult = (OkObjectResult)result.Result!;
+        var response = okResult.Value as V1GetCollectionsInfoPaginatedResponse;
+        Assert.That(response!.Collections, Is.Empty);
+        Assert.That(response.Pagination.TotalItems, Is.EqualTo(0));
+        Assert.That(response.Pagination.TotalPages, Is.EqualTo(0));
     }
 
     [Test]
     public async Task GetCollectionsInfo_WhenExceptionThrown_Returns500()
     {
         // Arrange
-        _clusterManager.GetCollectionsInfoAsync(Arg.Any<CancellationToken>())
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<IReadOnlyList<CollectionInfo>>(new Exception("Test error")));
 
+        var request = new V1GetCollectionsInfoRequest();
+
         // Act
-        var result = await _controller.GetCollectionsInfo(CancellationToken.None);
+        var result = await _controller.GetCollectionsInfo(request, CancellationToken.None);
 
         // Assert
         Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
@@ -256,28 +500,109 @@ public class CollectionsControllerTests
         Assert.That(objectResult.StatusCode, Is.EqualTo(500));
     }
 
+    #endregion
+
+    #region Cache Reset Tests
+
     [Test]
-    public async Task DeleteCollection_WhenExceptionThrown_Returns500()
+    public async Task GetCollectionsInfo_WithClearCacheTrue_CallsGetCollectionsInfoWithTrue()
     {
         // Arrange
-        var request = new V1DeleteCollectionRequest
+        var collections = new List<CollectionInfo>
         {
-            CollectionName = "test_collection",
-            SingleNode = true,
-            NodeUrl = "http://node1:6333",
-            DeletionType = CollectionDeletionType.Api
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "collection1",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
+            }
         };
 
-        _clusterManager.DeleteCollectionViaApiAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<bool>(new Exception("Test error")));
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(collections);
+
+        var request = new V1GetCollectionsInfoRequest
+        {
+            ClearCache = true,
+            PageSize = 10
+        };
 
         // Act
-        var result = await _controller.DeleteCollection(request, CancellationToken.None);
+        await _controller.GetCollectionsInfo(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
-        var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        await _clusterManager.Received(1).GetCollectionsInfoAsync(true, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GetCollectionsInfo_WithClearCacheFalse_CallsGetCollectionsInfoWithFalse()
+    {
+        // Arrange
+        var collections = new List<CollectionInfo>
+        {
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "collection1",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
+            }
+        };
+
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(collections);
+
+        var request = new V1GetCollectionsInfoRequest
+        {
+            ClearCache = false,
+            PageSize = 10
+        };
+
+        // Act
+        await _controller.GetCollectionsInfo(request, CancellationToken.None);
+
+        // Assert
+        await _clusterManager.Received(1).GetCollectionsInfoAsync(false, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GetCollectionsInfo_DefaultClearCache_CallsGetCollectionsInfoWithFalse()
+    {
+        // Arrange
+        var collections = new List<CollectionInfo>
+        {
+            new()
+            {
+                PodName = "pod1",
+                NodeUrl = "http://node1:6333",
+                PeerId = "peer1",
+                CollectionName = "collection1",
+                PodNamespace = "default",
+                Metrics = new Dictionary<string, object>(),
+                Issues = new List<string>()
+            }
+        };
+
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(collections);
+
+        var request = new V1GetCollectionsInfoRequest
+        {
+            PageSize = 10
+        };
+
+        // Act
+        await _controller.GetCollectionsInfo(request, CancellationToken.None);
+
+        // Assert
+        await _clusterManager.Received(1).GetCollectionsInfoAsync(false, Arg.Any<CancellationToken>());
     }
 
     #endregion

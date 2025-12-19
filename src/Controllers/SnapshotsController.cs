@@ -17,15 +17,19 @@ public class SnapshotsController(
     : ControllerBase
 {
     [HttpGet("info")]
-    public async Task<ActionResult<V1GetSnapshotsInfoResponse>> GetSnapshotsInfo(
+    [ProducesResponseType(typeof(V1GetSnapshotsInfoPaginatedResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1GetSnapshotsInfoPaginatedResponse>> GetSnapshotsInfo(
+        [FromQuery] V1GetSnapshotsInfoRequest request,
         CancellationToken cancellationToken)
     {
         try
         {
-            var result = await snapshotService.GetSnapshotsInfoAsync(cancellationToken);
+            var result = await snapshotService.GetSnapshotsInfoAsync(request.ClearCache, cancellationToken);
 
             var snapshotDtos = result
-                .Select(snapshot => new V1GetSnapshotsInfoResponse.SnapshotInfoDto
+                .Select(snapshot => new V1GetSnapshotsInfoPaginatedResponse.SnapshotInfoDto
                 {
                     PodName = snapshot.PodName,
                     NodeUrl = snapshot.NodeUrl,
@@ -39,12 +43,12 @@ public class SnapshotsController(
                 })
                 .OrderBy(x => x.CollectionName)
                 .ThenBy(x => x.SnapshotName)
-                .ToArray();
+                .ToList();
 
             // Group snapshots by collection name
-            var groupedSnapshots = snapshotDtos
+            var collectionGroups = snapshotDtos
                 .GroupBy(s => s.CollectionName)
-                .Select(g => new V1GetSnapshotsInfoResponse.SnapshotCollectionGroup
+                .Select(g => new V1GetSnapshotsInfoPaginatedResponse.SnapshotCollectionGroup
                 {
                     CollectionName = g.Key,
                     TotalSize = g.Sum(s => s.SizeBytes),
@@ -52,17 +56,43 @@ public class SnapshotsController(
                     Snapshots = g.ToArray()
                 })
                 .OrderBy(g => g.CollectionName)
+                .ToList();
+
+            // Apply name filter if provided
+            if (!string.IsNullOrWhiteSpace(request.NameFilter))
+            {
+                collectionGroups = collectionGroups
+                    .Where(g => g.CollectionName.Contains(request.NameFilter, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+
+            // Calculate pagination on unique collection groups
+            var totalItems = collectionGroups.Count;
+            var totalPages = (int)Math.Ceiling(totalItems / (double)request.PageSize);
+            var skip = (request.Page - 1) * request.PageSize;
+
+            // Apply pagination to groups
+            var pagedGroups = collectionGroups
+                .Skip(skip)
+                .Take(request.PageSize)
                 .ToArray();
 
-            return Ok(new V1GetSnapshotsInfoResponse
+            return Ok(new V1GetSnapshotsInfoPaginatedResponse
             {
-                Snapshots = snapshotDtos,
-                GroupedSnapshots = groupedSnapshots
+                GroupedSnapshots = pagedGroups,
+                Pagination = new V1GetSnapshotsInfoPaginatedResponse.PaginationInfo
+                {
+                    CurrentPage = request.Page,
+                    PageSize = request.PageSize,
+                    TotalItems = totalItems,
+                    TotalPages = totalPages
+                }
             });
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { error = "Failed to get snapshots info", details = ex.Message });
+            logger.LogError(ex, "Failed to get paginated snapshots info");
+            return StatusCode(500, new { error = "Failed to get paginated snapshots info", details = ex.Message });
         }
     }
 

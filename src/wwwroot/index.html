@@ -92,6 +92,31 @@
                         <div class="total-size" id="totalCollectionsSize">Total Size: 0 B</div>
                     </div>
                 </div>
+                <div class="collections-controls">
+                    <div class="filter-controls">
+                        <input type="text" id="collectionNameFilter" class="filter-input" placeholder="Filter by collection name...">
+                        <button id="clearFilterBtn" class="clear-filter-btn" title="Clear filter">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="pagination-controls">
+                        <button id="prevPageBtn" class="pagination-btn" disabled>
+                            <i class="fas fa-chevron-left"></i> Previous
+                        </button>
+                        <span class="page-info" id="pageInfo">Page 1</span>
+                        <button id="nextPageBtn" class="pagination-btn" disabled>
+                            Next <i class="fas fa-chevron-right"></i>
+                        </button>
+                        <div class="page-size-selector">
+                            <label for="pageSizeSelect">Items per page:</label>
+                            <select id="pageSizeSelect" class="page-size-select">
+                                <option value="5">5</option>
+                                <option value="10" selected>10</option>
+                                <option value="15">15</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
                 <div class="collections-table" id="collectionsTable">
                     <!-- Will be populated by JavaScript -->
                 </div>
@@ -101,7 +126,35 @@
             <div class="snapshots-overview">
                 <div class="snapshots-header">
                     <h3><i class="fas fa-camera"></i> Snapshots Overview</h3>
-                    <div class="total-size" id="totalSnapshotsSize"></div>
+                    <div class="snapshots-stats">
+                        <div class="total-count" id="totalSnapshotsCount">Collections: 0</div>
+                        <div class="total-size" id="totalSnapshotsSize">Total Size: 0 B</div>
+                    </div>
+                </div>
+                <div class="snapshots-controls">
+                    <div class="filter-controls">
+                        <input type="text" id="snapshotNameFilter" class="filter-input" placeholder="Filter by collection name...">
+                        <button id="clearSnapshotFilterBtn" class="clear-filter-btn" title="Clear filter">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="pagination-controls">
+                        <button id="prevSnapshotPageBtn" class="pagination-btn" disabled>
+                            <i class="fas fa-chevron-left"></i> Previous
+                        </button>
+                        <span class="page-info" id="snapshotPageInfo">Page 1</span>
+                        <button id="nextSnapshotPageBtn" class="pagination-btn" disabled>
+                            Next <i class="fas fa-chevron-right"></i>
+                        </button>
+                        <div class="page-size-selector">
+                            <label for="snapshotPageSizeSelect">Items per page:</label>
+                            <select id="snapshotPageSizeSelect" class="page-size-select">
+                                <option value="5">5</option>
+                                <option value="10" selected>10</option>
+                                <option value="15">15</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
                 <div class="snapshots-table" id="snapshotsTable">
                     <!-- Will be populated by JavaScript -->

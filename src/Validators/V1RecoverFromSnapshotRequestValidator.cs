@@ -8,24 +8,18 @@ public class V1RecoverFromSnapshotRequestValidator : AbstractValidator<V1Recover
     public V1RecoverFromSnapshotRequestValidator()
     {
         RuleFor(x => x.CollectionName)
-            .NotEmpty()
-            .WithMessage("Collection name is required");
+            .NotEmpty();
         
         RuleFor(x => x.SnapshotName)
-            .NotEmpty()
-            .WithMessage("Snapshot name is required");
+            .NotEmpty();
         
         RuleFor(x => x.TargetNodeUrl)
             .NotEmpty()
-            .WithMessage("Target node URL is required")
-            .Must(BeAValidUrl)
-            .WithMessage("Target node URL must be a valid URL");
+            .Must(BeAValidUrl);
         
         RuleFor(x => x.Source)
             .NotEmpty()
-            .WithMessage("Source is required")
-            .Must(BeAValidSource)
-            .WithMessage("Source must be 'KubernetesStorage', 'QdrantApi', or 'S3Storage'");
+            .Must(BeAValidSource);
     }
     
     private bool BeAValidUrl(string url)

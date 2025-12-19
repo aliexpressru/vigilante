@@ -1,7 +1,7 @@
 class VigilanteDashboard {
     constructor() {
         this.statusApiEndpoint = '/api/v1/cluster/status';
-        this.sizesApiEndpoint = '/api/v1/collections/info';
+        this.sizesPaginatedApiEndpoint = '/api/v1/collections/info';
         this.snapshotsApiEndpoint = '/api/v1/snapshots/info';
         this.replicateShardsEndpoint = '/api/v1/cluster/replicate-shards';
         this.deleteCollectionEndpoint = '/api/v1/collections';
@@ -12,16 +12,26 @@ class VigilanteDashboard {
         this.deletePodEndpoint = '/api/v1/kubernetes/delete-pod';
         this.manageStatefulSetEndpoint = '/api/v1/kubernetes/manage-statefulset';
         this.refreshInterval = 0;
-        this.intervalId = null;
         this.openSnapshots = new Set();
         this.selectedState = new Map();
         this.toastIdCounter = 0; // Counter for unique toast IDs
         this.clusterIssues = []; // Issues from cluster/status
         this.collectionIssues = []; // Issues from collections-info
-        this.nodeWarnings = []; // Warnings from nodes
         this.clusterNodes = []; // Store cluster nodes for StatefulSet management
+        // Pagination state for collections
+        this.currentPage = 1;
+        this.pageSize = 10;
+        this.totalPages = 1;
+        this.collectionNameFilter = '';
+        // Pagination state for snapshots
+        this.snapshotCurrentPage = 1;
+        this.snapshotPageSize = 10;
+        this.snapshotTotalPages = 1;
+        this.snapshotNameFilter = '';
         this.init();
         this.setupRefreshControls();
+        this.setupCollectionControls();
+        this.setupSnapshotControls();
     }
 
     // Convert numeric status to string
@@ -85,7 +95,6 @@ class VigilanteDashboard {
             
             this.stopAutoRefresh();
             if (newInterval > 0) {
-                this.skipNextRefresh = true; // Skip the immediate refresh
                 this.startAutoRefresh();
             }
         });
@@ -96,10 +105,128 @@ class VigilanteDashboard {
         });
     }
 
+    setupCollectionControls() {
+        const filterInput = document.getElementById('collectionNameFilter');
+        const clearFilterBtn = document.getElementById('clearFilterBtn');
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+        const pageSizeSelect = document.getElementById('pageSizeSelect');
+
+        // Filter input with debounce
+        let filterTimeout;
+        filterInput.addEventListener('input', (e) => {
+            clearTimeout(filterTimeout);
+            filterTimeout = setTimeout(() => {
+                this.collectionNameFilter = e.target.value.trim();
+                this.currentPage = 1; // Reset to first page when filter changes
+                this.loadCollectionSizes();
+            }, 300);
+        });
+
+        // Clear filter button
+        clearFilterBtn.addEventListener('click', () => {
+            filterInput.value = '';
+            this.collectionNameFilter = '';
+            this.currentPage = 1;
+            this.loadCollectionSizes();
+        });
+
+        // Page size selector
+        pageSizeSelect.addEventListener('change', (e) => {
+            this.pageSize = parseInt(e.target.value);
+            this.currentPage = 1; // Reset to first page when page size changes
+            this.loadCollectionSizes();
+        });
+
+        // Pagination buttons
+        prevPageBtn.addEventListener('click', () => {
+            if (this.currentPage > 1) {
+                this.currentPage--;
+                this.loadCollectionSizes();
+            }
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            if (this.currentPage < this.totalPages) {
+                this.currentPage++;
+                this.loadCollectionSizes();
+            }
+        });
+    }
+
+    setupSnapshotControls() {
+        const filterInput = document.getElementById('snapshotNameFilter');
+        const clearFilterBtn = document.getElementById('clearSnapshotFilterBtn');
+        const prevPageBtn = document.getElementById('prevSnapshotPageBtn');
+        const nextPageBtn = document.getElementById('nextSnapshotPageBtn');
+        const pageSizeSelect = document.getElementById('snapshotPageSizeSelect');
+
+        // Filter input with debounce
+        let filterTimeout;
+        filterInput.addEventListener('input', (e) => {
+            clearTimeout(filterTimeout);
+            filterTimeout = setTimeout(() => {
+                this.snapshotNameFilter = e.target.value.trim();
+                this.snapshotCurrentPage = 1; // Reset to first page when filter changes
+                this.loadSnapshots();
+            }, 300);
+        });
+
+        // Clear filter button
+        clearFilterBtn.addEventListener('click', () => {
+            filterInput.value = '';
+            this.snapshotNameFilter = '';
+            this.snapshotCurrentPage = 1;
+            this.loadSnapshots();
+        });
+
+        // Page size selector
+        pageSizeSelect.addEventListener('change', (e) => {
+            this.snapshotPageSize = parseInt(e.target.value);
+            this.snapshotCurrentPage = 1; // Reset to first page when page size changes
+            this.loadSnapshots();
+        });
+
+        // Pagination buttons
+        prevPageBtn.addEventListener('click', () => {
+            if (this.snapshotCurrentPage > 1) {
+                this.snapshotCurrentPage--;
+                this.loadSnapshots();
+            }
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            if (this.snapshotCurrentPage < this.snapshotTotalPages) {
+                this.snapshotCurrentPage++;
+                this.loadSnapshots();
+            }
+        });
+    }
+
+    updatePaginationControls() {
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+        const pageInfo = document.getElementById('pageInfo');
+
+        prevPageBtn.disabled = this.currentPage <= 1;
+        nextPageBtn.disabled = this.currentPage >= this.totalPages;
+        pageInfo.textContent = `Page ${this.currentPage} of ${this.totalPages}`;
+    }
+
+    updateSnapshotPaginationControls() {
+        const prevPageBtn = document.getElementById('prevSnapshotPageBtn');
+        const nextPageBtn = document.getElementById('nextSnapshotPageBtn');
+        const pageInfo = document.getElementById('snapshotPageInfo');
+
+        prevPageBtn.disabled = this.snapshotCurrentPage <= 1;
+        nextPageBtn.disabled = this.snapshotCurrentPage >= this.snapshotTotalPages;
+        pageInfo.textContent = `Page ${this.snapshotCurrentPage} of ${this.snapshotTotalPages}`;
+    }
+
     refresh() {
         this.loadClusterStatus();
-        this.loadCollectionSizes();
-        this.loadSnapshots();
+        this.loadCollectionSizes(true); // Clear cache on manual/auto refresh
+        this.loadSnapshots(true); // Clear cache on manual/auto refresh
     }
 
     setupRecoveryModal() {
@@ -240,17 +367,17 @@ class VigilanteDashboard {
 
         // Validation
         if (!targetNodeUrl) {
-            this.showToast('Please select a target node', 'error', null, 3000);
+            this.showToast('Please select a target node', 'error', null, 15000);
             return;
         }
 
         if (!collectionName) {
-            this.showToast('Please enter a collection name', 'error', null, 3000);
+            this.showToast('Please enter a collection name', 'error', null, 15000);
             return;
         }
 
         if (!this.recoveryContext) {
-            this.showToast('Recovery context lost', 'error', null, 3000);
+            this.showToast('Recovery context lost', 'error', null, 15000);
             return;
         }
 
@@ -282,7 +409,12 @@ class VigilanteDashboard {
     }
 
     // Toast notification methods
-    showToast(message, type = 'info', title = null, duration = 5000, isLoading = false) {
+    showToast(message, type = 'info', title = null, duration = null, isLoading = false) {
+        // Set default duration based on type if not specified
+        if (duration === null) {
+            duration = type === 'error' ? 15000 : 5000;
+        }
+        
         const container = document.getElementById('toast-container');
         if (!container) return null;
 
@@ -381,9 +513,15 @@ class VigilanteDashboard {
     }
 
     async loadClusterStatus() {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
         try {
             this.showRefreshAnimation();
-            const response = await fetch(this.statusApiEndpoint);
+            const response = await fetch(this.statusApiEndpoint, {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
             
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -393,24 +531,58 @@ class VigilanteDashboard {
             this.updateUI(data);
             
         } catch (error) {
+            clearTimeout(timeoutId);
             console.error('Error fetching cluster status:', error);
-            this.showError(error.message);
+            
+            // Add error to cluster issues instead of showing separate error message
+            let errorMessage;
+            if (error.name === 'AbortError') {
+                errorMessage = 'Request timed out after 30 seconds. Please check your connection to the cluster.';
+            } else {
+                errorMessage = this.getErrorMessage(error);
+            }
+            this.addClusterError(errorMessage);
         } finally {
             this.hideRefreshAnimation();
         }
     }
 
-    async loadCollectionSizes() {
+    async loadCollectionSizes(clearCache = false) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
         try {
-            const response = await fetch(this.sizesApiEndpoint);
+            // Build URL with pagination and filter parameters
+            const params = new URLSearchParams({
+                page: this.currentPage.toString(),
+                pageSize: this.pageSize.toString(),
+                clearCache: clearCache.toString()
+            });
+            
+            if (this.collectionNameFilter) {
+                params.append('nameFilter', this.collectionNameFilter);
+            }
+            
+            const url = `${this.sizesPaginatedApiEndpoint}?${params.toString()}`;
+            const response = await fetch(url, {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
             
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             
             const data = await response.json();
-            // Handle both direct array and nested collections property
-            const collections = Array.isArray(data) ? data : (data.collections || []);
+            
+            // Extract pagination info from pagination object
+            const pagination = data.pagination || {};
+            this.currentPage = pagination.currentPage || 1;
+            this.totalPages = pagination.totalPages || 1;
+            this.pageSize = pagination.pageSize || 10;
+            
+            // Extract collections
+            const collections = data.collections || [];
             
             // Extract collection issues if present
             this.collectionIssues = data.issues || [];
@@ -418,10 +590,33 @@ class VigilanteDashboard {
             // Update combined issues display
             this.updateCombinedIssues();
             
+            // Update pagination controls
+            this.updatePaginationControls();
+            
+            // Update total count with actual total from pagination
+            const totalCountElement = document.getElementById('totalCollectionsCount');
+            if (totalCountElement) {
+                totalCountElement.textContent = `Collections: ${pagination.totalItems || 0}`;
+            }
+            
             this.updateCollectionSizes(collections);
             
         } catch (error) {
+            clearTimeout(timeoutId);
             console.error('Error fetching collection sizes:', error);
+            
+            // Add error message to collection issues
+            let errorMessage;
+            if (error.name === 'AbortError') {
+                errorMessage = 'Collections request timed out after 30 seconds. Please check your connection.';
+            } else {
+                errorMessage = `Error loading collections: ${this.getErrorMessage(error)}`;
+            }
+            
+            if (!this.collectionIssues.includes(errorMessage)) {
+                this.collectionIssues.push(errorMessage);
+                this.updateCombinedIssues();
+            }
         }
     }
 
@@ -574,7 +769,7 @@ class VigilanteDashboard {
             collections = [];
         }
         
-        // Calculate total size
+        // Calculate total size for current page
         let totalSizeBytes = 0;
         collections.forEach(info => {
             if (info?.metrics?.sizeBytes) {
@@ -582,17 +777,7 @@ class VigilanteDashboard {
             }
         });
         
-        // Group collections by name to count unique collections
-        const uniqueCollections = new Set(collections.map(info => info.collectionName).filter(Boolean));
-        const collectionsCount = uniqueCollections.size;
-        
-        // Update collections count display
-        const totalCountElement = document.getElementById('totalCollectionsCount');
-        if (totalCountElement) {
-            totalCountElement.textContent = `Collections: ${collectionsCount}`;
-        }
-        
-        // Update total size display
+        // Update total size display (for current page)
         const totalSizeElement = document.getElementById('totalCollectionsSize');
         if (totalSizeElement) {
             totalSizeElement.textContent = `Total Size: ${this.formatSize(totalSizeBytes)}`;
@@ -993,21 +1178,58 @@ class VigilanteDashboard {
         container.appendChild(table);
     }
 
-    async loadSnapshots() {
+    async loadSnapshots(clearCache = false) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
         try {
-            const response = await fetch(this.snapshotsApiEndpoint);
+            const params = new URLSearchParams({
+                page: this.snapshotCurrentPage.toString(),
+                pageSize: this.snapshotPageSize.toString(),
+                clearCache: clearCache.toString()
+            });
+
+            if (this.snapshotNameFilter) {
+                params.append('nameFilter', this.snapshotNameFilter);
+            }
+
+            const response = await fetch(`${this.snapshotsApiEndpoint}?${params}`, {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
             
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             
             const data = await response.json();
-            // Use groupedSnapshots from backend if available, otherwise fall back to old format
+            
+            // Update pagination state
+            if (data.pagination) {
+                this.snapshotTotalPages = data.pagination.totalPages;
+                this.updateSnapshotPaginationControls();
+                
+                // Update total counts
+                const totalCount = data.pagination.totalItems;
+                document.getElementById('totalSnapshotsCount').textContent = `Collections: ${totalCount}`;
+            }
+            
+            // Use groupedSnapshots from backend
             const groupedSnapshots = data.groupedSnapshots || [];
             this.updateSnapshotsTable(groupedSnapshots);
             
         } catch (error) {
+            clearTimeout(timeoutId);
             console.error('Error fetching snapshots:', error);
+            
+            // Show error as toast notification
+            let errorMessage;
+            if (error.name === 'AbortError') {
+                errorMessage = 'Snapshots request timed out after 30 seconds. Please check your connection.';
+            } else {
+                errorMessage = this.getErrorMessage(error);
+            }
+            this.showToast(`Error loading snapshots: ${errorMessage}`, 'error', 'Snapshot Load Error', 15000);
         }
     }
 
@@ -1015,7 +1237,7 @@ class VigilanteDashboard {
         if (!groupedSnapshots || groupedSnapshots.length === 0) {
             const container = document.getElementById('snapshotsTable');
             container.innerHTML = '<p style="color: #999; padding: 20px; text-align: center;">No snapshots found</p>';
-            document.getElementById('totalSnapshotsSize').textContent = 'Total: 0 B';
+            document.getElementById('totalSnapshotsSize').textContent = 'Total Size: 0 B';
             return;
         }
 
@@ -1023,53 +1245,52 @@ class VigilanteDashboard {
         const totalSize = groupedSnapshots.reduce((sum, group) => sum + group.totalSize, 0);
 
         // Update total size display
-        document.getElementById('totalSnapshotsSize').textContent = `Total: ${this.formatSize(totalSize)}`;
+        document.getElementById('totalSnapshotsSize').textContent = `Total Size: ${this.formatSize(totalSize)}`;
 
         // Create table
         const table = document.createElement('table');
+        table.className = 'collections-table'; // Use same class as collections for consistent styling
         const tbody = document.createElement('tbody');
 
         groupedSnapshots.forEach(collection => {
             // Main collection row
             const row = document.createElement('tr');
-            row.className = 'snapshot-row';
+            row.className = 'collection-row'; // Use same class as collections
             
             const key = collection.collectionName;
             const isOpen = this.openSnapshots.has(key);
 
-            const td = document.createElement('td');
-            td.colSpan = 1;
+            const nameCell = document.createElement('td');
+            nameCell.className = 'collection-name'; // Use same class as collections
+            nameCell.colSpan = 1;
             
-            const container = document.createElement('div');
-            container.className = 'snapshot-header-container';
+            const headerContainer = document.createElement('div');
+            headerContainer.className = 'collection-header-container';
+            headerContainer.style.display = 'flex';
+            headerContainer.style.justifyContent = 'space-between';
+            headerContainer.style.alignItems = 'center';
             
-            const headerLine = document.createElement('div');
-            headerLine.className = 'snapshot-header-line';
-            headerLine.style.display = 'flex';
-            headerLine.style.justifyContent = 'space-between';
-            headerLine.style.alignItems = 'center';
-            
-            const nameSection = document.createElement('div');
-            nameSection.innerHTML = `
-                <i class="fas fa-camera" style="color: #7b1fa2; margin-right: 8px;"></i>
-                <strong>${collection.collectionName}</strong>
-            `;
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'collection-name-line';
+            nameDiv.innerHTML = `<i class="fas fa-camera" style="color: #7b1fa2; margin-right: 8px;"></i>${collection.collectionName}`;
+            nameDiv.title = collection.collectionName;
             
             const sizeSpan = document.createElement('span');
-            sizeSpan.className = 'snapshot-size';
+            sizeSpan.className = 'collection-size';
             sizeSpan.textContent = this.formatSize(collection.totalSize);
             
-            headerLine.appendChild(nameSection);
-            headerLine.appendChild(sizeSpan);
-            container.appendChild(headerLine);
-            td.appendChild(container);
-            row.appendChild(td);
+            headerContainer.appendChild(nameDiv);
+            headerContainer.appendChild(sizeSpan);
+            nameCell.appendChild(headerContainer);
+            row.appendChild(nameCell);
 
             // Details row for nodes
             const detailsRow = document.createElement('tr');
-            detailsRow.className = `snapshot-details ${isOpen ? 'visible' : ''}`;
-            const detailsTd = document.createElement('td');
-            detailsTd.colSpan = 1;
+            detailsRow.className = `collection-details ${isOpen ? 'visible' : ''}`;
+            const detailsCell = document.createElement('td');
+            detailsCell.colSpan = 1;
+            const detailsContent = document.createElement('div');
+            detailsContent.className = 'collection-details-content';
             
             const nodesTable = document.createElement('table');
             nodesTable.className = 'nodes-table';
@@ -1183,8 +1404,9 @@ class VigilanteDashboard {
             deleteAllRow.appendChild(deleteAllCell);
             nodesTable.appendChild(deleteAllRow);
 
-            detailsTd.appendChild(nodesTable);
-            detailsRow.appendChild(detailsTd);
+            detailsContent.appendChild(nodesTable);
+            detailsCell.appendChild(detailsContent);
+            detailsRow.appendChild(detailsCell);
 
             // Toggle details on click
             row.addEventListener('click', () => {
@@ -1252,46 +1474,16 @@ class VigilanteDashboard {
                     errorMessage += `\n\n${errorDetails}`;
                     console.error('Validation errors:', result.errors);
                 }
-                this.showToast(`✗ ${errorMessage}`, 'error', null, 8000);
+                this.showToast(`✗ ${errorMessage}`, 'error', null, 15000);
             }
         } catch (error) {
             console.error('Recovery error:', error);
             this.removeToast(toastId);
-            this.showToast(`✗ Error recovering snapshot: ${error.message}`, 'error', null, 5000);
+            const errorMessage = this.getErrorMessage(error);
+            this.showToast(`✗ Error recovering snapshot: ${errorMessage}`, 'error', null, 15000);
         }
     }
 
-    async recoverSnapshotOnAllNodes(collection) {
-        const snapshots = collection.snapshots;
-        const toastId = this.showToast(`Recovering ${collection.collectionName} on ${snapshots.length} snapshots...`, 'info', 0);
-        
-        try {
-            const promises = snapshots.map(snapshot => 
-                fetch(this.recoverFromSnapshotEndpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        nodeUrl: snapshot.nodeUrl,
-                        collectionName: collection.collectionName,
-                        snapshotName: snapshot.snapshotName
-                    })
-                })
-            );
-
-            const results = await Promise.all(promises);
-            this.removeToast(toastId);
-
-            const successCount = results.filter(r => r.ok).length;
-            if (successCount === results.length) {
-                this.showToast(`✓ Successfully recovered ${collection.collectionName} on all ${snapshots.length} snapshots`, 'success', 5000);
-            } else {
-                this.showToast(`⚠ Recovered on ${successCount}/${snapshots.length} snapshots`, 'warning', 5000);
-            }
-        } catch (error) {
-            this.removeToast(toastId);
-            this.showToast(`✗ Error recovering snapshots: ${error.message}`, 'error', 5000);
-        }
-    }
 
     async deleteSnapshotFromNode(snapshot) {
         // Show podName if available and not 'unknown', otherwise show nodeUrl
@@ -1360,12 +1552,12 @@ class VigilanteDashboard {
                 this.showToast(`✓ ${result.message}`, 'success', null, 5000);
                 this.loadSnapshots(); // Reload to update UI
             } else {
-                this.showToast(`✗ ${result.message || 'Deletion failed'}`, 'error', null, 5000);
+                this.showToast(`✗ ${result.message || 'Deletion failed'}`, 'error', null, 15000);
             }
         } catch (error) {
             console.error('Delete snapshot error:', error);
             this.removeToast(toastId);
-            this.showToast(`✗ Error deleting snapshot: ${error.message}`, 'error', null, 5000);
+            this.showToast(`✗ Error deleting snapshot: ${error.message}`, 'error', null, 15000);
         }
     }
 
@@ -1420,7 +1612,7 @@ class VigilanteDashboard {
             }
         } catch (error) {
             this.removeToast(toastId);
-            this.showToast(`✗ Error deleting snapshots: ${error.message}`, 'error', null, 5000);
+            this.showToast(`✗ Error deleting snapshots: ${error.message}`, 'error', null, 15000);
         }
     }
 
@@ -1521,7 +1713,7 @@ class VigilanteDashboard {
 
             if (!collectionNameInput || !snapshotUrlInput) {
                 console.error('Form elements not found in DOM!');
-                this.showToast('Form error - please try again', 'error', null, 5000);
+                this.showToast('Form error - please try again', 'error', null, 15000);
                 isSubmitting = false;
                 submitButton.disabled = false;
                 return;
@@ -1553,7 +1745,7 @@ class VigilanteDashboard {
                     `Please fill in: ${missingFields.join(', ')}`, 
                     'error', 
                     'Missing Required Fields',
-                    5000
+                    15000
                 );
                 isSubmitting = false;
                 submitButton.disabled = false;
@@ -1627,12 +1819,12 @@ class VigilanteDashboard {
                 // Reload data to reflect changes
                 setTimeout(() => this.refresh(), 2000);
             } else {
-                this.showToast(`✗ ${result.message || 'Recovery failed'}`, 'error', null, 8000);
+                this.showToast(`✗ ${result.message || 'Recovery failed'}`, 'error', null, 15000);
             }
         } catch (error) {
             console.error('Recover from URL error:', error);
             this.removeToast(toastId);
-            this.showToast(`✗ Error recovering collection: ${error.message}`, 'error', 8000);
+            this.showToast(`✗ Error recovering collection: ${error.message}`, 'error', 15000);
         }
     }
 
@@ -1729,12 +1921,6 @@ class VigilanteDashboard {
             collectionSection.appendChild(collectionList);
             issuesList.appendChild(collectionSection);
         }
-    }
-
-    updateIssues(issues) {
-        // Legacy method - kept for compatibility
-        // Now handled by updateCombinedIssues
-        console.warn('updateIssues is deprecated, use updateCombinedIssues instead');
     }
 
 
@@ -1875,6 +2061,12 @@ class VigilanteDashboard {
         // URL without dashboard button
         const urlDetail = this.createNodeDetail('URL', node.url);
         details.appendChild(urlDetail);
+
+        // Version (if available)
+        if (node.version) {
+            const versionDetail = this.createNodeDetail('Version', node.version);
+            details.appendChild(versionDetail);
+        }
 
         // Namespace (if available)
         if (node.namespace) {
@@ -2045,7 +2237,7 @@ class VigilanteDashboard {
             }
         } catch (error) {
             this.removeToast(toastId);
-            this.showToast(`Error deleting collection: ${error.message}`, 'error', 'Deletion failed', 5000);
+            this.showToast(`Error deleting collection: ${error.message}`, 'error', 'Deletion failed', 15000);
         }
     }
 
@@ -2070,32 +2262,56 @@ class VigilanteDashboard {
         this.updateToast(toastId, message, type, title);
     }
 
-    showError(message) {
-        // Remove any existing error messages
-        const existingError = document.querySelector('.error-message');
-        if (existingError) {
-            existingError.remove();
+    // Helper to detect and format timeout errors
+    getErrorMessage(error) {
+        // Check for timeout/network errors
+        if (error.name === 'AbortError') {
+            return 'Request timeout - server took too long to respond';
         }
+        
+        // Check for common network error patterns
+        if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
+            // Check if it might be a timeout (browser doesn't always expose this)
+            return 'Network error or request timeout - unable to connect to server';
+        }
+        
+        if (error.message.includes('timeout')) {
+            return 'Request timeout - server took too long to respond';
+        }
+        
+        // For HTTP errors, provide more detail
+        if (error.message.includes('HTTP error')) {
+            return error.message;
+        }
+        
+        // Generic error message
+        return error.message || 'Unknown error occurred';
+    }
 
-        // Create new error message
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'error-message';
-        errorDiv.innerHTML = `
-            <strong>Error loading cluster status:</strong> ${message}
-            <br>
-            <small>Retrying in ${this.refreshInterval / 1000} seconds...</small>
-        `;
-
-        // Insert after header
-        const header = document.querySelector('.header');
-        header.insertAdjacentElement('afterend', errorDiv);
-
-        // Auto-remove after 4 seconds
-        setTimeout(() => {
-            if (errorDiv.parentNode) {
-                errorDiv.remove();
-            }
-        }, 4000);
+    addClusterError(message) {
+        // Create error message with retry info if auto-refresh is enabled
+        let errorMessage = `Error loading cluster status: ${message}`;
+        if (this.refreshInterval > 0) {
+            errorMessage += ` (Retrying in ${this.refreshInterval / 1000} seconds)`;
+        }
+        
+        // Add to cluster issues if not already present
+        if (!this.clusterIssues.includes(errorMessage)) {
+            this.clusterIssues.push(errorMessage);
+            this.updateCombinedIssues();
+        }
+        
+        // Auto-remove after 10 seconds if auto-refresh is enabled
+        // (it will be re-added if the error persists on next refresh)
+        if (this.refreshInterval > 0) {
+            setTimeout(() => {
+                const index = this.clusterIssues.indexOf(errorMessage);
+                if (index > -1) {
+                    this.clusterIssues.splice(index, 1);
+                    this.updateCombinedIssues();
+                }
+            }, 10000);
+        }
     }
 
     // Snapshot management methods
@@ -2421,11 +2637,11 @@ class VigilanteDashboard {
                 // Refresh after a short delay to allow pod to be deleted
                 setTimeout(() => this.refresh(), 2000);
             } else {
-                this.showToast(result.error || result.details || 'Failed to delete pod', 'error', 'Deletion Failed', 5000);
+                this.showToast(result.error || result.details || 'Failed to delete pod', 'error', 'Deletion Failed', 15000);
             }
         } catch (error) {
             this.removeToast(toastId);
-            this.showToast(`Error deleting pod: ${error.message}`, 'error', 'Error', 5000);
+            this.showToast(`Error deleting pod: ${error.message}`, 'error', 'Error', 15000);
         }
     }
 
@@ -2582,11 +2798,11 @@ class VigilanteDashboard {
                 // Refresh after a delay to allow operation to take effect
                 setTimeout(() => this.refresh(), 3000);
             } else {
-                this.showToast(result.error || result.details || 'Failed to manage StatefulSet', 'error', 'Operation Failed', 5000);
+                this.showToast(result.error || result.details || 'Failed to manage StatefulSet', 'error', 'Operation Failed', 15000);
             }
         } catch (error) {
             this.removeToast(toastId);
-            this.showToast(`Error managing StatefulSet: ${error.message}`, 'error', 'Error', 5000);
+            this.showToast(`Error managing StatefulSet: ${error.message}`, 'error', 'Error', 15000);
         }
     }
 }

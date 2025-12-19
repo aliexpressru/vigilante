@@ -1,16 +1,16 @@
 namespace Vigilante.Models.Responses;
 
-public class V1GetSnapshotsInfoResponse
+public class V1GetSnapshotsInfoPaginatedResponse
 {
     /// <summary>
-    /// Flat list of all snapshots (for backward compatibility)
-    /// </summary>
-    public SnapshotInfoDto[] Snapshots { get; set; } = Array.Empty<SnapshotInfoDto>();
-    
-    /// <summary>
-    /// Snapshots grouped by collection name
+    /// Paginated snapshots grouped by collection
     /// </summary>
     public SnapshotCollectionGroup[] GroupedSnapshots { get; set; } = Array.Empty<SnapshotCollectionGroup>();
+    
+    /// <summary>
+    /// Pagination information
+    /// </summary>
+    public PaginationInfo Pagination { get; set; } = new();
 
     public class SnapshotInfoDto
     {
@@ -31,7 +31,7 @@ public class V1GetSnapshotsInfoResponse
         public string PodNamespace { get; set; } = string.Empty;
         
         /// <summary>
-        /// Source where snapshot was retrieved from: "KubernetesStorage" or "QdrantApi"
+        /// Source where snapshot was retrieved from: "KubernetesStorage", "QdrantApi", or "S3Storage"
         /// </summary>
         public string Source { get; set; } = string.Empty;
     }
@@ -58,4 +58,28 @@ public class V1GetSnapshotsInfoResponse
         /// </summary>
         public SnapshotInfoDto[] Snapshots { get; set; } = Array.Empty<SnapshotInfoDto>();
     }
+    
+    public class PaginationInfo
+    {
+        /// <summary>
+        /// Current page number (1-based)
+        /// </summary>
+        public int CurrentPage { get; set; }
+        
+        /// <summary>
+        /// Number of items per page
+        /// </summary>
+        public int PageSize { get; set; }
+        
+        /// <summary>
+        /// Total number of collection groups (not individual snapshots)
+        /// </summary>
+        public int TotalItems { get; set; }
+        
+        /// <summary>
+        /// Total number of pages
+        /// </summary>
+        public int TotalPages { get; set; }
+    }
 }
+

@@ -38,4 +38,9 @@ public class NodeInfo
     public string? StatefulSetName { get; set; }
 
     public HashSet<string> CurrentPeerIds { get; set; } = new();
+    
+    /// <summary>
+    /// Qdrant version running on this node
+    /// </summary>
+    public string? Version { get; set; }
 }

@@ -9,19 +9,14 @@ public class V1RecoverFromUrlRequestValidator : AbstractValidator<V1RecoverFromU
     {
         RuleFor(x => x.NodeUrl)
             .NotEmpty()
-            .WithMessage("NodeUrl is required")
-            .Must(BeValidUrl)
-            .WithMessage("NodeUrl must be a valid URL");
+            .Must(BeValidUrl);
 
         RuleFor(x => x.CollectionName)
-            .NotEmpty()
-            .WithMessage("CollectionName is required");
+            .NotEmpty();
 
         RuleFor(x => x.SnapshotUrl)
             .NotEmpty()
-            .WithMessage("SnapshotUrl is required")
-            .Must(BeValidUrl)
-            .WithMessage("SnapshotUrl must be a valid URL");
+            .Must(BeValidUrl);
     }
 
     private bool BeValidUrl(string url)

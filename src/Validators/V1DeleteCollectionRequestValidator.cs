@@ -9,31 +9,26 @@ public class V1DeleteCollectionRequestValidator : AbstractValidator<V1DeleteColl
     public V1DeleteCollectionRequestValidator()
     {
         RuleFor(x => x.CollectionName)
-            .NotEmpty()
-            .WithMessage("Collection name is required");
+            .NotEmpty();
         
         RuleFor(x => x.DeletionType)
-            .IsInEnum()
-            .WithMessage("Invalid deletion type");
+            .IsInEnum();
         
         // When SingleNode = true and DeletionType = Api, NodeUrl is required
         When(x => x.SingleNode && x.DeletionType == CollectionDeletionType.Api, () =>
         {
             RuleFor(x => x.NodeUrl)
-                .NotEmpty()
-                .WithMessage("NodeUrl is required when deleting from a single node via API");
+                .NotEmpty();
         });
         
         // When SingleNode = true and DeletionType = Disk, PodName and PodNamespace are required
         When(x => x.SingleNode && x.DeletionType == CollectionDeletionType.Disk, () =>
         {
             RuleFor(x => x.PodName)
-                .NotEmpty()
-                .WithMessage("PodName is required when deleting from a single node disk");
+                .NotEmpty();
             
             RuleFor(x => x.PodNamespace)
-                .NotEmpty()
-                .WithMessage("PodNamespace is required when deleting from a single node disk");
+                .NotEmpty();
         });
     }
 }

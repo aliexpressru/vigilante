@@ -16,7 +16,7 @@ public interface IClusterManager
     /// <summary>
     /// Gets information about all collections across the cluster
     /// </summary>
-    Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(bool clearCache = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Replicates shards from source peer to target peer

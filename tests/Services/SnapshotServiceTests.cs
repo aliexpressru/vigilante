@@ -309,7 +309,7 @@ public class SnapshotServiceTests
             .Returns(snapshotsFromDisk);
 
         // Act
-        var result = await _snapshotManager.GetSnapshotsInfoAsync(CancellationToken.None);
+        var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert
         Assert.That(result, Has.Count.EqualTo(1));
@@ -375,7 +375,7 @@ public class SnapshotServiceTests
             .Returns(snapshotsWithSize);
 
         // Act
-        var result = await _snapshotManager.GetSnapshotsInfoAsync(CancellationToken.None);
+        var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert
         Assert.That(result, Has.Count.EqualTo(1));
@@ -446,7 +446,7 @@ public class SnapshotServiceTests
             .Returns(snapshotsWithSize);
 
         // Act
-        var result = await _snapshotManager.GetSnapshotsInfoAsync(CancellationToken.None);
+        var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert
         Assert.That(result, Has.Count.EqualTo(1));
@@ -512,7 +512,7 @@ public class SnapshotServiceTests
             .Returns(snapshotsWithSize);
 
         // Act
-        var result = await _snapshotManager.GetSnapshotsInfoAsync(CancellationToken.None);
+        var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert - should only return the snapshot matching this node's PeerId
         Assert.That(result, Has.Count.EqualTo(1));
@@ -584,7 +584,7 @@ public class SnapshotServiceTests
             });
 
         // Act
-        var result = await _snapshotManager.GetSnapshotsInfoAsync(CancellationToken.None);
+        var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert
         Assert.That(result, Has.Count.EqualTo(2));
@@ -652,7 +652,7 @@ public class SnapshotServiceTests
             });
 
         // Act
-        var result = await _snapshotManager.GetSnapshotsInfoAsync(CancellationToken.None);
+        var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert - should still get snapshots from collection2
         Assert.That(result, Has.Count.EqualTo(1));
