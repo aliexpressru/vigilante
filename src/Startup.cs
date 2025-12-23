@@ -49,6 +49,7 @@ public class Startup(IConfiguration configuration)
         services.AddSingleton<ICollectionService, CollectionService>();
         services.AddSingleton<ISnapshotService, SnapshotService>();
         services.AddSingleton<IClusterManager, ClusterManager>();
+        services.AddSingleton<ILogReader, LogReader>();
         
         // Test data provider for local development
         services.AddSingleton<TestDataProvider>();
