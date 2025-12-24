@@ -60,7 +60,12 @@ public class ClusterState
             var nodeName = !string.IsNullOrEmpty(node.PodName) ? node.PodName : node.Url;
             foreach (var issue in node.Issues)
             {
-                issues.Add($"{nodeName}: {issue}");
+                if (string.IsNullOrWhiteSpace(issue))
+                {
+                    continue;
+                }
+
+                issues.Add($"{nodeName}: {issue.Trim()}");
             }
         }
 
@@ -79,7 +84,12 @@ public class ClusterState
             var nodeName = !string.IsNullOrEmpty(node.PodName) ? node.PodName : node.Url;
             foreach (var warning in node.Warnings)
             {
-                warnings.Add($"{nodeName}: {warning}");
+                if (string.IsNullOrWhiteSpace(warning))
+                {
+                    continue;
+                }
+
+                warnings.Add($"{nodeName}: {warning.Trim()}");
             }
         }
         
