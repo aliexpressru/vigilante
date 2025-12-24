@@ -482,10 +482,22 @@ public class ClusterManager(
                 {
                     foreach (var issue in qdrantIssues)
                     {
-                        var issueMessage = string.IsNullOrEmpty(issue.Value) 
-                            ? issue.Key 
-                            : $"{issue.Key}: {issue.Value}";
-                        nodeInfo.Issues.Add(issueMessage);
+                        var key = issue.Key?.Trim();
+                        var value = issue.Value?.Trim();
+
+                        if (string.IsNullOrWhiteSpace(key) && string.IsNullOrWhiteSpace(value))
+                        {
+                            continue;
+                        }
+
+                        var issueMessage = string.IsNullOrWhiteSpace(value)
+                            ? key!
+                            : $"{key ?? "Unknown"}: {value}";
+
+                        if (!string.IsNullOrWhiteSpace(issueMessage))
+                        {
+                            nodeInfo.Issues.Add(issueMessage);
+                        }
                     }
                     
                     logger.LogInformation(
@@ -918,3 +930,4 @@ public class ClusterManager(
         }
     }
 }
+
