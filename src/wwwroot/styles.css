@@ -28,6 +28,18 @@ body {
     color: white;
 }
 
+.header-content {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 30px;
+    flex-wrap: wrap;
+}
+
+.header-title {
+    text-align: center;
+}
+
 .header h1 {
     font-size: 2.5rem;
     margin-bottom: 10px;
@@ -3011,3 +3023,267 @@ body {
     25% { transform: translateX(-5px); }
     75% { transform: translateX(5px); }
 }
+
+/* Logs Side Panel */
+.logs-side-panel {
+    position: fixed;
+    top: 0;
+    right: -600px;
+    width: 600px;
+    height: 100vh;
+    background: white;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+    transition: right 0.3s ease-in-out;
+    z-index: 1100;
+    display: flex;
+    flex-direction: column;
+}
+
+.logs-side-panel.open {
+    right: 0;
+}
+
+.logs-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.logs-panel-header h3 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+
+.logs-close-button {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    transition: all 0.2s ease;
+}
+
+.logs-close-button:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: rotate(90deg);
+}
+
+.logs-panel-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.logs-refresh-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.logs-refresh-select {
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    background-color: white;
+    font-size: 0.85rem;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.logs-refresh-select:hover {
+    border-color: #667eea;
+}
+
+.logs-refresh-select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+}
+
+.logs-manual-refresh-button {
+    padding: 6px 12px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.logs-manual-refresh-button:hover {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.logs-manual-refresh-button:active {
+    transform: translateY(0);
+}
+
+.logs-manual-refresh-button.refreshing i {
+    animation: rotate 1s linear infinite;
+}
+
+.logs-panel-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px 20px;
+    background: #fff;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+}
+
+.logs-loading {
+    text-align: center;
+    padding: 40px 20px;
+    color: #999;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.logs-error {
+    padding: 20px;
+    background: #ffebee;
+    border-left: 4px solid #f44336;
+    color: #c62828;
+    border-radius: 4px;
+    margin: 10px 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    line-height: 1.6;
+}
+
+.logs-error i {
+    margin-right: 8px;
+    font-size: 1.2rem;
+    vertical-align: middle;
+}
+
+.logs-error strong {
+    display: block;
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+}
+
+.logs-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #999;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.log-entry {
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    border-left: 3px solid #e0e0e0;
+    background: #f8f9fa;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+}
+
+.log-entry:hover {
+    background: #e9ecef;
+    border-left-color: #667eea;
+}
+
+.log-timestamp {
+    color: #666;
+    font-weight: 600;
+    margin-right: 8px;
+}
+
+.log-source {
+    color: #764ba2;
+    font-weight: 600;
+    margin-right: 8px;
+}
+
+.log-message {
+    color: #333;
+}
+
+/* View Logs Button for Nodes */
+.view-logs-button {
+    padding: 6px 12px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: center;
+    margin-top: 8px;
+}
+
+.view-logs-button:hover {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.view-logs-button:active {
+    transform: translateY(0);
+}
+
+/* View Vigilante Logs Button */
+.view-vigilante-logs-button {
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.view-vigilante-logs-button:hover {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.view-vigilante-logs-button:active {
+    transform: translateY(0);
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+    .logs-side-panel {
+        width: 100%;
+        right: -100%;
+    }
+}
+

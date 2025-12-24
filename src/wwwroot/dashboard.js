@@ -11,6 +11,8 @@ class VigilanteDashboard {
         this.recoverFromSnapshotEndpoint = '/api/v1/snapshots/recover';
         this.deletePodEndpoint = '/api/v1/kubernetes/delete-pod';
         this.manageStatefulSetEndpoint = '/api/v1/kubernetes/manage-statefulset';
+        this.qdrantLogsEndpoint = '/api/v1/logs/qdrant';
+        this.vigilanteLogsEndpoint = '/api/v1/logs/vigilante';
         this.refreshInterval = 0;
         this.openSnapshots = new Set();
         this.selectedState = new Map();
@@ -18,6 +20,10 @@ class VigilanteDashboard {
         this.clusterIssues = []; // Issues from cluster/status
         this.collectionIssues = []; // Issues from collections-info
         this.clusterNodes = []; // Store cluster nodes for StatefulSet management
+        // Logs state
+        this.logsRefreshInterval = 0;
+        this.logsRefreshTimer = null;
+        this.currentLogContext = null; // { type: 'qdrant' | 'vigilante', podName?: string, namespace?: string }
         // Pagination state for collections
         this.currentPage = 1;
         this.pageSize = 10;
@@ -32,6 +38,7 @@ class VigilanteDashboard {
         this.setupRefreshControls();
         this.setupCollectionControls();
         this.setupSnapshotControls();
+        this.setupLogsControls();
     }
 
     // Convert numeric status to string
@@ -2086,6 +2093,16 @@ class VigilanteDashboard {
         });
         details.appendChild(dashboardBtn);
 
+        // View Logs button
+        const viewLogsBtn = document.createElement('button');
+        viewLogsBtn.className = 'view-logs-button';
+        viewLogsBtn.innerHTML = '<i class="fas fa-file-alt"></i> View Logs';
+        viewLogsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.openQdrantLogs(node.podName, node.namespace, node.url);
+        });
+        details.appendChild(viewLogsBtn);
+
         // Recover from URL button
         const recoverFromUrlBtn = document.createElement('button');
         recoverFromUrlBtn.className = 'recover-from-url-button';
@@ -2803,6 +2820,258 @@ class VigilanteDashboard {
         } catch (error) {
             this.removeToast(toastId);
             this.showToast(`Error managing StatefulSet: ${error.message}`, 'error', 'Error', 15000);
+        }
+    }
+
+    // ========== Logs Methods ==========
+
+    setupLogsControls() {
+        // Close button
+        const closeButton = document.getElementById('closeLogsPanel');
+        if (closeButton) {
+            closeButton.addEventListener('click', () => {
+                this.closeLogsPanel();
+            });
+        }
+
+        // Auto-refresh interval selector
+        const intervalSelect = document.getElementById('logsRefreshInterval');
+        if (intervalSelect) {
+            intervalSelect.addEventListener('change', (e) => {
+                const newInterval = parseInt(e.target.value);
+                this.logsRefreshInterval = newInterval;
+                this.stopLogsAutoRefresh();
+                if (newInterval > 0 && this.currentLogContext) {
+                    this.startLogsAutoRefresh();
+                }
+            });
+        }
+
+        // Manual refresh button
+        const manualRefreshBtn = document.getElementById('logsManualRefresh');
+        if (manualRefreshBtn) {
+            manualRefreshBtn.addEventListener('click', () => {
+                if (this.currentLogContext) {
+                    this.refreshLogs();
+                }
+            });
+        }
+
+        // View Vigilante Logs button in header
+        const viewVigilanteLogsBtn = document.getElementById('viewVigilanteLogs');
+        if (viewVigilanteLogsBtn) {
+            viewVigilanteLogsBtn.addEventListener('click', () => {
+                this.openVigilanteLogs();
+            });
+        }
+    }
+
+    openQdrantLogs(podName, namespace, nodeUrl) {
+        // Open panel first
+        this.openLogsPanel();
+
+        // Check if pod name is available
+        if (!podName) {
+            this.currentLogContext = null;
+            
+            const title = document.getElementById('logsPanelTitle');
+            if (title) {
+                title.innerHTML = `<i class="fas fa-file-alt"></i> Logs: ${nodeUrl || 'Unknown Node'}`;
+            }
+
+            const content = document.getElementById('logsPanelContent');
+            if (content) {
+                content.innerHTML = `<div class="logs-error">
+                    <i class="fas fa-exclamation-triangle"></i> 
+                    <strong>Cannot view logs</strong><br><br>
+                    Pod information is not available for this node.<br>
+                    This usually means the node is not running in a Kubernetes cluster or pod metadata is missing.
+                </div>`;
+            }
+            return;
+        }
+
+        this.currentLogContext = {
+            type: 'qdrant',
+            podName: podName,
+            namespace: namespace || 'qdrant'
+        };
+
+        const title = document.getElementById('logsPanelTitle');
+        if (title) {
+            title.innerHTML = `<i class="fas fa-file-alt"></i> Logs: ${podName}`;
+        }
+
+        this.loadLogs();
+
+        // Set default refresh interval to 15 seconds
+        this.logsRefreshInterval = 15000;
+        const intervalSelect = document.getElementById('logsRefreshInterval');
+        if (intervalSelect) {
+            intervalSelect.value = '15000';
+        }
+        this.startLogsAutoRefresh();
+    }
+
+    openVigilanteLogs() {
+        this.currentLogContext = {
+            type: 'vigilante',
+            namespace: 'qdrant' // Default namespace
+        };
+
+        const title = document.getElementById('logsPanelTitle');
+        if (title) {
+            title.innerHTML = `<i class="fas fa-file-alt"></i> Vigilante Logs`;
+        }
+
+        this.openLogsPanel();
+        this.loadLogs();
+
+        // Set default refresh interval to 15 seconds
+        this.logsRefreshInterval = 15000;
+        const intervalSelect = document.getElementById('logsRefreshInterval');
+        if (intervalSelect) {
+            intervalSelect.value = '15000';
+        }
+        this.startLogsAutoRefresh();
+    }
+
+    openLogsPanel() {
+        const panel = document.getElementById('logsSidePanel');
+        if (panel) {
+            panel.classList.add('open');
+        }
+    }
+
+    closeLogsPanel() {
+        const panel = document.getElementById('logsSidePanel');
+        if (panel) {
+            panel.classList.remove('open');
+        }
+        this.stopLogsAutoRefresh();
+        this.currentLogContext = null;
+    }
+
+    async loadLogs() {
+        const content = document.getElementById('logsPanelContent');
+        if (!content || !this.currentLogContext) return;
+
+        try {
+            let response;
+            const requestBody = {
+                namespace: this.currentLogContext.namespace,
+                limit: 200
+            };
+
+            if (this.currentLogContext.type === 'qdrant') {
+                requestBody.podName = this.currentLogContext.podName;
+                response = await fetch(this.qdrantLogsEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+            } else if (this.currentLogContext.type === 'vigilante') {
+                response = await fetch(this.vigilanteLogsEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+            }
+
+            if (!response || !response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            
+            if (data.success && data.logs) {
+                this.renderLogs(data.logs);
+            } else {
+                throw new Error(data.message || 'Failed to load logs');
+            }
+        } catch (error) {
+            console.error('Error loading logs:', error);
+            content.innerHTML = `<div class="logs-error">
+                <i class="fas fa-exclamation-triangle"></i> 
+                Failed to load logs: ${error.message}
+            </div>`;
+        }
+    }
+
+    renderLogs(logs) {
+        const content = document.getElementById('logsPanelContent');
+        if (!content) return;
+
+        if (!logs || logs.length === 0) {
+            content.innerHTML = '<div class="logs-empty">No logs available</div>';
+            return;
+        }
+
+        // Reverse logs to show newest first
+        const sortedLogs = [...logs].reverse();
+
+        let html = '';
+        sortedLogs.forEach(log => {
+            const timestamp = new Date(log.timestamp).toLocaleString();
+            const source = log.source || 'unknown';
+            const message = this.escapeHtml(log.message);
+            
+            html += `<div class="log-entry">
+                <span class="log-timestamp">${timestamp}</span>
+                <span class="log-source">[${source}]</span>
+                <span class="log-message">${message}</span>
+            </div>`;
+        });
+
+        content.innerHTML = html;
+        
+        // Auto-scroll to top (newest logs)
+        content.scrollTop = 0;
+    }
+
+    escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    refreshLogs() {
+        const refreshBtn = document.getElementById('logsManualRefresh');
+        if (refreshBtn) {
+            refreshBtn.classList.add('refreshing');
+        }
+
+        this.loadLogs().finally(() => {
+            if (refreshBtn) {
+                setTimeout(() => {
+                    refreshBtn.classList.remove('refreshing');
+                }, 1000);
+            }
+        });
+    }
+
+    startLogsAutoRefresh() {
+        this.stopLogsAutoRefresh();
+        if (this.logsRefreshInterval > 0) {
+            this.logsRefreshTimer = setInterval(() => {
+                this.loadLogs();
+            }, this.logsRefreshInterval);
+        }
+    }
+
+    stopLogsAutoRefresh() {
+        if (this.logsRefreshTimer) {
+            clearInterval(this.logsRefreshTimer);
+            this.logsRefreshTimer = null;
         }
     }
 }
