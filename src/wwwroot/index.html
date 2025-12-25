@@ -10,8 +10,15 @@
 <body>
     <div class="container">
         <header class="header">
-            <h1><i class="fas fa-shield-alt"></i> Vigilante Dashboard</h1>
-            <p>Qdrant Cluster Guardian</p>
+            <div class="header-content">
+                <div class="header-title">
+                    <h1><i class="fas fa-shield-alt"></i> Vigilante Dashboard</h1>
+                    <p>Qdrant Cluster Guardian</p>
+                </div>
+                <button id="viewVigilanteLogs" class="view-vigilante-logs-button" title="View Vigilante service logs">
+                    <i class="fas fa-file-alt"></i> View Vigilante Logs
+                </button>
+            </div>
         </header>
 
         <div class="main-content">
@@ -166,6 +173,33 @@
 
     <!-- Toast notifications container -->
     <div id="toast-container" class="toast-container"></div>
+
+    <!-- Logs Side Panel -->
+    <div id="logsSidePanel" class="logs-side-panel">
+        <div class="logs-panel-header">
+            <h3 id="logsPanelTitle"><i class="fas fa-file-alt"></i> Logs</h3>
+            <button id="closeLogsPanel" class="logs-close-button" title="Close logs panel">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="logs-panel-controls">
+            <div class="logs-refresh-controls">
+                <span>Auto-refresh:</span>
+                <select id="logsRefreshInterval" class="logs-refresh-select">
+                    <option value="15000" selected>15s</option>
+                    <option value="30000">30s</option>
+                    <option value="60000">1m</option>
+                    <option value="0">Off</option>
+                </select>
+            </div>
+            <button id="logsManualRefresh" class="logs-manual-refresh-button" title="Refresh now">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
+        <div class="logs-panel-content" id="logsPanelContent">
+            <div class="logs-loading">Loading logs...</div>
+        </div>
+    </div>
 
     <!-- Recovery Modal -->
     <div id="recoveryModal" class="modal">
