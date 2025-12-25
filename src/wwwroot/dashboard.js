@@ -3016,13 +3016,11 @@ class VigilanteDashboard {
 
         let html = '';
         sortedLogs.forEach(log => {
-            const timestamp = new Date(log.timestamp).toLocaleString();
             const source = log.source || 'unknown';
             const message = this.escapeHtml(log.message);
             
             html += `<div class="log-entry">
                 <div class="log-meta">
-                    <span class="log-timestamp">${timestamp}</span>
                     <span class="log-source">[${source}]</span>
                 </div>
                 <div class="log-message">${message}</div>
