@@ -3021,9 +3021,11 @@ class VigilanteDashboard {
             const message = this.escapeHtml(log.message);
             
             html += `<div class="log-entry">
-                <span class="log-timestamp">${timestamp}</span>
-                <span class="log-source">[${source}]</span>
-                <span class="log-message">${message}</span>
+                <div class="log-meta">
+                    <span class="log-timestamp">${timestamp}</span>
+                    <span class="log-source">[${source}]</span>
+                </div>
+                <div class="log-message">${message}</div>
             </div>`;
         });
 

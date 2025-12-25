@@ -45,6 +45,7 @@ kubectl apply -f rbac.yaml -n qdrant
 **Required permissions:**
 - `pods`: `list`, `get`, `watch`, `delete` - for pod management and monitoring
 - `pods/exec`: `create`, `get`, `watch` - for executing commands in pods
+- `pods/log`: `get`, `list` - for reading pod logs
 - `events` (CoreV1): `list`, `get`, `watch` - for fetching Kubernetes warning events
 - `statefulsets`: `get`, `list`, `patch`, `update` - for StatefulSet operations (rollout, scale)
 

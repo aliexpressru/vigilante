@@ -3201,6 +3201,9 @@ body {
     transition: all 0.2s ease;
     word-wrap: break-word;
     white-space: pre-wrap;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .log-entry:hover {
@@ -3208,20 +3211,26 @@ body {
     border-left-color: #667eea;
 }
 
+.log-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .log-timestamp {
     color: #666;
     font-weight: 600;
-    margin-right: 8px;
 }
 
 .log-source {
     color: #764ba2;
     font-weight: 600;
-    margin-right: 8px;
 }
 
 .log-message {
     color: #333;
+    word-break: break-all;
+    white-space: pre-wrap;
 }
 
 /* View Logs Button for Nodes */
