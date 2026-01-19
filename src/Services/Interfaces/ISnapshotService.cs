@@ -9,6 +9,14 @@ namespace Vigilante.Services.Interfaces;
 public interface ISnapshotService
 {
     /// <summary>
+    /// Creates a snapshot of a collection on a specific node
+    /// </summary>
+    Task<string?> CreateCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Creates a snapshot for a collection on all nodes
     /// </summary>
     Task<Dictionary<string, string?>> CreateCollectionSnapshotOnAllNodesAsync(
@@ -56,26 +64,5 @@ public interface ISnapshotService
     Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(
         bool clearCache = false,
         CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Gets paginated and filtered snapshots information
-    /// </summary>
-    /// <param name="page">Page number (1-based)</param>
-    /// <param name="pageSize">Number of items per page</param>
-    /// <param name="filter">Filter by collection name (case-insensitive partial match)</param>
-    /// <param name="forceRefresh">Whether to force refresh the cache</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Tuple of paginated snapshots and total count</returns>
-    Task<(IReadOnlyList<SnapshotInfo> Snapshots, int TotalCount)> GetSnapshotsInfoPaginatedAsync(
-        int page,
-        int pageSize,
-        string? filter,
-        bool forceRefresh,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Clears the snapshots cache
-    /// </summary>
-    void ClearCache();
 }
 

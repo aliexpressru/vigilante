@@ -54,13 +54,6 @@ public interface ICollectionService
         string collectionName,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Creates a snapshot of a collection on a specific node
-    /// </summary>
-    Task<string?> CreateCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken);
 
     /// <summary>
     /// Lists all snapshots for a collection on a specific node

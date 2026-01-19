@@ -266,41 +266,7 @@ public class CollectionService : ICollectionService
             $"Collection {collectionName}", 
             cancellationToken);
     }
-    public async Task<string?> CreateCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogInformation("Creating snapshot for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            var result = await qdrantClient.CreateCollectionSnapshot(
-                collectionName, 
-                cancellationToken,
-                isWaitForResult: false);
-            
-            if (result.IsAcceptedOrSuccess())
-            {
-                var snapshotName = result.Result?.Name ?? $"{collectionName}-snapshot-{DateTime.UtcNow:yyyyMMddHHmmss}";
-                var statusText = result.IsAccepted() ? "accepted" : "created successfully";
-                _logger.LogInformation("Snapshot {StatusText} for collection {CollectionName} on node {NodeUrl}", 
-                    statusText, collectionName, nodeUrl);
-                return snapshotName;
-            }
-            
-            _logger.LogError("Failed to create snapshot for collection {CollectionName}: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to create snapshot for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            return null;
-        }
-    }
+    
     
     public async Task<List<string>> ListCollectionSnapshotsAsync(
         string nodeUrl,

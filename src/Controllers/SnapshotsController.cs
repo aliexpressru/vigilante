@@ -109,7 +109,7 @@ public class SnapshotsController(
             if (request.SingleNode)
             {
                 // Create snapshot on specific node
-                var snapshotName = await collectionService.CreateCollectionSnapshotAsync(
+                var snapshotName = await snapshotService.CreateCollectionSnapshotAsync(
                     request.NodeUrl!,
                     request.CollectionName,
                     cancellationToken);

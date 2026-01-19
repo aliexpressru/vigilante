@@ -42,8 +42,8 @@ public class SnapshotServiceTests
             _nodesProvider,
             _clientFactory,
             _collectionService,
-            _options,
             _s3SnapshotService,
+            _options,
             _logger);
     }
 
@@ -204,13 +204,40 @@ public class SnapshotServiceTests
         _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
-        _collectionService
-            .CreateCollectionSnapshotAsync("http://node1:6333", collectionName, Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<string?>("snapshot1.snapshot"));
+        // Create mock Qdrant clients for each node
+        var mockClient1 = Substitute.For<IQdrantHttpClient>();
+        var mockClient2 = Substitute.For<IQdrantHttpClient>();
 
-        _collectionService
-            .CreateCollectionSnapshotAsync("http://node2:6333", collectionName, Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<string?>("snapshot2.snapshot"));
+        // Mock the factory to return appropriate clients
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient1);
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node2" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient2);
+
+        // Mock CreateCollectionSnapshot responses
+        var snapshotResponse1 = new CreateSnapshotResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Shared.SnapshotInfo
+            {
+                Name = "snapshot1.snapshot"
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        var snapshotResponse2 = new CreateSnapshotResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Shared.SnapshotInfo
+            {
+                Name = "snapshot2.snapshot"
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        mockClient1.CreateCollectionSnapshot(collectionName, Arg.Any<CancellationToken>(), false)
+            .Returns(Task.FromResult(snapshotResponse1));
+
+        mockClient2.CreateCollectionSnapshot(collectionName, Arg.Any<CancellationToken>(), false)
+            .Returns(Task.FromResult(snapshotResponse2));
 
         // Act
         var result = await _snapshotManager.CreateCollectionSnapshotOnAllNodesAsync(collectionName, CancellationToken.None);

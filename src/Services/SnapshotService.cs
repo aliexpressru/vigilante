@@ -16,8 +16,8 @@ public class SnapshotService(
     IQdrantNodesProvider nodesProvider,
     IQdrantClientFactory clientFactory,
     ICollectionService collectionService,
-    IOptions<QdrantOptions> options,
     IS3SnapshotService s3SnapshotService,
+    IOptions<QdrantOptions> options,
     ILogger<SnapshotService> logger) : ISnapshotService
 {
     private readonly QdrantOptions _options = options.Value;
@@ -25,81 +25,42 @@ public class SnapshotService(
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
 
     /// <summary>
-    /// Clears the snapshots cache
+    /// Creates a snapshot of a collection on a specific node
     /// </summary>
-    public void ClearCache()
-    {
-        _cacheLock.Wait();
-        try
-        {
-            _snapshotsCache = null;
-            logger.LogInformation("Snapshots cache cleared");
-        }
-        finally
-        {
-            _cacheLock.Release();
-        }
-    }
-
-    /// <summary>
-    /// Gets snapshots from cache or fetches them if cache is empty
-    /// </summary>
-    private async Task<IReadOnlyList<SnapshotInfo>> GetOrFetchSnapshotsAsync(
-        bool forceRefresh,
+    public async Task<string?> CreateCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
         CancellationToken cancellationToken)
     {
-        await _cacheLock.WaitAsync(cancellationToken);
         try
         {
-            if (forceRefresh || _snapshotsCache == null)
+            logger.LogInformation("Creating snapshot for collection {CollectionName} on node {NodeUrl}", 
+                collectionName, nodeUrl);
+            var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
+            var result = await qdrantClient.CreateCollectionSnapshot(
+                collectionName, 
+                cancellationToken,
+                isWaitForResult: false);
+            
+            if (result.IsAcceptedOrSuccess())
             {
-                logger.LogInformation("Fetching snapshots (ForceRefresh: {ForceRefresh}, CacheEmpty: {CacheEmpty})",
-                    forceRefresh, _snapshotsCache == null);
-                var snapshots = await GetSnapshotsInfoAsync(forceRefresh, cancellationToken);
-                _snapshotsCache = snapshots;
+                var snapshotName = result.Result?.Name ?? $"{collectionName}-snapshot-{DateTime.UtcNow:yyyyMMddHHmmss}";
+                var statusText = result.IsAccepted() ? "accepted" : "created successfully";
+                logger.LogInformation("Snapshot {StatusText} for collection {CollectionName} on node {NodeUrl}", 
+                    statusText, collectionName, nodeUrl);
+                return snapshotName;
             }
-
-            return _snapshotsCache;
+            
+            logger.LogError("Failed to create snapshot for collection {CollectionName}: {Error}",
+                collectionName, result?.Status?.Error ?? "Unknown error");
+            return null;
         }
-        finally
+        catch (Exception ex)
         {
-            _cacheLock.Release();
+            logger.LogError(ex, "Failed to create snapshot for collection {CollectionName} on node {NodeUrl}", 
+                collectionName, nodeUrl);
+            return null;
         }
-    }
-
-    /// <summary>
-    /// Gets paginated and filtered snapshots information
-    /// </summary>
-    public async Task<(IReadOnlyList<SnapshotInfo> Snapshots, int TotalCount)> GetSnapshotsInfoPaginatedAsync(
-        int page,
-        int pageSize,
-        string? filter,
-        bool forceRefresh,
-        CancellationToken cancellationToken = default)
-    {
-        var allSnapshots = await GetOrFetchSnapshotsAsync(forceRefresh, cancellationToken);
-
-        // Apply filter
-        var filteredSnapshots = string.IsNullOrWhiteSpace(filter)
-            ? allSnapshots
-            : allSnapshots.Where(s => s.CollectionName.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                .ToList()
-                .AsReadOnly();
-
-        var totalCount = filteredSnapshots.Count;
-
-        // Apply pagination
-        var paginatedSnapshots = filteredSnapshots
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToList()
-            .AsReadOnly();
-
-        logger.LogInformation(
-            "Returning page {Page} of snapshots (PageSize: {PageSize}, Filter: '{Filter}', TotalCount: {TotalCount}, PageCount: {PageCount})",
-            page, pageSize, filter ?? "(none)", totalCount, paginatedSnapshots.Count);
-
-        return (paginatedSnapshots, totalCount);
     }
 
     public async Task<Dictionary<string, string?>> CreateCollectionSnapshotOnAllNodesAsync(
@@ -114,7 +75,7 @@ public class SnapshotService(
         var createTasks = nodes.Select(async node =>
         {
             var nodeUrl = $"{QdrantConstants.HttpProtocol}{node.Host}:{node.Port}";
-            var snapshotName = await collectionService.CreateCollectionSnapshotAsync(
+            var snapshotName = await CreateCollectionSnapshotAsync(
                 nodeUrl,
                 collectionName,
                 cancellationToken);
