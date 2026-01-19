@@ -626,7 +626,7 @@ public class SnapshotService(
             logger.LogDebug("Getting snapshots with size info for collection {CollectionName} on node {NodeUrl}", 
                 collectionName, node.Url);
             
-            var snapshotsWithSize = await collectionService.GetCollectionSnapshotsWithSizeAsync(
+            var snapshotsWithSize = await GetCollectionSnapshotsWithSizeAsync(
                 node.Url, 
                 collectionName, 
                 cancellationToken);
@@ -646,6 +646,44 @@ public class SnapshotService(
         {
             logger.LogError(ex, "Failed to get snapshots for collection {CollectionName} on node {NodeUrl}", 
                 collectionName, node.Url);
+        }
+    }
+    
+    /// <summary>
+    /// Gets snapshot information with sizes for a collection on a specific node
+    /// </summary>
+    private async Task<List<(string Name, long Size)>> GetCollectionSnapshotsWithSizeAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            logger.LogDebug("Getting snapshots with size info for collection {CollectionName} on node {NodeUrl}", 
+                collectionName, nodeUrl);
+            var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
+            var result = await qdrantClient.ListCollectionSnapshots(collectionName, cancellationToken);
+            
+            if (result?.Status?.IsSuccess == true && result.Result != null)
+            {
+                var snapshots = result.Result
+                    .Select(s => (s.Name, s.Size))
+                    .ToList();
+                
+                logger.LogDebug("Found {Count} snapshots with size info for collection {CollectionName} on node {NodeUrl}", 
+                    snapshots.Count, collectionName, nodeUrl);
+                return snapshots;
+            }
+            
+            logger.LogWarning("Failed to get snapshots for collection {CollectionName}: {Error}",
+                collectionName, result?.Status?.Error ?? "Unknown error");
+            return new List<(string Name, long Size)>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to get snapshots for collection {CollectionName} on node {NodeUrl}", 
+                collectionName, nodeUrl);
+            return new List<(string Name, long Size)>();
         }
     }
 

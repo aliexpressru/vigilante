@@ -391,15 +391,18 @@ public class SnapshotServiceTests
         mockClient.ListCollections(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(listCollectionsResponse));
 
-        // Mock GetCollectionSnapshotsWithSizeAsync
-        var snapshotsWithSize = new List<(string Name, long Size)>
+        // Mock ListCollectionSnapshots response
+        var listSnapshotsResponse = new ListSnapshotsResponse
         {
-            ("collection1-1001-snapshot.snapshot", 2048)
+            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
+            {
+                new() { Name = "collection1-1001-snapshot.snapshot", Size = 2048 }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
-        _collectionService
-            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection1", Arg.Any<CancellationToken>())
-            .Returns(snapshotsWithSize);
+        mockClient.ListCollectionSnapshots("collection1", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(listSnapshotsResponse));
 
         // Act
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
@@ -462,15 +465,18 @@ public class SnapshotServiceTests
         mockClient.ListCollections(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(listCollectionsResponse));
 
-        // Mock GetCollectionSnapshotsWithSizeAsync
-        var snapshotsWithSize = new List<(string Name, long Size)>
+        // Mock ListCollectionSnapshots response
+        var listSnapshotsResponse = new ListSnapshotsResponse
         {
-            ("collection1-1001-snapshot.snapshot", 2048)
+            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
+            {
+                new() { Name = "collection1-1001-snapshot.snapshot", Size = 2048 }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
-        _collectionService
-            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection1", Arg.Any<CancellationToken>())
-            .Returns(snapshotsWithSize);
+        mockClient.ListCollectionSnapshots("collection1", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(listSnapshotsResponse));
 
         // Act
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
@@ -526,17 +532,20 @@ public class SnapshotServiceTests
         mockClient.ListCollections(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(listCollectionsResponse));
 
-        // Return snapshots from multiple nodes (simulating S3 storage)
-        var snapshotsWithSize = new List<(string Name, long Size)>
+        // Mock ListCollectionSnapshots response - return snapshots from multiple nodes (simulating S3 storage)
+        var listSnapshotsResponse = new ListSnapshotsResponse
         {
-            ("collection1-1001-snapshot.snapshot", 2048), // Matches node1's PeerId
-            ("collection1-1002-snapshot.snapshot", 2048), // Different PeerId - should be filtered out
-            ("collection1-1003-snapshot.snapshot", 2048)  // Different PeerId - should be filtered out
+            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
+            {
+                new() { Name = "collection1-1001-snapshot.snapshot", Size = 2048 }, // Matches node1's PeerId
+                new() { Name = "collection1-1002-snapshot.snapshot", Size = 2048 }, // Different PeerId - should be filtered out
+                new() { Name = "collection1-1003-snapshot.snapshot", Size = 2048 }  // Different PeerId - should be filtered out
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
-        _collectionService
-            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection1", Arg.Any<CancellationToken>())
-            .Returns(snapshotsWithSize);
+        mockClient.ListCollectionSnapshots("collection1", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(listSnapshotsResponse));
 
         // Act
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
@@ -594,21 +603,31 @@ public class SnapshotServiceTests
         mockClient.ListCollections(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(listCollectionsResponse));
 
-        // Mock snapshots for collection1
-        _collectionService
-            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection1", Arg.Any<CancellationToken>())
-            .Returns(new List<(string Name, long Size)>
+        // Mock ListCollectionSnapshots for collection1
+        var listSnapshots1Response = new ListSnapshotsResponse
+        {
+            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
             {
-                ("collection1-1001-snapshot.snapshot", 2048)
-            });
+                new() { Name = "collection1-1001-snapshot.snapshot", Size = 2048 }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
 
-        // Mock snapshots for collection2
-        _collectionService
-            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection2", Arg.Any<CancellationToken>())
-            .Returns(new List<(string Name, long Size)>
+        mockClient.ListCollectionSnapshots("collection1", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(listSnapshots1Response));
+
+        // Mock ListCollectionSnapshots for collection2
+        var listSnapshots2Response = new ListSnapshotsResponse
+        {
+            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
             {
-                ("collection2-1001-snapshot.snapshot", 4096)
-            });
+                new() { Name = "collection2-1001-snapshot.snapshot", Size = 4096 }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollectionSnapshots("collection2", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(listSnapshots2Response));
 
         // Act
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
@@ -666,17 +685,21 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult(listCollectionsResponse));
 
         // collection1 throws exception
-        _collectionService
-            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection1", Arg.Any<CancellationToken>())
-            .Returns<List<(string, long)>>(_ => throw new Exception("Collection1 failed"));
+        mockClient.ListCollectionSnapshots("collection1", Arg.Any<CancellationToken>())
+            .Returns<ListSnapshotsResponse>(_ => throw new Exception("Collection1 failed"));
 
         // collection2 succeeds
-        _collectionService
-            .GetCollectionSnapshotsWithSizeAsync("http://node1:6333", "collection2", Arg.Any<CancellationToken>())
-            .Returns(new List<(string Name, long Size)>
+        var listSnapshots2Response = new ListSnapshotsResponse
+        {
+            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
             {
-                ("collection2-1001-snapshot.snapshot", 4096)
-            });
+                new() { Name = "collection2-1001-snapshot.snapshot", Size = 4096 }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollectionSnapshots("collection2", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(listSnapshots2Response));
 
         // Act
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);

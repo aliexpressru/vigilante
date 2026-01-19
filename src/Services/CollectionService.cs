@@ -297,41 +297,7 @@ public class CollectionService : ICollectionService
             return new List<string>();
         }
     }
-    public async Task<List<(string Name, long Size)>> GetCollectionSnapshotsWithSizeAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogDebug("Getting snapshots with size info for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            var result = await qdrantClient.ListCollectionSnapshots(collectionName, cancellationToken);
-            
-            if (result?.Status?.IsSuccess == true && result.Result != null)
-            {
-                var snapshots = result.Result
-                    .Select(s => (s.Name, s.Size))
-                    .ToList();
-                
-                _logger.LogDebug("Found {Count} snapshots with size info for collection {CollectionName} on node {NodeUrl}", 
-                    snapshots.Count, collectionName, nodeUrl);
-                return snapshots;
-            }
-            
-            _logger.LogWarning("Failed to get snapshots for collection {CollectionName}: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
-            return new List<(string Name, long Size)>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get snapshots for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            return new List<(string Name, long Size)>();
-        }
-    }
-
+    
     public async Task<bool> DeleteCollectionSnapshotAsync(
         string nodeUrl,
         string collectionName,
