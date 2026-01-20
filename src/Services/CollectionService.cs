@@ -14,7 +14,7 @@ public class CollectionService : ICollectionService
 {
     private readonly ILogger<CollectionService> _logger;
     private readonly IMeterService _meterService;
-    private readonly IPodCommandExecutor? _commandExecutor;
+    private IPodCommandExecutor? _commandExecutor;
     private readonly QdrantOptions _options;
     private readonly IQdrantClientFactory _clientFactory;
 
