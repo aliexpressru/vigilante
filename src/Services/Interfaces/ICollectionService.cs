@@ -65,15 +65,6 @@ public interface ICollectionService
 
 
     /// <summary>
-    /// Deletes a snapshot for a collection on a specific node
-    /// </summary>
-    Task<bool> DeleteCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken);
-
-    /// <summary>
     /// Downloads a snapshot for a collection from a specific node
     /// </summary>
     Task<Stream?> DownloadCollectionSnapshotAsync(

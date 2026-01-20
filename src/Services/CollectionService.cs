@@ -298,42 +298,6 @@ public class CollectionService : ICollectionService
         }
     }
     
-    public async Task<bool> DeleteCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} on node {NodeUrl}", 
-                snapshotName, collectionName, nodeUrl);
-            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            var result = await qdrantClient.DeleteCollectionSnapshot(
-                collectionName, 
-                snapshotName, 
-                cancellationToken,
-                isWaitForResult: false);
-            
-            if (result.IsAcceptedOrSuccess())
-            {
-                var statusText = result.IsAccepted() ? "deletion accepted" : "deleted successfully";
-                _logger.LogInformation("Snapshot {SnapshotName} {StatusText} for collection {CollectionName} on node {NodeUrl}", 
-                    snapshotName, statusText, collectionName, nodeUrl);
-                return true;
-            }
-            
-            _logger.LogError("Failed to delete snapshot {SnapshotName} for collection {CollectionName}: {Error}",
-                snapshotName, collectionName, result?.Status?.Error ?? "Unknown error");
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete snapshot {SnapshotName} for collection {CollectionName} on node {NodeUrl}", 
-                snapshotName, collectionName, nodeUrl);
-            return false;
-        }
-    }
     public async Task<Stream?> DownloadCollectionSnapshotAsync(
         string nodeUrl,
         string collectionName,

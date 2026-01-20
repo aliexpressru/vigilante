@@ -36,6 +36,7 @@ public class SnapshotService(
         {
             logger.LogInformation("Creating snapshot for collection {CollectionName} on node {NodeUrl}", 
                 collectionName, nodeUrl);
+            
             var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             var result = await qdrantClient.CreateCollectionSnapshot(
                 collectionName, 
@@ -46,6 +47,7 @@ public class SnapshotService(
             {
                 var snapshotName = result.Result?.Name ?? $"{collectionName}-snapshot-{DateTime.UtcNow:yyyyMMddHHmmss}";
                 var statusText = result.IsAccepted() ? "accepted" : "created successfully";
+                
                 logger.LogInformation("Snapshot {StatusText} for collection {CollectionName} on node {NodeUrl}", 
                     statusText, collectionName, nodeUrl);
                 return snapshotName;
@@ -96,6 +98,46 @@ public class SnapshotService(
 
         return results;
     }
+    
+    /// <summary>
+    /// Deletes a snapshot for a collection on a specific node
+    /// </summary>
+    public async Task<bool> DeleteCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} on node {NodeUrl}", 
+                snapshotName, collectionName, nodeUrl);
+            var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
+            var result = await qdrantClient.DeleteCollectionSnapshot(
+                collectionName, 
+                snapshotName, 
+                cancellationToken,
+                isWaitForResult: false);
+            
+            if (result.IsAcceptedOrSuccess())
+            {
+                var statusText = result.IsAccepted() ? "deletion accepted" : "deleted successfully";
+                logger.LogInformation("Snapshot {SnapshotName} {StatusText} for collection {CollectionName} on node {NodeUrl}", 
+                    snapshotName, statusText, collectionName, nodeUrl);
+                return true;
+            }
+            
+            logger.LogError("Failed to delete snapshot {SnapshotName} for collection {CollectionName}: {Error}",
+                snapshotName, collectionName, result?.Status?.Error ?? "Unknown error");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to delete snapshot {SnapshotName} for collection {CollectionName} on node {NodeUrl}", 
+                snapshotName, collectionName, nodeUrl);
+            return false;
+        }
+    }
 
     public async Task<Dictionary<string, bool>> DeleteCollectionSnapshotOnAllNodesAsync(
         string collectionName,
@@ -108,23 +150,99 @@ public class SnapshotService(
         var nodes = await nodesProvider.GetNodesAsync(cancellationToken);
         var results = new Dictionary<string, bool>();
 
-        var deleteTasks = nodes.Select(async node =>
+        // Determine snapshot source (same priority as GetSnapshotsInfoAsync)
+        var firstNode = nodes.FirstOrDefault();
+        
+        // Priority 1: Check if S3 is available
+        var isS3Available = firstNode != null && 
+                           await s3SnapshotService.IsAvailableAsync(firstNode.Namespace, cancellationToken);
+        
+        if (isS3Available)
         {
-            var nodeUrl = $"{QdrantConstants.HttpProtocol}{node.Host}:{node.Port}";
-            var success = await collectionService.DeleteCollectionSnapshotAsync(
-                nodeUrl,
+            // Delete from S3 (only once, not per node since S3 is shared)
+            logger.LogInformation("Deleting snapshot {SnapshotName} from S3 storage", snapshotName);
+            
+            var success = await DeleteSnapshotAsync(
                 collectionName,
                 snapshotName,
-                cancellationToken);
-
-            return (NodeUrl: nodeUrl, Success: success);
-        });
-
-        var deleteResults = await Task.WhenAll(deleteTasks);
-
-        foreach (var result in deleteResults)
+                SnapshotSource.S3Storage,
+                podNamespace: firstNode?.Namespace,
+                cancellationToken: cancellationToken);
+            
+            // Return same result for all nodes since S3 is shared
+            foreach (var node in nodes)
+            {
+                var nodeUrl = $"{QdrantConstants.HttpProtocol}{node.Host}:{node.Port}";
+                results[nodeUrl] = success;
+            }
+            
+            logger.LogInformation("Snapshot {SnapshotName} deleted from S3 storage: {Success}", 
+                snapshotName, success);
+            
+            return results;
+        }
+        
+        // Priority 2: Check if we have pod names (Kubernetes storage)
+        var hasPodsWithNames = nodes.Any(n => !string.IsNullOrEmpty(n.PodName));
+        
+        if (hasPodsWithNames)
         {
-            results[result.NodeUrl] = result.Success;
+            // Delete from Kubernetes storage on each pod
+            logger.LogInformation("Deleting snapshot {SnapshotName} from Kubernetes storage on all nodes", snapshotName);
+            
+            var deleteTasks = nodes.Select(async node =>
+            {
+                var nodeUrl = $"{QdrantConstants.HttpProtocol}{node.Host}:{node.Port}";
+                
+                if (string.IsNullOrEmpty(node.PodName))
+                {
+                    logger.LogWarning("Pod name is not available for node {NodeUrl}, skipping", nodeUrl);
+                    return (NodeUrl: nodeUrl, Success: false);
+                }
+                
+                var success = await DeleteSnapshotAsync(
+                    collectionName,
+                    snapshotName,
+                    SnapshotSource.KubernetesStorage,
+                    nodeUrl: nodeUrl,
+                    podName: node.PodName,
+                    podNamespace: node.Namespace,
+                    cancellationToken: cancellationToken);
+
+                return (NodeUrl: nodeUrl, Success: success);
+            });
+
+            var deleteResults = await Task.WhenAll(deleteTasks);
+
+            foreach (var result in deleteResults)
+            {
+                results[result.NodeUrl] = result.Success;
+            }
+        }
+        else
+        {
+            // Priority 3: Delete via Qdrant API (fallback)
+            logger.LogInformation("Deleting snapshot {SnapshotName} via Qdrant API on all nodes", snapshotName);
+            
+            var deleteTasks = nodes.Select(async node =>
+            {
+                var nodeUrl = $"{QdrantConstants.HttpProtocol}{node.Host}:{node.Port}";
+                var success = await DeleteSnapshotAsync(
+                    collectionName,
+                    snapshotName,
+                    SnapshotSource.QdrantApi,
+                    nodeUrl: nodeUrl,
+                    cancellationToken: cancellationToken);
+
+                return (NodeUrl: nodeUrl, Success: success);
+            });
+
+            var deleteResults = await Task.WhenAll(deleteTasks);
+
+            foreach (var result in deleteResults)
+            {
+                results[result.NodeUrl] = result.Success;
+            }
         }
 
         var successCount = results.Values.Count(s => s);
@@ -188,7 +306,7 @@ public class SnapshotService(
             logger.LogInformation("Deleting snapshot {SnapshotName} via Qdrant API on node {NodeUrl}", 
                 snapshotName, nodeUrl);
 
-            return await collectionService.DeleteCollectionSnapshotAsync(
+            return await DeleteCollectionSnapshotAsync(
                 nodeUrl,
                 collectionName,
                 snapshotName,
@@ -652,7 +770,7 @@ public class SnapshotService(
     /// <summary>
     /// Gets snapshot information with sizes for a collection on a specific node
     /// </summary>
-    private async Task<List<(string Name, long Size)>> GetCollectionSnapshotsWithSizeAsync(
+    public async Task<List<(string Name, long Size)>> GetCollectionSnapshotsWithSizeAsync(
         string nodeUrl,
         string collectionName,
         CancellationToken cancellationToken)

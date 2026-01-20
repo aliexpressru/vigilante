@@ -24,6 +24,23 @@ public interface ISnapshotService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets snapshot information with sizes for a collection on a specific node
+    /// </summary>
+    Task<List<(string Name, long Size)>> GetCollectionSnapshotsWithSizeAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Deletes a snapshot for a collection on a specific node
+    /// </summary>
+    Task<bool> DeleteCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Deletes a snapshot from all nodes via Qdrant API
     /// </summary>
     Task<Dictionary<string, bool>> DeleteCollectionSnapshotOnAllNodesAsync(
