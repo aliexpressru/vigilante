@@ -17,6 +17,7 @@ public class SnapshotService(
     IQdrantClientFactory clientFactory,
     ICollectionService collectionService,
     IS3SnapshotService s3SnapshotService,
+    IPodCommandExecutor? commandExecutor,
     IOptions<QdrantOptions> options,
     ILogger<SnapshotService> logger) : ISnapshotService
 {
@@ -102,7 +103,7 @@ public class SnapshotService(
     /// <summary>
     /// Deletes a snapshot for a collection on a specific node
     /// </summary>
-    public async Task<bool> DeleteCollectionSnapshotAsync(
+    public async Task<bool> DeleteCollectionSnapshotApiAsync(
         string nodeUrl,
         string collectionName,
         string snapshotName,
@@ -264,53 +265,172 @@ public class SnapshotService(
         logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} (source: {Source})", 
             snapshotName, collectionName, source);
 
-        if (source == SnapshotSource.S3Storage)
+        switch (source)
         {
-            // Delete from S3 storage
-            logger.LogInformation("Deleting snapshot {SnapshotName} from S3 storage", snapshotName);
+            case SnapshotSource.S3Storage:
+                // Delete from S3 storage
+                logger.LogInformation("Deleting snapshot {SnapshotName} from S3 storage", snapshotName);
 
-            return await s3SnapshotService.DeleteSnapshotAsync(
-                collectionName,
-                snapshotName,
-                podNamespace,
-                cancellationToken);
-        }
-        else if (source == SnapshotSource.KubernetesStorage)
-        {
+                return await s3SnapshotService.DeleteSnapshotAsync(
+                    collectionName,
+                    snapshotName,
+                    podNamespace,
+                    cancellationToken);
             // Delete from Kubernetes storage (disk)
-            if (string.IsNullOrEmpty(podName) || string.IsNullOrEmpty(podNamespace))
-            {
+            case SnapshotSource.KubernetesStorage when string.IsNullOrEmpty(podName) || string.IsNullOrEmpty(podNamespace):
                 logger.LogError("PodName and PodNamespace are required for deleting snapshots from Kubernetes storage");
                 return false;
+            case SnapshotSource.KubernetesStorage:
+                logger.LogInformation("Deleting snapshot {SnapshotName} from Kubernetes storage on pod {PodName}", 
+                    snapshotName, podName);
+
+                return await collectionService.DeleteSnapshotFromDiskAsync(
+                    podName,
+                    podNamespace,
+                    collectionName,
+                    snapshotName,
+                    cancellationToken);
+            // SnapshotSource.QdrantApi
+            default:
+            {
+                // Delete via Qdrant API (for S3 or API-managed snapshots)
+                if (string.IsNullOrEmpty(nodeUrl))
+                {
+                    logger.LogError("NodeUrl is required for deleting snapshots via Qdrant API");
+                    return false;
+                }
+
+                logger.LogInformation("Deleting snapshot {SnapshotName} via Qdrant API on node {NodeUrl}", 
+                    snapshotName, nodeUrl);
+
+                return await DeleteCollectionSnapshotApiAsync(
+                    nodeUrl,
+                    collectionName,
+                    snapshotName,
+                    cancellationToken);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Downloads a snapshot for a collection from a specific node via Qdrant API
+    /// </summary>
+    public async Task<Stream?> DownloadCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from node {NodeUrl}", 
+                snapshotName, collectionName, nodeUrl);
+            var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
+            
+            var result = await qdrantClient.DownloadCollectionSnapshot(
+                collectionName, 
+                snapshotName, 
+                cancellationToken);
+            
+            if (result?.Result?.SnapshotDataStream != null)
+            {
+                logger.LogInformation("Snapshot {SnapshotName} downloaded successfully for collection {CollectionName} from node {NodeUrl}", 
+                    snapshotName, collectionName, nodeUrl);
+                return result.Result.SnapshotDataStream;
+            }
+            
+            logger.LogError("Failed to download snapshot {SnapshotName} for collection {CollectionName}: empty or null result",
+                snapshotName, collectionName);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to download snapshot {SnapshotName} for collection {CollectionName} from node {NodeUrl}", 
+                snapshotName, collectionName, nodeUrl);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Downloads a snapshot directly from disk on a specific pod (bypasses Qdrant API)
+    /// </summary>
+    public async Task<Stream?> DownloadSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}", 
+                snapshotName, collectionName, podName, podNamespace);
+
+            var snapshotPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
+            
+            logger.LogInformation("Starting download: {SnapshotPath} from pod {PodName}", snapshotPath, podName);
+
+            if (commandExecutor == null)
+            {
+                logger.LogError("Command executor not available - not running in Kubernetes cluster");
+                return null;
             }
 
-            logger.LogInformation("Deleting snapshot {SnapshotName} from Kubernetes storage on pod {PodName}", 
-                snapshotName, podName);
-
-            return await collectionService.DeleteSnapshotFromDiskAsync(
+            // Get expected file size for verification
+            var expectedSize = await commandExecutor.GetFileSizeInBytesAsync(
                 podName,
                 podNamespace,
-                collectionName,
-                snapshotName,
+                snapshotPath,
                 cancellationToken);
-        }
-        else // SnapshotSource.QdrantApi
-        {
-            // Delete via Qdrant API (for S3 or API-managed snapshots)
-            if (string.IsNullOrEmpty(nodeUrl))
+
+            if (expectedSize.HasValue)
             {
-                logger.LogError("NodeUrl is required for deleting snapshots via Qdrant API");
-                return false;
+                logger.LogInformation("Got expected file size: {Size} bytes ({FormattedSize})", 
+                    expectedSize.Value, expectedSize.Value.ToPrettySize());
+            }
+            else
+            {
+                logger.LogWarning("Could not get file size from pod - will download without size limit!");
             }
 
-            logger.LogInformation("Deleting snapshot {SnapshotName} via Qdrant API on node {NodeUrl}", 
-                snapshotName, nodeUrl);
-
-            return await DeleteCollectionSnapshotAsync(
-                nodeUrl,
-                collectionName,
-                snapshotName,
+            // Get checksum for verification
+            var checksumPath = $"{snapshotPath}.checksum";
+            var expectedChecksum = await commandExecutor.GetFileContentAsync(
+                podName,
+                podNamespace,
+                checksumPath,
                 cancellationToken);
+
+            if (!string.IsNullOrEmpty(expectedChecksum))
+            {
+                logger.LogInformation("Expected checksum: {Checksum}", expectedChecksum);
+            }
+
+            // Download file using cat command
+            var snapshotStream = await commandExecutor.DownloadFileAsync(
+                podName,
+                podNamespace,
+                snapshotPath,
+                expectedSize,
+                cancellationToken);
+
+            if (snapshotStream == null)
+            {
+                logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName}", 
+                    snapshotName, podName);
+                return null;
+            }
+
+            logger.LogInformation("Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
+                snapshotName, podName, podNamespace);
+
+            return snapshotStream;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to download snapshot {SnapshotName} from disk on pod {PodName} in namespace {Namespace}", 
+                snapshotName, podName, podNamespace);
+            return null;
         }
     }
 
@@ -357,7 +477,7 @@ public class SnapshotService(
         try
         {
             logger.LogDebug("Attempting to download snapshot via API from {NodeUrl}", nodeUrl);
-            var apiStream = await collectionService.DownloadCollectionSnapshotAsync(
+            var apiStream = await DownloadCollectionSnapshotAsync(
                 nodeUrl,
                 collectionName,
                 snapshotName,
@@ -384,7 +504,7 @@ public class SnapshotService(
                 logger.LogDebug("Attempting to download snapshot from disk: Pod={PodName}, Namespace={Namespace}",
                     podName, podNamespace);
 
-                var diskStream = await collectionService.DownloadSnapshotFromDiskAsync(
+                var diskStream = await DownloadSnapshotFromDiskAsync(
                     podName,
                     podNamespace,
                     collectionName,

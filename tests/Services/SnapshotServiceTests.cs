@@ -22,6 +22,7 @@ public class SnapshotServiceTests
     private IOptions<QdrantOptions> _options = null!;
     private ILogger<SnapshotService> _logger = null!;
     private IS3SnapshotService _s3SnapshotService = null!;
+    private IPodCommandExecutor _commandExecutor = null!;
     private SnapshotService _snapshotManager = null!;
 
     [SetUp]
@@ -32,6 +33,7 @@ public class SnapshotServiceTests
         _collectionService = Substitute.For<ICollectionService>();
         _options = Substitute.For<IOptions<QdrantOptions>>();
         _logger = Substitute.For<ILogger<SnapshotService>>();
+        _commandExecutor = Substitute.For<IPodCommandExecutor>();
         
         _options.Value.Returns(new QdrantOptions { HttpTimeoutSeconds = 5 });
         
@@ -43,6 +45,7 @@ public class SnapshotServiceTests
             _clientFactory,
             _collectionService,
             _s3SnapshotService,
+            _commandExecutor,
             _options,
             _logger);
     }

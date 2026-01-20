@@ -34,7 +34,7 @@ public interface ISnapshotService
     /// <summary>
     /// Deletes a snapshot for a collection on a specific node
     /// </summary>
-    Task<bool> DeleteCollectionSnapshotAsync(
+    Task<bool> DeleteCollectionSnapshotApiAsync(
         string nodeUrl,
         string collectionName,
         string snapshotName,
@@ -70,6 +70,25 @@ public interface ISnapshotService
         string? podName = null,
         string? podNamespace = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Downloads a snapshot for a collection from a specific node via Qdrant API
+    /// </summary>
+    Task<Stream?> DownloadCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Downloads a snapshot directly from disk on a specific pod (bypasses Qdrant API)
+    /// </summary>
+    Task<Stream?> DownloadSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Gets information about all snapshots in the cluster (from both Kubernetes storage and Qdrant API)

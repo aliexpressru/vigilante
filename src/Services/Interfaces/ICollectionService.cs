@@ -65,25 +65,6 @@ public interface ICollectionService
 
 
     /// <summary>
-    /// Downloads a snapshot for a collection from a specific node
-    /// </summary>
-    Task<Stream?> DownloadCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Downloads a snapshot directly from disk on a specific pod (bypasses Qdrant API)
-    /// </summary>
-    Task<Stream?> DownloadSnapshotFromDiskAsync(
-        string podName,
-        string podNamespace,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken);
-
-    /// <summary>
     /// Checks if a collection exists on a specific node
     /// </summary>
 
