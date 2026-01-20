@@ -6,6 +6,7 @@ using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Responses;
 using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Configuration;
+using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
@@ -40,6 +41,10 @@ public class SnapshotServiceTests
         // Mock S3SnapshotService to avoid real S3 dependencies in tests
         _s3SnapshotService = Substitute.For<IS3SnapshotService>();
         
+        // Default: S3 is not available (tests can override this)
+        _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(false));
+        
         _snapshotManager = new SnapshotService(
             _nodesProvider,
             _clientFactory,
@@ -48,6 +53,31 @@ public class SnapshotServiceTests
             _commandExecutor,
             _options,
             _logger);
+    }
+
+    /// <summary>
+    /// Helper to setup BuildNodeInfoListAsync mock from GetNodesAsync result
+    /// </summary>
+    private void SetupNodeInfoList(IReadOnlyList<QdrantNodeConfig> nodes, Dictionary<string, string>? peerIds = null)
+    {
+        var nodeInfos = nodes.Select(n =>
+        {
+            var nodeUrl = $"http://{n.Host}:{n.Port}";
+            var peerId = peerIds?.GetValueOrDefault(nodeUrl) ?? string.Empty;
+            
+            return new NodeInfo
+            {
+                Url = nodeUrl,
+                PeerId = peerId,
+                Namespace = n.Namespace,
+                PodName = n.PodName,
+                StatefulSetName = n.StatefulSetName,
+                LastSeen = DateTime.UtcNow
+            };
+        }).ToList();
+
+        _nodesProvider.BuildNodeInfoListAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(nodeInfos));
     }
 
     [TearDown]
@@ -431,6 +461,7 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var pod1Id = 1001UL;
+        SetupNodeInfoList(nodes, new Dictionary<string, string> { ["http://node1:6333"] = pod1Id.ToString() });
         var mockClient = Substitute.For<IQdrantHttpClient>();
         
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
@@ -490,6 +521,8 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var pod1Id = 1001UL;
+        SetupNodeInfoList(nodes, new Dictionary<string, string> { ["http://node1:6333"] = pod1Id.ToString() });
+        
         var mockClient = Substitute.For<IQdrantHttpClient>();
         
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
@@ -559,6 +592,8 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var pod1Id = 1001UL;
+        SetupNodeInfoList(nodes, new Dictionary<string, string> { ["http://node1:6333"] = pod1Id.ToString() });
+        
         var mockClient = Substitute.For<IQdrantHttpClient>();
         
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
@@ -631,6 +666,8 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var pod1Id = 1001UL;
+        SetupNodeInfoList(nodes, new Dictionary<string, string> { ["http://node1:6333"] = pod1Id.ToString() });
+        
         var mockClient = Substitute.For<IQdrantHttpClient>();
         
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
@@ -701,6 +738,8 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var pod1Id = 1001UL;
+        SetupNodeInfoList(nodes, new Dictionary<string, string> { ["http://node1:6333"] = pod1Id.ToString() });
+        
         var mockClient = Substitute.For<IQdrantHttpClient>();
         
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
@@ -783,6 +822,8 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var pod1Id = 1001UL;
+        SetupNodeInfoList(nodes, new Dictionary<string, string> { ["http://node1:6333"] = pod1Id.ToString() });
+        
         var mockClient = Substitute.For<IQdrantHttpClient>();
         
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())

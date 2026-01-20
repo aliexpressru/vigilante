@@ -230,15 +230,10 @@ public class ClusterManager(
 
     private async Task<NodeInfo> GetNodeInfoAsync(QdrantNodeConfig node, CancellationToken cancellationToken)
     {
-        var nodeInfo = new NodeInfo
-        {
-            Url = $"{QdrantConstants.HttpProtocol}{node.Host}:{node.Port}",
-            Namespace = node.Namespace,
-            PodName = node.PodName,
-            StatefulSetName = node.StatefulSetName,
-            LastSeen = DateTime.UtcNow
-        };
+        // Get basic node info (URL, peer ID, pod name, etc.) from the nodes provider
+        var nodeInfo = await nodesProvider.GetBasicNodeInfoAsync(node, cancellationToken);
 
+        // Enrich with additional cluster information
         try
         {
             var client = clientFactory.CreateClient(node.Host, node.Port, _options.ApiKey);
@@ -277,7 +272,18 @@ public class ClusterManager(
         CancellationToken timeoutToken,
         CancellationToken originalToken)
     {
-        nodeInfo.PeerId = clusterInfoResult.PeerId.ToString();
+        // PeerId is already set by GetBasicNodeInfoAsync, but verify it matches
+        var expectedPeerId = clusterInfoResult.PeerId.ToString();
+        if (string.IsNullOrEmpty(nodeInfo.PeerId))
+        {
+            nodeInfo.PeerId = expectedPeerId;
+        }
+        else if (nodeInfo.PeerId != expectedPeerId)
+        {
+            logger.LogWarning("PeerId mismatch for node {NodeUrl}: expected {Expected}, got {Actual}", 
+                nodeInfo.Url, nodeInfo.PeerId, expectedPeerId);
+        }
+        
         nodeInfo.IsHealthy = true;
         nodeInfo.IsLeader = clusterInfoResult.RaftInfo?.Leader != null &&
                             clusterInfoResult.RaftInfo.Leader.ToString() == clusterInfoResult.PeerId.ToString();

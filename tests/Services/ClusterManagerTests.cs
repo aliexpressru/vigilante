@@ -61,6 +61,25 @@ public class ClusterManagerTests
                 return _mockClients.GetOrAdd(key, _ => Substitute.For<IQdrantHttpClient>());
             });
         
+        // Setup GetBasicNodeInfoAsync to return basic NodeInfo without calling GetClusterInfo
+        // GetNodeInfoAsync will call GetClusterInfo separately to enrich the data
+        _nodesProvider.GetBasicNodeInfoAsync(Arg.Any<QdrantNodeConfig>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var config = callInfo.ArgAt<QdrantNodeConfig>(0);
+                var nodeUrl = $"http://{config.Host}:{config.Port}";
+                
+                return Task.FromResult(new NodeInfo
+                {
+                    Url = nodeUrl,
+                    PeerId = string.Empty, // Will be populated by GetNodeInfoAsync
+                    Namespace = config.Namespace,
+                    PodName = config.PodName,
+                    StatefulSetName = config.StatefulSetName,
+                    LastSeen = DateTime.UtcNow
+                });
+            });
+        
         var kubernetesManager = Substitute.For<IKubernetesManager>();
         
         _clusterManager = new ClusterManager(

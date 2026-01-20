@@ -557,7 +557,7 @@ public class SnapshotService(
             }
 
             // Fetch fresh data
-            var nodes = await BuildNodeInfoListAsync(cancellationToken);
+            var nodes = await nodesProvider.BuildNodeInfoListAsync(cancellationToken);
             logger.LogInformation("Found {NodesCount} nodes to process", nodes.Count);
             
             var result = new List<SnapshotInfo>();
@@ -637,50 +637,6 @@ public class SnapshotService(
         }
     }
 
-    private async Task<List<NodeInfo>> BuildNodeInfoListAsync(CancellationToken cancellationToken)
-    {
-        var nodeConfigs = await nodesProvider.GetNodesAsync(cancellationToken);
-        var nodes = new List<NodeInfo>();
-
-        foreach (var nodeConfig in nodeConfigs)
-        {
-            var nodeUrl = $"{QdrantConstants.HttpProtocol}{nodeConfig.Host}:{nodeConfig.Port}";
-            
-            string? peerId = await GetPeerIdForNodeAsync(nodeUrl, nodeConfig, cancellationToken);
-
-            nodes.Add(new NodeInfo
-            {
-                Url = nodeUrl,
-                Namespace = nodeConfig.Namespace,
-                PodName = nodeConfig.PodName,
-                PeerId = peerId ?? "",
-                IsHealthy = true,
-                LastSeen = DateTime.UtcNow
-            });
-        }
-
-        return nodes;
-    }
-
-    private async Task<string?> GetPeerIdForNodeAsync(string nodeUrl, QdrantNodeConfig nodeConfig, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var client = clientFactory.CreateClient(nodeConfig.Host, nodeConfig.Port, _options.ApiKey);
-            var clusterInfo = await client.GetClusterInfo(cancellationToken);
-            
-            if (clusterInfo.Status.IsSuccess && clusterInfo.Result?.PeerId != null)
-            {
-                return clusterInfo.Result.PeerId.ToString();
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to get cluster info for node {NodeUrl}", nodeUrl);
-        }
-
-        return null;
-    }
 
     private async Task GetSnapshotsFromKubernetesStorageAsync(
         List<NodeInfo> nodes, 
