@@ -11,6 +11,11 @@ public static class S3Constants
     public const string SnapshotsFolder = "snapshots";
     
     /// <summary>
+    /// Identifier used for S3 storage in snapshot metadata (PodName, NodeUrl, PeerId)
+    /// </summary>
+    public const string StorageIdentifier = "S3";
+    
+    /// <summary>
     /// Secret name in Kubernetes for S3 credentials
     /// </summary>
     public const string SecretName = "qdrant-s3-credentials";

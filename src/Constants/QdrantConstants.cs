@@ -16,6 +16,11 @@ public static class QdrantConstants
     public const string StoragePath = "/qdrant/storage/collections";
 
     /// <summary>
+    /// Base path to Qdrant snapshots directory in containers
+    /// </summary>
+    public const string SnapshotsPath = "/qdrant/snapshots";
+
+    /// <summary>
     /// Name of the Qdrant container in Kubernetes pods
     /// </summary>
     public const string ContainerName = "qdrant";
