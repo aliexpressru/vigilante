@@ -494,9 +494,15 @@ public class SnapshotServiceTests
             }
         };
 
-        _collectionService
-            .GetSnapshotsFromDiskForPodAsync("pod1", "ns1", "http://node1:6333", "1001", Arg.Any<CancellationToken>())
-            .Returns(snapshotsFromDisk);
+        // Mock commandExecutor to return collection folders and snapshot files
+        _commandExecutor.ListFilesAsync("pod1", "ns1", "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
+            .Returns(new List<string> { "collection1" });
+        
+        _commandExecutor.ListFilesAsync("pod1", "ns1", "/qdrant/snapshots/collection1", "*.snapshot", Arg.Any<CancellationToken>())
+            .Returns(new List<string> { "snapshot1.snapshot" });
+        
+        _commandExecutor.GetSizeAsync("pod1", "ns1", "/qdrant/snapshots/collection1", "snapshot1.snapshot", Arg.Any<CancellationToken>())
+            .Returns(1024L);
 
         // Act
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
@@ -611,10 +617,9 @@ public class SnapshotServiceTests
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
             }));
 
-        // Disk returns empty
-        _collectionService
-            .GetSnapshotsFromDiskForPodAsync("pod1", "ns1", "http://node1:6333", "1001", Arg.Any<CancellationToken>())
-            .Returns(new List<SnapshotInfo>());
+        // Disk returns empty (no collection folders)
+        _commandExecutor.ListFilesAsync("pod1", "ns1", "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
+            .Returns(new List<string>());
 
         // Mock ListCollections response
         var listCollectionsResponse = new ListCollectionsResponse

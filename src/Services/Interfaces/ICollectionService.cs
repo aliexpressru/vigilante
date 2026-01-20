@@ -104,15 +104,6 @@ public interface ICollectionService
         IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Gets snapshot files and their sizes from disk for a specific pod
-    /// </summary>
-    Task<IEnumerable<SnapshotInfo>> GetSnapshotsFromDiskForPodAsync(
-        string podName,
-        string podNamespace,
-        string nodeUrl,
-        string peerId,
-        CancellationToken cancellationToken);
 
 
     /// <summary>
