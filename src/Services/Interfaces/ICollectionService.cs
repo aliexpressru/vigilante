@@ -103,16 +103,5 @@ public interface ICollectionService
     Task<IReadOnlyList<CollectionInfo>> GetCollectionsFromQdrantAsync(
         IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken);
-
-
-
-    /// <summary>
-    /// Deletes a snapshot file directly from disk on a specific pod
-    /// </summary>
-    Task<bool> DeleteSnapshotFromDiskAsync(
-        string podName,
-        string podNamespace,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken);
 }
+

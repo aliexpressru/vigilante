@@ -100,5 +100,15 @@ public interface ISnapshotService
     Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(
         bool clearCache = false,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a snapshot file directly from disk on a specific pod
+    /// </summary>
+    Task<bool> DeleteSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
 }
 

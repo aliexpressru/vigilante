@@ -493,33 +493,6 @@ public class CollectionService : ICollectionService
     }
 
 
-    public async Task<bool> DeleteSnapshotFromDiskAsync(
-        string podName,
-        string podNamespace,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken)
-    {
-        _logger.LogInformation(
-            "Deleting snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}",
-            snapshotName, collectionName, podName, podNamespace);
-
-        if (_commandExecutor == null)
-        {
-            _logger.LogError("Kubernetes client not available, cannot delete snapshot from disk");
-            return false;
-        }
-
-        var fullPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
-        return await _commandExecutor.DeleteAndVerifyAsync(
-            podName, 
-            podNamespace, 
-            fullPath, 
-            isDirectory: false, 
-            $"Snapshot {snapshotName}", 
-            cancellationToken);
-    }
-
     private async Task ProcessCollectionClusteringInfoAsync(
         IQdrantHttpClient qdrantClient,
         string healthyNodeUrl,

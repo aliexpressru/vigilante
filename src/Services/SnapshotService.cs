@@ -15,7 +15,6 @@ namespace Vigilante.Services;
 public class SnapshotService(
     IQdrantNodesProvider nodesProvider,
     IQdrantClientFactory clientFactory,
-    ICollectionService collectionService,
     IS3SnapshotService s3SnapshotService,
     IPodCommandExecutor? commandExecutor,
     IOptions<QdrantOptions> options,
@@ -284,7 +283,7 @@ public class SnapshotService(
                 logger.LogInformation("Deleting snapshot {SnapshotName} from Kubernetes storage on pod {PodName}", 
                     snapshotName, podName);
 
-                return await collectionService.DeleteSnapshotFromDiskAsync(
+                return await DeleteSnapshotFromDiskAsync(
                     podName,
                     podNamespace,
                     collectionName,
@@ -986,5 +985,32 @@ public class SnapshotService(
 
         logger.LogInformation("Found {Count} snapshots on pod {PodName}", snapshots.Count, podName);
         return snapshots;
+    }
+
+    public async Task<bool> DeleteSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "Deleting snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}",
+            snapshotName, collectionName, podName, podNamespace);
+
+        if (commandExecutor == null)
+        {
+            logger.LogError("Kubernetes client not available, cannot delete snapshot from disk");
+            return false;
+        }
+
+        var fullPath = $"{QdrantConstants.SnapshotsPath}/{collectionName}/{snapshotName}";
+        return await commandExecutor.DeleteAndVerifyAsync(
+            podName, 
+            podNamespace, 
+            fullPath, 
+            isDirectory: false, 
+            $"Snapshot {snapshotName}", 
+            cancellationToken);
     }
 }

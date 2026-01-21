@@ -143,44 +143,6 @@ public class CollectionServiceTests
 
     #endregion
 
-    #region DeleteSnapshotFromDiskAsync Tests
-
-    [Test]
-    public async Task DeleteSnapshotFromDiskAsync_ShouldCallDeleteAndVerify()
-    {
-        // Arrange
-        var podName = "test-pod";
-        var podNamespace = "test-ns";
-        var collectionName = "test-collection";
-        var snapshotName = "test-snapshot.snapshot";
-
-        _mockCommandExecutor.DeleteAndVerifyAsync(
-                podName, 
-                podNamespace, 
-                "/qdrant/snapshots/test-collection/test-snapshot.snapshot", 
-                false, 
-                "Snapshot test-snapshot.snapshot", 
-                Arg.Any<CancellationToken>())
-            .Returns(true);
-
-        var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
-
-        // Act
-        var result = await service.DeleteSnapshotFromDiskAsync(
-            podName, podNamespace, collectionName, snapshotName, CancellationToken.None);
-
-        // Assert
-        Assert.That(result, Is.True);
-        await _mockCommandExecutor.Received(1).DeleteAndVerifyAsync(
-            podName, 
-            podNamespace, 
-            "/qdrant/snapshots/test-collection/test-snapshot.snapshot", 
-            false, 
-            "Snapshot test-snapshot.snapshot", 
-            Arg.Any<CancellationToken>());
-    }
-
-    #endregion
 
     /// <summary>
     /// Helper method to create CollectionService with mocked IPodCommandExecutor using reflection
