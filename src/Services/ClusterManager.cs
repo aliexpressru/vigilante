@@ -25,7 +25,7 @@ public class ClusterManager(
     private readonly QdrantOptions _options = options.Value;
     private readonly ClusterPeerState _clusterState = new();
     private IReadOnlyList<CollectionInfo>? _cachedCollections;
-    private readonly object _cacheLock = new();
+    private readonly Lock _cacheLock = new();
 
     public async Task<ClusterState> GetClusterStateAsync(CancellationToken cancellationToken = default)
     {
@@ -36,9 +36,11 @@ public class ClusterManager(
         DetectClusterSplits(nodeStatuses);
         FinalizeNodeHealthStatus(nodeStatuses);
 
-        var state = new ClusterState();
-        state.Nodes = nodeStatuses.ToList();
-        state.LastUpdated = DateTime.UtcNow;
+        var state = new ClusterState
+        {
+            Nodes = nodeStatuses.ToList(),
+            LastUpdated = DateTime.UtcNow
+        };
 
         meterService.UpdateAliveNodes(state.Nodes.Count(n => n.IsHealthy));
         await AddKubernetesWarningsIfNeededAsync(state, cancellationToken);
@@ -46,7 +48,8 @@ public class ClusterManager(
         return state;
     }
 
-    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(bool clearCache = false, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(bool clearCache = false,
+        CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Starting GetCollectionsInfoAsync (clearCache={ClearCache})", clearCache);
 
@@ -58,6 +61,7 @@ public class ClusterManager(
                 if (_cachedCollections != null)
                 {
                     logger.LogInformation("Returning cached collections ({Count} items)", _cachedCollections.Count);
+
                     return _cachedCollections;
                 }
             }
@@ -78,6 +82,7 @@ public class ClusterManager(
         if (result.Count == 0)
         {
             logger.LogDebug("No collections found from API, returning test data");
+
             return testDataProvider.GenerateTestCollectionData();
         }
 
@@ -119,6 +124,7 @@ public class ClusterManager(
         if (healthyNode == null)
         {
             logger.LogError("No healthy nodes found to perform replication");
+
             return false;
         }
 
@@ -242,10 +248,11 @@ public class ClusterManager(
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
             var clusterInfo = await client.GetClusterInfo(linkedCts.Token).WaitAsync(timeoutCts.Token);
-            
+
             if (clusterInfo.Status.IsSuccess && clusterInfo.Result?.PeerId != null)
             {
-                await ProcessClusterInfoResultAsync(nodeInfo, clusterInfo.Result, client, linkedCts.Token, timeoutCts.Token, cancellationToken);
+                await ProcessClusterInfoResultAsync(nodeInfo, clusterInfo.Result, client, linkedCts.Token,
+                    timeoutCts.Token, cancellationToken);
             }
             else
             {
@@ -280,10 +287,10 @@ public class ClusterManager(
         }
         else if (nodeInfo.PeerId != expectedPeerId)
         {
-            logger.LogWarning("PeerId mismatch for node {NodeUrl}: expected {Expected}, got {Actual}", 
+            logger.LogWarning("PeerId mismatch for node {NodeUrl}: expected {Expected}, got {Actual}",
                 nodeInfo.Url, nodeInfo.PeerId, expectedPeerId);
         }
-        
+
         nodeInfo.IsHealthy = true;
         nodeInfo.IsLeader = clusterInfoResult.RaftInfo?.Leader != null &&
                             clusterInfoResult.RaftInfo.Leader.ToString() == clusterInfoResult.PeerId.ToString();
@@ -301,7 +308,8 @@ public class ClusterManager(
         }
     }
 
-    private async Task FetchQdrantVersionAsync(NodeInfo nodeInfo, IQdrantHttpClient client, CancellationToken cancellationToken)
+    private async Task FetchQdrantVersionAsync(NodeInfo nodeInfo, IQdrantHttpClient client,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -340,16 +348,17 @@ public class ClusterManager(
 
         var consensusLastUpdate = clusterInfoResult.ConsensusThreadStatus?.LastUpdate;
         var (activeFailures, staleFailures) = CategorizeMessageSendFailures(
-            clusterInfoResult.MessageSendFailures, 
+            clusterInfoResult.MessageSendFailures,
             consensusLastUpdate);
 
         ProcessActiveFailures(nodeInfo, activeFailures);
         ProcessStaleFailures(nodeInfo, staleFailures);
     }
 
-    private (List<(string PeerId, MessageSendFailureUnit Failure)> Active, List<(string PeerId, MessageSendFailureUnit Failure)> Stale) 
+    private (List<(string PeerId, MessageSendFailureUnit Failure)> Active,
+        List<(string PeerId, MessageSendFailureUnit Failure)> Stale)
         CategorizeMessageSendFailures(
-            Dictionary<string, MessageSendFailureUnit> failures, 
+            Dictionary<string, MessageSendFailureUnit> failures,
             DateTime? consensusLastUpdate)
     {
         var activeFailures = new List<(string PeerId, MessageSendFailureUnit Failure)>();
@@ -371,16 +380,16 @@ public class ClusterManager(
     }
 
     private void ProcessActiveFailures(
-        NodeInfo nodeInfo, 
+        NodeInfo nodeInfo,
         List<(string PeerId, MessageSendFailureUnit Failure)> activeFailures)
     {
         if (activeFailures.Count == 0)
             return;
 
-        var failuresStr = string.Join(", ", activeFailures.Select(f => 
+        var failuresStr = string.Join(", ", activeFailures.Select(f =>
             $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
         nodeInfo.Issues.Add($"Message send failures: {failuresStr}");
-        
+
         if (nodeInfo.ErrorType == NodeErrorType.None)
         {
             nodeInfo.ErrorType = NodeErrorType.MessageSendFailures;
@@ -390,16 +399,17 @@ public class ClusterManager(
     }
 
     private void ProcessStaleFailures(
-        NodeInfo nodeInfo, 
+        NodeInfo nodeInfo,
         List<(string PeerId, MessageSendFailureUnit Failure)> staleFailures)
     {
         if (staleFailures.Count == 0)
             return;
 
-        var staleFailuresStr = string.Join(", ", staleFailures.Select(f => 
+        var staleFailuresStr = string.Join(", ", staleFailures.Select(f =>
             $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
         nodeInfo.Warnings.Add($"Stale message send failures (older than consensus update): {staleFailuresStr}");
-        logger.LogInformation("Node {NodeUrl} has stale message send failures: {Failures}", nodeInfo.Url, staleFailuresStr);
+        logger.LogInformation("Node {NodeUrl} has stale message send failures: {Failures}", nodeInfo.Url,
+            staleFailuresStr);
     }
 
     private void CollectPeerInformation(NodeInfo nodeInfo, ClusterInfoResult clusterInfoResult)
@@ -430,7 +440,7 @@ public class ClusterManager(
             if (!isHealthy)
             {
                 nodeInfo.Issues.Add(errorMessage ?? "Failed to fetch collections");
-                
+
                 if (nodeInfo.ErrorType == NodeErrorType.None)
                 {
                     nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
@@ -447,7 +457,7 @@ public class ClusterManager(
 
             logger.LogWarning(ex, "Collections request timed out for node {NodeUrl}", nodeInfo.Url);
             nodeInfo.Issues.Add("Collections request timed out");
-            
+
             if (nodeInfo.ErrorType == NodeErrorType.None)
             {
                 nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
@@ -459,7 +469,7 @@ public class ClusterManager(
         {
             logger.LogWarning(ex, "Failed to fetch collections for node {NodeUrl}", nodeInfo.Url);
             nodeInfo.Issues.Add($"Failed to fetch collections: {ex.Message}");
-            
+
             if (nodeInfo.ErrorType == NodeErrorType.None)
             {
                 nodeInfo.ErrorType = NodeErrorType.CollectionsFetchError;
@@ -479,11 +489,11 @@ public class ClusterManager(
 #pragma warning disable QD0001
             var issuesResponse = await client.ReportIssues(cancellationToken);
 #pragma warning restore QD0001
-            
+
             if (issuesResponse.Status.IsSuccess && issuesResponse.Result?.Issues != null)
             {
                 var qdrantIssues = issuesResponse.Result.Issues;
-                
+
                 if (qdrantIssues.Length > 0)
                 {
                     foreach (var issue in qdrantIssues)
@@ -494,21 +504,22 @@ public class ClusterManager(
 
                         // Build issue message
                         var issueMessage = new System.Text.StringBuilder();
-                        
+
                         if (!string.IsNullOrWhiteSpace(issueId))
                         {
                             issueMessage.Append($"[{issueId}]");
                         }
-                        
+
                         if (!string.IsNullOrWhiteSpace(description))
                         {
                             if (issueMessage.Length > 0)
                             {
                                 issueMessage.Append(" ");
                             }
+
                             issueMessage.Append(description);
                         }
-                        
+
                         if (!string.IsNullOrWhiteSpace(relatedCollection))
                         {
                             issueMessage.Append($" (Collection: {relatedCollection})");
@@ -518,7 +529,7 @@ public class ClusterManager(
                         if (!string.IsNullOrWhiteSpace(message))
                         {
                             nodeInfo.Issues.Add(message);
-                            
+
                             logger.LogDebug(
                                 "Node {NodeUrl} issue: {IssueId} - {Description}",
                                 nodeInfo.Url,
@@ -526,7 +537,7 @@ public class ClusterManager(
                                 description ?? "no description");
                         }
                     }
-                    
+
                     logger.LogInformation(
                         "Node {NodeUrl} reported {Count} Qdrant issues",
                         nodeInfo.Url,
@@ -550,7 +561,7 @@ public class ClusterManager(
         nodeInfo.Issues.Add($"Failed to get cluster info: {errorDetails ?? "Invalid response"}");
         nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.InvalidResponse);
         nodeInfo.ErrorType = NodeErrorType.InvalidResponse;
-        logger.LogWarning("Node {NodeUrl} returned invalid cluster info response. Error: {Error}", 
+        logger.LogWarning("Node {NodeUrl} returned invalid cluster info response. Error: {Error}",
             nodeInfo.Url, errorDetails ?? "Invalid response");
     }
 
@@ -582,7 +593,8 @@ public class ClusterManager(
                  node.ErrorType == NodeErrorType.MessageSendFailures))
             {
                 node.IsHealthy = false;
-                logger.LogInformation("Marking node {NodeUrl} as unhealthy due to {ErrorType}", node.Url, node.ErrorType);
+                logger.LogInformation("Marking node {NodeUrl} as unhealthy due to {ErrorType}", node.Url,
+                    node.ErrorType);
             }
         }
     }
@@ -592,12 +604,14 @@ public class ClusterManager(
         if (kubernetesManager == null)
         {
             logger.LogDebug("KubernetesManager is not available, skipping K8s events");
+
             return;
         }
 
         if (state.Status != ClusterStatus.Degraded)
         {
             logger.LogDebug("Cluster status is {Status}, skipping K8s events (only fetch for Degraded)", state.Status);
+
             return;
         }
 
@@ -623,9 +637,10 @@ public class ClusterManager(
                         logger.LogDebug("Added K8s event to node {NodeUrl}: {Warning}", targetNode.Url, warning);
                     }
 
-                    logger.LogInformation("Added {Count} Kubernetes warning events to node {NodeUrl}. Total warnings on node: {TotalWarnings}",
+                    logger.LogInformation(
+                        "Added {Count} Kubernetes warning events to node {NodeUrl}. Total warnings on node: {TotalWarnings}",
                         warningEvents.Count, targetNode.Url, targetNode.Warnings.Count);
-                    
+
                     // Force recalculation of Health to include new warnings
                     state.InvalidateCache();
                     logger.LogDebug("Invalidated ClusterState cache to recalculate health with new warnings");
@@ -637,7 +652,8 @@ public class ClusterManager(
             }
             else
             {
-                logger.LogInformation("No K8s warning events found in namespace {Namespace}", namespaceToUse ?? "default");
+                logger.LogInformation("No K8s warning events found in namespace {Namespace}",
+                    namespaceToUse ?? "default");
             }
         }
         catch (Exception ex)
@@ -658,10 +674,13 @@ public class ClusterManager(
         CancellationToken cancellationToken)
     {
         logger.LogInformation("Fetching collections from Qdrant API");
+
         var nodeInfos = nodes.Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName));
+        
         var collectionsFromApi = await collectionService.GetCollectionsFromQdrantAsync(nodeInfos, cancellationToken);
         var result = collectionsFromApi.ToList();
         logger.LogInformation("Retrieved {Count} collections from Qdrant API", result.Count);
+
         return result;
     }
 
@@ -684,9 +703,10 @@ public class ClusterManager(
         EnrichCollectionsWithStorageData(collections, storageCollections);
     }
 
-    private async Task<Dictionary<(string NodeUrl, string CollectionName), CollectionSize>> FetchStorageCollectionSizesAsync(
-        IReadOnlyList<NodeInfo> nodes,
-        CancellationToken cancellationToken)
+    private async Task<Dictionary<(string NodeUrl, string CollectionName), CollectionSize>>
+        FetchStorageCollectionSizesAsync(
+            IReadOnlyList<NodeInfo> nodes,
+            CancellationToken cancellationToken)
     {
         var storageCollections = new Dictionary<(string NodeUrl, string CollectionName), CollectionSize>();
 
@@ -778,6 +798,7 @@ public class ClusterManager(
         if (healthyNodes.Count == 0)
         {
             logger.LogWarning("No healthy nodes found, skipping sharding information collection");
+
             return;
         }
 
@@ -810,6 +831,7 @@ public class ClusterManager(
         if (healthyNodes.Count == 0)
         {
             logger.LogInformation("No healthy nodes with peer information to analyze for splits");
+
             return;
         }
 
@@ -827,11 +849,13 @@ public class ClusterManager(
         {
             logger.LogWarning("Could not establish majority cluster state from {HealthyNodeCount} healthy nodes",
                 healthyNodes.Count);
+
             return false;
         }
 
         logger.LogInformation("Established majority cluster state with peer IDs: {PeerIds}",
             string.Join(", ", _clusterState.MajorityPeerIds));
+
         return true;
     }
 
@@ -874,6 +898,7 @@ public class ClusterManager(
         if (kubernetesManager == null)
         {
             logger.LogDebug("Kubernetes manager not available, cannot resolve pod name");
+
             return null;
         }
 
@@ -915,7 +940,7 @@ public class ClusterManager(
                 {
                     return count > 1 ? $"{latestError} ({count} failures)" : latestError;
                 }
-                
+
                 // Try to extract the main error message (e.g., "Can't send Raft message over channel")
                 var messageStart = latestError.IndexOf("message: \"", StringComparison.Ordinal);
                 if (messageStart >= 0)
@@ -957,4 +982,3 @@ public class ClusterManager(
         }
     }
 }
-
