@@ -2291,8 +2291,22 @@ public class ClusterManagerTests
             {
                 Issues = new[]
                 {
-                    new KeyValuePair<string, string>("disk_usage", "Disk usage is above 80%"),
-                    new KeyValuePair<string, string>("memory_usage", "Memory usage is above 90%")
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = "disk_usage",
+                        Description = "Disk usage is above 80%",
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = null,
+                        Solution = null
+                    },
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = "memory_usage",
+                        Description = "Memory usage is above 90%",
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = null,
+                        Solution = null
+                    }
                 }
             }
         };
@@ -2310,8 +2324,8 @@ public class ClusterManagerTests
         var node = state.Nodes[0];
         Assert.That(node.IsHealthy, Is.True, "Node should be healthy even with Qdrant issues (they are informational)");
         Assert.That(node.Issues, Has.Count.EqualTo(2), "Should have 2 issues from Qdrant");
-        Assert.That(node.Issues[0], Is.EqualTo("disk_usage: Disk usage is above 80%"));
-        Assert.That(node.Issues[1], Is.EqualTo("memory_usage: Memory usage is above 90%"));
+        Assert.That(node.Issues[0], Is.EqualTo("[disk_usage] Disk usage is above 80%"));
+        Assert.That(node.Issues[1], Is.EqualTo("[memory_usage] Memory usage is above 90%"));
     }
 
     [Test]
@@ -2347,7 +2361,7 @@ public class ClusterManagerTests
                 }
             }));
 
-        // Mock ReportIssues response with issues without values
+        // Mock ReportIssues response with issues with empty/null values
         var reportIssuesResponse = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse
         {
             Status = new QdrantStatus(QdrantOperationStatusType.Ok),
@@ -2355,10 +2369,38 @@ public class ClusterManagerTests
             {
                 Issues = new[]
                 {
-                    new KeyValuePair<string, string>(null!, null!),
-                    new KeyValuePair<string, string>("", ""),
-                    new KeyValuePair<string, string>("   ", "   "),
-                    new KeyValuePair<string, string>("disk_usage", "  High  ")
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = null,
+                        Description = null,
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = null,
+                        Solution = null
+                    },
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = "",
+                        Description = "",
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = null,
+                        Solution = null
+                    },
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = "   ",
+                        Description = "   ",
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = null,
+                        Solution = null
+                    },
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = "disk_usage",
+                        Description = "  High  ",
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = null,
+                        Solution = null
+                    }
                 }
             }
         };
@@ -2375,9 +2417,77 @@ public class ClusterManagerTests
         Assert.That(state.Nodes, Has.Count.EqualTo(1));
         var node = state.Nodes[0];
         Assert.That(node.Issues, Has.Count.EqualTo(1), "Only one valid issue should remain");
-        Assert.That(node.Issues[0], Is.EqualTo("disk_usage: High"));
+        Assert.That(node.Issues[0], Is.EqualTo("[disk_usage] High"));
         Assert.That(state.Health.Issues, Has.Count.EqualTo(1));
-        Assert.That(state.Health.Issues[0], Is.EqualTo("pod1: disk_usage: High"));
+        Assert.That(state.Health.Issues[0], Is.EqualTo("pod1: [disk_usage] High"));
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WithQdrantIssuesWithRelatedCollection_ShouldIncludeCollectionName()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var peerId = 1001UL;
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = peerId,
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = peerId },
+                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    {
+                        ConsensusThreadStatus = "working",
+                        LastUpdate = DateTime.UtcNow,
+                        Err = null
+                    },
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                }
+            }));
+
+        // Mock ReportIssues response with related collection
+        var reportIssuesResponse = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+            Result = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint
+            {
+                Issues = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = "shard_replication",
+                        Description = "Shard has no active replicas",
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = "my_collection",
+                        Solution = null
+                    }
+                }
+            }
+        };
+        
+#pragma warning disable QD0001
+        mockClient.ReportIssues(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(reportIssuesResponse));
+#pragma warning restore QD0001
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        var node = state.Nodes[0];
+        Assert.That(node.Issues, Has.Count.EqualTo(1));
+        Assert.That(node.Issues[0], Is.EqualTo("[shard_replication] Shard has no active replicas (Collection: my_collection)"));
     }
 
     [Test]

@@ -488,21 +488,42 @@ public class ClusterManager(
                 {
                     foreach (var issue in qdrantIssues)
                     {
-                        var key = issue.Key?.Trim();
-                        var value = issue.Value?.Trim();
+                        var issueId = issue.Id?.Trim();
+                        var description = issue.Description?.Trim();
+                        var relatedCollection = issue.RelatedCollection?.Trim();
 
-                        if (string.IsNullOrWhiteSpace(key) && string.IsNullOrWhiteSpace(value))
+                        // Build issue message
+                        var issueMessage = new System.Text.StringBuilder();
+                        
+                        if (!string.IsNullOrWhiteSpace(issueId))
                         {
-                            continue;
+                            issueMessage.Append($"[{issueId}]");
+                        }
+                        
+                        if (!string.IsNullOrWhiteSpace(description))
+                        {
+                            if (issueMessage.Length > 0)
+                            {
+                                issueMessage.Append(" ");
+                            }
+                            issueMessage.Append(description);
+                        }
+                        
+                        if (!string.IsNullOrWhiteSpace(relatedCollection))
+                        {
+                            issueMessage.Append($" (Collection: {relatedCollection})");
                         }
 
-                        var issueMessage = string.IsNullOrWhiteSpace(value)
-                            ? key!
-                            : $"{key ?? "Unknown"}: {value}";
-
-                        if (!string.IsNullOrWhiteSpace(issueMessage))
+                        var message = issueMessage.ToString();
+                        if (!string.IsNullOrWhiteSpace(message))
                         {
-                            nodeInfo.Issues.Add(issueMessage);
+                            nodeInfo.Issues.Add(message);
+                            
+                            logger.LogDebug(
+                                "Node {NodeUrl} issue: {IssueId} - {Description}",
+                                nodeInfo.Url,
+                                issueId ?? "unknown",
+                                description ?? "no description");
                         }
                     }
                     
