@@ -278,6 +278,7 @@ public class CollectionService : ICollectionService
         {
             _logger.LogInformation("Recovering collection {CollectionName} from snapshot {SnapshotName} on node {NodeUrl}", 
                 collectionName, snapshotName, nodeUrl);
+            
             var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             var result = await qdrantClient.RecoverCollectionFromSnapshot(
                 collectionName, 
@@ -287,7 +288,7 @@ public class CollectionService : ICollectionService
             
             if (result.IsAcceptedOrSuccess())
             {
-                var statusText = result.IsAccepted() ? "recovery accepted" : "recovered successfully";
+                var statusText = result.IsAccepted() ? MetricConstants.RecoveryAcceptedMessage : MetricConstants.RecoverySuccessMessage;
                 _logger.LogInformation("Collection {CollectionName} {StatusText} from snapshot {SnapshotName} on node {NodeUrl}", 
                     collectionName, statusText, snapshotName, nodeUrl);
                 return true;
@@ -331,7 +332,7 @@ public class CollectionService : ICollectionService
             
             if (result.IsAcceptedOrSuccess())
             {
-                var statusText = result.IsAccepted() ? "recovery accepted" : "recovered successfully";
+                var statusText = result.IsAccepted() ? MetricConstants.RecoveryAcceptedMessage : MetricConstants.RecoverySuccessMessage;
                 _logger.LogInformation("Collection {CollectionName} {StatusText} from URL {SnapshotUrl} on node {NodeUrl}", 
                     collectionName, statusText, snapshotUrl, nodeUrl);
                 return true;

@@ -44,5 +44,15 @@ public static class MetricConstants
     /// Default error message when error details are not available
     /// </summary>
     public const string UnknownErrorMessage = "Unknown error";
+    
+    /// <summary>
+    /// Status message for accepted recovery operation
+    /// </summary>
+    public const string RecoveryAcceptedMessage = "recovery accepted";
+    
+    /// <summary>
+    /// Status message for successful recovery operation
+    /// </summary>
+    public const string RecoverySuccessMessage = "recovered successfully";
 }
 
