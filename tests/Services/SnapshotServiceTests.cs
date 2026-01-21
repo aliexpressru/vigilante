@@ -946,6 +946,72 @@ public class SnapshotServiceTests
 
     #endregion
 
+    #region DownloadCollectionSnapshotAsync Tests
+
+    [Test]
+    public async Task DownloadCollectionSnapshotAsync_Success()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test-collection";
+        var snapshotName = "test-snapshot.snapshot";
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        var mockStream = new MemoryStream(new byte[] { 1, 2, 3, 4, 5 });
+        
+        var downloadResponse = new DownloadSnapshotResponse(
+            snapshotName,
+            mockStream,
+            5L,
+            QdrantStatus.Success(),
+            TimeSpan.FromSeconds(1));
+
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(mockClient);
+
+        mockClient.DownloadCollectionSnapshot(collectionName, snapshotName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(downloadResponse));
+
+        // Act
+        var result = await _snapshotManager.DownloadCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result, Is.SameAs(mockStream));
+    }
+
+    [Test]
+    public async Task DownloadCollectionSnapshotAsync_ReturnsNull_WhenResultIsNull()
+    {
+        // Arrange
+        var nodeUrl = "http://node1:6333";
+        var collectionName = "test-collection";
+        var snapshotName = "test-snapshot.snapshot";
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        
+        var downloadResponse = new DownloadSnapshotResponse(
+            snapshotName,
+            null!,
+            0L,
+            QdrantStatus.Success(),
+            TimeSpan.FromSeconds(1));
+
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(mockClient);
+
+        mockClient.DownloadCollectionSnapshot(collectionName, snapshotName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(downloadResponse));
+
+        // Act
+        var result = await _snapshotManager.DownloadCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.Null);
+    }
+
+    #endregion
+
     #region GetSnapshotsFromDiskForPodAsync Tests
 
     [Test]
