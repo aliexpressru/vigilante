@@ -54,7 +54,7 @@ public class SnapshotService(
             }
             
             logger.LogError("Failed to create snapshot for collection {CollectionName}: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
+                collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
             return null;
         }
         catch (Exception ex)
@@ -128,7 +128,7 @@ public class SnapshotService(
             }
             
             logger.LogError("Failed to delete snapshot {SnapshotName} for collection {CollectionName}: {Error}",
-                snapshotName, collectionName, result?.Status?.Error ?? "Unknown error");
+                snapshotName, collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
             return false;
         }
         catch (Exception ex)
@@ -747,7 +747,7 @@ public class SnapshotService(
                 if (!collectionsResponse.Status.IsSuccess || collectionsResponse.Result?.Collections == null)
                 {
                     logger.LogWarning("Failed to get collections from node {NodeUrl}: {Error}", 
-                        node.Url, collectionsResponse.Status?.Error ?? "Unknown error");
+                        node.Url, collectionsResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage);
                     continue;
                 }
                 
@@ -799,7 +799,7 @@ public class SnapshotService(
                             
                             var snapshotInfo = new SnapshotInfo
                             {
-                                PodName = node.PodName ?? "unknown",
+                                PodName = node.PodName ?? MetricConstants.UnknownPodName,
                                 NodeUrl = node.Url,
                                 PeerId = node.PeerId,
                                 CollectionName = collectionName,
@@ -871,7 +871,7 @@ public class SnapshotService(
             }
             
             logger.LogWarning("Failed to get snapshots for collection {CollectionName}: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
+                collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
             return new List<(string Name, long Size)>();
         }
         catch (Exception ex)

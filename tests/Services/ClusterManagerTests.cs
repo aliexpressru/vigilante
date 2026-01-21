@@ -7,6 +7,7 @@ using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Responses;
 using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Configuration;
+using Vigilante.Constants;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services;
@@ -1017,9 +1018,8 @@ public class ClusterManagerTests
                 PeerId = "1001",
                 Metrics = new Dictionary<string, object>
                 {
-                    { "prettySize", "N/A" },
-                    { "sizeBytes", 0L },
-                    { "snapshots", new List<string>() }
+                    { "prettySize", MetricConstants.NotAvailableValue },
+                    { "sizeBytes", 0L }
                 }
             }
         };
@@ -1079,9 +1079,8 @@ public class ClusterManagerTests
                 PeerId = "1001",
                 Metrics = new Dictionary<string, object>
                 {
-                    { "prettySize", "N/A" },
-                    { "sizeBytes", 0L },
-                    { "snapshots", new List<string>() }
+                    { "prettySize", MetricConstants.NotAvailableValue },
+                    { "sizeBytes", 0L }
                 }
             }
         };
@@ -1107,7 +1106,7 @@ public class ClusterManagerTests
         Assert.That(result, Has.Count.EqualTo(1));
         Assert.That(result[0].Issues, Has.Count.EqualTo(1));
         Assert.That(result[0].Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
-        Assert.That(result[0].Metrics["prettySize"], Is.EqualTo("N/A"));
+        Assert.That(result[0].Metrics["prettySize"], Is.EqualTo(MetricConstants.NotAvailableValue));
         Assert.That(result[0].Metrics["sizeBytes"], Is.EqualTo(0L));
     }
 
@@ -1149,9 +1148,8 @@ public class ClusterManagerTests
                 PeerId = "1001",
                 Metrics = new Dictionary<string, object>
                 {
-                    { "prettySize", "N/A" },
-                    { "sizeBytes", 0L },
-                    { "snapshots", new List<string>() }
+                    { "prettySize", MetricConstants.NotAvailableValue },
+                    { "sizeBytes", 0L }
                 }
             }
         };
@@ -1228,7 +1226,11 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", MetricConstants.NotAvailableValue },
+                    { "sizeBytes", 0L }
+                }
             },
             new()
             {
@@ -1236,7 +1238,11 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", MetricConstants.NotAvailableValue },
+                    { "sizeBytes", 0L }
+                }
             },
             new()
             {
@@ -1244,7 +1250,11 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", MetricConstants.NotAvailableValue },
+                    { "sizeBytes", 0L }
+                }
             }
         };
 
@@ -1295,7 +1305,7 @@ public class ClusterManagerTests
         var collectionMissing = result.First(c => c.CollectionName == "collection_missing_from_storage");
         Assert.That(collectionMissing.Issues, Has.Count.EqualTo(1));
         Assert.That(collectionMissing.Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
-        Assert.That(collectionMissing.Metrics["prettySize"], Is.EqualTo("N/A"));
+        Assert.That(collectionMissing.Metrics["prettySize"], Is.EqualTo(MetricConstants.NotAvailableValue));
 
         var anotherInBoth = result.First(c => c.CollectionName == "another_in_both");
         Assert.That(anotherInBoth.Issues, Has.Count.EqualTo(0));
@@ -1401,7 +1411,11 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", MetricConstants.NotAvailableValue },
+                    { "sizeBytes", 0L }
+                }
             },
             new()
             {
@@ -1409,7 +1423,11 @@ public class ClusterManagerTests
                 NodeUrl = "http://node2:6333",
                 PodName = "pod2",
                 PeerId = "1002",
-                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", MetricConstants.NotAvailableValue },
+                    { "sizeBytes", 0L }
+                }
             }
         };
 

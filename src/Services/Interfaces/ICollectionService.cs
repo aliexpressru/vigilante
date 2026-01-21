@@ -53,17 +53,7 @@ public interface ICollectionService
         string podNamespace,
         string collectionName,
         CancellationToken cancellationToken);
-
-
-    /// <summary>
-    /// Lists all snapshots for a collection on a specific node
-    /// </summary>
-    Task<List<string>> ListCollectionSnapshotsAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken);
-
-
+    
     /// <summary>
     /// Checks if a collection exists on a specific node
     /// </summary>

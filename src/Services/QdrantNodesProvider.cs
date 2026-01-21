@@ -208,8 +208,8 @@ public class QdrantNodesProvider(
                 return peerId;
             }
             
-            logger.LogWarning("Failed to get peer ID for node {NodeUrl}: {Error}", 
-                nodeUrl, clusterInfo.Status?.Error ?? "Unknown error");
+                logger.LogWarning("Failed to get cluster info from node {NodeUrl}: {Error}",
+                nodeUrl, clusterInfo.Status?.Error ?? MetricConstants.UnknownErrorMessage);
             return null;
         }
         catch (OperationCanceledException)

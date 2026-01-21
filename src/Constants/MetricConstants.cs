@@ -29,5 +29,20 @@ public static class MetricConstants
     /// Metric key for shard states (used in TestDataProvider)
     /// </summary>
     public const string ShardStatesKey = "shardStates";
+    
+    /// <summary>
+    /// Default value for pretty size when size is not available
+    /// </summary>
+    public const string NotAvailableValue = "N/A";
+    
+    /// <summary>
+    /// Default pod name when pod name is not available
+    /// </summary>
+    public const string UnknownPodName = "unknown";
+    
+    /// <summary>
+    /// Default error message when error details are not available
+    /// </summary>
+    public const string UnknownErrorMessage = "Unknown error";
 }
 

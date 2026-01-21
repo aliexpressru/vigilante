@@ -5,7 +5,6 @@ using Vigilante.Configuration;
 using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models;
-using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services;
@@ -14,7 +13,7 @@ public class CollectionService : ICollectionService
 {
     private readonly ILogger<CollectionService> _logger;
     private readonly IMeterService _meterService;
-    private IPodCommandExecutor? _commandExecutor;
+    private readonly IPodCommandExecutor? _commandExecutor;
     private readonly QdrantOptions _options;
     private readonly IQdrantClientFactory _clientFactory;
 
@@ -72,7 +71,7 @@ public class CollectionService : ICollectionService
             }
 
             _logger.LogError("Failed to replicate shards for {Collection}: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
+                collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
             return false;
         }
         catch (Exception ex)
@@ -152,7 +151,8 @@ public class CollectionService : ICollectionService
             
             if (!collectionsResponse.Status.IsSuccess)
             {
-                var errorDetails = collectionsResponse.Status?.Error ?? "Unknown error";
+                var errorDetails = collectionsResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage;
+                
                 _logger.LogWarning("Collections health check failed: {Error}", errorDetails);
                 return (false, $"Failed to list collections: {errorDetails}");
             }
@@ -161,8 +161,8 @@ public class CollectionService : ICollectionService
             if (collectionsResponse.Result?.Collections != null && collectionsResponse.Result.Collections.Any())
             {
                 var collections = collectionsResponse.Result.Collections;
-                _logger.LogDebug("Checking health for {CollectionCount} collections in parallel", collections.Length);
                 
+                _logger.LogDebug("Checking health for {CollectionCount} collections in parallel", collections.Length);
                 // Create tasks for all collection health checks
                 var checkTasks = collections.Select(async collection =>
                 {
@@ -173,7 +173,8 @@ public class CollectionService : ICollectionService
                     
                     if (!collectionInfo.Status.IsSuccess)
                     {
-                        var errorDetails = collectionInfo.Status?.Error ?? "Unknown error";
+                        var errorDetails = collectionInfo.Status?.Error ?? MetricConstants.UnknownErrorMessage;
+                        
                         _logger.LogWarning("Collections health check failed for {CollectionName}: {Error}", collectionName, errorDetails);
                         return (IsHealthy: false, CollectionName: collectionName, Error: errorDetails);
                     }
@@ -230,7 +231,7 @@ public class CollectionService : ICollectionService
             }
 
             _logger.LogError("Failed to delete collection {CollectionName} via API: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
+                collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
             return false;
         }
         catch (Exception ex)
@@ -257,47 +258,15 @@ public class CollectionService : ICollectionService
             return false;
         }
 
-        var fullPath = $"{QdrantConstants.StoragePath}/{collectionName}";
         return await _commandExecutor.DeleteAndVerifyAsync(
             podName, 
             podNamespace, 
-            fullPath, 
+            $"{QdrantConstants.StoragePath}/{collectionName}", 
             isDirectory: true, 
             $"Collection {collectionName}", 
             cancellationToken);
     }
     
-    
-    public async Task<List<string>> ListCollectionSnapshotsAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogDebug("Listing snapshots for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            var result = await qdrantClient.ListCollectionSnapshots(collectionName, cancellationToken);
-            if (result?.Status?.IsSuccess == true && result.Result != null)
-            {
-                var snapshots = result.Result.Select(s => s.Name).ToList();
-                _logger.LogDebug("Found {Count} snapshots for collection {CollectionName} on node {NodeUrl}", 
-                    snapshots.Count, collectionName, nodeUrl);
-                return snapshots;
-            }
-            _logger.LogWarning("Failed to list snapshots for collection {CollectionName}: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
-            return new List<string>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to list snapshots for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            return new List<string>();
-        }
-    }
-
 
     public async Task<bool> RecoverCollectionFromSnapshotAsync(
         string nodeUrl,
@@ -325,7 +294,7 @@ public class CollectionService : ICollectionService
             }
             
             _logger.LogError("Failed to recover collection {CollectionName} from snapshot {SnapshotName}: {Error}",
-                collectionName, snapshotName, result?.Status?.Error ?? "Unknown error");
+                collectionName, snapshotName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
             return false;
         }
         catch (Exception ex)
@@ -369,7 +338,7 @@ public class CollectionService : ICollectionService
             }
             
             _logger.LogError("Failed to recover collection {CollectionName} from URL {SnapshotUrl}: {Error}",
-                collectionName, snapshotUrl, result?.Status?.Error ?? "Unknown error");
+                collectionName, snapshotUrl, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
             return false;
         }
         catch (Exception ex)
@@ -442,7 +411,7 @@ public class CollectionService : ICollectionService
                 if (!collectionsResponse.Status.IsSuccess || collectionsResponse.Result?.Collections == null)
                 {
                     _logger.LogWarning("Failed to get collections from node {NodeUrl}: {Error}", 
-                        node.Url, collectionsResponse.Status?.Error ?? "Unknown error");
+                        node.Url, collectionsResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage);
                     continue;
                 }
                 
@@ -453,23 +422,19 @@ public class CollectionService : ICollectionService
                     {
                         var collectionName = collection.Name;
                         
-                        // Get snapshots for this collection
-                        var snapshots = await ListCollectionSnapshotsAsync(node.Url, collectionName, cancellationToken);
-                        
                         var metrics = new Dictionary<string, object>
                         {
-                            { MetricConstants.PrettySizeKey, "N/A" },
-                            { MetricConstants.SizeBytesKey, 0L },
-                            { "snapshots", snapshots }
+                            { MetricConstants.PrettySizeKey, MetricConstants.NotAvailableValue },
+                            { MetricConstants.SizeBytesKey, 0L }
                         };
 
                         result.Add(new CollectionInfo
                         {
                             CollectionName = collectionName,
                             NodeUrl = node.Url,
-                            PodName = node.PodName ?? "unknown",
+                            PodName = node.PodName ?? MetricConstants.UnknownPodName,
                             PeerId = node.PeerId,
-                            PodNamespace = node.Namespace ?? "",
+                            PodNamespace = node.Namespace ?? string.Empty,
                             Metrics = metrics
                         });
                         
