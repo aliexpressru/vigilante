@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -25,6 +26,7 @@ public class ClusterManagerTests
     private IMeterService _meterService = null!;
     private IQdrantClientFactory _clientFactory = null!;
     private ICollectionService _collectionService = null!;
+    private IHostEnvironment _environment = null!;
     private TestDataProvider _testDataProvider = null!;
     private ClusterManager _clusterManager = null!;
     private ConcurrentDictionary<string, IQdrantHttpClient> _mockClients = null!;
@@ -42,8 +44,12 @@ public class ClusterManagerTests
         
         _options.Value.Returns(new QdrantOptions { HttpTimeoutSeconds = 5 });
         
-        // Create TestDataProvider with the same options
-        _testDataProvider = new TestDataProvider(_options);
+        // Create mock environment (Development by default for tests)
+        _environment = Substitute.For<IHostEnvironment>();
+        _environment.EnvironmentName.Returns(Environments.Development);
+        
+        // Create TestDataProvider with the same options and environment
+        _testDataProvider = new TestDataProvider(_options, _environment);
         
         // Setup collection service to always return healthy
         _collectionService

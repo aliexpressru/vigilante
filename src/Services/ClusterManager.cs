@@ -86,7 +86,7 @@ public class ClusterManager(
             return testDataProvider.GenerateTestCollectionData();
         }
 
-        if (HasPodsWithNames(state.Nodes))
+        if (state.Nodes.Any(n => !string.IsNullOrEmpty(n.PodName)))
         {
             await EnrichCollectionsWithStorageInfoAsync(state.Nodes, result, cancellationToken);
         }
@@ -682,11 +682,6 @@ public class ClusterManager(
         logger.LogInformation("Retrieved {Count} collections from Qdrant API", result.Count);
 
         return result;
-    }
-
-    private bool HasPodsWithNames(IReadOnlyList<NodeInfo> nodes)
-    {
-        return nodes.Any(n => !string.IsNullOrEmpty(n.PodName));
     }
 
     private async Task EnrichCollectionsWithStorageInfoAsync(

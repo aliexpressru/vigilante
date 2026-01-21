@@ -11,9 +11,9 @@ namespace Vigilante.Services;
 public class TestDataProvider
 {
     private readonly QdrantOptions _options;
-    private readonly IWebHostEnvironment _environment;
+    private readonly IHostEnvironment _environment;
 
-    public TestDataProvider(IOptions<QdrantOptions> options, IWebHostEnvironment environment)
+    public TestDataProvider(IOptions<QdrantOptions> options, IHostEnvironment environment)
     {
         _options = options.Value;
         _environment = environment;
