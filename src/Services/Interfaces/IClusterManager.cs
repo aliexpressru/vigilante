@@ -30,26 +30,9 @@ public interface IClusterManager
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes a collection via Qdrant API on a specific node
-    /// </summary>
-    Task<bool> DeleteCollectionViaApiAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// Deletes a collection via Qdrant API on all nodes
     /// </summary>
     Task<Dictionary<string, bool>> DeleteCollectionViaApiOnAllNodesAsync(
-        string collectionName,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Deletes a collection from disk on a specific pod
-    /// </summary>
-    Task<bool> DeleteCollectionFromDiskAsync(
-        string podName,
-        string podNamespace,
         string collectionName,
         CancellationToken cancellationToken = default);
 

@@ -15,6 +15,7 @@ namespace Aer.Vigilante.Tests.Controllers;
 public class CollectionsControllerTests
 {
     private IClusterManager _clusterManager = null!;
+    private ICollectionService _collectionService = null!;
     private ILogger<CollectionsController> _logger = null!;
     private CollectionsController _controller = null!;
 
@@ -22,9 +23,10 @@ public class CollectionsControllerTests
     public void Setup()
     {
         _clusterManager = Substitute.For<IClusterManager>();
+        _collectionService = Substitute.For<ICollectionService>();
         _logger = Substitute.For<ILogger<CollectionsController>>();
         
-        _controller = new CollectionsController(_clusterManager, _logger);
+        _controller = new CollectionsController(_clusterManager, _collectionService, _logger);
     }
 
     #region GetCollectionsInfo (Paginated) Tests
@@ -369,7 +371,7 @@ public class CollectionsControllerTests
             DeletionType = CollectionDeletionType.Api
         };
 
-        _clusterManager.DeleteCollectionViaApiAsync(request.NodeUrl, request.CollectionName, Arg.Any<CancellationToken>())
+        _collectionService.DeleteCollectionViaApiAsync(request.NodeUrl, request.CollectionName, Arg.Any<CancellationToken>())
             .Returns(true);
 
         // Act
@@ -395,7 +397,7 @@ public class CollectionsControllerTests
             DeletionType = CollectionDeletionType.Disk
         };
 
-        _clusterManager.DeleteCollectionFromDiskAsync(request.PodName!, request.PodNamespace!, request.CollectionName, Arg.Any<CancellationToken>())
+        _collectionService.DeleteCollectionFromDiskAsync(request.PodName!, request.PodNamespace!, request.CollectionName, Arg.Any<CancellationToken>())
             .Returns(true);
 
         // Act

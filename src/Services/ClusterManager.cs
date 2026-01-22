@@ -139,30 +139,6 @@ public class ClusterManager(
             cancellationToken);
     }
 
-    public async Task<bool> DeleteCollectionViaApiAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        logger.LogInformation("Deleting collection {CollectionName} via API on node {NodeUrl}",
-            collectionName, nodeUrl);
-
-        return await collectionService.DeleteCollectionViaApiAsync(nodeUrl, collectionName, cancellationToken);
-    }
-
-    public async Task<bool> DeleteCollectionFromDiskAsync(
-        string podName,
-        string podNamespace,
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        logger.LogInformation(
-            "Deleting collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}",
-            collectionName, podName, podNamespace);
-
-        return await collectionService.DeleteCollectionFromDiskAsync(podName, podNamespace, collectionName,
-            cancellationToken);
-    }
 
     public async Task<Dictionary<string, bool>> DeleteCollectionViaApiOnAllNodesAsync(
         string collectionName,
