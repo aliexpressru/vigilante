@@ -1,7 +1,6 @@
 using Aer.QdrantClient.Http.Abstractions;
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
-using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
@@ -72,28 +71,30 @@ public class ClusterManager(
         }
 
         var state = await GetClusterStateAsync(cancellationToken);
-        var peerToPodMap = CreatePeerToPodMap(state.Nodes);
+        var peerToPodMap = state.Nodes
+            .Where(n => !string.IsNullOrEmpty(n.PeerId) && !string.IsNullOrEmpty(n.PodName))
+            .ToDictionary(n => n.PeerId, n => n.PodName!);
 
-        logger.LogInformation("Found {NodesCount} nodes to process. Healthy nodes: {HealthyCount}",
+        logger.LogInformation("Found {NodesCount} nodes. Healthy nodes: {HealthyCount}",
             state.Nodes.Count, state.Nodes.Count(n => n.IsHealthy));
 
-        var result = await FetchCollectionsFromApiAsync(state.Nodes, cancellationToken);
+        // Get enriched collections info from CollectionService
+        var result = await collectionService.GetEnrichedCollectionsInfoAsync(
+            state.Nodes,
+            peerToPodMap,
+            cancellationToken);
 
+        // Fallback to test data if no collections found
         if (result.Count == 0)
         {
-            logger.LogDebug("No collections found from API, returning test data");
-
+            logger.LogDebug("No collections found from API, attempting to return test data (only available in Development)");
             return testDataProvider.GenerateTestCollectionData();
         }
 
-        if (state.Nodes.Any(n => !string.IsNullOrEmpty(n.PodName)))
-        {
-            await EnrichCollectionsWithStorageInfoAsync(state.Nodes, result, cancellationToken);
-        }
-
-        await EnrichCollectionsWithClusteringInfoAsync(state.Nodes, result, peerToPodMap, cancellationToken);
-
-        LogCompletionSummary(result);
+        var collectionsWithIssues = result.Count(c => c.Issues.Count > 0);
+        logger.LogInformation(
+            "Completed GetCollectionsInfoAsync, found {TotalCollections} collections in total ({IssuesCount} with issues)",
+            result.Count, collectionsWithIssues);
 
         // Cache the result
         lock (_cacheLock)
@@ -661,150 +662,6 @@ public class ClusterManager(
             logger.LogWarning(ex, "Failed to fetch Kubernetes warning events");
         }
     }
-
-    private Dictionary<string, string> CreatePeerToPodMap(IReadOnlyList<NodeInfo> nodes)
-    {
-        return nodes
-            .Where(n => !string.IsNullOrEmpty(n.PeerId) && !string.IsNullOrEmpty(n.PodName))
-            .ToDictionary(n => n.PeerId, n => n.PodName!);
-    }
-
-    private async Task<List<CollectionInfo>> FetchCollectionsFromApiAsync(
-        IReadOnlyList<NodeInfo> nodes,
-        CancellationToken cancellationToken)
-    {
-        logger.LogInformation("Fetching collections from Qdrant API");
-
-        var nodeInfos = nodes.Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName));
-        
-        var collectionsFromApi = await collectionService.GetCollectionsFromQdrantAsync(nodeInfos, cancellationToken);
-        var result = collectionsFromApi.ToList();
-        logger.LogInformation("Retrieved {Count} collections from Qdrant API", result.Count);
-
-        return result;
-    }
-
-    private async Task EnrichCollectionsWithStorageInfoAsync(
-        IReadOnlyList<NodeInfo> nodes,
-        List<CollectionInfo> collections,
-        CancellationToken cancellationToken)
-    {
-        logger.LogInformation("Enriching collections with storage information from Kubernetes");
-
-        var storageCollections = await FetchStorageCollectionSizesAsync(nodes, cancellationToken);
-
-        logger.LogInformation("Found {Count} collections in storage across all nodes", storageCollections.Count);
-
-        EnrichCollectionsWithStorageData(collections, storageCollections);
-    }
-
-    private async Task<Dictionary<(string NodeUrl, string CollectionName), CollectionSize>>
-        FetchStorageCollectionSizesAsync(
-            IReadOnlyList<NodeInfo> nodes,
-            CancellationToken cancellationToken)
-    {
-        var storageCollections = new Dictionary<(string NodeUrl, string CollectionName), CollectionSize>();
-
-        foreach (var node in nodes)
-        {
-            try
-            {
-                var podName = kubernetesManager != null 
-                    ? await kubernetesManager.ResolvePodNameAsync(node.Url, node.PodName, node.Namespace, cancellationToken)
-                    : node.PodName;
-
-                if (string.IsNullOrEmpty(podName))
-                    continue;
-
-                logger.LogInformation("Found pod {PodName} for IP {NodeUrl}, fetching storage info", podName, node.Url);
-
-                var collectionSizes = (await collectionService.GetCollectionsSizesForPodAsync(
-                    podName,
-                    node.Namespace ?? "",
-                    node.Url,
-                    node.PeerId,
-                    cancellationToken)).ToList();
-
-                foreach (var size in collectionSizes)
-                {
-                    storageCollections[(size.NodeUrl, size.CollectionName)] = size;
-                }
-
-                logger.LogInformation("Retrieved {SizesCount} collection sizes from pod {PodName}",
-                    collectionSizes.Count, podName);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to get collection sizes for node {NodeUrl}", node.Url);
-            }
-        }
-
-        return storageCollections;
-    }
-
-
-    private void EnrichCollectionsWithStorageData(
-        List<CollectionInfo> collections,
-        Dictionary<(string NodeUrl, string CollectionName), CollectionSize> storageCollections)
-    {
-        foreach (var collection in collections)
-        {
-            var key = (collection.NodeUrl, collection.CollectionName);
-
-            if (storageCollections.TryGetValue(key, out var storageInfo))
-            {
-                collection.Metrics[MetricConstants.PrettySizeKey] = storageInfo.PrettySize;
-                collection.Metrics[MetricConstants.SizeBytesKey] = storageInfo.SizeBytes;
-
-                logger.LogDebug("Enriched collection {CollectionName} on {NodeUrl} with storage data: {Size}",
-                    collection.CollectionName, collection.NodeUrl, storageInfo.PrettySize);
-            }
-            else
-            {
-                collection.Issues.Add("Collection exists in API but not found in storage");
-
-                logger.LogWarning("Collection {CollectionName} on node {NodeUrl} exists in API but not in storage!",
-                    collection.CollectionName, collection.NodeUrl);
-            }
-        }
-    }
-
-    private async Task EnrichCollectionsWithClusteringInfoAsync(
-        IReadOnlyList<NodeInfo> nodes,
-        List<CollectionInfo> collections,
-        Dictionary<string, string> peerToPodMap,
-        CancellationToken cancellationToken)
-    {
-        var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
-
-        if (healthyNodes.Count == 0)
-        {
-            logger.LogWarning("No healthy nodes found, skipping sharding information collection");
-
-            return;
-        }
-
-        logger.LogInformation("Enriching collections with clustering info from {HealthyNodeCount} healthy nodes",
-            healthyNodes.Count);
-
-        foreach (var healthyNode in healthyNodes)
-        {
-            await collectionService.EnrichWithClusteringInfoAsync(
-                healthyNode.Url,
-                collections,
-                peerToPodMap,
-                cancellationToken);
-        }
-    }
-
-    private void LogCompletionSummary(List<CollectionInfo> collections)
-    {
-        var collectionsWithIssues = collections.Count(c => c.Issues.Count > 0);
-        logger.LogInformation(
-            "Completed GetCollectionsInfoAsync, found {TotalCollections} collections in total ({IssuesCount} with issues)",
-            collections.Count, collectionsWithIssues);
-    }
-
 
     private void DetectClusterSplits(NodeInfo[] nodes)
     {

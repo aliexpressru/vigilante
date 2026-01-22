@@ -437,8 +437,8 @@ public class CollectionService : ICollectionService
             _logger.LogError(ex, "Failed to setup QdrantClient for node {NodeUrl}", healthyNodeUrl);
         }
     }
-
-    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsFromQdrantAsync(
+    
+    public async Task<List<CollectionInfo>> GetCollectionsFromQdrantAsync(
         IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken)
     {
@@ -508,7 +508,6 @@ public class CollectionService : ICollectionService
         return result;
     }
 
-
     private void UpdateShardMetrics(CollectionInfo info,
         Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
             clusteringResult)
@@ -557,4 +556,130 @@ public class CollectionService : ICollectionService
             info.Metrics["outgoingTransfers"] = outgoingTransfers;
         }
     }
+
+    public async Task<IReadOnlyList<CollectionInfo>> GetEnrichedCollectionsInfoAsync(
+        IReadOnlyList<NodeInfo> nodes,
+        Dictionary<string, string> peerToPodMap,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Getting enriched collections info from {NodesCount} nodes", nodes.Count);
+
+        // Get collections from Qdrant API (only from healthy nodes)
+        var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
+        
+        _logger.LogInformation("Using {HealthyCount} healthy nodes out of {TotalCount}", 
+            healthyNodes.Count, nodes.Count);
+
+        var collections = await GetCollectionsFromQdrantAsync(
+            healthyNodes.Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName)),
+            cancellationToken);
+
+        if (collections.Count == 0)
+        {
+            _logger.LogDebug("No collections found from API");
+            return collections;
+        }
+
+        // Enrich with storage info if nodes have pod names
+        if (healthyNodes.Any(n => !string.IsNullOrEmpty(n.PodName)))
+        {
+            await EnrichCollectionsWithStorageInfoAsync(healthyNodes, collections, cancellationToken);
+        }
+
+        // Enrich with clustering info
+        await EnrichCollectionsWithClusteringInfoAsync(healthyNodes, collections, peerToPodMap, cancellationToken);
+
+        _logger.LogInformation("Retrieved and enriched {Count} collections", collections.Count);
+
+        return collections;
+    }
+
+    private async Task EnrichCollectionsWithStorageInfoAsync(
+        IReadOnlyList<NodeInfo> nodes,
+        List<CollectionInfo> collections,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Enriching collections with storage information from Kubernetes");
+
+        var storageCollections = new Dictionary<(string NodeUrl, string CollectionName), CollectionSize>();
+
+        foreach (var node in nodes)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(node.PodName))
+                {
+                    _logger.LogDebug("Skipping node {NodeUrl} - no pod name available", node.Url);
+                    continue;
+                }
+
+                _logger.LogInformation("Fetching storage info from pod {PodName} for node {NodeUrl}", 
+                    node.PodName, node.Url);
+
+                var collectionSizes = (await GetCollectionsSizesForPodAsync(
+                    node.PodName,
+                    node.Namespace ?? string.Empty,
+                    node.Url,
+                    node.PeerId,
+                    cancellationToken)).ToList();
+
+                foreach (var size in collectionSizes)
+                {
+                    storageCollections[(size.NodeUrl, size.CollectionName)] = size;
+                }
+
+                _logger.LogInformation("Retrieved {SizesCount} collection sizes from pod {PodName}",
+                    collectionSizes.Count, node.PodName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get collection sizes for node {NodeUrl}", node.Url);
+            }
+        }
+
+        _logger.LogInformation("Found {Count} collections in storage across all nodes", storageCollections.Count);
+
+        // Enrich collections with storage data
+        foreach (var collection in collections)
+        {
+            var key = (collection.NodeUrl, collection.CollectionName);
+
+            if (storageCollections.TryGetValue(key, out var storageInfo))
+            {
+                collection.Metrics[MetricConstants.PrettySizeKey] = storageInfo.PrettySize;
+                collection.Metrics[MetricConstants.SizeBytesKey] = storageInfo.SizeBytes;
+
+                _logger.LogDebug("Enriched collection {CollectionName} on {NodeUrl} with storage data: {Size}",
+                    collection.CollectionName, collection.NodeUrl, storageInfo.PrettySize);
+            }
+            else
+            {
+                collection.Issues.Add("Collection exists in API but not found in storage");
+
+                _logger.LogWarning("Collection {CollectionName} on node {NodeUrl} exists in API but not in storage!",
+                    collection.CollectionName, collection.NodeUrl);
+            }
+        }
+    }
+
+    private async Task EnrichCollectionsWithClusteringInfoAsync(
+        IReadOnlyList<NodeInfo> nodes,
+        List<CollectionInfo> collections,
+        Dictionary<string, string> peerToPodMap,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Enriching collections with clustering information");
+
+        // Find a healthy node to query clustering info
+        var healthyNode = nodes.FirstOrDefault(n => n.IsHealthy);
+        
+        if (healthyNode == null)
+        {
+            _logger.LogWarning("No healthy nodes available for clustering info");
+            return;
+        }
+
+        await EnrichWithClusteringInfoAsync(healthyNode.Url, collections, peerToPodMap, cancellationToken);
+    }
 }
+

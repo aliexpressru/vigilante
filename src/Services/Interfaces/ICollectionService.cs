@@ -90,8 +90,16 @@ public interface ICollectionService
     /// <summary>
     /// Gets collections list from a Qdrant node directly (fallback when Kubernetes is not available)
     /// </summary>
-    Task<IReadOnlyList<CollectionInfo>> GetCollectionsFromQdrantAsync(
+    Task<List<CollectionInfo>> GetCollectionsFromQdrantAsync(
         IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
+        CancellationToken cancellationToken);
+    
+    /// <summary>
+    /// Gets enriched collections information from healthy nodes with storage and clustering data
+    /// </summary>
+    Task<IReadOnlyList<CollectionInfo>> GetEnrichedCollectionsInfoAsync(
+        IReadOnlyList<NodeInfo> nodes,
+        Dictionary<string, string> peerToPodMap,
         CancellationToken cancellationToken);
 }
 

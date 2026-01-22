@@ -4,6 +4,8 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using NUnit.Framework;
 using Vigilante.Configuration;
+using Vigilante.Extensions;
+using Vigilante.Models;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
 
@@ -139,6 +141,215 @@ public class CollectionServiceTests
             true, 
             "Collection test-collection", 
             Arg.Any<CancellationToken>());
+    }
+
+    #endregion
+
+    #region GetEnrichedCollectionsInfoAsync Tests
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WithNoHealthyNodes_ReturnsEmptyList()
+    {
+        // Arrange
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+        
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = false }
+        };
+        
+        var peerToPodMap = new Dictionary<string, string>();
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.Empty);
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WithHealthyNodes_FiltersOnlyHealthyOnes()
+    {
+        // Arrange
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
+            .Returns(mockClient);
+
+        var collectionsResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
+                }
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(collectionsResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+        
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" },
+            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = false, PodName = "pod2" }
+        };
+        
+        var peerToPodMap = new Dictionary<string, string>
+        {
+            { "1001", "pod1" },
+            { "1002", "pod2" }
+        };
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].CollectionName, Is.EqualTo("test_collection"));
+        Assert.That(result[0].NodeUrl, Is.EqualTo("http://node1:6333"));
+        
+        // Verify only healthy node was queried
+        await mockClient.Received(1).ListCollections(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WithStorageData_EnrichesMetrics()
+    {
+        // Arrange
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
+            .Returns(mockClient);
+
+        var collectionsResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
+                }
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(collectionsResponse);
+
+        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new List<string> { "test_collection" });
+        
+        _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), "test_collection", Arg.Any<CancellationToken>())
+            .Returns(1073741824L); // 1 GB
+
+        var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
+        
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1", Namespace = "default" }
+        };
+        
+        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].Metrics["sizeBytes"], Is.EqualTo(1073741824L));
+        Assert.That(result[0].Metrics["prettySize"], Is.EqualTo("1 GB"));
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WhenCollectionNotInStorage_AddsIssue()
+    {
+        // Arrange
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
+            .Returns(mockClient);
+
+        var collectionsResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
+                }
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(collectionsResponse);
+
+        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new List<string>()); // Empty - no collections in storage
+
+        var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
+        
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1", Namespace = "default" }
+        };
+        
+        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].Issues, Has.Count.EqualTo(1));
+        Assert.That(result[0].Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WithoutPodNames_SkipsStorageEnrichment()
+    {
+        // Arrange
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
+            .Returns(mockClient);
+
+        var collectionsResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
+                }
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(collectionsResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+        
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = null } // No pod name
+        };
+        
+        var peerToPodMap = new Dictionary<string, string>();
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].Metrics["prettySize"], Is.EqualTo("N/A")); // Not enriched
+        Assert.That(result[0].Metrics["sizeBytes"], Is.EqualTo(0L)); // Not enriched
     }
 
     #endregion

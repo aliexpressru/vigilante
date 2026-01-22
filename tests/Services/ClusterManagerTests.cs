@@ -1036,8 +1036,9 @@ public class ClusterManagerTests
             }
         };
 
-        _collectionService.GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>())
             .Returns(apiCollections);
 
@@ -1045,8 +1046,9 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert
-        await _collectionService.Received(1).GetCollectionsFromQdrantAsync(
-            Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
+            Arg.Any<IReadOnlyList<NodeInfo>>(),
+            Arg.Any<Dictionary<string, string>>(),
             Arg.Any<CancellationToken>());
 
         Assert.That(result, Has.Count.EqualTo(1));
@@ -1093,12 +1095,14 @@ public class ClusterManagerTests
                 {
                     { "prettySize", MetricConstants.NotAvailableValue },
                     { "sizeBytes", 0L }
-                }
+                },
+                Issues = new List<string> { "Collection exists in API but not found in storage" }
             }
         };
 
-        _collectionService.GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>())
             .Returns(apiCollections);
 
@@ -1160,14 +1164,15 @@ public class ClusterManagerTests
                 PeerId = "1001",
                 Metrics = new Dictionary<string, object>
                 {
-                    { "prettySize", MetricConstants.NotAvailableValue },
-                    { "sizeBytes", 0L }
+                    { "prettySize", "1 GB" },
+                    { "sizeBytes", 1073741824L }
                 }
             }
         };
 
-        _collectionService.GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>())
             .Returns(apiCollections);
 
@@ -1240,8 +1245,8 @@ public class ClusterManagerTests
                 PeerId = "1001",
                 Metrics = new Dictionary<string, object>
                 {
-                    { "prettySize", MetricConstants.NotAvailableValue },
-                    { "sizeBytes", 0L }
+                    { "prettySize", "476.84 MB" },
+                    { "sizeBytes", 500000000L }
                 }
             },
             new()
@@ -1254,7 +1259,8 @@ public class ClusterManagerTests
                 {
                     { "prettySize", MetricConstants.NotAvailableValue },
                     { "sizeBytes", 0L }
-                }
+                },
+                Issues = new List<string> { "Collection exists in API but not found in storage" }
             },
             new()
             {
@@ -1264,14 +1270,15 @@ public class ClusterManagerTests
                 PeerId = "1001",
                 Metrics = new Dictionary<string, object>
                 {
-                    { "prettySize", MetricConstants.NotAvailableValue },
-                    { "sizeBytes", 0L }
+                    { "prettySize", "715.26 MB" },
+                    { "sizeBytes", 750000000L }
                 }
             }
         };
 
-        _collectionService.GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>())
             .Returns(apiCollections);
 
@@ -1352,8 +1359,9 @@ public class ClusterManagerTests
             }));
 
         // API returns no collections
-        _collectionService.GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>())
             .Returns(new List<CollectionInfo>());
 
@@ -1425,8 +1433,8 @@ public class ClusterManagerTests
                 PeerId = "1001",
                 Metrics = new Dictionary<string, object>
                 {
-                    { "prettySize", MetricConstants.NotAvailableValue },
-                    { "sizeBytes", 0L }
+                    { "prettySize", "953.67 MB" },
+                    { "sizeBytes", 1000000000L }
                 }
             },
             new()
@@ -1439,12 +1447,14 @@ public class ClusterManagerTests
                 {
                     { "prettySize", MetricConstants.NotAvailableValue },
                     { "sizeBytes", 0L }
-                }
+                },
+                Issues = new List<string> { "Collection exists in API but not found in storage" }
             }
         };
 
-        _collectionService.GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>())
             .Returns(apiCollections);
 
