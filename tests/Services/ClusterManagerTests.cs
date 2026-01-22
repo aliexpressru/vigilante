@@ -27,6 +27,7 @@ public class ClusterManagerTests
     private IQdrantClientFactory _clientFactory = null!;
     private ICollectionService _collectionService = null!;
     private IHostEnvironment _environment = null!;
+    private IKubernetesManager _kubernetesManager = null!;
     private TestDataProvider _testDataProvider = null!;
     private ClusterManager _clusterManager = null!;
     private ConcurrentDictionary<string, IQdrantHttpClient> _mockClients = null!;
@@ -50,6 +51,11 @@ public class ClusterManagerTests
         
         // Create TestDataProvider with the same options and environment
         _testDataProvider = new TestDataProvider(_options, _environment);
+        
+        // Setup kubernetes manager to resolve pod names
+        _kubernetesManager = Substitute.For<IKubernetesManager>();
+        _kubernetesManager.ResolvePodNameAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromResult(callInfo.ArgAt<string?>(1))); // Return the podName parameter as-is
         
         // Setup collection service to always return healthy
         _collectionService
@@ -97,7 +103,7 @@ public class ClusterManagerTests
             _options,
             _logger,
             _meterService,
-            kubernetesManager);
+            _kubernetesManager);
     }
 
     [Test]

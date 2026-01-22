@@ -709,7 +709,9 @@ public class ClusterManager(
         {
             try
             {
-                var podName = await ResolvePodNameAsync(node, cancellationToken);
+                var podName = kubernetesManager != null 
+                    ? await kubernetesManager.ResolvePodNameAsync(node.Url, node.PodName, node.Namespace, cancellationToken)
+                    : node.PodName;
 
                 if (string.IsNullOrEmpty(podName))
                     continue;
@@ -740,21 +742,6 @@ public class ClusterManager(
         return storageCollections;
     }
 
-    private async Task<string?> ResolvePodNameAsync(NodeInfo node, CancellationToken cancellationToken)
-    {
-        if (!string.IsNullOrEmpty(node.PodName))
-            return node.PodName;
-
-        var podName = await GetPodNameFromIpAsync(node.Url, node.Namespace ?? "", cancellationToken);
-
-        if (string.IsNullOrEmpty(podName))
-        {
-            logger.LogWarning("Could not find pod for IP {NodeUrl} in namespace {Namespace}",
-                node.Url, node.Namespace);
-        }
-
-        return podName;
-    }
 
     private void EnrichCollectionsWithStorageData(
         List<CollectionInfo> collections,
@@ -882,23 +869,6 @@ public class ClusterManager(
             node.Url, node.PeerId, inconsistencyReason);
     }
 
-    private async Task<string?> GetPodNameFromIpAsync(string podUrl, string podNamespace,
-        CancellationToken cancellationToken)
-    {
-        var uri = new Uri(podUrl);
-        var podIp = uri.Host;
-
-        logger.LogInformation("Getting pod name for IP {PodIp} in namespace {Namespace}", podIp, podNamespace);
-
-        if (kubernetesManager == null)
-        {
-            logger.LogDebug("Kubernetes manager not available, cannot resolve pod name");
-
-            return null;
-        }
-
-        return await kubernetesManager.GetPodNameByIpAsync(podIp, podNamespace, cancellationToken);
-    }
 
     private static string GetShortErrorMessage(NodeErrorType errorType) => errorType switch
     {

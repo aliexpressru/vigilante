@@ -29,4 +29,9 @@ public interface IKubernetesManager
     /// Gets pod name by its IP address in the specified namespace
     /// </summary>
     Task<string?> GetPodNameByIpAsync(string podIp, string? namespaceParameter = null, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Resolves pod name from NodeInfo, using cached value if available or querying by IP
+    /// </summary>
+    Task<string?> ResolvePodNameAsync(string nodeUrl, string? podName, string? podNamespace, CancellationToken cancellationToken = default);
 }

@@ -279,5 +279,28 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
             return null;
         }
     }
+
+    public async Task<string?> ResolvePodNameAsync(string nodeUrl, string? podName, string? podNamespace, CancellationToken cancellationToken = default)
+    {
+        if (!string.IsNullOrEmpty(podName))
+            return podName;
+
+        var uri = new Uri(nodeUrl);
+        var podIp = uri.Host;
+        var ns = podNamespace ?? KubernetesConstants.DefaultNamespace;
+
+        logger.LogInformation("Resolving pod name for IP {PodIp} from URL {NodeUrl} in namespace {Namespace}", 
+            podIp, nodeUrl, ns);
+
+        var resolvedPodName = await GetPodNameByIpAsync(podIp, ns, cancellationToken);
+
+        if (string.IsNullOrEmpty(resolvedPodName))
+        {
+            logger.LogWarning("Could not find pod for IP {PodIp} (from URL {NodeUrl}) in namespace {Namespace}",
+                podIp, nodeUrl, ns);
+        }
+
+        return resolvedPodName;
+    }
 }
 
