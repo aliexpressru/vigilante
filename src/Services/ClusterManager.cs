@@ -1,6 +1,7 @@
 using Aer.QdrantClient.Http.Abstractions;
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
+using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
@@ -33,7 +34,18 @@ public class ClusterManager(
         var nodeStatuses = await Task.WhenAll(tasks);
 
         DetectClusterSplits(nodeStatuses);
-        FinalizeNodeHealthStatus(nodeStatuses);
+
+        // Mark nodes with MessageSendFailures as unhealthy if they weren't identified as part of a cluster split
+        foreach (var node in nodeStatuses)
+        {
+            if (node.IsHealthy && 
+                node.ErrorType == NodeErrorType.MessageSendFailures)
+            {
+                node.IsHealthy = false;
+                logger.LogInformation(ClusterConstants.MarkingNodeUnhealthyMessage, 
+                    node.Url);
+            }
+        }
 
         var state = new ClusterState
         {
@@ -267,7 +279,6 @@ public class ClusterManager(
                 nodeInfo.Url, nodeInfo.PeerId, expectedPeerId);
         }
 
-        nodeInfo.IsHealthy = true;
         nodeInfo.IsLeader = clusterInfoResult.RaftInfo?.Leader != null &&
                             clusterInfoResult.RaftInfo.Leader.ToString() == clusterInfoResult.PeerId.ToString();
 
@@ -277,6 +288,21 @@ public class ClusterManager(
         CollectPeerInformation(nodeInfo, clusterInfoResult);
         await CheckCollectionsHealthAsync(nodeInfo, client, linkedToken, originalCancellationToken);
         await FetchQdrantIssuesAsync(nodeInfo, client, linkedToken);
+
+        // Set IsHealthy based on error type:
+        // - ConsensusThreadError: immediately unhealthy (critical)
+        // - MessageSendFailures: will be evaluated by DetectClusterSplits (might be split, not just unhealthy)
+        // - Other errors or no errors: healthy
+        if (nodeInfo.ErrorType == NodeErrorType.ConsensusThreadError)
+        {
+            nodeInfo.IsHealthy = false;
+        }
+        else if (nodeInfo.ErrorType == NodeErrorType.None || 
+                 nodeInfo.ErrorType == NodeErrorType.MessageSendFailures)
+        {
+            // Healthy for now - MessageSendFailures will be handled by split detection
+            nodeInfo.IsHealthy = true;
+        }
 
         if (nodeInfo.Issues.Count > 0)
         {
@@ -311,7 +337,7 @@ public class ClusterManager(
         if (clusterInfoResult.ConsensusThreadStatus?.Err != null)
         {
             var consensusError = clusterInfoResult.ConsensusThreadStatus.Err;
-            nodeInfo.Issues.Add("Consensus thread error: " + consensusError);
+            nodeInfo.Issues.Add(ClusterConstants.ConsensusThreadErrorPrefix + consensusError);
             nodeInfo.ErrorType = NodeErrorType.ConsensusThreadError;
             logger.LogWarning("Node {NodeUrl} has consensus thread error: {Error}", nodeInfo.Url, consensusError);
         }
@@ -323,24 +349,12 @@ public class ClusterManager(
             return;
 
         var consensusLastUpdate = clusterInfoResult.ConsensusThreadStatus?.LastUpdate;
-        var (activeFailures, staleFailures) = CategorizeMessageSendFailures(
-            clusterInfoResult.MessageSendFailures,
-            consensusLastUpdate);
-
-        ProcessActiveFailures(nodeInfo, activeFailures);
-        ProcessStaleFailures(nodeInfo, staleFailures);
-    }
-
-    private (List<(string PeerId, MessageSendFailureUnit Failure)> Active,
-        List<(string PeerId, MessageSendFailureUnit Failure)> Stale)
-        CategorizeMessageSendFailures(
-            Dictionary<string, MessageSendFailureUnit> failures,
-            DateTime? consensusLastUpdate)
-    {
+        
+        // Categorize failures into active and stale
         var activeFailures = new List<(string PeerId, MessageSendFailureUnit Failure)>();
         var staleFailures = new List<(string PeerId, MessageSendFailureUnit Failure)>();
 
-        foreach (var failure in failures)
+        foreach (var failure in clusterInfoResult.MessageSendFailures)
         {
             if (consensusLastUpdate.HasValue && failure.Value.LatestErrorTimestamp < consensusLastUpdate.Value)
             {
@@ -352,40 +366,32 @@ public class ClusterManager(
             }
         }
 
-        return (activeFailures, staleFailures);
-    }
-
-    private void ProcessActiveFailures(
-        NodeInfo nodeInfo,
-        List<(string PeerId, MessageSendFailureUnit Failure)> activeFailures)
-    {
-        if (activeFailures.Count == 0)
-            return;
-
-        var failuresStr = string.Join(", ", activeFailures.Select(f =>
-            $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
-        nodeInfo.Issues.Add($"Message send failures: {failuresStr}");
-
-        if (nodeInfo.ErrorType == NodeErrorType.None)
+        // Process active failures
+        if (activeFailures.Count > 0)
         {
-            nodeInfo.ErrorType = NodeErrorType.MessageSendFailures;
+            var failuresStr = string.Join(", ", activeFailures.Select(f =>
+                $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
+            nodeInfo.Issues.Add(ClusterConstants.MessageSendFailuresPrefix + failuresStr);
+
+            if (nodeInfo.ErrorType == NodeErrorType.None)
+            {
+                nodeInfo.ErrorType = NodeErrorType.MessageSendFailures;
+            }
+
+            // Don't set IsHealthy = false here - let DetectClusterSplits determine if this is a split
+            // If it's not a split, will mark it as unhealthy further up
+            logger.LogWarning("Node {NodeUrl} has message send failures: {Failures}", nodeInfo.Url, failuresStr);
         }
 
-        logger.LogWarning("Node {NodeUrl} has message send failures: {Failures}", nodeInfo.Url, failuresStr);
-    }
-
-    private void ProcessStaleFailures(
-        NodeInfo nodeInfo,
-        List<(string PeerId, MessageSendFailureUnit Failure)> staleFailures)
-    {
-        if (staleFailures.Count == 0)
-            return;
-
-        var staleFailuresStr = string.Join(", ", staleFailures.Select(f =>
-            $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
-        nodeInfo.Warnings.Add($"Stale message send failures (older than consensus update): {staleFailuresStr}");
-        logger.LogInformation("Node {NodeUrl} has stale message send failures: {Failures}", nodeInfo.Url,
-            staleFailuresStr);
+        // Process stale failures
+        if (staleFailures.Count > 0)
+        {
+            var staleFailuresStr = string.Join(", ", staleFailures.Select(f =>
+                $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
+            nodeInfo.Warnings.Add(ClusterConstants.StaleMessageSendFailuresPrefix + staleFailuresStr);
+            logger.LogInformation("Node {NodeUrl} has stale message send failures: {Failures}", nodeInfo.Url,
+                staleFailuresStr);
+        }
     }
 
     private void CollectPeerInformation(NodeInfo nodeInfo, ClusterInfoResult clusterInfoResult)
@@ -498,7 +504,7 @@ public class ClusterManager(
 
                         if (!string.IsNullOrWhiteSpace(relatedCollection))
                         {
-                            issueMessage.Append($" (Collection: {relatedCollection})");
+                            issueMessage.Append($" ({ClusterConstants.CollectionIssuePrefix}{relatedCollection})");
                         }
 
                         var message = issueMessage.ToString();
@@ -558,20 +564,6 @@ public class ClusterManager(
         }
     }
 
-    private void FinalizeNodeHealthStatus(NodeInfo[] nodeStatuses)
-    {
-        foreach (var node in nodeStatuses)
-        {
-            if (node.IsHealthy && node.Issues.Count > 0 &&
-                (node.ErrorType == NodeErrorType.ConsensusThreadError ||
-                 node.ErrorType == NodeErrorType.MessageSendFailures))
-            {
-                node.IsHealthy = false;
-                logger.LogInformation("Marking node {NodeUrl} as unhealthy due to {ErrorType}", node.Url,
-                    node.ErrorType);
-            }
-        }
-    }
 
     private async Task AddKubernetesWarningsIfNeededAsync(ClusterState state, CancellationToken cancellationToken)
     {
@@ -607,7 +599,7 @@ public class ClusterManager(
                 {
                     foreach (var warning in warningEvents)
                     {
-                        targetNode.Warnings.Add($"K8s Event: {warning}");
+                        targetNode.Warnings.Add(ClusterConstants.KubernetesEventPrefix + warning);
                         logger.LogDebug("Added K8s event to node {NodeUrl}: {Warning}", targetNode.Url, warning);
                     }
 
@@ -702,20 +694,20 @@ public class ClusterManager(
 
     private static string GetShortErrorMessage(NodeErrorType errorType) => errorType switch
     {
-        NodeErrorType.Timeout => "Timeout",
-        NodeErrorType.ConnectionError => "Connection Error",
-        NodeErrorType.InvalidResponse => "Invalid Response",
-        NodeErrorType.ClusterSplit => "Cluster Split",
-        NodeErrorType.CollectionsFetchError => "Collections Error",
-        NodeErrorType.ConsensusThreadError => "Consensus Error",
-        NodeErrorType.MessageSendFailures => "Message Send Failures",
-        _ => "Unknown Error"
+        NodeErrorType.Timeout => ClusterConstants.TimeoutError,
+        NodeErrorType.ConnectionError => ClusterConstants.ConnectionError,
+        NodeErrorType.InvalidResponse => ClusterConstants.InvalidResponseError,
+        NodeErrorType.ClusterSplit => ClusterConstants.ClusterSplitError,
+        NodeErrorType.CollectionsFetchError => ClusterConstants.CollectionsError,
+        NodeErrorType.ConsensusThreadError => ClusterConstants.ConsensusError,
+        NodeErrorType.MessageSendFailures => ClusterConstants.MessageSendFailuresError,
+        _ => ClusterConstants.UnknownError
     };
 
     private static string FormatMessageSendFailure(object? failure)
     {
         if (failure == null)
-            return "unknown error";
+            return ClusterConstants.UnknownErrorMessage;
 
         try
         {
@@ -731,13 +723,15 @@ public class ClusterManager(
             if (!string.IsNullOrEmpty(latestError))
             {
                 // If it's a simple string (doesn't contain structured data), return it directly
-                if (!latestError.Contains("message: \"") && !latestError.Contains("status: "))
+                if (!latestError.Contains(ClusterConstants.MessagePrefix) && !latestError.Contains(ClusterConstants.StatusPrefix))
                 {
-                    return count > 1 ? $"{latestError} ({count} failures)" : latestError;
+                    return count > 1 
+                        ? string.Format(ClusterConstants.FailureWithCountFormat, latestError, count) 
+                        : latestError;
                 }
 
                 // Try to extract the main error message (e.g., "Can't send Raft message over channel")
-                var messageStart = latestError.IndexOf("message: \"", StringComparison.Ordinal);
+                var messageStart = latestError.IndexOf(ClusterConstants.MessagePrefix, StringComparison.Ordinal);
                 if (messageStart >= 0)
                 {
                     messageStart += 10; // length of "message: \""
@@ -748,12 +742,14 @@ public class ClusterManager(
                         // Unescape common escape sequences
                         message = message.Replace("\\u0027", "'").Replace("\\\"", "\"");
 
-                        return count > 1 ? $"{message} ({count} failures)" : message;
+                        return count > 1 
+                            ? string.Format(ClusterConstants.FailureWithCountFormat, message, count) 
+                            : message;
                     }
                 }
 
                 // Fallback: try to extract status
-                var statusStart = latestError.IndexOf("status: ", StringComparison.Ordinal);
+                var statusStart = latestError.IndexOf(ClusterConstants.StatusPrefix, StringComparison.Ordinal);
                 if (statusStart >= 0)
                 {
                     statusStart += 8; // length of "status: "
@@ -762,18 +758,22 @@ public class ClusterManager(
                     {
                         var status = latestError.Substring(statusStart, statusEnd - statusStart);
 
-                        return count > 1 ? $"{status} error ({count} failures)" : $"{status} error";
+                        return count > 1 
+                            ? string.Format(ClusterConstants.ErrorWithCountFormat, status, count)
+                            : status + ClusterConstants.ErrorSuffix;
                     }
                 }
             }
 
             // If we can't parse it nicely, just show count
-            return count > 0 ? $"{count} send failures" : "send failure";
+            return count > 0 
+                ? string.Format(ClusterConstants.SendFailuresFormat, count) 
+                : ClusterConstants.SendFailureMessage;
         }
         catch
         {
             // If parsing fails, return a simple message
-            return "communication error";
+            return ClusterConstants.CommunicationErrorMessage;
         }
     }
 }
