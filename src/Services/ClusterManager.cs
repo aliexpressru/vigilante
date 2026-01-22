@@ -228,21 +228,21 @@ public class ClusterManager(
 
             if (clusterInfo.Status.IsSuccess && clusterInfo.Result?.PeerId != null)
             {
-                await ProcessClusterInfoResultAsync(nodeInfo, clusterInfo.Result, client, linkedCts.Token,
-                    timeoutCts.Token, cancellationToken);
+                await ProcessClusterInfoResultAsync(nodeInfo, clusterInfo.Result, client, linkedCts.Token, cancellationToken);
             }
             else
             {
-                HandleInvalidClusterInfoResponse(nodeInfo, node, clusterInfo.Status?.Error);
+                HandleNodeError(nodeInfo, node, NodeErrorType.InvalidResponse, 
+                    $"Failed to get cluster info: {clusterInfo.Status?.Error ?? "Invalid response"}", cancellationToken);
             }
         }
         catch (OperationCanceledException ex)
         {
-            HandleNodeQueryException(nodeInfo, node, ex, NodeErrorType.Timeout, "Request timed out", cancellationToken);
+            HandleNodeError(nodeInfo, node, NodeErrorType.Timeout, "Request timed out", cancellationToken, ex);
         }
         catch (Exception ex)
         {
-            HandleNodeQueryException(nodeInfo, node, ex, NodeErrorType.ConnectionError, ex.Message, cancellationToken);
+            HandleNodeError(nodeInfo, node, NodeErrorType.ConnectionError, ex.Message, cancellationToken, ex);
         }
 
         return nodeInfo;
@@ -253,8 +253,7 @@ public class ClusterManager(
         ClusterInfoResult clusterInfoResult,
         IQdrantHttpClient client,
         CancellationToken linkedToken,
-        CancellationToken timeoutToken,
-        CancellationToken originalToken)
+        CancellationToken originalCancellationToken)
     {
         // PeerId is already set by GetBasicNodeInfoAsync, but verify it matches
         var expectedPeerId = clusterInfoResult.PeerId.ToString();
@@ -276,7 +275,7 @@ public class ClusterManager(
         CheckConsensusErrors(nodeInfo, clusterInfoResult);
         CheckMessageSendFailures(nodeInfo, clusterInfoResult);
         CollectPeerInformation(nodeInfo, clusterInfoResult);
-        await CheckCollectionsHealthAsync(nodeInfo, client, linkedToken, timeoutToken, originalToken);
+        await CheckCollectionsHealthAsync(nodeInfo, client, linkedToken, originalCancellationToken);
         await FetchQdrantIssuesAsync(nodeInfo, client, linkedToken);
 
         if (nodeInfo.Issues.Count > 0)
@@ -405,14 +404,12 @@ public class ClusterManager(
         NodeInfo nodeInfo,
         IQdrantHttpClient client,
         CancellationToken linkedToken,
-        CancellationToken timeoutToken,
-        CancellationToken originalToken)
+        CancellationToken originalCancellationToken)
     {
         try
         {
             var (isHealthy, errorMessage) = await collectionService
-                .CheckCollectionsHealthAsync(client, linkedToken)
-                .WaitAsync(timeoutToken);
+                .CheckCollectionsHealthAsync(client, linkedToken);
 
             if (!isHealthy)
             {
@@ -429,9 +426,11 @@ public class ClusterManager(
         }
         catch (OperationCanceledException ex)
         {
-            if (originalToken.IsCancellationRequested)
+            // If user cancelled - propagate without marking node as unhealthy
+            if (originalCancellationToken.IsCancellationRequested)
                 throw;
 
+            // Otherwise it's a timeout - this indicates a real problem, mark node as unhealthy
             logger.LogWarning(ex, "Collections request timed out for node {NodeUrl}", nodeInfo.Url);
             nodeInfo.Issues.Add("Collections request timed out");
 
@@ -528,37 +527,35 @@ public class ClusterManager(
         }
     }
 
-    private void HandleInvalidClusterInfoResponse(
+    private void HandleNodeError(
         NodeInfo nodeInfo,
         QdrantNodeConfig node,
-        string? errorDetails)
-    {
-        nodeInfo.PeerId = $"{node.Host}:{node.Port}";
-        nodeInfo.IsHealthy = false;
-        nodeInfo.Issues.Add($"Failed to get cluster info: {errorDetails ?? "Invalid response"}");
-        nodeInfo.ShortError = GetShortErrorMessage(NodeErrorType.InvalidResponse);
-        nodeInfo.ErrorType = NodeErrorType.InvalidResponse;
-        logger.LogWarning("Node {NodeUrl} returned invalid cluster info response. Error: {Error}",
-            nodeInfo.Url, errorDetails ?? "Invalid response");
-    }
-
-    private void HandleNodeQueryException(
-        NodeInfo nodeInfo,
-        QdrantNodeConfig node,
-        Exception ex,
         NodeErrorType errorType,
         string errorMessage,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Exception? exception = null)
     {
-        if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
-            throw ex;
+        // Re-throw if the original cancellation token was requested (user cancelled)
+        // Don't re-throw if it was just a timeout (internal cancellation)
+        if (exception is OperationCanceledException && cancellationToken.IsCancellationRequested)
+            throw exception;
 
-        logger.LogWarning(ex, "Failed to get status for node {NodeUrl}", nodeInfo.Url);
+        // Set node state
         nodeInfo.PeerId = $"{node.Host}:{node.Port}";
         nodeInfo.IsHealthy = false;
         nodeInfo.Issues.Add(errorMessage);
         nodeInfo.ShortError = GetShortErrorMessage(errorType);
         nodeInfo.ErrorType = errorType;
+
+        // Log the error
+        if (exception != null)
+        {
+            logger.LogWarning(exception, "Failed to get status for node {NodeUrl}", nodeInfo.Url);
+        }
+        else
+        {
+            logger.LogWarning("Node {NodeUrl} error: {ErrorMessage}", nodeInfo.Url, errorMessage);
+        }
     }
 
     private void FinalizeNodeHealthStatus(NodeInfo[] nodeStatuses)
