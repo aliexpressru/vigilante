@@ -129,11 +129,6 @@ public static class KubernetesConstants
     /// </summary>
     public const string ForbiddenStatusCode = "403";
 
-    // Field selector templates
-    /// <summary>
-    /// Format string for pod IP field selector
-    /// </summary>
-    public const string PodIpFieldSelectorFormat = "status.podIP=={0}";
 
     // DateTime format for ISO 8601
     /// <summary>

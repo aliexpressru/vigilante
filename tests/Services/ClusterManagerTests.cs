@@ -52,10 +52,8 @@ public class ClusterManagerTests
         // Create TestDataProvider with the same options and environment
         _testDataProvider = new TestDataProvider(_options, _environment);
         
-        // Setup kubernetes manager to resolve pod names
+        // Setup kubernetes manager
         _kubernetesManager = Substitute.For<IKubernetesManager>();
-        _kubernetesManager.ResolvePodNameAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => Task.FromResult(callInfo.ArgAt<string?>(1))); // Return the podName parameter as-is
         
         // Setup collection service to always return healthy
         _collectionService

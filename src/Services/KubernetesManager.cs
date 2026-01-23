@@ -164,18 +164,12 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
 
                     foreach (var evt in sortedEvents)
                     {
-                        var timestamp = evt.EventTime;
-                        var timestampStr = timestamp.HasValue 
-                            ? timestamp.Value.ToString(KubernetesConstants.EventTimestampFormat) 
-                            : KubernetesConstants.UnknownTime;
-                        var involvedObject = evt.Regarding != null 
-                            ? $"{evt.Regarding.Kind}/{evt.Regarding.Name}" 
-                            : KubernetesConstants.UnknownObject;
-                        var reason = evt.Reason ?? KubernetesConstants.UnknownReason;
-                        var message = evt.Note ?? KubernetesConstants.NoMessage;
-
-                        warnings.Add(string.Format(KubernetesConstants.EventWarningFormat, 
-                            timestampStr, involvedObject, reason, message));
+                        warnings.Add(FormatEventWarning(
+                            evt.EventTime,
+                            evt.Regarding?.Kind,
+                            evt.Regarding?.Name,
+                            evt.Reason,
+                            evt.Note));
                     }
 
                     logger.LogInformation("Formatted {Count} warning events from namespace {Namespace}", warnings.Count, ns);
@@ -209,18 +203,12 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
 
             foreach (var evt in warningEvents)
             {
-                var timestamp = evt.LastTimestamp ?? evt.EventTime;
-                var timestampStr = timestamp.HasValue 
-                    ? timestamp.Value.ToString(KubernetesConstants.EventTimestampFormat) 
-                    : KubernetesConstants.UnknownTime;
-                var involvedObject = evt.InvolvedObject != null 
-                    ? $"{evt.InvolvedObject.Kind}/{evt.InvolvedObject.Name}" 
-                    : KubernetesConstants.UnknownObject;
-                var reason = evt.Reason ?? KubernetesConstants.UnknownReason;
-                var message = evt.Message ?? KubernetesConstants.NoMessage;
-
-                warnings.Add(string.Format(KubernetesConstants.EventWarningFormat, 
-                    timestampStr, involvedObject, reason, message));
+                warnings.Add(FormatEventWarning(
+                    evt.LastTimestamp ?? evt.EventTime,
+                    evt.InvolvedObject?.Kind,
+                    evt.InvolvedObject?.Name,
+                    evt.Reason,
+                    evt.Message));
             }
 
             logger.LogInformation("Formatted {Count} warning events from namespace {Namespace}", warnings.Count, ns);
@@ -242,57 +230,27 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         return warnings;
     }
 
-    public async Task<string?> GetPodNameByIpAsync(string podIp, string? namespaceParameter = null, CancellationToken cancellationToken = default)
+
+    private static string FormatEventWarning(
+        DateTime? timestamp,
+        string? kind,
+        string? name,
+        string? reason,
+        string? message)
     {
-        if (kubernetes == null)
-        {
-            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
-            return null;
-        }
+        var timestampStr = timestamp.HasValue
+            ? timestamp.Value.ToString(KubernetesConstants.EventTimestampFormat)
+            : KubernetesConstants.UnknownTime;
 
-        var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
+        var involvedObject = !string.IsNullOrEmpty(kind) && !string.IsNullOrEmpty(name)
+            ? $"{kind}/{name}"
+            : KubernetesConstants.UnknownObject;
 
-        try
-        {
-            logger.LogInformation("Getting pod name for IP {PodIp} in namespace {Namespace}", podIp, ns);
+        var eventReason = reason ?? KubernetesConstants.UnknownReason;
+        var eventMessage = message ?? KubernetesConstants.NoMessage;
 
-            var pods = await kubernetes.CoreV1.ListNamespacedPodAsync(
-                namespaceParameter: ns,
-                fieldSelector: string.Format(KubernetesConstants.PodIpFieldSelectorFormat, podIp),
-                cancellationToken: cancellationToken);
-
-            logger.LogInformation("Found {PodsCount} pods matching IP {PodIp}", pods.Items.Count, podIp);
-
-            return pods.Items.FirstOrDefault()?.Metadata.Name;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to get pod name for IP {PodIp} in namespace {Namespace}", podIp, ns);
-            return null;
-        }
-    }
-
-    public async Task<string?> ResolvePodNameAsync(string nodeUrl, string? podName, string? podNamespace, CancellationToken cancellationToken = default)
-    {
-        if (!string.IsNullOrEmpty(podName))
-            return podName;
-
-        var uri = new Uri(nodeUrl);
-        var podIp = uri.Host;
-        var ns = podNamespace ?? KubernetesConstants.DefaultNamespace;
-
-        logger.LogInformation("Resolving pod name for IP {PodIp} from URL {NodeUrl} in namespace {Namespace}", 
-            podIp, nodeUrl, ns);
-
-        var resolvedPodName = await GetPodNameByIpAsync(podIp, ns, cancellationToken);
-
-        if (string.IsNullOrEmpty(resolvedPodName))
-        {
-            logger.LogWarning("Could not find pod for IP {PodIp} (from URL {NodeUrl}) in namespace {Namespace}",
-                podIp, nodeUrl, ns);
-        }
-
-        return resolvedPodName;
+        return string.Format(KubernetesConstants.EventWarningFormat,
+            timestampStr, involvedObject, eventReason, eventMessage);
     }
 }
 
