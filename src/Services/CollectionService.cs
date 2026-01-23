@@ -508,6 +508,44 @@ public class CollectionService : ICollectionService
         return result;
     }
 
+
+    public async Task<IReadOnlyList<CollectionInfo>> GetEnrichedCollectionsInfoAsync(
+        IReadOnlyList<NodeInfo> nodes,
+        Dictionary<string, string> peerToPodMap,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Getting enriched collections info from {NodesCount} nodes", nodes.Count);
+
+        // Get collections from Qdrant API (only from healthy nodes)
+        var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
+        
+        _logger.LogInformation("Using {HealthyCount} healthy nodes out of {TotalCount}", 
+            healthyNodes.Count, nodes.Count);
+
+        var collections = await GetCollectionsFromQdrantAsync(
+            healthyNodes.Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName)),
+            cancellationToken);
+
+        if (collections.Count == 0)
+        {
+            _logger.LogDebug("No collections found from API");
+            return collections;
+        }
+
+        // Enrich with storage info if nodes have pod names
+        if (healthyNodes.Any(n => !string.IsNullOrEmpty(n.PodName)))
+        {
+            await EnrichCollectionsWithStorageInfoAsync(healthyNodes, collections, cancellationToken);
+        }
+
+        // Enrich with clustering info
+        await EnrichCollectionsWithClusteringInfoAsync(healthyNodes, collections, peerToPodMap, cancellationToken);
+
+        _logger.LogInformation("Retrieved and enriched {Count} collections", collections.Count);
+
+        return collections;
+    }
+
     private void UpdateShardMetrics(CollectionInfo info,
         Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
             clusteringResult)
@@ -557,42 +595,6 @@ public class CollectionService : ICollectionService
         }
     }
 
-    public async Task<IReadOnlyList<CollectionInfo>> GetEnrichedCollectionsInfoAsync(
-        IReadOnlyList<NodeInfo> nodes,
-        Dictionary<string, string> peerToPodMap,
-        CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("Getting enriched collections info from {NodesCount} nodes", nodes.Count);
-
-        // Get collections from Qdrant API (only from healthy nodes)
-        var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
-        
-        _logger.LogInformation("Using {HealthyCount} healthy nodes out of {TotalCount}", 
-            healthyNodes.Count, nodes.Count);
-
-        var collections = await GetCollectionsFromQdrantAsync(
-            healthyNodes.Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName)),
-            cancellationToken);
-
-        if (collections.Count == 0)
-        {
-            _logger.LogDebug("No collections found from API");
-            return collections;
-        }
-
-        // Enrich with storage info if nodes have pod names
-        if (healthyNodes.Any(n => !string.IsNullOrEmpty(n.PodName)))
-        {
-            await EnrichCollectionsWithStorageInfoAsync(healthyNodes, collections, cancellationToken);
-        }
-
-        // Enrich with clustering info
-        await EnrichCollectionsWithClusteringInfoAsync(healthyNodes, collections, peerToPodMap, cancellationToken);
-
-        _logger.LogInformation("Retrieved and enriched {Count} collections", collections.Count);
-
-        return collections;
-    }
 
     private async Task EnrichCollectionsWithStorageInfoAsync(
         IReadOnlyList<NodeInfo> nodes,

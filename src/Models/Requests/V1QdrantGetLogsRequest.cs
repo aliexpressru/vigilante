@@ -5,7 +5,7 @@ namespace Vigilante.Models.Requests;
 /// </summary>
 public class V1GetQdrantLogsRequest
 {
-    public string PodName { get; set; }
+    public required string PodName { get; set; }
 
     public string? Namespace { get; set; }
 

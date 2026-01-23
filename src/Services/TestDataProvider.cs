@@ -214,7 +214,8 @@ public class TestDataProvider
                     PodName = podName,
                     PeerId = peerId,
                     NodeUrl = url,
-                    SizeBytes = sizeBytes
+                    SizeBytes = sizeBytes,
+                    PodNamespace = "default"
                 });
             }
         }

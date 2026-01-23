@@ -5,21 +5,21 @@ namespace Vigilante.Models;
 
 public class SnapshotInfo
 {
-    public string PodName { get; set; }
+    public required string PodName { get; set; }
 
-    public string NodeUrl { get; set; }
+    public required string NodeUrl { get; set; }
 
-    public string PeerId { get; set; }
+    public required string PeerId { get; set; }
 
-    public string CollectionName { get; set; }
+    public required string CollectionName { get; set; }
 
-    public string SnapshotName { get; set; }
+    public required string SnapshotName { get; set; }
 
     public long SizeBytes { get; set; }
 
     public string PrettySize => SizeBytes.ToPrettySize();
     
-    public string PodNamespace { get; set; }
+    public required string PodNamespace { get; set; }
     
     /// <summary>
     /// Source where this snapshot information was retrieved from

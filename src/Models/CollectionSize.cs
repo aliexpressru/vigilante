@@ -4,13 +4,13 @@ namespace Vigilante.Models;
 
 public class CollectionSize
 {
-    public string PodName { get; set; }
+    public required string PodName { get; set; }
 
-    public string NodeUrl { get; set; }
+    public required string NodeUrl { get; set; }
 
-    public string PeerId { get; set; }
+    public required string PeerId { get; set; }
 
-    public string CollectionName { get; set; }
+    public required string CollectionName { get; set; }
 
     public long SizeBytes { get; set; }
 

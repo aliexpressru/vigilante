@@ -76,59 +76,6 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
             cancellationToken);
     }
 
-    private async Task<bool> UpdateStatefulSetAsync(
-        string statefulSetName,
-        string? namespaceParameter,
-        Action<V1StatefulSet> modifyAction,
-        string operationDescription,
-        CancellationToken cancellationToken)
-    {
-        if (kubernetes == null)
-        {
-            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
-            return false;
-        }
-        
-        if (string.IsNullOrEmpty(namespaceParameter))
-        {
-            logger.LogWarning(KubernetesConstants.NamespaceNotProvidedForStatefulSetMessage, 
-                statefulSetName, KubernetesConstants.DefaultNamespace);
-        }
-        
-        var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
-        
-        try
-        {
-            logger.LogInformation("Performing {Operation} for StatefulSet {StatefulSetName} in namespace {Namespace}", 
-                operationDescription, statefulSetName, ns);
-            
-            // Get current StatefulSet
-            var statefulSet = await kubernetes.AppsV1.ReadNamespacedStatefulSetAsync(
-                name: statefulSetName,
-                namespaceParameter: ns,
-                cancellationToken: cancellationToken);
-            
-            // Apply modification
-            modifyAction(statefulSet);
-            
-            // Update StatefulSet
-            await kubernetes.AppsV1.ReplaceNamespacedStatefulSetAsync(
-                body: statefulSet,
-                name: statefulSetName,
-                namespaceParameter: ns,
-                cancellationToken: cancellationToken);
-            
-            logger.LogInformation("Successfully performed {Operation} for StatefulSet {StatefulSetName}", 
-                operationDescription, statefulSetName);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to {Operation} for StatefulSet {StatefulSetName} in namespace {Namespace}", 
-                operationDescription, statefulSetName, ns);
-            return false;
-        }
-    }
 
     public async Task<List<string>> GetWarningEventsAsync(string? namespaceParameter = null, CancellationToken cancellationToken = default)
     {
@@ -245,6 +192,60 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         }
 
         return KubernetesConstants.DefaultNamespace;
+    }
+
+    private async Task<bool> UpdateStatefulSetAsync(
+        string statefulSetName,
+        string? namespaceParameter,
+        Action<V1StatefulSet> modifyAction,
+        string operationDescription,
+        CancellationToken cancellationToken)
+    {
+        if (kubernetes == null)
+        {
+            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
+            return false;
+        }
+        
+        if (string.IsNullOrEmpty(namespaceParameter))
+        {
+            logger.LogWarning(KubernetesConstants.NamespaceNotProvidedForStatefulSetMessage, 
+                statefulSetName, KubernetesConstants.DefaultNamespace);
+        }
+        
+        var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
+        
+        try
+        {
+            logger.LogInformation("Performing {Operation} for StatefulSet {StatefulSetName} in namespace {Namespace}", 
+                operationDescription, statefulSetName, ns);
+            
+            // Get current StatefulSet
+            var statefulSet = await kubernetes.AppsV1.ReadNamespacedStatefulSetAsync(
+                name: statefulSetName,
+                namespaceParameter: ns,
+                cancellationToken: cancellationToken);
+            
+            // Apply modification
+            modifyAction(statefulSet);
+            
+            // Update StatefulSet
+            await kubernetes.AppsV1.ReplaceNamespacedStatefulSetAsync(
+                body: statefulSet,
+                name: statefulSetName,
+                namespaceParameter: ns,
+                cancellationToken: cancellationToken);
+            
+            logger.LogInformation("Successfully performed {Operation} for StatefulSet {StatefulSetName}", 
+                operationDescription, statefulSetName);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to {Operation} for StatefulSet {StatefulSetName} in namespace {Namespace}", 
+                operationDescription, statefulSetName, ns);
+            return false;
+        }
     }
 
     private static string FormatEventWarning(
