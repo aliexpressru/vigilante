@@ -9,6 +9,7 @@ using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 using Vigilante.Constants;
 using Vigilante.Services;
+using Vigilante.Services.Interfaces;
 using Vigilante.Services.Models;
 
 namespace Aer.Vigilante.Tests.Services;
@@ -24,9 +25,10 @@ public class LogReaderTests
         var core = Substitute.For<ICoreV1Operations>();
         kube.CoreV1.Returns(core);
         var logger = Substitute.For<ILogger<LogReader>>();
+        var kubernetesManager = Substitute.For<IKubernetesManager>();
         var env = Substitute.For<IWebHostEnvironment>();
         env.ContentRootPath.Returns(Path.GetTempPath());
-        var reader = new LogReader(kube, logger, env);
+        var reader = new LogReader(kube, kubernetesManager, logger, env);
         return (reader, kube, core);
     }
 
@@ -115,9 +117,10 @@ public class LogReaderTests
     public async Task GetQdrantPodLogsAsync_NoKubernetes_ReturnsFailure()
     {
         var logger = Substitute.For<ILogger<LogReader>>();
+        var kubernetesManager = Substitute.For<IKubernetesManager>();
         var env = Substitute.For<IWebHostEnvironment>();
         env.ContentRootPath.Returns(Path.GetTempPath());
-        var reader = new LogReader(null, logger, env);
+        var reader = new LogReader(null, kubernetesManager, logger, env);
 
         var page = await reader.GetQdrantPodLogsAsync("pod-1", new LogQuery(null, 10), CancellationToken.None);
 

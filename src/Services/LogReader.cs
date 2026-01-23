@@ -10,7 +10,11 @@ namespace Vigilante.Services;
 /// <summary>
 /// Reads logs from Kubernetes pods (Qdrant) and from the Vigilante service pod
 /// </summary>
-public class LogReader(IKubernetes? kubernetes, ILogger<LogReader> logger, IWebHostEnvironment env) : ILogReader
+public class LogReader(
+    IKubernetes? kubernetes, 
+    IKubernetesManager? kubernetesManager,
+    ILogger<LogReader> logger, 
+    IWebHostEnvironment env) : ILogReader
 {
     private const int DefaultLimit = 200;
     private const string ContinuationSeparator = "|";
@@ -27,7 +31,7 @@ public class LogReader(IKubernetes? kubernetes, ILogger<LogReader> logger, IWebH
         if (kubernetes != null)
         {
             var podName = Environment.GetEnvironmentVariable("HOSTNAME");
-            var ns = ReadCurrentNamespace();
+            var ns = kubernetesManager?.GetCurrentNamespace() ?? KubernetesConstants.DefaultNamespace;
             if (!string.IsNullOrWhiteSpace(podName))
             {
                 return await GetPodLogsAsync(podName, ns, query, cancellationToken, source: "vigilante");
@@ -186,22 +190,6 @@ public class LogReader(IKubernetes? kubernetes, ILogger<LogReader> logger, IWebH
         return Convert.ToBase64String(Encoding.UTF8.GetBytes($"{last.Timestamp:o}{ContinuationSeparator}{last.Source}"));
     }
 
-    private string ReadCurrentNamespace()
-    {
-        try
-        {
-            if (File.Exists(KubernetesConstants.ServiceAccountNamespacePath))
-            {
-                return File.ReadAllText(KubernetesConstants.ServiceAccountNamespacePath).Trim();
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogDebug(ex, "Failed to read service account namespace");
-        }
-
-        return KubernetesConstants.DefaultNamespace;
-    }
 
     private static LogPage Failed(string message) => new(false, message, Array.Empty<LogEntry>(), null, false);
 

@@ -230,6 +230,22 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         return warnings;
     }
 
+    public string GetCurrentNamespace()
+    {
+        try
+        {
+            if (File.Exists(KubernetesConstants.ServiceAccountNamespacePath))
+            {
+                return File.ReadAllText(KubernetesConstants.ServiceAccountNamespacePath).Trim();
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Failed to read service account namespace");
+        }
+
+        return KubernetesConstants.DefaultNamespace;
+    }
 
     private static string FormatEventWarning(
         DateTime? timestamp,

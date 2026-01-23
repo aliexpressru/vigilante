@@ -24,4 +24,9 @@ public interface IKubernetesManager
     /// Gets warning events from Kubernetes for the specified namespace
     /// </summary>
     Task<List<string>> GetWarningEventsAsync(string? namespaceParameter = null, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets the current namespace from the service account namespace file, or returns default namespace
+    /// </summary>
+    string GetCurrentNamespace();
 }
