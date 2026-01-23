@@ -62,7 +62,7 @@ public class LogReader(IKubernetes? kubernetes, ILogger<LogReader> logger, IWebH
         var fetchLimit = limit + 1; // fetch one extra to detect truncation
         var sinceSeconds = cursor == null
             ? (query.Continuation != null ? 1 : null) // ensure continuation drives a lower-bound even if parsing fails
-            : (int?)Math.Max(0, (int)(DateTime.UtcNow - cursor.Timestamp.ToUniversalTime()).TotalSeconds);
+            : (int?)Math.Max(0, (int)(DateTime.UtcNow - cursor.Value.ToUniversalTime()).TotalSeconds);
 
         try
         {
@@ -96,7 +96,7 @@ public class LogReader(IKubernetes? kubernetes, ILogger<LogReader> logger, IWebH
             var entries = ParseLogs(raw, source ?? podName);
             if (cursor is not null)
             {
-                entries = entries.Where(e => e.Timestamp > cursor.Timestamp).ToList();
+                entries = entries.Where(e => e.Timestamp > cursor.Value).ToList();
             }
 
             var pageEntries = entries.Take(limit).ToList();
@@ -130,7 +130,7 @@ public class LogReader(IKubernetes? kubernetes, ILogger<LogReader> logger, IWebH
             var parsed = ParseLogs(string.Join('\n', lines), "vigilante");
             if (cursor is not null)
             {
-                parsed = parsed.Where(e => e.Timestamp > cursor.Timestamp).ToList();
+                parsed = parsed.Where(e => e.Timestamp > cursor.Value).ToList();
             }
 
             var ordered = parsed.OrderBy(e => e.Timestamp).ToList();
@@ -152,9 +152,7 @@ public class LogReader(IKubernetes? kubernetes, ILogger<LogReader> logger, IWebH
         }
     }
 
-    private record ContinuationCursor(DateTime Timestamp, string Source);
-
-    private ContinuationCursor? ParseContinuation(string? continuation)
+    private DateTime? ParseContinuation(string? continuation)
     {
         if (string.IsNullOrWhiteSpace(continuation))
         {
@@ -167,7 +165,7 @@ public class LogReader(IKubernetes? kubernetes, ILogger<LogReader> logger, IWebH
             var parts = decoded.Split(ContinuationSeparator);
             if (parts.Length >= 1 && DateTime.TryParse(parts[0], null, DateTimeStyles.RoundtripKind, out var ts))
             {
-                return new ContinuationCursor(ts, parts.Length > 1 ? parts[1] : string.Empty);
+                return ts;
             }
         }
         catch (Exception ex)
