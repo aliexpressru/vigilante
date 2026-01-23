@@ -5,7 +5,6 @@ using Vigilante.Configuration;
 using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models;
-using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services;
@@ -23,22 +22,22 @@ public class CollectionService : ICollectionService
         IMeterService meterService,
         IQdrantClientFactory clientFactory,
         IOptions<QdrantOptions> options,
-        ILogger<PodCommandExecutor> commandExecutorLogger)
+        ILogger<PodCommandExecutor> commandExecutorLogger,
+        IKubernetes? kubernetes = null)
     {
         _logger = logger;
         _meterService = meterService;
         _clientFactory = clientFactory;
         _options = options.Value;
 
-        // Try to initialize Kubernetes client and command executor only if we're running in a cluster
-        try
+        // Initialize command executor if Kubernetes client is available
+        if (kubernetes != null)
         {
-            var kubernetes = new Kubernetes(KubernetesClientConfiguration.InClusterConfig());
             _commandExecutor = new PodCommandExecutor(kubernetes, commandExecutorLogger);
         }
-        catch (k8s.Exceptions.KubeConfigException)
+        else
         {
-            _logger.LogWarning("Not running in Kubernetes cluster, collection size monitoring will be disabled");
+            _logger.LogWarning("Kubernetes client not available, collection size monitoring will be disabled");
             _commandExecutor = null;
         }
     }
@@ -66,18 +65,21 @@ public class CollectionService : ICollectionService
 
             if (result?.Status?.IsSuccess == true)
             {
-                _logger.LogInformation("Shard replication initiated: {Collection} [{SourcePeer}→{TargetPeer}]", 
+                _logger.LogInformation("Shard replication initiated: {Collection} [{SourcePeer}→{TargetPeer}]",
                     collectionName, sourcePeerId, targetPeerId);
+
                 return true;
             }
 
             _logger.LogError("Failed to replicate shards for {Collection}: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
+                collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+
             return false;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to replicate shards for collection {Collection}", collectionName);
+
             return false;
         }
     }
@@ -143,67 +145,77 @@ public class CollectionService : ICollectionService
         return sizes;
     }
 
-    public async Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client, CancellationToken cancellationToken = default)
+    public async Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client,
+        CancellationToken cancellationToken = default)
     {
         try
         {
             _logger.LogDebug("Checking collections health");
             var collectionsResponse = await client.ListCollections(cancellationToken);
-            
+
             if (!collectionsResponse.Status.IsSuccess)
             {
-                var errorDetails = collectionsResponse.Status?.Error ?? "Unknown error";
+                var errorDetails = collectionsResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage;
+
                 _logger.LogWarning("Collections health check failed: {Error}", errorDetails);
+
                 return (false, $"Failed to list collections: {errorDetails}");
             }
-            
+
             // If there are collections, check each one in parallel
             if (collectionsResponse.Result?.Collections != null && collectionsResponse.Result.Collections.Any())
             {
                 var collections = collectionsResponse.Result.Collections;
+
                 _logger.LogDebug("Checking health for {CollectionCount} collections in parallel", collections.Length);
-                
                 // Create tasks for all collection health checks
                 var checkTasks = collections.Select(async collection =>
                 {
                     var collectionName = collection.Name;
-                    
+
                     _logger.LogDebug("Checking collection info for {CollectionName}", collectionName);
                     var collectionInfo = await client.GetCollectionInfo(collectionName, cancellationToken);
-                    
+
                     if (!collectionInfo.Status.IsSuccess)
                     {
-                        var errorDetails = collectionInfo.Status?.Error ?? "Unknown error";
-                        _logger.LogWarning("Collections health check failed for {CollectionName}: {Error}", collectionName, errorDetails);
+                        var errorDetails = collectionInfo.Status?.Error ?? MetricConstants.UnknownErrorMessage;
+
+                        _logger.LogWarning("Collections health check failed for {CollectionName}: {Error}",
+                            collectionName, errorDetails);
+
                         return (IsHealthy: false, CollectionName: collectionName, Error: errorDetails);
                     }
-                    
+
                     _logger.LogDebug("Collection {CollectionName} is healthy", collectionName);
+
                     return (IsHealthy: true, CollectionName: collectionName, Error: (string?)null);
                 }).ToArray();
-                
+
                 // Wait for all checks to complete
                 var results = await Task.WhenAll(checkTasks);
-                
+
                 // Check if any collection failed
                 var failedCollection = results.FirstOrDefault(r => !r.IsHealthy);
                 if (failedCollection.CollectionName != null)
                 {
-                    return (false, $"Failed to get info for collection '{failedCollection.CollectionName}': {failedCollection.Error}");
+                    return (false,
+                        $"Failed to get info for collection '{failedCollection.CollectionName}': {failedCollection.Error}");
                 }
-                
-                _logger.LogDebug("Collections health check passed for all {CollectionCount} collections", collections.Length);
+
+                _logger.LogDebug("Collections health check passed for all {CollectionCount} collections",
+                    collections.Length);
             }
             else
             {
                 _logger.LogDebug("Collections health check passed (no collections to verify)");
             }
-            
+
             return (true, null);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Collections health check failed with exception");
+
             return (false, $"Exception during collections check: {ex.Message}");
         }
     }
@@ -215,7 +227,7 @@ public class CollectionService : ICollectionService
     {
         try
         {
-            _logger.LogInformation("Deleting collection {CollectionName} via API on node {NodeUrl}", 
+            _logger.LogInformation("Deleting collection {CollectionName} via API on node {NodeUrl}",
                 collectionName, nodeUrl);
 
             var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
@@ -224,19 +236,22 @@ public class CollectionService : ICollectionService
 
             if (result?.Status?.IsSuccess == true)
             {
-                _logger.LogInformation("Collection {CollectionName} deleted successfully via API on node {NodeUrl}", 
+                _logger.LogInformation("Collection {CollectionName} deleted successfully via API on node {NodeUrl}",
                     collectionName, nodeUrl);
+
                 return true;
             }
 
             _logger.LogError("Failed to delete collection {CollectionName} via API: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
+                collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete collection {CollectionName} via API on node {NodeUrl}", 
+            _logger.LogError(ex, "Failed to delete collection {CollectionName} via API on node {NodeUrl}",
                 collectionName, nodeUrl);
+
             return false;
         }
     }
@@ -254,271 +269,17 @@ public class CollectionService : ICollectionService
         if (_commandExecutor == null)
         {
             _logger.LogError("Kubernetes client not available, cannot delete collection from disk");
+
             return false;
         }
 
-        var fullPath = $"{QdrantConstants.StoragePath}/{collectionName}";
         return await _commandExecutor.DeleteAndVerifyAsync(
-            podName, 
-            podNamespace, 
-            fullPath, 
-            isDirectory: true, 
-            $"Collection {collectionName}", 
+            podName,
+            podNamespace,
+            $"{QdrantConstants.StoragePath}/{collectionName}",
+            isDirectory: true,
+            $"Collection {collectionName}",
             cancellationToken);
-    }
-    public async Task<string?> CreateCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogInformation("Creating snapshot for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            var result = await qdrantClient.CreateCollectionSnapshot(
-                collectionName, 
-                cancellationToken,
-                isWaitForResult: false);
-            
-            if (result.IsAcceptedOrSuccess())
-            {
-                var snapshotName = result.Result?.Name ?? $"{collectionName}-snapshot-{DateTime.UtcNow:yyyyMMddHHmmss}";
-                var statusText = result.IsAccepted() ? "accepted" : "created successfully";
-                _logger.LogInformation("Snapshot {StatusText} for collection {CollectionName} on node {NodeUrl}", 
-                    statusText, collectionName, nodeUrl);
-                return snapshotName;
-            }
-            
-            _logger.LogError("Failed to create snapshot for collection {CollectionName}: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to create snapshot for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            return null;
-        }
-    }
-    
-    public async Task<List<string>> ListCollectionSnapshotsAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogDebug("Listing snapshots for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            var result = await qdrantClient.ListCollectionSnapshots(collectionName, cancellationToken);
-            if (result?.Status?.IsSuccess == true && result.Result != null)
-            {
-                var snapshots = result.Result.Select(s => s.Name).ToList();
-                _logger.LogDebug("Found {Count} snapshots for collection {CollectionName} on node {NodeUrl}", 
-                    snapshots.Count, collectionName, nodeUrl);
-                return snapshots;
-            }
-            _logger.LogWarning("Failed to list snapshots for collection {CollectionName}: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
-            return new List<string>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to list snapshots for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            return new List<string>();
-        }
-    }
-    public async Task<List<(string Name, long Size)>> GetCollectionSnapshotsWithSizeAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogDebug("Getting snapshots with size info for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            var result = await qdrantClient.ListCollectionSnapshots(collectionName, cancellationToken);
-            
-            if (result?.Status?.IsSuccess == true && result.Result != null)
-            {
-                var snapshots = result.Result
-                    .Select(s => (s.Name, s.Size))
-                    .ToList();
-                
-                _logger.LogDebug("Found {Count} snapshots with size info for collection {CollectionName} on node {NodeUrl}", 
-                    snapshots.Count, collectionName, nodeUrl);
-                return snapshots;
-            }
-            
-            _logger.LogWarning("Failed to get snapshots for collection {CollectionName}: {Error}",
-                collectionName, result?.Status?.Error ?? "Unknown error");
-            return new List<(string Name, long Size)>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get snapshots for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            return new List<(string Name, long Size)>();
-        }
-    }
-
-    public async Task<bool> DeleteCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} on node {NodeUrl}", 
-                snapshotName, collectionName, nodeUrl);
-            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            var result = await qdrantClient.DeleteCollectionSnapshot(
-                collectionName, 
-                snapshotName, 
-                cancellationToken,
-                isWaitForResult: false);
-            
-            if (result.IsAcceptedOrSuccess())
-            {
-                var statusText = result.IsAccepted() ? "deletion accepted" : "deleted successfully";
-                _logger.LogInformation("Snapshot {SnapshotName} {StatusText} for collection {CollectionName} on node {NodeUrl}", 
-                    snapshotName, statusText, collectionName, nodeUrl);
-                return true;
-            }
-            
-            _logger.LogError("Failed to delete snapshot {SnapshotName} for collection {CollectionName}: {Error}",
-                snapshotName, collectionName, result?.Status?.Error ?? "Unknown error");
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete snapshot {SnapshotName} for collection {CollectionName} on node {NodeUrl}", 
-                snapshotName, collectionName, nodeUrl);
-            return false;
-        }
-    }
-    public async Task<Stream?> DownloadCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from node {NodeUrl}", 
-                snapshotName, collectionName, nodeUrl);
-            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            
-            var result = await qdrantClient.DownloadCollectionSnapshot(
-                collectionName, 
-                snapshotName, 
-                cancellationToken);
-            
-            if (result?.Result?.SnapshotDataStream != null)
-            {
-                _logger.LogInformation("Snapshot {SnapshotName} downloaded successfully for collection {CollectionName} from node {NodeUrl}", 
-                    snapshotName, collectionName, nodeUrl);
-                return result.Result.SnapshotDataStream;
-            }
-            
-            _logger.LogError("Failed to download snapshot {SnapshotName} for collection {CollectionName}: empty or null result",
-                snapshotName, collectionName);
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to download snapshot {SnapshotName} for collection {CollectionName} from node {NodeUrl}", 
-                snapshotName, collectionName, nodeUrl);
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Downloads a snapshot directly from disk on a specific pod (bypasses Qdrant API)
-    /// </summary>
-    public async Task<Stream?> DownloadSnapshotFromDiskAsync(
-        string podName,
-        string podNamespace,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}", 
-                snapshotName, collectionName, podName, podNamespace);
-
-            var snapshotPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
-            
-            _logger.LogInformation("Starting download: {SnapshotPath} from pod {PodName}", snapshotPath, podName);
-
-            if (_commandExecutor == null)
-            {
-                _logger.LogError("Command executor not available - not running in Kubernetes cluster");
-                return null;
-            }
-
-            // Get expected file size for verification
-            var expectedSize = await _commandExecutor.GetFileSizeInBytesAsync(
-                podName,
-                podNamespace,
-                snapshotPath,
-                cancellationToken);
-
-            if (expectedSize.HasValue)
-            {
-                _logger.LogInformation("Got expected file size: {Size} bytes ({FormattedSize})", 
-                    expectedSize.Value, expectedSize.Value.ToPrettySize());
-            }
-            else
-            {
-                _logger.LogWarning("Could not get file size from pod - will download without size limit!");
-            }
-
-            // Get checksum for verification
-            var checksumPath = $"{snapshotPath}.checksum";
-            var expectedChecksum = await _commandExecutor.GetFileContentAsync(
-                podName,
-                podNamespace,
-                checksumPath,
-                cancellationToken);
-
-            if (!string.IsNullOrEmpty(expectedChecksum))
-            {
-                _logger.LogInformation("Expected checksum: {Checksum}", expectedChecksum);
-            }
-
-            // Download file using cat command
-            var snapshotStream = await _commandExecutor.DownloadFileAsync(
-                podName,
-                podNamespace,
-                snapshotPath,
-                expectedSize,
-                cancellationToken);
-
-            if (snapshotStream == null)
-            {
-                _logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName}", 
-                    snapshotName, podName);
-                return null;
-            }
-
-            _logger.LogInformation("Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
-                snapshotName, podName, podNamespace);
-
-            return snapshotStream;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to download snapshot {SnapshotName} from disk on pod {PodName} in namespace {Namespace}", 
-                snapshotName, podName, podNamespace);
-            return null;
-        }
     }
 
 
@@ -530,31 +291,41 @@ public class CollectionService : ICollectionService
     {
         try
         {
-            _logger.LogInformation("Recovering collection {CollectionName} from snapshot {SnapshotName} on node {NodeUrl}", 
+            _logger.LogInformation(
+                "Recovering collection {CollectionName} from snapshot {SnapshotName} on node {NodeUrl}",
                 collectionName, snapshotName, nodeUrl);
+
             var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             var result = await qdrantClient.RecoverCollectionFromSnapshot(
-                collectionName, 
-                snapshotName, 
+                collectionName,
+                snapshotName,
                 cancellationToken,
                 isWaitForResult: true);
-            
+
             if (result.IsAcceptedOrSuccess())
             {
-                var statusText = result.IsAccepted() ? "recovery accepted" : "recovered successfully";
-                _logger.LogInformation("Collection {CollectionName} {StatusText} from snapshot {SnapshotName} on node {NodeUrl}", 
+                var statusText = result.IsAccepted()
+                    ? MetricConstants.RecoveryAcceptedMessage
+                    : MetricConstants.RecoverySuccessMessage;
+
+                _logger.LogInformation(
+                    "Collection {CollectionName} {StatusText} from snapshot {SnapshotName} on node {NodeUrl}",
                     collectionName, statusText, snapshotName, nodeUrl);
+
                 return true;
             }
-            
+
             _logger.LogError("Failed to recover collection {CollectionName} from snapshot {SnapshotName}: {Error}",
-                collectionName, snapshotName, result?.Status?.Error ?? "Unknown error");
+                collectionName, snapshotName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to recover collection {CollectionName} from snapshot {SnapshotName} on node {NodeUrl}", 
+            _logger.LogError(ex,
+                "Failed to recover collection {CollectionName} from snapshot {SnapshotName} on node {NodeUrl}",
                 collectionName, snapshotName, nodeUrl);
+
             return false;
         }
     }
@@ -569,36 +340,44 @@ public class CollectionService : ICollectionService
     {
         try
         {
-            _logger.LogInformation("Recovering collection {CollectionName} from URL {SnapshotUrl} on node {NodeUrl}", 
+            _logger.LogInformation("Recovering collection {CollectionName} from URL {SnapshotUrl} on node {NodeUrl}",
                 collectionName, snapshotUrl, nodeUrl);
-            
+
             var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            
+
             var snapshotLocationUri = new Uri(snapshotUrl);
-            
+
             var result = await qdrantClient.RecoverCollectionFromSnapshot(
-                collectionName, 
-                snapshotLocationUri, 
+                collectionName,
+                snapshotLocationUri,
                 cancellationToken,
                 isWaitForResult: waitForResult,
                 snapshotChecksum: snapshotChecksum);
-            
+
             if (result.IsAcceptedOrSuccess())
             {
-                var statusText = result.IsAccepted() ? "recovery accepted" : "recovered successfully";
-                _logger.LogInformation("Collection {CollectionName} {StatusText} from URL {SnapshotUrl} on node {NodeUrl}", 
+                var statusText = result.IsAccepted()
+                    ? MetricConstants.RecoveryAcceptedMessage
+                    : MetricConstants.RecoverySuccessMessage;
+
+                _logger.LogInformation(
+                    "Collection {CollectionName} {StatusText} from URL {SnapshotUrl} on node {NodeUrl}",
                     collectionName, statusText, snapshotUrl, nodeUrl);
+
                 return true;
             }
-            
+
             _logger.LogError("Failed to recover collection {CollectionName} from URL {SnapshotUrl}: {Error}",
-                collectionName, snapshotUrl, result?.Status?.Error ?? "Unknown error");
+                collectionName, snapshotUrl, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to recover collection {CollectionName} from URL {SnapshotUrl} on node {NodeUrl}", 
+            _logger.LogError(ex,
+                "Failed to recover collection {CollectionName} from URL {SnapshotUrl} on node {NodeUrl}",
                 collectionName, snapshotUrl, nodeUrl);
+
             return false;
         }
     }
@@ -615,10 +394,11 @@ public class CollectionService : ICollectionService
 
             var healthyNodePeerId = collectionInfos
                 .FirstOrDefault(c => c.NodeUrl == healthyNodeUrl)?.PeerId;
-            
+
             if (string.IsNullOrEmpty(healthyNodePeerId))
             {
                 _logger.LogWarning("Could not find peer ID for node {NodeUrl}", healthyNodeUrl);
+
                 return;
             }
 
@@ -629,13 +409,27 @@ public class CollectionService : ICollectionService
 
             foreach (var collectionName in collectionNames)
             {
-                await ProcessCollectionClusteringInfoAsync(
-                    qdrantClient, 
-                    healthyNodeUrl, 
-                    collectionName, 
-                    collectionInfos, 
-                    peerToPodMap, 
-                    cancellationToken);
+                try
+                {
+                    var clusteringInfo = await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
+
+                    if (clusteringInfo?.Status?.IsSuccess != true || clusteringInfo.Result == null)
+                        continue;
+
+                    var info = collectionInfos.FirstOrDefault(c =>
+                        c.CollectionName == collectionName && c.NodeUrl == healthyNodeUrl);
+
+                    if (info == null)
+                        continue;
+
+                    UpdateShardMetrics(info, clusteringInfo.Result);
+                    UpdateTransferMetrics(info, clusteringInfo.Result, peerToPodMap);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to get clustering info for collection {Collection} on node {NodeUrl}",
+                        collectionName, healthyNodeUrl);
+                }
             }
         }
         catch (Exception ex)
@@ -643,64 +437,62 @@ public class CollectionService : ICollectionService
             _logger.LogError(ex, "Failed to setup QdrantClient for node {NodeUrl}", healthyNodeUrl);
         }
     }
-
-    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsFromQdrantAsync(
+    
+    public async Task<List<CollectionInfo>> GetCollectionsFromQdrantAsync(
         IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Getting collections from Qdrant API (Kubernetes storage not available)");
-        
+
         var result = new List<CollectionInfo>();
-        
+
         foreach (var node in nodes)
         {
             try
             {
                 _logger.LogDebug("Getting collections from node {NodeUrl}", node.Url);
-                
+
                 var qdrantClient = _clientFactory.CreateClientFromUrl(node.Url, _options.ApiKey);
-                
+
                 // Get list of collections
                 var collectionsResponse = await qdrantClient.ListCollections(cancellationToken);
                 if (!collectionsResponse.Status.IsSuccess || collectionsResponse.Result?.Collections == null)
                 {
-                    _logger.LogWarning("Failed to get collections from node {NodeUrl}: {Error}", 
-                        node.Url, collectionsResponse.Status?.Error ?? "Unknown error");
+                    _logger.LogWarning("Failed to get collections from node {NodeUrl}: {Error}",
+                        node.Url, collectionsResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+
                     continue;
                 }
-                
+
                 // For each collection, get its info
                 foreach (var collection in collectionsResponse.Result.Collections)
                 {
                     try
                     {
                         var collectionName = collection.Name;
-                        
-                        // Get snapshots for this collection
-                        var snapshots = await ListCollectionSnapshotsAsync(node.Url, collectionName, cancellationToken);
-                        
+
                         var metrics = new Dictionary<string, object>
                         {
-                            { MetricConstants.PrettySizeKey, "N/A" },
-                            { MetricConstants.SizeBytesKey, 0L },
-                            { "snapshots", snapshots }
+                            { MetricConstants.PrettySizeKey, MetricConstants.NotAvailableValue },
+                            { MetricConstants.SizeBytesKey, 0L }
                         };
 
                         result.Add(new CollectionInfo
                         {
                             CollectionName = collectionName,
                             NodeUrl = node.Url,
-                            PodName = node.PodName ?? "unknown",
+                            PodName = node.PodName ?? MetricConstants.UnknownPodName,
                             PeerId = node.PeerId,
-                            PodNamespace = node.Namespace ?? "",
+                            PodNamespace = node.Namespace ?? string.Empty,
                             Metrics = metrics
                         });
-                        
-                        _logger.LogDebug("Added collection {CollectionName} from node {NodeUrl}", collectionName, node.Url);
+
+                        _logger.LogDebug("Added collection {CollectionName} from node {NodeUrl}", collectionName,
+                            node.Url);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Failed to get info for collection {CollectionName} from node {NodeUrl}", 
+                        _logger.LogWarning(ex, "Failed to get info for collection {CollectionName} from node {NodeUrl}",
                             collection.Name, node.Url);
                     }
                 }
@@ -710,124 +502,53 @@ public class CollectionService : ICollectionService
                 _logger.LogError(ex, "Failed to get collections from node {NodeUrl}", node.Url);
             }
         }
-        
+
         _logger.LogInformation("Retrieved {Count} collections from Qdrant API", result.Count);
+
         return result;
     }
 
-    public async Task<IEnumerable<SnapshotInfo>> GetSnapshotsFromDiskForPodAsync(
-        string podName,
-        string podNamespace,
-        string nodeUrl,
-        string peerId,
-        CancellationToken cancellationToken)
-    {
-        _logger.LogInformation(
-            "Starting to get snapshots from disk for pod {PodName} (Node URL {NodeUrl}) in namespace {Namespace}",
-            podName, nodeUrl, podNamespace);
 
-        if (_commandExecutor == null)
-        {
-            _logger.LogWarning("Kubernetes client not available, cannot get snapshots from disk for pod {PodName}", podName);
-            return [];
-        }
-
-        var snapshots = new List<SnapshotInfo>();
-
-        try
-        {
-            _logger.LogInformation("Listing collection folders in /qdrant/snapshots on pod {PodName}", podName);
-            
-            var collectionFolders = await _commandExecutor.ListFilesAsync(
-                podName,
-                podNamespace,
-                "/qdrant/snapshots",
-                "*/",
-                cancellationToken);
-
-            _logger.LogInformation("Found {Count} collection folders in snapshots directory on pod {PodName}: {Folders}", 
-                collectionFolders.Count, podName, string.Join(", ", collectionFolders));
-
-            foreach (var collectionName in collectionFolders)
-            {
-                await ProcessCollectionSnapshotsFromDiskAsync(
-                    podName, 
-                    podNamespace, 
-                    nodeUrl, 
-                    peerId, 
-                    collectionName, 
-                    snapshots, 
-                    cancellationToken);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get snapshots from disk for pod {PodName}", podName);
-        }
-
-        _logger.LogInformation("Found {Count} snapshots on pod {PodName}", snapshots.Count, podName);
-        return snapshots;
-    }
-
-    public async Task<bool> DeleteSnapshotFromDiskAsync(
-        string podName,
-        string podNamespace,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken)
-    {
-        _logger.LogInformation(
-            "Deleting snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}",
-            snapshotName, collectionName, podName, podNamespace);
-
-        if (_commandExecutor == null)
-        {
-            _logger.LogError("Kubernetes client not available, cannot delete snapshot from disk");
-            return false;
-        }
-
-        var fullPath = $"/qdrant/snapshots/{collectionName}/{snapshotName}";
-        return await _commandExecutor.DeleteAndVerifyAsync(
-            podName, 
-            podNamespace, 
-            fullPath, 
-            isDirectory: false, 
-            $"Snapshot {snapshotName}", 
-            cancellationToken);
-    }
-
-    private async Task ProcessCollectionClusteringInfoAsync(
-        IQdrantHttpClient qdrantClient,
-        string healthyNodeUrl,
-        string collectionName,
-        IList<CollectionInfo> collectionInfos,
+    public async Task<IReadOnlyList<CollectionInfo>> GetEnrichedCollectionsInfoAsync(
+        IReadOnlyList<NodeInfo> nodes,
         Dictionary<string, string> peerToPodMap,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var clusteringInfo = await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
-            
-            if (clusteringInfo?.Status?.IsSuccess != true || clusteringInfo.Result == null)
-                return;
+        _logger.LogInformation("Getting enriched collections info from {NodesCount} nodes", nodes.Count);
 
-            var info = collectionInfos.FirstOrDefault(c => 
-                c.CollectionName == collectionName && c.NodeUrl == healthyNodeUrl);
-            
-            if (info == null)
-                return;
+        // Get collections from Qdrant API (only from healthy nodes)
+        var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
+        
+        _logger.LogInformation("Using {HealthyCount} healthy nodes out of {TotalCount}", 
+            healthyNodes.Count, nodes.Count);
 
-            UpdateShardMetrics(info, clusteringInfo.Result);
-            UpdateTransferMetrics(info, clusteringInfo.Result, peerToPodMap);
-        }
-        catch (Exception ex)
+        var collections = await GetCollectionsFromQdrantAsync(
+            healthyNodes.Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName)),
+            cancellationToken);
+
+        if (collections.Count == 0)
         {
-            _logger.LogError(ex, "Failed to get clustering info for collection {Collection} on node {NodeUrl}", 
-                collectionName, healthyNodeUrl);
+            _logger.LogDebug("No collections found from API");
+            return collections;
         }
+
+        // Enrich with storage info if nodes have pod names
+        if (healthyNodes.Any(n => !string.IsNullOrEmpty(n.PodName)))
+        {
+            await EnrichCollectionsWithStorageInfoAsync(healthyNodes, collections, cancellationToken);
+        }
+
+        // Enrich with clustering info
+        await EnrichCollectionsWithClusteringInfoAsync(healthyNodes, collections, peerToPodMap, cancellationToken);
+
+        _logger.LogInformation("Retrieved and enriched {Count} collections", collections.Count);
+
+        return collections;
     }
 
-    private void UpdateShardMetrics(CollectionInfo info, Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo clusteringResult)
+    private void UpdateShardMetrics(CollectionInfo info,
+        Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+            clusteringResult)
     {
         if (clusteringResult.LocalShards == null)
             return;
@@ -849,8 +570,9 @@ public class CollectionService : ICollectionService
     }
 
     private void UpdateTransferMetrics(
-        CollectionInfo info, 
-        Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo clusteringResult,
+        CollectionInfo info,
+        Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+            clusteringResult,
         Dictionary<string, string> peerToPodMap)
     {
         if (clusteringResult.ShardTransfers == null)
@@ -873,92 +595,93 @@ public class CollectionService : ICollectionService
         }
     }
 
-    private async Task ProcessCollectionSnapshotsFromDiskAsync(
-        string podName,
-        string podNamespace,
-        string nodeUrl,
-        string peerId,
-        string collectionName,
-        List<SnapshotInfo> snapshots,
+
+    private async Task EnrichCollectionsWithStorageInfoAsync(
+        IReadOnlyList<NodeInfo> nodes,
+        List<CollectionInfo> collections,
         CancellationToken cancellationToken)
     {
-        try
+        _logger.LogInformation("Enriching collections with storage information from Kubernetes");
+
+        var storageCollections = new Dictionary<(string NodeUrl, string CollectionName), CollectionSize>();
+
+        foreach (var node in nodes)
         {
-            _logger.LogInformation("Listing snapshot files in /qdrant/snapshots/{CollectionName} on pod {PodName}", 
-                collectionName, podName);
-            
-            var snapshotFiles = await _commandExecutor!.ListFilesAsync(
-                podName,
-                podNamespace,
-                $"/qdrant/snapshots/{collectionName}",
-                "*.snapshot",
-                cancellationToken);
-
-            _logger.LogInformation("Found {Count} snapshot files for collection {CollectionName} on pod {PodName}: {Files}", 
-                snapshotFiles.Count, collectionName, podName, string.Join(", ", snapshotFiles));
-
-            foreach (var snapshotFile in snapshotFiles.Where(f => f.EndsWith(".snapshot")))
+            try
             {
-                await ProcessSingleSnapshotFromDiskAsync(
-                    podName, 
-                    podNamespace, 
-                    nodeUrl, 
-                    peerId, 
-                    collectionName, 
-                    snapshotFile, 
-                    snapshots, 
-                    cancellationToken);
+                if (string.IsNullOrEmpty(node.PodName))
+                {
+                    _logger.LogDebug("Skipping node {NodeUrl} - no pod name available", node.Url);
+                    continue;
+                }
+
+                _logger.LogInformation("Fetching storage info from pod {PodName} for node {NodeUrl}", 
+                    node.PodName, node.Url);
+
+                var collectionSizes = (await GetCollectionsSizesForPodAsync(
+                    node.PodName,
+                    node.Namespace ?? string.Empty,
+                    node.Url,
+                    node.PeerId,
+                    cancellationToken)).ToList();
+
+                foreach (var size in collectionSizes)
+                {
+                    storageCollections[(size.NodeUrl, size.CollectionName)] = size;
+                }
+
+                _logger.LogInformation("Retrieved {SizesCount} collection sizes from pod {PodName}",
+                    collectionSizes.Count, node.PodName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get collection sizes for node {NodeUrl}", node.Url);
             }
         }
-        catch (Exception ex)
+
+        _logger.LogInformation("Found {Count} collections in storage across all nodes", storageCollections.Count);
+
+        // Enrich collections with storage data
+        foreach (var collection in collections)
         {
-            _logger.LogError(ex, "Failed to get snapshots for collection {Collection} on pod {PodName}",
-                collectionName, podName);
+            var key = (collection.NodeUrl, collection.CollectionName);
+
+            if (storageCollections.TryGetValue(key, out var storageInfo))
+            {
+                collection.Metrics[MetricConstants.PrettySizeKey] = storageInfo.PrettySize;
+                collection.Metrics[MetricConstants.SizeBytesKey] = storageInfo.SizeBytes;
+
+                _logger.LogDebug("Enriched collection {CollectionName} on {NodeUrl} with storage data: {Size}",
+                    collection.CollectionName, collection.NodeUrl, storageInfo.PrettySize);
+            }
+            else
+            {
+                collection.Issues.Add("Collection exists in API but not found in storage");
+
+                _logger.LogWarning("Collection {CollectionName} on node {NodeUrl} exists in API but not in storage!",
+                    collection.CollectionName, collection.NodeUrl);
+            }
         }
     }
 
-    private async Task ProcessSingleSnapshotFromDiskAsync(
-        string podName,
-        string podNamespace,
-        string nodeUrl,
-        string peerId,
-        string collectionName,
-        string snapshotFile,
-        List<SnapshotInfo> snapshots,
+    private async Task EnrichCollectionsWithClusteringInfoAsync(
+        IReadOnlyList<NodeInfo> nodes,
+        List<CollectionInfo> collections,
+        Dictionary<string, string> peerToPodMap,
         CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Getting size for snapshot {SnapshotFile} in {CollectionName}", 
-            snapshotFile, collectionName);
+        _logger.LogInformation("Enriching collections with clustering information");
+
+        // Find a healthy node to query clustering info
+        var healthyNode = nodes.FirstOrDefault(n => n.IsHealthy);
         
-        var sizeBytes = await _commandExecutor!.GetSizeAsync(
-            podName,
-            podNamespace,
-            $"/qdrant/snapshots/{collectionName}",
-            snapshotFile,
-            cancellationToken);
-
-        if (sizeBytes.HasValue)
+        if (healthyNode == null)
         {
-            var snapshotInfo = new SnapshotInfo
-            {
-                PodName = podName,
-                NodeUrl = nodeUrl,
-                PeerId = peerId,
-                CollectionName = collectionName,
-                SnapshotName = snapshotFile,
-                SizeBytes = sizeBytes.Value,
-                PodNamespace = podNamespace
-            };
+            _logger.LogWarning("No healthy nodes available for clustering info");
+            return;
+        }
 
-            snapshots.Add(snapshotInfo);
-            _logger.LogInformation("Added snapshot {SnapshotName} for collection {CollectionName}: {Size} bytes ({PrettySize})", 
-                snapshotFile, collectionName, sizeBytes.Value, snapshotInfo.PrettySize);
-        }
-        else
-        {
-            _logger.LogWarning("Could not get size for snapshot {SnapshotFile} in collection {CollectionName}", 
-                snapshotFile, collectionName);
-        }
+        await EnrichWithClusteringInfoAsync(healthyNode.Url, collections, peerToPodMap, cancellationToken);
     }
 }
 

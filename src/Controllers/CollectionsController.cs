@@ -9,6 +9,7 @@ namespace Vigilante.Controllers;
 [Route("api/v1/collections")]
 public class CollectionsController(
     IClusterManager clusterManager,
+    ICollectionService collectionService,
     ILogger<CollectionsController> logger)
     : ControllerBase
 {
@@ -114,7 +115,7 @@ public class CollectionsController(
                 // Delete on specific node
                 if (request.DeletionType == Models.Enums.CollectionDeletionType.Api)
                 {
-                    var success = await clusterManager.DeleteCollectionViaApiAsync(
+                    var success = await collectionService.DeleteCollectionViaApiAsync(
                         request.NodeUrl!, 
                         request.CollectionName, 
                         cancellationToken);
@@ -139,7 +140,7 @@ public class CollectionsController(
                 }
                 else // Disk
                 {
-                    var success = await clusterManager.DeleteCollectionFromDiskAsync(
+                    var success = await collectionService.DeleteCollectionFromDiskAsync(
                         request.PodName!, 
                         request.PodNamespace!, 
                         request.CollectionName, 

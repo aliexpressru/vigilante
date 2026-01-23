@@ -9,11 +9,36 @@ namespace Vigilante.Services.Interfaces;
 public interface ISnapshotService
 {
     /// <summary>
+    /// Creates a snapshot of a collection on a specific node
+    /// </summary>
+    Task<string?> CreateCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Creates a snapshot for a collection on all nodes
     /// </summary>
     Task<Dictionary<string, string?>> CreateCollectionSnapshotOnAllNodesAsync(
         string collectionName,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets snapshot information with sizes for a collection on a specific node
+    /// </summary>
+    Task<List<(string Name, long Size)>> GetCollectionSnapshotsWithSizeAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Deletes a snapshot for a collection on a specific node
+    /// </summary>
+    Task<bool> DeleteCollectionSnapshotApiAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Deletes a snapshot from all nodes via Qdrant API
@@ -47,6 +72,25 @@ public interface ISnapshotService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Downloads a snapshot for a collection from a specific node via Qdrant API
+    /// </summary>
+    Task<Stream?> DownloadCollectionSnapshotAsync(
+        string nodeUrl,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Downloads a snapshot directly from disk on a specific pod (bypasses Qdrant API)
+    /// </summary>
+    Task<Stream?> DownloadSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Gets information about all snapshots in the cluster (from both Kubernetes storage and Qdrant API)
     /// Supports caching to improve performance
     /// </summary>
@@ -58,24 +102,13 @@ public interface ISnapshotService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets paginated and filtered snapshots information
+    /// Deletes a snapshot file directly from disk on a specific pod
     /// </summary>
-    /// <param name="page">Page number (1-based)</param>
-    /// <param name="pageSize">Number of items per page</param>
-    /// <param name="filter">Filter by collection name (case-insensitive partial match)</param>
-    /// <param name="forceRefresh">Whether to force refresh the cache</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Tuple of paginated snapshots and total count</returns>
-    Task<(IReadOnlyList<SnapshotInfo> Snapshots, int TotalCount)> GetSnapshotsInfoPaginatedAsync(
-        int page,
-        int pageSize,
-        string? filter,
-        bool forceRefresh,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Clears the snapshots cache
-    /// </summary>
-    void ClearCache();
+    Task<bool> DeleteSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
 }
 

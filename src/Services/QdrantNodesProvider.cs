@@ -1,6 +1,10 @@
+using Aer.QdrantClient.Http.Abstractions;
 using k8s;
+using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
 using Vigilante.Constants;
+using Vigilante.Extensions;
+using Vigilante.Models;
 using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services;
@@ -12,9 +16,13 @@ namespace Vigilante.Services;
 public class QdrantNodesProvider(
     IConfiguration configuration,
     IKubernetes? kubernetes,
+    IKubernetesManager? kubernetesManager,
+    IQdrantClientFactory clientFactory,
+    IOptions<QdrantOptions> options,
     ILogger<QdrantNodesProvider> logger)
     : IQdrantNodesProvider
 {
+    private readonly QdrantOptions _options = options.Value;
 
     public async Task<IReadOnlyList<QdrantNodeConfig>> GetNodesAsync(CancellationToken cancellationToken)
     {
@@ -48,15 +56,78 @@ public class QdrantNodesProvider(
         logger.LogWarning("No Qdrant nodes found through any discovery method");
         return [];
     }
-
-    private string GetCurrentNamespace()
+    
+    /// <summary>
+    /// Builds a list of NodeInfo with peer IDs for all discovered nodes.
+    /// This is a lightweight method suitable for scenarios where only basic node info and peer IDs are needed.
+    /// </summary>
+    public async Task<List<NodeInfo>> BuildNodeInfoListAsync(CancellationToken cancellationToken)
     {
-        if (File.Exists(KubernetesConstants.ServiceAccountNamespacePath))
+        var nodeConfigs = await GetNodesAsync(cancellationToken);
+        var tasks = nodeConfigs.Select(config => GetBasicNodeInfoAsync(config, cancellationToken));
+        var nodeInfoList = await Task.WhenAll(tasks);
+        return nodeInfoList.ToList();
+    }
+
+    /// <summary>
+    /// Gets basic node information including peer ID for a single node configuration.
+    /// </summary>
+    public async Task<NodeInfo> GetBasicNodeInfoAsync(QdrantNodeConfig nodeConfig, CancellationToken cancellationToken)
+    {
+        var nodeUrl = $"{QdrantConstants.HttpProtocol}{nodeConfig.Host}:{nodeConfig.Port}";
+        var peerId = await GetPeerIdForNodeAsync(nodeUrl, nodeConfig, cancellationToken);
+
+        return new NodeInfo
         {
-            return File.ReadAllText(KubernetesConstants.ServiceAccountNamespacePath).Trim();
+            Url = nodeUrl,
+            PeerId = peerId ?? string.Empty,
+            Namespace = nodeConfig.Namespace,
+            PodName = nodeConfig.PodName,
+            StatefulSetName = nodeConfig.StatefulSetName,
+            LastSeen = DateTime.UtcNow
+        };
+    }
+
+    /// <summary>
+    /// Gets the peer ID for a specific node
+    /// </summary>
+    public async Task<string?> GetPeerIdForNodeAsync(
+        string nodeUrl, 
+        QdrantNodeConfig nodeConfig, 
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            logger.LogDebug("Getting peer ID for node {NodeUrl}", nodeUrl);
+            
+            var client = clientFactory.CreateClient(nodeConfig.Host, nodeConfig.Port, _options.ApiKey);
+            
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_options.HttpTimeoutSeconds));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+            var clusterInfo = await client.GetClusterInfo(linkedCts.Token).WaitAsync(timeoutCts.Token);
+            
+            if (clusterInfo.Status.IsSuccess && clusterInfo.Result?.PeerId != null)
+            {
+                var peerId = clusterInfo.Result.PeerId.ToString();
+                logger.LogDebug("Got peer ID {PeerId} for node {NodeUrl}", peerId, nodeUrl);
+                return peerId;
+            }
+            
+            logger.LogWarning("Failed to get cluster info from node {NodeUrl}: {Error}",
+                nodeUrl, clusterInfo.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+            return null;
         }
-        
-        return KubernetesConstants.DefaultNamespace;
+        catch (OperationCanceledException)
+        {
+            logger.LogWarning("Timeout getting peer ID for node {NodeUrl}", nodeUrl);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to get peer ID for node {NodeUrl}", nodeUrl);
+            return null;
+        }
     }
 
     private async Task<IReadOnlyList<QdrantNodeConfig>> GetNodesFromK8sAsync(CancellationToken cancellationToken)
@@ -67,7 +138,7 @@ public class QdrantNodesProvider(
             return [];
         }
         
-        var currentNamespace = GetCurrentNamespace();
+        var currentNamespace = kubernetesManager?.GetCurrentNamespace() ?? KubernetesConstants.DefaultNamespace;
         
         var pods = await kubernetes.CoreV1.ListNamespacedPodAsync(
             namespaceParameter: currentNamespace,

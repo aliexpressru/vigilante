@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models.Enums;
 using Vigilante.Models.Requests;
@@ -109,7 +110,7 @@ public class SnapshotsController(
             if (request.SingleNode)
             {
                 // Create snapshot on specific node
-                var snapshotName = await collectionService.CreateCollectionSnapshotAsync(
+                var snapshotName = await snapshotService.CreateCollectionSnapshotAsync(
                     request.NodeUrl!,
                     request.CollectionName,
                     cancellationToken);
@@ -417,7 +418,7 @@ public class SnapshotsController(
             {
                 Success = success,
                 Message = success
-                    ? $"Collection '{request.CollectionName}' recovered successfully from snapshot '{request.SnapshotName}' on {request.TargetNodeUrl}"
+                    ? $"Collection '{request.CollectionName}' {MetricConstants.RecoverySuccessMessage} from snapshot '{request.SnapshotName}' on {request.TargetNodeUrl}"
                     : $"Failed to recover collection '{request.CollectionName}' from snapshot '{request.SnapshotName}' on {request.TargetNodeUrl}",
                 Error = success ? null : "Recovery failed"
             };
@@ -503,7 +504,7 @@ public class SnapshotsController(
             {
                 Success = success,
                 Message = success
-                    ? $"Collection '{request.CollectionName}' recovered successfully from URL '{request.SnapshotUrl}' on {request.NodeUrl}"
+                    ? $"Collection '{request.CollectionName}' {MetricConstants.RecoverySuccessMessage} from URL '{request.SnapshotUrl}' on {request.NodeUrl}"
                     : $"Failed to recover collection '{request.CollectionName}' from URL '{request.SnapshotUrl}' on {request.NodeUrl}",
                 Error = success ? null : "Recovery failed"
             };

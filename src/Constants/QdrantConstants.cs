@@ -16,6 +16,11 @@ public static class QdrantConstants
     public const string StoragePath = "/qdrant/storage/collections";
 
     /// <summary>
+    /// Base path to Qdrant snapshots directory in containers
+    /// </summary>
+    public const string SnapshotsPath = "/qdrant/snapshots";
+
+    /// <summary>
     /// Name of the Qdrant container in Kubernetes pods
     /// </summary>
     public const string ContainerName = "qdrant";
@@ -34,5 +39,35 @@ public static class QdrantConstants
     /// HTTP protocol prefix for node URLs
     /// </summary>
     public const string HttpProtocol = "http://";
+
+    /// <summary>
+    /// Status text for accepted snapshot operations
+    /// </summary>
+    public const string SnapshotAcceptedStatus = "accepted";
+
+    /// <summary>
+    /// Status text for successfully created snapshot operations
+    /// </summary>
+    public const string SnapshotCreatedStatus = "created successfully";
+
+    /// <summary>
+    /// Status text for accepted deletion operations
+    /// </summary>
+    public const string SnapshotDeletionAcceptedStatus = "deletion accepted";
+
+    /// <summary>
+    /// Status text for successfully deleted snapshot operations
+    /// </summary>
+    public const string SnapshotDeletedStatus = "deleted successfully";
+
+    /// <summary>
+    /// File pattern for snapshot files
+    /// </summary>
+    public const string SnapshotFilePattern = "*.snapshot";
+
+    /// <summary>
+    /// Directory pattern for listing directories
+    /// </summary>
+    public const string DirectoryPattern = "*/";
 }
 

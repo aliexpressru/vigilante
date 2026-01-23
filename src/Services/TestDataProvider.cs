@@ -10,17 +10,23 @@ namespace Vigilante.Services;
 /// </summary>
 public class TestDataProvider
 {
-
-
     private readonly QdrantOptions _options;
+    private readonly IHostEnvironment _environment;
 
-    public TestDataProvider(IOptions<QdrantOptions> options)
+    public TestDataProvider(IOptions<QdrantOptions> options, IHostEnvironment environment)
     {
         _options = options.Value;
+        _environment = environment;
     }
 
     public IReadOnlyList<CollectionInfo> GenerateTestCollectionData()
     {
+        // Only return test data in Development environment
+        if (!_environment.IsDevelopment())
+        {
+            return new List<CollectionInfo>();
+        }
+
         var testData = new List<CollectionInfo>();
         var testCollections = new[] 
         { 
@@ -208,7 +214,8 @@ public class TestDataProvider
                     PodName = podName,
                     PeerId = peerId,
                     NodeUrl = url,
-                    SizeBytes = sizeBytes
+                    SizeBytes = sizeBytes,
+                    PodNamespace = "default"
                 });
             }
         }

@@ -925,7 +925,7 @@ class VigilanteDashboard {
                         // 4. Get other metrics (if any)
                         const otherMetricsHtml = Object.entries(nodeInfo.metrics)
                             .filter(([key]) => key !== 'prettySize' && key !== 'sizeBytes' && key !== 'shardStates' && 
-                                              key !== 'shard_states' && key !== 'shards' && key !== 'outgoingTransfers' && key !== 'snapshots')
+                                              key !== 'shard_states' && key !== 'shards' && key !== 'outgoingTransfers')
                             .map(([key, value]) => {
                                 const formattedValue = this.formatMetricValue(key, value, nodeInfo);
                                 if (!formattedValue) return '';

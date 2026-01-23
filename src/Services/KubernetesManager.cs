@@ -21,7 +21,7 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         
         if (string.IsNullOrEmpty(namespaceParameter))
         {
-            logger.LogWarning("Namespace not provided for pod {PodName}, using default '{DefaultNamespace}'", podName, KubernetesConstants.DefaultNamespace);
+            logger.LogWarning(KubernetesConstants.NamespaceNotProvidedForPodMessage, podName, KubernetesConstants.DefaultNamespace);
         }
         
         var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
@@ -47,101 +47,35 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
 
     public async Task<bool> RolloutRestartStatefulSetAsync(string statefulSetName, string? namespaceParameter = null, CancellationToken cancellationToken = default)
     {
-        if (kubernetes == null)
-        {
-            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
-            return false;
-        }
-        
-        if (string.IsNullOrEmpty(namespaceParameter))
-        {
-            logger.LogWarning("Namespace not provided for StatefulSet {StatefulSetName}, using default '{DefaultNamespace}'", statefulSetName, KubernetesConstants.DefaultNamespace);
-        }
-        
-        var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
-        
-        try
-        {
-            logger.LogInformation("Rolling out restart for StatefulSet {StatefulSetName} in namespace {Namespace}", 
-                statefulSetName, ns);
-            
-            // Get current StatefulSet
-            var statefulSet = await kubernetes.AppsV1.ReadNamespacedStatefulSetAsync(
-                name: statefulSetName,
-                namespaceParameter: ns,
-                cancellationToken: cancellationToken);
-            
-            // Trigger rollout restart by adding/updating annotation
-            var now = DateTime.UtcNow.ToString("o");
-            statefulSet.Spec.Template.Metadata ??= new V1ObjectMeta();
-            statefulSet.Spec.Template.Metadata.Annotations ??= new Dictionary<string, string>();
-            statefulSet.Spec.Template.Metadata.Annotations[KubernetesConstants.RestartedAtAnnotationKey] = now;
-            
-            // Update StatefulSet
-            await kubernetes.AppsV1.ReplaceNamespacedStatefulSetAsync(
-                body: statefulSet,
-                name: statefulSetName,
-                namespaceParameter: ns,
-                cancellationToken: cancellationToken);
-            
-            logger.LogInformation("Successfully triggered rollout restart for StatefulSet {StatefulSetName}", statefulSetName);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to rollout restart StatefulSet {StatefulSetName} in namespace {Namespace}", 
-                statefulSetName, ns);
-            return false;
-        }
+        return await UpdateStatefulSetAsync(
+            statefulSetName,
+            namespaceParameter,
+            statefulSet =>
+            {
+                // Trigger rollout restart by adding/updating annotation
+                var now = DateTime.UtcNow.ToString(KubernetesConstants.Iso8601Format);
+                statefulSet.Spec.Template.Metadata ??= new V1ObjectMeta();
+                statefulSet.Spec.Template.Metadata.Annotations ??= new Dictionary<string, string>();
+                statefulSet.Spec.Template.Metadata.Annotations[KubernetesConstants.RestartedAtAnnotationKey] = now;
+            },
+            KubernetesConstants.RolloutRestartOperation,
+            cancellationToken);
     }
 
     public async Task<bool> ScaleStatefulSetAsync(string statefulSetName, int replicas, string? namespaceParameter = null, CancellationToken cancellationToken = default)
     {
-        if (kubernetes == null)
-        {
-            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
-            return false;
-        }
-        
-        if (string.IsNullOrEmpty(namespaceParameter))
-        {
-            logger.LogWarning("Namespace not provided for StatefulSet {StatefulSetName}, using default '{DefaultNamespace}'", statefulSetName, KubernetesConstants.DefaultNamespace);
-        }
-        
-        var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
-        
-        try
-        {
-            logger.LogInformation("Scaling StatefulSet {StatefulSetName} to {Replicas} replicas in namespace {Namespace}", 
-                statefulSetName, replicas, ns);
-            
-            // Get current StatefulSet
-            var statefulSet = await kubernetes.AppsV1.ReadNamespacedStatefulSetAsync(
-                name: statefulSetName,
-                namespaceParameter: ns,
-                cancellationToken: cancellationToken);
-            
-            // Update replicas
-            statefulSet.Spec.Replicas = replicas;
-            
-            // Update StatefulSet
-            await kubernetes.AppsV1.ReplaceNamespacedStatefulSetAsync(
-                body: statefulSet,
-                name: statefulSetName,
-                namespaceParameter: ns,
-                cancellationToken: cancellationToken);
-            
-            logger.LogInformation("Successfully scaled StatefulSet {StatefulSetName} to {Replicas} replicas", 
-                statefulSetName, replicas);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to scale StatefulSet {StatefulSetName} to {Replicas} replicas in namespace {Namespace}", 
-                statefulSetName, replicas, ns);
-            return false;
-        }
+        return await UpdateStatefulSetAsync(
+            statefulSetName,
+            namespaceParameter,
+            statefulSet =>
+            {
+                // Update replicas
+                statefulSet.Spec.Replicas = replicas;
+            },
+            string.Format(KubernetesConstants.ScaleOperationFormat, replicas),
+            cancellationToken);
     }
+
 
     public async Task<List<string>> GetWarningEventsAsync(string? namespaceParameter = null, CancellationToken cancellationToken = default)
     {
@@ -163,8 +97,8 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
             {
                 var eventsListV1 = await kubernetes.EventsV1.ListNamespacedEventAsync(
                     namespaceParameter: ns,
-                    fieldSelector: "type=Warning",
-                    limit: 20,
+                    fieldSelector: KubernetesConstants.WarningEventFieldSelector,
+                    limit: KubernetesConstants.EventsFetchLimit,
                     cancellationToken: cancellationToken);
 
                 if (eventsListV1?.Items != null && eventsListV1.Items.Count > 0)
@@ -177,15 +111,12 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
 
                     foreach (var evt in sortedEvents)
                     {
-                        var timestamp = evt.EventTime;
-                        var timestampStr = timestamp.HasValue ? timestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "Unknown time";
-                        var involvedObject = evt.Regarding != null 
-                            ? $"{evt.Regarding.Kind}/{evt.Regarding.Name}" 
-                            : "Unknown object";
-                        var reason = evt.Reason ?? "Unknown reason";
-                        var message = evt.Note ?? "No message";
-
-                        warnings.Add($"[{timestampStr}] {involvedObject}: {reason} - {message}");
+                        warnings.Add(FormatEventWarning(
+                            evt.EventTime,
+                            evt.Regarding?.Kind,
+                            evt.Regarding?.Name,
+                            evt.Reason,
+                            evt.Note));
                     }
 
                     logger.LogInformation("Formatted {Count} warning events from namespace {Namespace}", warnings.Count, ns);
@@ -194,14 +125,14 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
             }
             catch (Exception exV1)
             {
-                logger.LogDebug(exV1, "Events v1 API not available or failed, falling back to CoreV1 Events");
+                logger.LogDebug(exV1, KubernetesConstants.EventsV1NotAvailableMessage);
             }
 
             // Fallback to CoreV1 Events API (older Kubernetes versions)
             var eventsList = await kubernetes.CoreV1.ListNamespacedEventAsync(
                 namespaceParameter: ns,
-                fieldSelector: "type=Warning",
-                limit: 20,
+                fieldSelector: KubernetesConstants.WarningEventFieldSelector,
+                limit: KubernetesConstants.EventsFetchLimit,
                 cancellationToken: cancellationToken);
 
             if (eventsList?.Items == null || eventsList.Items.Count == 0)
@@ -219,15 +150,12 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
 
             foreach (var evt in warningEvents)
             {
-                var timestamp = evt.LastTimestamp ?? evt.EventTime;
-                var timestampStr = timestamp.HasValue ? timestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "Unknown time";
-                var involvedObject = evt.InvolvedObject != null 
-                    ? $"{evt.InvolvedObject.Kind}/{evt.InvolvedObject.Name}" 
-                    : "Unknown object";
-                var reason = evt.Reason ?? "Unknown reason";
-                var message = evt.Message ?? "No message";
-
-                warnings.Add($"[{timestampStr}] {involvedObject}: {reason} - {message}");
+                warnings.Add(FormatEventWarning(
+                    evt.LastTimestamp ?? evt.EventTime,
+                    evt.InvolvedObject?.Kind,
+                    evt.InvolvedObject?.Name,
+                    evt.Reason,
+                    evt.Message));
             }
 
             logger.LogInformation("Formatted {Count} warning events from namespace {Namespace}", warnings.Count, ns);
@@ -235,11 +163,10 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         catch (Exception ex)
         {
             // Check if it's a Forbidden error (RBAC issue)
-            if (ex.Message.Contains("Forbidden") || ex.Message.Contains("403"))
+            if (ex.Message.Contains(KubernetesConstants.ForbiddenError) || 
+                ex.Message.Contains(KubernetesConstants.ForbiddenStatusCode))
             {
-                logger.LogWarning("Access denied to read events in namespace {Namespace}. " +
-                    "ServiceAccount may be missing RBAC permissions for 'events' resource. " +
-                    "Please apply updated k8s/rbac.yaml to grant necessary permissions.", ns);
+                logger.LogWarning(KubernetesConstants.RbacPermissionErrorMessage, ns);
             }
             else
             {
@@ -250,34 +177,97 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         return warnings;
     }
 
-    public async Task<string?> GetPodNameByIpAsync(string podIp, string? namespaceParameter = null, CancellationToken cancellationToken = default)
+    public string GetCurrentNamespace()
+    {
+        try
+        {
+            if (File.Exists(KubernetesConstants.ServiceAccountNamespacePath))
+            {
+                return File.ReadAllText(KubernetesConstants.ServiceAccountNamespacePath).Trim();
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Failed to read service account namespace");
+        }
+
+        return KubernetesConstants.DefaultNamespace;
+    }
+
+    private async Task<bool> UpdateStatefulSetAsync(
+        string statefulSetName,
+        string? namespaceParameter,
+        Action<V1StatefulSet> modifyAction,
+        string operationDescription,
+        CancellationToken cancellationToken)
     {
         if (kubernetes == null)
         {
             logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
-            return null;
+            return false;
         }
-
+        
+        if (string.IsNullOrEmpty(namespaceParameter))
+        {
+            logger.LogWarning(KubernetesConstants.NamespaceNotProvidedForStatefulSetMessage, 
+                statefulSetName, KubernetesConstants.DefaultNamespace);
+        }
+        
         var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
-
+        
         try
         {
-            logger.LogInformation("Getting pod name for IP {PodIp} in namespace {Namespace}", podIp, ns);
-
-            var pods = await kubernetes.CoreV1.ListNamespacedPodAsync(
+            logger.LogInformation("Performing {Operation} for StatefulSet {StatefulSetName} in namespace {Namespace}", 
+                operationDescription, statefulSetName, ns);
+            
+            // Get current StatefulSet
+            var statefulSet = await kubernetes.AppsV1.ReadNamespacedStatefulSetAsync(
+                name: statefulSetName,
                 namespaceParameter: ns,
-                fieldSelector: $"status.podIP=={podIp}",
                 cancellationToken: cancellationToken);
-
-            logger.LogInformation("Found {PodsCount} pods matching IP {PodIp}", pods.Items.Count, podIp);
-
-            return pods.Items.FirstOrDefault()?.Metadata.Name;
+            
+            // Apply modification
+            modifyAction(statefulSet);
+            
+            // Update StatefulSet
+            await kubernetes.AppsV1.ReplaceNamespacedStatefulSetAsync(
+                body: statefulSet,
+                name: statefulSetName,
+                namespaceParameter: ns,
+                cancellationToken: cancellationToken);
+            
+            logger.LogInformation("Successfully performed {Operation} for StatefulSet {StatefulSetName}", 
+                operationDescription, statefulSetName);
+            return true;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to get pod name for IP {PodIp} in namespace {Namespace}", podIp, ns);
-            return null;
+            logger.LogError(ex, "Failed to {Operation} for StatefulSet {StatefulSetName} in namespace {Namespace}", 
+                operationDescription, statefulSetName, ns);
+            return false;
         }
+    }
+
+    private static string FormatEventWarning(
+        DateTime? timestamp,
+        string? kind,
+        string? name,
+        string? reason,
+        string? message)
+    {
+        var timestampStr = timestamp.HasValue
+            ? timestamp.Value.ToString(KubernetesConstants.EventTimestampFormat)
+            : KubernetesConstants.UnknownTime;
+
+        var involvedObject = !string.IsNullOrEmpty(kind) && !string.IsNullOrEmpty(name)
+            ? $"{kind}/{name}"
+            : KubernetesConstants.UnknownObject;
+
+        var eventReason = reason ?? KubernetesConstants.UnknownReason;
+        var eventMessage = message ?? KubernetesConstants.NoMessage;
+
+        return string.Format(KubernetesConstants.EventWarningFormat,
+            timestampStr, involvedObject, eventReason, eventMessage);
     }
 }
 

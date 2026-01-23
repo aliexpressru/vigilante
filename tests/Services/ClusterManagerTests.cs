@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -7,6 +8,7 @@ using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Responses;
 using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Configuration;
+using Vigilante.Constants;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services;
@@ -24,6 +26,8 @@ public class ClusterManagerTests
     private IMeterService _meterService = null!;
     private IQdrantClientFactory _clientFactory = null!;
     private ICollectionService _collectionService = null!;
+    private IHostEnvironment _environment = null!;
+    private IKubernetesManager _kubernetesManager = null!;
     private TestDataProvider _testDataProvider = null!;
     private ClusterManager _clusterManager = null!;
     private ConcurrentDictionary<string, IQdrantHttpClient> _mockClients = null!;
@@ -41,8 +45,15 @@ public class ClusterManagerTests
         
         _options.Value.Returns(new QdrantOptions { HttpTimeoutSeconds = 5 });
         
-        // Create TestDataProvider with the same options
-        _testDataProvider = new TestDataProvider(_options);
+        // Create mock environment (Development by default for tests)
+        _environment = Substitute.For<IHostEnvironment>();
+        _environment.EnvironmentName.Returns(Environments.Development);
+        
+        // Create TestDataProvider with the same options and environment
+        _testDataProvider = new TestDataProvider(_options, _environment);
+        
+        // Setup kubernetes manager
+        _kubernetesManager = Substitute.For<IKubernetesManager>();
         
         // Setup collection service to always return healthy
         _collectionService
@@ -61,6 +72,25 @@ public class ClusterManagerTests
                 return _mockClients.GetOrAdd(key, _ => Substitute.For<IQdrantHttpClient>());
             });
         
+        // Setup GetBasicNodeInfoAsync to return basic NodeInfo without calling GetClusterInfo
+        // GetNodeInfoAsync will call GetClusterInfo separately to enrich the data
+        _nodesProvider.GetBasicNodeInfoAsync(Arg.Any<QdrantNodeConfig>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var config = callInfo.ArgAt<QdrantNodeConfig>(0);
+                var nodeUrl = $"http://{config.Host}:{config.Port}";
+                
+                return Task.FromResult(new NodeInfo
+                {
+                    Url = nodeUrl,
+                    PeerId = string.Empty, // Will be populated by GetNodeInfoAsync
+                    Namespace = config.Namespace,
+                    PodName = config.PodName,
+                    StatefulSetName = config.StatefulSetName,
+                    LastSeen = DateTime.UtcNow
+                });
+            });
+        
         var kubernetesManager = Substitute.For<IKubernetesManager>();
         
         _clusterManager = new ClusterManager(
@@ -71,7 +101,7 @@ public class ClusterManagerTests
             _options,
             _logger,
             _meterService,
-            kubernetesManager);
+            _kubernetesManager);
     }
 
     [Test]
@@ -998,15 +1028,15 @@ public class ClusterManagerTests
                 PeerId = "1001",
                 Metrics = new Dictionary<string, object>
                 {
-                    { "prettySize", "N/A" },
-                    { "sizeBytes", 0L },
-                    { "snapshots", new List<string>() }
+                    { "prettySize", MetricConstants.NotAvailableValue },
+                    { "sizeBytes", 0L }
                 }
             }
         };
 
-        _collectionService.GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>())
             .Returns(apiCollections);
 
@@ -1014,8 +1044,9 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert
-        await _collectionService.Received(1).GetCollectionsFromQdrantAsync(
-            Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
+            Arg.Any<IReadOnlyList<NodeInfo>>(),
+            Arg.Any<Dictionary<string, string>>(),
             Arg.Any<CancellationToken>());
 
         Assert.That(result, Has.Count.EqualTo(1));
@@ -1060,15 +1091,16 @@ public class ClusterManagerTests
                 PeerId = "1001",
                 Metrics = new Dictionary<string, object>
                 {
-                    { "prettySize", "N/A" },
-                    { "sizeBytes", 0L },
-                    { "snapshots", new List<string>() }
-                }
+                    { "prettySize", MetricConstants.NotAvailableValue },
+                    { "sizeBytes", 0L }
+                },
+                Issues = new List<string> { "Collection exists in API but not found in storage" }
             }
         };
 
-        _collectionService.GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>())
             .Returns(apiCollections);
 
@@ -1088,7 +1120,7 @@ public class ClusterManagerTests
         Assert.That(result, Has.Count.EqualTo(1));
         Assert.That(result[0].Issues, Has.Count.EqualTo(1));
         Assert.That(result[0].Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
-        Assert.That(result[0].Metrics["prettySize"], Is.EqualTo("N/A"));
+        Assert.That(result[0].Metrics["prettySize"], Is.EqualTo(MetricConstants.NotAvailableValue));
         Assert.That(result[0].Metrics["sizeBytes"], Is.EqualTo(0L));
     }
 
@@ -1130,15 +1162,15 @@ public class ClusterManagerTests
                 PeerId = "1001",
                 Metrics = new Dictionary<string, object>
                 {
-                    { "prettySize", "N/A" },
-                    { "sizeBytes", 0L },
-                    { "snapshots", new List<string>() }
+                    { "prettySize", "1 GB" },
+                    { "sizeBytes", 1073741824L }
                 }
             }
         };
 
-        _collectionService.GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>())
             .Returns(apiCollections);
 
@@ -1209,7 +1241,11 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", "476.84 MB" },
+                    { "sizeBytes", 500000000L }
+                }
             },
             new()
             {
@@ -1217,7 +1253,12 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", MetricConstants.NotAvailableValue },
+                    { "sizeBytes", 0L }
+                },
+                Issues = new List<string> { "Collection exists in API but not found in storage" }
             },
             new()
             {
@@ -1225,12 +1266,17 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", "715.26 MB" },
+                    { "sizeBytes", 750000000L }
+                }
             }
         };
 
-        _collectionService.GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>())
             .Returns(apiCollections);
 
@@ -1276,7 +1322,7 @@ public class ClusterManagerTests
         var collectionMissing = result.First(c => c.CollectionName == "collection_missing_from_storage");
         Assert.That(collectionMissing.Issues, Has.Count.EqualTo(1));
         Assert.That(collectionMissing.Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
-        Assert.That(collectionMissing.Metrics["prettySize"], Is.EqualTo("N/A"));
+        Assert.That(collectionMissing.Metrics["prettySize"], Is.EqualTo(MetricConstants.NotAvailableValue));
 
         var anotherInBoth = result.First(c => c.CollectionName == "another_in_both");
         Assert.That(anotherInBoth.Issues, Has.Count.EqualTo(0));
@@ -1311,8 +1357,9 @@ public class ClusterManagerTests
             }));
 
         // API returns no collections
-        _collectionService.GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>())
             .Returns(new List<CollectionInfo>());
 
@@ -1382,7 +1429,11 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", "953.67 MB" },
+                    { "sizeBytes", 1000000000L }
+                }
             },
             new()
             {
@@ -1390,12 +1441,18 @@ public class ClusterManagerTests
                 NodeUrl = "http://node2:6333",
                 PodName = "pod2",
                 PeerId = "1002",
-                Metrics = new Dictionary<string, object> { { "prettySize", "N/A" }, { "sizeBytes", 0L }, { "snapshots", new List<string>() } }
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", MetricConstants.NotAvailableValue },
+                    { "sizeBytes", 0L }
+                },
+                Issues = new List<string> { "Collection exists in API but not found in storage" }
             }
         };
 
-        _collectionService.GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>())
             .Returns(apiCollections);
 
@@ -2272,8 +2329,22 @@ public class ClusterManagerTests
             {
                 Issues = new[]
                 {
-                    new KeyValuePair<string, string>("disk_usage", "Disk usage is above 80%"),
-                    new KeyValuePair<string, string>("memory_usage", "Memory usage is above 90%")
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = "disk_usage",
+                        Description = "Disk usage is above 80%",
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = null,
+                        Solution = null
+                    },
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = "memory_usage",
+                        Description = "Memory usage is above 90%",
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = null,
+                        Solution = null
+                    }
                 }
             }
         };
@@ -2291,8 +2362,8 @@ public class ClusterManagerTests
         var node = state.Nodes[0];
         Assert.That(node.IsHealthy, Is.True, "Node should be healthy even with Qdrant issues (they are informational)");
         Assert.That(node.Issues, Has.Count.EqualTo(2), "Should have 2 issues from Qdrant");
-        Assert.That(node.Issues[0], Is.EqualTo("disk_usage: Disk usage is above 80%"));
-        Assert.That(node.Issues[1], Is.EqualTo("memory_usage: Memory usage is above 90%"));
+        Assert.That(node.Issues[0], Is.EqualTo("[disk_usage] Disk usage is above 80%"));
+        Assert.That(node.Issues[1], Is.EqualTo("[memory_usage] Memory usage is above 90%"));
     }
 
     [Test]
@@ -2328,7 +2399,7 @@ public class ClusterManagerTests
                 }
             }));
 
-        // Mock ReportIssues response with issues without values
+        // Mock ReportIssues response with issues with empty/null values
         var reportIssuesResponse = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse
         {
             Status = new QdrantStatus(QdrantOperationStatusType.Ok),
@@ -2336,10 +2407,38 @@ public class ClusterManagerTests
             {
                 Issues = new[]
                 {
-                    new KeyValuePair<string, string>(null!, null!),
-                    new KeyValuePair<string, string>("", ""),
-                    new KeyValuePair<string, string>("   ", "   "),
-                    new KeyValuePair<string, string>("disk_usage", "  High  ")
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = null,
+                        Description = null,
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = null,
+                        Solution = null
+                    },
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = "",
+                        Description = "",
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = null,
+                        Solution = null
+                    },
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = "   ",
+                        Description = "   ",
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = null,
+                        Solution = null
+                    },
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = "disk_usage",
+                        Description = "  High  ",
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = null,
+                        Solution = null
+                    }
                 }
             }
         };
@@ -2356,9 +2455,77 @@ public class ClusterManagerTests
         Assert.That(state.Nodes, Has.Count.EqualTo(1));
         var node = state.Nodes[0];
         Assert.That(node.Issues, Has.Count.EqualTo(1), "Only one valid issue should remain");
-        Assert.That(node.Issues[0], Is.EqualTo("disk_usage: High"));
+        Assert.That(node.Issues[0], Is.EqualTo("[disk_usage] High"));
         Assert.That(state.Health.Issues, Has.Count.EqualTo(1));
-        Assert.That(state.Health.Issues[0], Is.EqualTo("pod1: disk_usage: High"));
+        Assert.That(state.Health.Issues[0], Is.EqualTo("pod1: [disk_usage] High"));
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WithQdrantIssuesWithRelatedCollection_ShouldIncludeCollectionName()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var peerId = 1001UL;
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = peerId,
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = peerId },
+                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    {
+                        ConsensusThreadStatus = "working",
+                        LastUpdate = DateTime.UtcNow,
+                        Err = null
+                    },
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                }
+            }));
+
+        // Mock ReportIssues response with related collection
+        var reportIssuesResponse = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+            Result = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint
+            {
+                Issues = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
+                    {
+                        Id = "shard_replication",
+                        Description = "Shard has no active replicas",
+                        Timestamp = DateTime.UtcNow,
+                        RelatedCollection = "my_collection",
+                        Solution = null
+                    }
+                }
+            }
+        };
+        
+#pragma warning disable QD0001
+        mockClient.ReportIssues(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(reportIssuesResponse));
+#pragma warning restore QD0001
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        var node = state.Nodes[0];
+        Assert.That(node.Issues, Has.Count.EqualTo(1));
+        Assert.That(node.Issues[0], Is.EqualTo("[shard_replication] Shard has no active replicas (Collection: my_collection)"));
     }
 
     [Test]

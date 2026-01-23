@@ -53,59 +53,7 @@ public interface ICollectionService
         string podNamespace,
         string collectionName,
         CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Creates a snapshot of a collection on a specific node
-    /// </summary>
-    Task<string?> CreateCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Lists all snapshots for a collection on a specific node
-    /// </summary>
-    Task<List<string>> ListCollectionSnapshotsAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Gets snapshot information with sizes for a collection on a specific node
-    /// </summary>
-    Task<List<(string Name, long Size)>> GetCollectionSnapshotsWithSizeAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Deletes a snapshot for a collection on a specific node
-    /// </summary>
-    Task<bool> DeleteCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Downloads a snapshot for a collection from a specific node
-    /// </summary>
-    Task<Stream?> DownloadCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Downloads a snapshot directly from disk on a specific pod (bypasses Qdrant API)
-    /// </summary>
-    Task<Stream?> DownloadSnapshotFromDiskAsync(
-        string podName,
-        string podNamespace,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken);
-
+    
     /// <summary>
     /// Checks if a collection exists on a specific node
     /// </summary>
@@ -142,28 +90,16 @@ public interface ICollectionService
     /// <summary>
     /// Gets collections list from a Qdrant node directly (fallback when Kubernetes is not available)
     /// </summary>
-    Task<IReadOnlyList<CollectionInfo>> GetCollectionsFromQdrantAsync(
+    Task<List<CollectionInfo>> GetCollectionsFromQdrantAsync(
         IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken);
-
+    
     /// <summary>
-    /// Gets snapshot files and their sizes from disk for a specific pod
+    /// Gets enriched collections information from healthy nodes with storage and clustering data
     /// </summary>
-    Task<IEnumerable<SnapshotInfo>> GetSnapshotsFromDiskForPodAsync(
-        string podName,
-        string podNamespace,
-        string nodeUrl,
-        string peerId,
-        CancellationToken cancellationToken);
-
-
-    /// <summary>
-    /// Deletes a snapshot file directly from disk on a specific pod
-    /// </summary>
-    Task<bool> DeleteSnapshotFromDiskAsync(
-        string podName,
-        string podNamespace,
-        string collectionName,
-        string snapshotName,
+    Task<IReadOnlyList<CollectionInfo>> GetEnrichedCollectionsInfoAsync(
+        IReadOnlyList<NodeInfo> nodes,
+        Dictionary<string, string> peerToPodMap,
         CancellationToken cancellationToken);
 }
+

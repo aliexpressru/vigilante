@@ -26,7 +26,7 @@ public interface IKubernetesManager
     Task<List<string>> GetWarningEventsAsync(string? namespaceParameter = null, CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// Gets pod name by its IP address in the specified namespace
+    /// Gets the current namespace from the service account namespace file, or returns default namespace
     /// </summary>
-    Task<string?> GetPodNameByIpAsync(string podIp, string? namespaceParameter = null, CancellationToken cancellationToken = default);
+    string GetCurrentNamespace();
 }

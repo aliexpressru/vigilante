@@ -238,7 +238,7 @@ public class SnapshotsControllerTests
             NodeUrl = "http://node1:6333"
         };
 
-        _collectionService.CreateCollectionSnapshotAsync(request.NodeUrl!, request.CollectionName, Arg.Any<CancellationToken>())
+        _snapshotService.CreateCollectionSnapshotAsync(request.NodeUrl!, request.CollectionName, Arg.Any<CancellationToken>())
             .Returns("snapshot-123.snapshot");
 
         // Act
@@ -263,7 +263,7 @@ public class SnapshotsControllerTests
             NodeUrl = "http://node1:6333"
         };
 
-        _collectionService.CreateCollectionSnapshotAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _snapshotService.CreateCollectionSnapshotAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((string?)null);
 
         // Act
