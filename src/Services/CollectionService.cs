@@ -22,22 +22,22 @@ public class CollectionService : ICollectionService
         IMeterService meterService,
         IQdrantClientFactory clientFactory,
         IOptions<QdrantOptions> options,
-        ILogger<PodCommandExecutor> commandExecutorLogger)
+        ILogger<PodCommandExecutor> commandExecutorLogger,
+        IKubernetes? kubernetes = null)
     {
         _logger = logger;
         _meterService = meterService;
         _clientFactory = clientFactory;
         _options = options.Value;
 
-        // Try to initialize Kubernetes client and command executor only if we're running in a cluster
-        try
+        // Initialize command executor if Kubernetes client is available
+        if (kubernetes != null)
         {
-            var kubernetes = new Kubernetes(KubernetesClientConfiguration.InClusterConfig());
             _commandExecutor = new PodCommandExecutor(kubernetes, commandExecutorLogger);
         }
-        catch (k8s.Exceptions.KubeConfigException)
+        else
         {
-            _logger.LogWarning("Not running in Kubernetes cluster, collection size monitoring will be disabled");
+            _logger.LogWarning("Kubernetes client not available, collection size monitoring will be disabled");
             _commandExecutor = null;
         }
     }

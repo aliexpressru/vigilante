@@ -151,7 +151,7 @@ public class CollectionServiceTests
     public async Task GetEnrichedCollectionsInfoAsync_WithNoHealthyNodes_ReturnsEmptyList()
     {
         // Arrange
-        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger, null);
         
         var nodes = new List<NodeInfo>
         {
@@ -191,7 +191,7 @@ public class CollectionServiceTests
         mockClient.ListCollections(Arg.Any<CancellationToken>())
             .Returns(collectionsResponse);
 
-        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger, null);
         
         var nodes = new List<NodeInfo>
         {
@@ -334,7 +334,7 @@ public class CollectionServiceTests
         mockClient.ListCollections(Arg.Any<CancellationToken>())
             .Returns(collectionsResponse);
 
-        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger, null);
         
         var nodes = new List<NodeInfo>
         {
@@ -365,7 +365,8 @@ public class CollectionServiceTests
             _meterService,
             _clientFactory,
             _options,
-            _commandExecutorLogger);
+            _commandExecutorLogger,
+            null);
 
         // Use reflection to set the private readonly _commandExecutor field
         var fieldInfo = typeof(CollectionService).GetField("_commandExecutor", 
