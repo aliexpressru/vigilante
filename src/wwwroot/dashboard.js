@@ -722,6 +722,7 @@ class VigilanteDashboard {
                 .map(cb => parseInt(cb.dataset.shardId))
         );
         this.selectedState.set(stateKey, { selectedShards });
+        console.log(`Saved shard selection for ${stateKey}:`, Array.from(selectedShards));
     }
 
     clearOtherNodesShardSelection(currentStateKey) {
@@ -772,9 +773,11 @@ class VigilanteDashboard {
         document.querySelectorAll('.collection-details.visible').forEach(row => {
             const nameCell = row.previousElementSibling.querySelector('.collection-name-line');
             if (nameCell) {
-                openCollections.add(nameCell.textContent);
+                openCollections.add(nameCell.textContent.trim());
             }
         });
+        
+        console.log('Saving open collections state:', Array.from(openCollections));
         
         // Group collections by name and sort them
         const collectionsByName = collections.reduce((acc, info) => {
@@ -858,8 +861,10 @@ class VigilanteDashboard {
 
                 const detailsRow = document.createElement('tr');
                 detailsRow.className = 'collection-details';
-                if (openCollections.has(collection.name)) {
+                const shouldBeVisible = openCollections.has(collection.name);
+                if (shouldBeVisible) {
                     detailsRow.classList.add('visible');
+                    console.log(`Restoring visible state for collection: ${collection.name}`);
                 }
 
                 const detailsCell = document.createElement('td');
@@ -940,6 +945,7 @@ class VigilanteDashboard {
                         
                         // Restore shard selection state
                         const savedState = this.selectedState.get(stateKey) || { selectedShards: new Set() };
+                        console.log(`Restoring shard state for ${stateKey}:`, Array.from(savedState.selectedShards));
                         
                         // Setup Select All shards checkbox
                         const selectAllCheckbox = nodeDetails.querySelector('.select-all-shards-checkbox');
@@ -1060,6 +1066,7 @@ class VigilanteDashboard {
 
                 row.addEventListener('click', () => {
                     const wasVisible = detailsRow.classList.contains('visible');
+                    console.log(`Collection ${collection.name} clicked, was visible: ${wasVisible}, will be: ${!wasVisible}`);
                     if (wasVisible) {
                         detailsRow.classList.remove('visible');
                     } else {
