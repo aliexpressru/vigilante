@@ -16,9 +16,14 @@ public interface IQdrantNodesProvider
     /// Gets basic node information including peer ID for a single node configuration
     /// </summary>
     Task<NodeInfo> GetBasicNodeInfoAsync(QdrantNodeConfig nodeConfig, CancellationToken cancellationToken);
-
+    
     /// <summary>
-    /// Gets the peer ID for a specific node
+    /// Gets the currently stored StatefulSet name, or attempts to discover it from nodes
     /// </summary>
-    Task<string?> GetPeerIdForNodeAsync(string nodeUrl, QdrantNodeConfig nodeConfig, CancellationToken cancellationToken);
+    Task<string?> GetStatefulSetNameAsync(CancellationToken cancellationToken);
+    
+    /// <summary>
+    /// Sets the StatefulSet name (stores in memory)
+    /// </summary>
+    void SetStatefulSetName(string statefulSetName);
 }

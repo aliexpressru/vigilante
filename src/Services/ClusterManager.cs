@@ -50,7 +50,8 @@ public class ClusterManager(
         var state = new ClusterState
         {
             Nodes = nodeStatuses.ToList(),
-            LastUpdated = DateTime.UtcNow
+            LastUpdated = DateTime.UtcNow,
+            StatefulSetName = await nodesProvider.GetStatefulSetNameAsync(cancellationToken)
         };
 
         meterService.UpdateAliveNodes(state.Nodes.Count(n => n.IsHealthy));

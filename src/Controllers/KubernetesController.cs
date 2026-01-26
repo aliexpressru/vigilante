@@ -9,6 +9,7 @@ namespace Vigilante.Controllers;
 [Route("api/v1/kubernetes")]
 public class KubernetesController(
     IKubernetesManager kubernetesManager,
+    IQdrantNodesProvider nodesProvider,
     ILogger<KubernetesController> logger)
     : ControllerBase
 {
@@ -99,6 +100,9 @@ public class KubernetesController(
 
             if (success)
             {
+                // Store the StatefulSet name for future operations
+                nodesProvider.SetStatefulSetName(request.StatefulSetName);
+                
                 return Ok(new
                 {
                     message = $"StatefulSet '{request.StatefulSetName}' {operationDescription} initiated successfully"

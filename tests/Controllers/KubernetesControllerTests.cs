@@ -13,6 +13,7 @@ namespace Aer.Vigilante.Tests.Controllers;
 public class KubernetesControllerTests
 {
     private IKubernetesManager _kubernetesManager = null!;
+    private IQdrantNodesProvider _nodesProvider = null!;
     private ILogger<KubernetesController> _logger = null!;
     private KubernetesController _controller = null!;
 
@@ -20,9 +21,10 @@ public class KubernetesControllerTests
     public void Setup()
     {
         _kubernetesManager = Substitute.For<IKubernetesManager>();
+        _nodesProvider = Substitute.For<IQdrantNodesProvider>();
         _logger = Substitute.For<ILogger<KubernetesController>>();
         
-        _controller = new KubernetesController(_kubernetesManager, _logger);
+        _controller = new KubernetesController(_kubernetesManager, _nodesProvider, _logger);
     }
 
     #region DeletePodAsync Tests
@@ -318,6 +320,143 @@ public class KubernetesControllerTests
         Assert.That(result, Is.InstanceOf<ObjectResult>());
         var objectResult = (ObjectResult)result;
         Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+    }
+
+    #endregion
+
+    #region StatefulSet Name Storage Tests
+
+    [Test]
+    public async Task ManageStatefulSet_WithSuccessfulRollout_StoresStatefulSetName()
+    {
+        // Arrange
+        var request = new V1ManageStatefulSetRequest
+        {
+            StatefulSetName = "qdrant1",
+            Namespace = "qdrant",
+            OperationType = StatefulSetOperationType.Rollout
+        };
+
+        _kubernetesManager.RolloutRestartStatefulSetAsync(
+            request.StatefulSetName,
+            request.Namespace,
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        _nodesProvider.Received(1).SetStatefulSetName("qdrant1");
+    }
+
+    [Test]
+    public async Task ManageStatefulSet_WithSuccessfulScale_StoresStatefulSetName()
+    {
+        // Arrange
+        var request = new V1ManageStatefulSetRequest
+        {
+            StatefulSetName = "qdrant2",
+            Namespace = "qdrant",
+            OperationType = StatefulSetOperationType.Scale,
+            Replicas = 5
+        };
+
+        _kubernetesManager.ScaleStatefulSetAsync(
+            request.StatefulSetName,
+            request.Replicas.Value,
+            request.Namespace,
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        _nodesProvider.Received(1).SetStatefulSetName("qdrant2");
+    }
+
+    [Test]
+    public async Task ManageStatefulSet_WithSuccessfulScaleToZero_StoresStatefulSetName()
+    {
+        // Arrange
+        var request = new V1ManageStatefulSetRequest
+        {
+            StatefulSetName = "qdrant-test",
+            Namespace = "qdrant",
+            OperationType = StatefulSetOperationType.Scale,
+            Replicas = 0
+        };
+
+        _kubernetesManager.ScaleStatefulSetAsync(
+            request.StatefulSetName,
+            0,
+            request.Namespace,
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        _nodesProvider.Received(1).SetStatefulSetName("qdrant-test");
+    }
+
+    [Test]
+    public async Task ManageStatefulSet_WithFailedOperation_DoesNotStoreStatefulSetName()
+    {
+        // Arrange
+        var request = new V1ManageStatefulSetRequest
+        {
+            StatefulSetName = "qdrant-fail",
+            Namespace = "qdrant",
+            OperationType = StatefulSetOperationType.Rollout
+        };
+
+        _kubernetesManager.RolloutRestartStatefulSetAsync(
+            request.StatefulSetName,
+            request.Namespace,
+            Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        // Act
+        var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        _nodesProvider.DidNotReceive().SetStatefulSetName(Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task ManageStatefulSet_WithException_DoesNotStoreStatefulSetName()
+    {
+        // Arrange
+        var request = new V1ManageStatefulSetRequest
+        {
+            StatefulSetName = "qdrant-error",
+            Namespace = "qdrant",
+            OperationType = StatefulSetOperationType.Scale,
+            Replicas = 3
+        };
+
+        _kubernetesManager.ScaleStatefulSetAsync(
+            request.StatefulSetName,
+            request.Replicas.Value,
+            request.Namespace,
+            Arg.Any<CancellationToken>())
+            .Returns<bool>(_ => throw new Exception("Test exception"));
+
+        // Act
+        var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        _nodesProvider.DidNotReceive().SetStatefulSetName(Arg.Any<string>());
     }
 
     #endregion

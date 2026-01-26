@@ -1843,6 +1843,9 @@ class VigilanteDashboard {
         // Store warnings (already includes warnings from all nodes, aggregated by backend)
         this.clusterWarnings = clusterState.health.warnings || [];
         
+        // Store StatefulSet name from API response
+        this.statefulSetName = clusterState.statefulSetName;
+        
         // Update combined issues and warnings display
         this.updateCombinedIssues();
         this.updateWarnings();
@@ -2663,16 +2666,17 @@ class VigilanteDashboard {
     }
 
     showStatefulSetDialog() {
-        // Get StatefulSet name and namespace from first node
+        // Get StatefulSet name from stored value or fall back to first node
         const firstNode = this.clusterNodes && this.clusterNodes.length > 0 ? this.clusterNodes[0] : null;
-        const statefulSetName = firstNode?.statefulSetName || 'qdrant';
+        const storedStatefulSetName = this.statefulSetName || firstNode?.statefulSetName;
         const namespace = firstNode?.namespace || 'qdrant';
-        const currentReplicas = this.clusterNodes?.length || 3;
+        const currentReplicas = this.clusterNodes?.length || 0;
 
         console.log('Opening StatefulSet dialog with:', {
-            statefulSetName,
+            storedStatefulSetName,
             namespace,
             currentReplicas,
+            storedValue: this.statefulSetName,
             firstNode
         });
 
@@ -2683,16 +2687,30 @@ class VigilanteDashboard {
         // Create modal dialog
         const modal = document.createElement('div');
         modal.className = 'modal-dialog statefulset-modal';
+        
+        // If we don't have StatefulSet name, show input field
+        const statefulSetNameInput = !storedStatefulSetName ? `
+            <div class="form-group">
+                <label for="statefulSetNameInput">StatefulSet Name: <span style="color: red;">*</span></label>
+                <input type="text" id="statefulSetNameInput" class="form-input" placeholder="e.g., qdrant" required />
+                <small style="color: #888; display: block; margin-top: 4px;">
+                    Enter the name of your Qdrant StatefulSet
+                </small>
+            </div>
+        ` : '';
+        
         modal.innerHTML = `
             <div class="modal-header">
                 <h3><i class="fas fa-cubes"></i> Manage StatefulSet</h3>
                 <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
+                ${statefulSetNameInput}
+                ${storedStatefulSetName ? `
                 <div class="statefulset-info">
                     <div class="info-item">
                         <span class="info-label">StatefulSet:</span>
-                        <span class="info-value">${statefulSetName}</span>
+                        <span class="info-value">${storedStatefulSetName}</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Namespace:</span>
@@ -2703,6 +2721,7 @@ class VigilanteDashboard {
                         <span class="info-value">${currentReplicas}</span>
                     </div>
                 </div>
+                ` : ''}
                 <div class="form-group">
                     <label>Operation Type:</label>
                     <div class="operation-type-buttons">
@@ -2761,6 +2780,18 @@ class VigilanteDashboard {
 
         // Execute handler
         modal.querySelector('#executeStatefulSetBtn').addEventListener('click', async () => {
+            // Get StatefulSet name from input or use stored value
+            let statefulSetName = storedStatefulSetName;
+            if (!statefulSetName) {
+                const input = modal.querySelector('#statefulSetNameInput');
+                statefulSetName = input?.value.trim();
+                
+                if (!statefulSetName) {
+                    alert('Please enter the StatefulSet name');
+                    return;
+                }
+            }
+            
             const replicas = selectedOperation === 'scale' 
                 ? parseInt(modal.querySelector('#replicaCount').value)
                 : null;

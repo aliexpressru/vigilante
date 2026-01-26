@@ -747,6 +747,78 @@ public class ClusterManagerTests
     }
 
     [Test]
+    public async Task GetClusterStateAsync_IncludesStatefulSetName_WhenAvailable()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "qdrant", PodName = "qdrant1-0" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        _nodesProvider.GetStatefulSetNameAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>("qdrant1"));
+
+        var pod1Id = 1001UL;
+        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // Act
+        var result = await _clusterManager.GetClusterStateAsync();
+
+        // Assert
+        Assert.That(result.StatefulSetName, Is.EqualTo("qdrant1"));
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_StatefulSetName_IsNull_WhenNotAvailable()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "qdrant", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        _nodesProvider.GetStatefulSetNameAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(null));
+
+        var pod1Id = 1001UL;
+        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // Act
+        var result = await _clusterManager.GetClusterStateAsync();
+
+        // Assert
+        Assert.That(result.StatefulSetName, Is.Null);
+    }
+
+    [Test]
     public async Task GetClusterStateAsync_WhenAllNodesUnhealthy_ReturnsAllUnhealthy()
     {
         // Arrange

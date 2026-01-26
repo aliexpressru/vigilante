@@ -15,6 +15,11 @@ public class ClusterState
     public List<NodeInfo> Nodes { get; set; } = new();
 
     public DateTime LastUpdated { get; set; }
+    
+    /// <summary>
+    /// StatefulSet name for the Qdrant cluster
+    /// </summary>
+    public string? StatefulSetName { get; set; }
 
     /// <summary>
     /// Invalidates cached health and status to force recalculation.
