@@ -17,10 +17,11 @@ public interface ISnapshotService
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Creates a snapshot for a collection on all nodes
+    /// Creates a snapshot for a collection on specified nodes
     /// </summary>
-    Task<Dictionary<string, string?>> CreateCollectionSnapshotOnAllNodesAsync(
+    Task<Dictionary<string, string?>> CreateCollectionSnapshotAsync(
         string collectionName,
+        IEnumerable<string> nodeUrls,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -32,7 +33,7 @@ public interface ISnapshotService
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Deletes a snapshot for a collection on a specific node
+    /// Deletes a snapshot for a collection on a specific node via API
     /// </summary>
     Task<bool> DeleteCollectionSnapshotApiAsync(
         string nodeUrl,
@@ -41,24 +42,32 @@ public interface ISnapshotService
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Deletes a snapshot from all nodes via Qdrant API
+    /// Deletes a snapshot from specified nodes via Qdrant API
     /// </summary>
-    Task<Dictionary<string, bool>> DeleteCollectionSnapshotOnAllNodesAsync(
+    Task<Dictionary<string, bool>> DeleteCollectionSnapshotApiAsync(
         string collectionName,
         string snapshotName,
+        IEnumerable<string> nodeUrls,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Universal method to delete a snapshot based on its source (KubernetesStorage or QdrantApi)
+    /// Deletes a snapshot file from specified pods on disk
     /// </summary>
-    Task<bool> DeleteSnapshotAsync(
+    Task<Dictionary<string, bool>> DeleteSnapshotFromDiskAsync(
         string collectionName,
         string snapshotName,
-        SnapshotSource source,
-        string? nodeUrl = null,
-        string? podName = null,
-        string? podNamespace = null,
+        IEnumerable<(string PodName, string PodNamespace)> pods,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a snapshot file directly from disk on a specific pod
+    /// </summary>
+    Task<bool> DeleteSnapshotFromDiskAsync(
+        string podName,
+        string podNamespace,
+        string collectionName,
+        string snapshotName,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Downloads a snapshot with fallback (first tries API, then disk)
@@ -100,15 +109,4 @@ public interface ISnapshotService
     Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(
         bool clearCache = false,
         CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Deletes a snapshot file directly from disk on a specific pod
-    /// </summary>
-    Task<bool> DeleteSnapshotFromDiskAsync(
-        string podName,
-        string podNamespace,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken);
 }
-

@@ -1,22 +1,19 @@
 namespace Vigilante.Models.Requests;
 
 /// <summary>
-/// Request for creating a collection snapshot
+/// Request for creating a collection snapshot on specified nodes
 /// </summary>
 public class V1CreateSnapshotRequest
 {
     /// <summary>
     /// Name of the collection to snapshot
     /// </summary>
-    public string CollectionName { get; set; } = string.Empty;
+    public required string CollectionName { get; set; }
 
     /// <summary>
-    /// If true, create snapshot only on specific node. Otherwise on all nodes.
+    /// List of node URLs where snapshots should be created
+    /// Each entry should be a node URL like "http://qdrant-0:6333"
+    /// If empty or null, snapshot will be created on all nodes
     /// </summary>
-    public bool SingleNode { get; set; }
-
-    /// <summary>
-    /// Node URL (required if SingleNode is true)
-    /// </summary>
-    public string? NodeUrl { get; set; }
+    public List<string>? NodeUrls { get; set; }
 }

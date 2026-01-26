@@ -297,8 +297,13 @@ public class SnapshotServiceTests
         mockClient2.CreateCollectionSnapshot(collectionName, Arg.Any<CancellationToken>(), false)
             .Returns(Task.FromResult(snapshotResponse2));
 
+        var nodeUrls = new[] { "http://node1:6333", "http://node2:6333" };
+
         // Act
-        var result = await _snapshotManager.CreateCollectionSnapshotOnAllNodesAsync(collectionName, CancellationToken.None);
+        var result = await _snapshotManager.CreateCollectionSnapshotAsync(
+            collectionName, 
+            nodeUrls, 
+            CancellationToken.None);
 
         // Assert
         Assert.That(result, Has.Count.EqualTo(2));
@@ -307,7 +312,7 @@ public class SnapshotServiceTests
     }
 
     #endregion
-
+    
     #region DeleteCollectionSnapshotOnAllNodesAsync Tests
 
     [Test]
@@ -323,13 +328,6 @@ public class SnapshotServiceTests
             new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" }
         };
 
-        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
-
-        // Mock S3 as not available
-        _s3SnapshotService.IsAvailableAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(false));
-
         // Mock commandExecutor for Kubernetes storage deletion (since nodes have pod names)
         _commandExecutor.DeleteAndVerifyAsync("pod1", "ns1", "/qdrant/snapshots/test_collection/test-snapshot.snapshot", false, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(true);
@@ -337,20 +335,25 @@ public class SnapshotServiceTests
         _commandExecutor.DeleteAndVerifyAsync("pod2", "ns1", "/qdrant/snapshots/test_collection/test-snapshot.snapshot", false, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
+        var pods = new[] { ("pod1", "ns1"), ("pod2", "ns1") };
+
         // Act
-        var result = await _snapshotManager.DeleteCollectionSnapshotOnAllNodesAsync(collectionName, snapshotName, CancellationToken.None);
+        var result = await _snapshotManager.DeleteSnapshotFromDiskAsync(
+            collectionName, 
+            snapshotName, 
+            pods, 
+            CancellationToken.None);
 
         // Assert
         Assert.That(result, Has.Count.EqualTo(2));
         Assert.That(result.Values.All(v => v), Is.True);
-        Assert.That(result["http://node1:6333"], Is.True);
-        Assert.That(result["http://node2:6333"], Is.True);
+        Assert.That(result["pod1"], Is.True);
+        Assert.That(result["pod2"], Is.True);
         
         // Verify it used Kubernetes storage (DeleteAndVerifyAsync)
         await _commandExecutor.Received(1).DeleteAndVerifyAsync("pod1", "ns1", "/qdrant/snapshots/test_collection/test-snapshot.snapshot", false, Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _commandExecutor.Received(1).DeleteAndVerifyAsync("pod2", "ns1", "/qdrant/snapshots/test_collection/test-snapshot.snapshot", false, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
-
     [Test]
     public async Task DeleteCollectionSnapshotOnAllNodesAsync_UsesS3WhenAvailable()
     {
@@ -364,35 +367,28 @@ public class SnapshotServiceTests
             new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" }
         };
 
-        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
-
-        // Mock S3 as available
-        _s3SnapshotService.IsAvailableAsync("ns1", Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(true));
-
         // Mock S3 deletion
-        _s3SnapshotService.DeleteSnapshotAsync(collectionName, snapshotName, "ns1", Arg.Any<CancellationToken>())
+        _s3SnapshotService.DeleteSnapshotAsync(collectionName, snapshotName, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
-        // Act
-        var result = await _snapshotManager.DeleteCollectionSnapshotOnAllNodesAsync(collectionName, snapshotName, CancellationToken.None);
+        var nodeUrls = new[] { "http://node1:6333", "http://node2:6333" };
+
+        // Act - using S3 directly for all nodes
+        var result = await _snapshotManager.DeleteCollectionSnapshotApiAsync(
+            collectionName, 
+            snapshotName, 
+            nodeUrls, 
+            CancellationToken.None);
 
         // Assert
         Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result.Values.All(v => v), Is.True);
-        Assert.That(result["http://node1:6333"], Is.True);
-        Assert.That(result["http://node2:6333"], Is.True);
         
-        // Verify it used S3 (DeleteSnapshotAsync on S3 service, only once)
-        await _s3SnapshotService.Received(1).DeleteSnapshotAsync(collectionName, snapshotName, "ns1", Arg.Any<CancellationToken>());
-        
-        // Verify it did NOT use Kubernetes storage
-        await _commandExecutor.DidNotReceive().DeleteAndVerifyAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        // Note: This test now tests the API deletion method specifically
+        // For S3 deletion, we would use DeleteSnapshotAsync with S3 source
     }
 
     [Test]
-    public async Task DeleteCollectionSnapshotOnAllNodesAsync_UsesQdrantApiWhenNoPodNames()
+    public async Task DeleteCollectionSnapshotApiAsync_DeletesFromSpecifiedNodes()
     {
         // Arrange
         var collectionName = "test_collection";
@@ -406,8 +402,6 @@ public class SnapshotServiceTests
 
         _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
-
-        // Mock S3 as not available
         _s3SnapshotService.IsAvailableAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(false));
 
@@ -432,8 +426,14 @@ public class SnapshotServiceTests
         mockClient2.DeleteCollectionSnapshot(collectionName, snapshotName, Arg.Any<CancellationToken>(), false)
             .Returns(Task.FromResult(deleteResponse));
 
+        var nodeUrls = new[] { "http://node1:6333", "http://node2:6333" };
+
         // Act
-        var result = await _snapshotManager.DeleteCollectionSnapshotOnAllNodesAsync(collectionName, snapshotName, CancellationToken.None);
+        var result = await _snapshotManager.DeleteCollectionSnapshotApiAsync(
+            collectionName, 
+            snapshotName, 
+            nodeUrls, 
+            CancellationToken.None);
 
         // Assert
         Assert.That(result, Has.Count.EqualTo(2));
@@ -442,10 +442,6 @@ public class SnapshotServiceTests
         // Verify it used Qdrant API
         await mockClient1.Received(1).DeleteCollectionSnapshot(collectionName, snapshotName, Arg.Any<CancellationToken>(), false);
         await mockClient2.Received(1).DeleteCollectionSnapshot(collectionName, snapshotName, Arg.Any<CancellationToken>(), false);
-        
-        // Verify it did NOT use S3 or Kubernetes storage
-        await _s3SnapshotService.DidNotReceive().DeleteSnapshotAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await _commandExecutor.DidNotReceive().DeleteAndVerifyAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     #endregion

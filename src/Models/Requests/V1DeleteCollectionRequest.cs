@@ -3,7 +3,7 @@ using Vigilante.Models.Enums;
 namespace Vigilante.Models.Requests;
 
 /// <summary>
-/// Request to delete a collection
+/// Request to delete a collection on specified nodes
 /// </summary>
 public class V1DeleteCollectionRequest
 {
@@ -18,23 +18,31 @@ public class V1DeleteCollectionRequest
     public required CollectionDeletionType DeletionType { get; set; }
     
     /// <summary>
-    /// If true, delete only on specified node. If false, delete on all nodes.
+    /// List of node URLs for API deletion (required when DeletionType = Api)
+    /// Each entry should be a node URL like "http://qdrant-0:6333"
     /// </summary>
-    public required bool SingleNode { get; set; }
+    public List<string>? NodeUrls { get; set; }
     
     /// <summary>
-    /// Node URL for API deletion (required when SingleNode = true and DeletionType = Api)
+    /// List of pod specifications for disk deletion (required when DeletionType = Disk)
+    /// Each entry contains pod name and namespace
     /// </summary>
-    public string? NodeUrl { get; set; }
-    
+    public List<PodSpecification>? Pods { get; set; }
+
     /// <summary>
-    /// Pod name for disk deletion (required when SingleNode = true and DeletionType = Disk)
+    /// Specification of a pod for disk deletion
     /// </summary>
-    public string? PodName { get; set; }
-    
-    /// <summary>
-    /// Pod namespace for disk deletion (required when SingleNode = true and DeletionType = Disk)
-    /// </summary>
-    public string? PodNamespace { get; set; }
+    public class PodSpecification
+    {
+        /// <summary>
+        /// Pod name
+        /// </summary>
+        public required string PodName { get; set; }
+        
+        /// <summary>
+        /// Pod namespace
+        /// </summary>
+        public required string PodNamespace { get; set; }
+    }
 }
 

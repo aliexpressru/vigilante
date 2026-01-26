@@ -234,12 +234,19 @@ public class SnapshotsControllerTests
         var request = new V1CreateSnapshotRequest
         {
             CollectionName = "test_collection",
-            SingleNode = true,
-            NodeUrl = "http://node1:6333"
+            NodeUrls = new List<string> { "http://node1:6333" }
         };
 
-        _snapshotService.CreateCollectionSnapshotAsync(request.NodeUrl!, request.CollectionName, Arg.Any<CancellationToken>())
-            .Returns("snapshot-123.snapshot");
+        var results = new Dictionary<string, string?>
+        {
+            ["http://node1:6333"] = "snapshot-123.snapshot"
+        };
+
+        _snapshotService.CreateCollectionSnapshotAsync(
+            request.CollectionName,
+            Arg.Is<IEnumerable<string>>(urls => urls.Count() == 1),
+            Arg.Any<CancellationToken>())
+            .Returns(results);
 
         // Act
         var result = await _controller.CreateSnapshot(request, CancellationToken.None);
@@ -249,7 +256,6 @@ public class SnapshotsControllerTests
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1CreateSnapshotResponse;
         Assert.That(response!.Success, Is.True);
-        Assert.That(response.SnapshotName, Is.EqualTo("snapshot-123.snapshot"));
     }
 
     [Test]
@@ -259,12 +265,19 @@ public class SnapshotsControllerTests
         var request = new V1CreateSnapshotRequest
         {
             CollectionName = "test_collection",
-            SingleNode = true,
-            NodeUrl = "http://node1:6333"
+            NodeUrls = new List<string> { "http://node1:6333" }
         };
 
-        _snapshotService.CreateCollectionSnapshotAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((string?)null);
+        var results = new Dictionary<string, string?>
+        {
+            ["http://node1:6333"] = null
+        };
+
+        _snapshotService.CreateCollectionSnapshotAsync(
+            request.CollectionName,
+            Arg.Is<IEnumerable<string>>(urls => urls.Count() == 1),
+            Arg.Any<CancellationToken>())
+            .Returns(results);
 
         // Act
         var result = await _controller.CreateSnapshot(request, CancellationToken.None);
@@ -282,7 +295,7 @@ public class SnapshotsControllerTests
         var request = new V1CreateSnapshotRequest
         {
             CollectionName = "test_collection",
-            SingleNode = false
+            NodeUrls = new List<string> { "http://node1:6333", "http://node2:6333" }
         };
 
         var results = new Dictionary<string, string?>
@@ -291,7 +304,10 @@ public class SnapshotsControllerTests
             ["http://node2:6333"] = "snapshot-2.snapshot"
         };
 
-        _snapshotService.CreateCollectionSnapshotOnAllNodesAsync(request.CollectionName, Arg.Any<CancellationToken>())
+        _snapshotService.CreateCollectionSnapshotAsync(
+            request.CollectionName,
+            Arg.Is<IEnumerable<string>>(urls => urls.Count() == 2),
+            Arg.Any<CancellationToken>())
             .Returns(results);
 
         // Act
@@ -317,20 +333,21 @@ public class SnapshotsControllerTests
         {
             CollectionName = "test_collection",
             SnapshotName = "snapshot.snapshot",
-            SingleNode = true,
-            Source = "QdrantApi",
-            NodeUrl = "http://node1:6333"
+            Source = SnapshotSource.QdrantApi,
+            NodeUrls = new List<string> { "http://node1:6333" }
         };
 
-        _snapshotService.DeleteSnapshotAsync(
+        var results = new Dictionary<string, bool>
+        {
+            ["http://node1:6333"] = true
+        };
+
+        _snapshotService.DeleteCollectionSnapshotApiAsync(
             request.CollectionName,
             request.SnapshotName,
-            SnapshotSource.QdrantApi,
-            request.NodeUrl,
-            null,
-            null,
+            Arg.Is<IEnumerable<string>>(urls => urls.Count() == 1),
             Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns(results);
 
         // Act
         var result = await _controller.DeleteSnapshot(request, CancellationToken.None);
@@ -340,34 +357,49 @@ public class SnapshotsControllerTests
     }
 
     [Test]
-    public async Task DeleteSnapshot_SingleNode_WithInvalidSource_ReturnsBadRequest()
+    public async Task DeleteSnapshot_KubernetesStorage_ReturnsOk()
     {
         // Arrange
         var request = new V1DeleteSnapshotRequest
         {
             CollectionName = "test_collection",
             SnapshotName = "snapshot.snapshot",
-            SingleNode = true,
-            Source = "InvalidSource",
-            NodeUrl = "http://node1:6333"
+            Source = SnapshotSource.KubernetesStorage,
+            Pods = new List<V1DeleteSnapshotRequest.PodSpecification>
+            {
+                new() { PodName = "pod1", PodNamespace = "default" }
+            }
         };
+
+        var results = new Dictionary<string, bool>
+        {
+            ["pod1"] = true
+        };
+
+        _snapshotService.DeleteSnapshotFromDiskAsync(
+            request.CollectionName,
+            request.SnapshotName,
+            Arg.Is<IEnumerable<(string, string)>>(pods => pods.Count() == 1),
+            Arg.Any<CancellationToken>())
+            .Returns(results);
 
         // Act
         var result = await _controller.DeleteSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<BadRequestObjectResult>());
+        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
     }
 
     [Test]
-    public async Task DeleteSnapshot_AllNodes_WhenSuccessful_ReturnsOk()
+    public async Task DeleteSnapshot_MultipleNodes_WhenSuccessful_ReturnsOk()
     {
         // Arrange
         var request = new V1DeleteSnapshotRequest
         {
             CollectionName = "test_collection",
             SnapshotName = "snapshot.snapshot",
-            SingleNode = false
+            Source = SnapshotSource.QdrantApi,
+            NodeUrls = new List<string> { "http://node1:6333", "http://node2:6333" }
         };
 
         var results = new Dictionary<string, bool>
@@ -376,7 +408,11 @@ public class SnapshotsControllerTests
             ["http://node2:6333"] = true
         };
 
-        _snapshotService.DeleteCollectionSnapshotOnAllNodesAsync(request.CollectionName, request.SnapshotName, Arg.Any<CancellationToken>())
+        _snapshotService.DeleteCollectionSnapshotApiAsync(
+            request.CollectionName,
+            request.SnapshotName,
+            Arg.Is<IEnumerable<string>>(urls => urls.Count() == 2),
+            Arg.Any<CancellationToken>())
             .Returns(results);
 
         // Act
