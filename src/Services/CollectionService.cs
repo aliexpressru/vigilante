@@ -672,16 +672,22 @@ public class CollectionService : ICollectionService
     {
         _logger.LogInformation("Enriching collections with clustering information");
 
-        // Find a healthy node to query clustering info
-        var healthyNode = nodes.FirstOrDefault(n => n.IsHealthy);
+        // Get clustering info from each healthy node to get their local shards
+        var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
         
-        if (healthyNode == null)
+        if (healthyNodes.Count == 0)
         {
             _logger.LogWarning("No healthy nodes available for clustering info");
             return;
         }
 
-        await EnrichWithClusteringInfoAsync(healthyNode.Url, collections, peerToPodMap, cancellationToken);
+        _logger.LogInformation("Getting clustering info from {Count} healthy nodes", healthyNodes.Count);
+
+        // Query each healthy node to get its local shards
+        foreach (var node in healthyNodes)
+        {
+            await EnrichWithClusteringInfoAsync(node.Url, collections, peerToPodMap, cancellationToken);
+        }
     }
 }
 

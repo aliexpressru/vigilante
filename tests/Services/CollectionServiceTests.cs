@@ -354,6 +354,361 @@ public class CollectionServiceTests
 
     #endregion
 
+    #region Clustering Info and Shards Tests
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WithMultipleNodes_RetrievesShardsFromAllNodes()
+    {
+        // Arrange - This test verifies the bug fix where shards were only retrieved from one node
+        var mockClient1 = Substitute.For<IQdrantHttpClient>();
+        var mockClient2 = Substitute.For<IQdrantHttpClient>();
+        var mockClient3 = Substitute.For<IQdrantHttpClient>();
+
+        // Setup CreateClientFromUrl to return different clients for different URLs
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>())
+            .Returns(mockClient1);
+        _clientFactory.CreateClientFromUrl("http://node2:6333", Arg.Any<string?>())
+            .Returns(mockClient2);
+        _clientFactory.CreateClientFromUrl("http://node3:6333", Arg.Any<string?>())
+            .Returns(mockClient3);
+
+        // Mock ListCollections for all nodes
+        var collectionsResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
+                }
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient1.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient2.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient3.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+
+        // Mock GetCollectionClusteringInfo for each node with different local shards
+        var clusteringInfo1 = new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+            {
+                PeerId = 1001,
+                ShardCount = 3,
+                LocalShards = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.LocalShardInfo
+                    {
+                        ShardId = 0,
+                        State = Aer.QdrantClient.Http.Models.Shared.ShardState.Active
+                    }
+                },
+                ShardTransfers = Array.Empty<Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        var clusteringInfo2 = new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+            {
+                PeerId = 1002,
+                ShardCount = 3,
+                LocalShards = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.LocalShardInfo
+                    {
+                        ShardId = 1,
+                        State = Aer.QdrantClient.Http.Models.Shared.ShardState.Active
+                    }
+                },
+                ShardTransfers = Array.Empty<Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        var clusteringInfo3 = new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+            {
+                PeerId = 1003,
+                ShardCount = 3,
+                LocalShards = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.LocalShardInfo
+                    {
+                        ShardId = 2,
+                        State = Aer.QdrantClient.Http.Models.Shared.ShardState.Active
+                    }
+                },
+                ShardTransfers = Array.Empty<Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient1.GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>())
+            .Returns(clusteringInfo1);
+        mockClient2.GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>())
+            .Returns(clusteringInfo2);
+        mockClient3.GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>())
+            .Returns(clusteringInfo3);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger, null);
+
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" },
+            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = "pod2" },
+            new() { Url = "http://node3:6333", PeerId = "1003", IsHealthy = true, PodName = "pod3" }
+        };
+
+        var peerToPodMap = new Dictionary<string, string>
+        {
+            { "1001", "pod1" },
+            { "1002", "pod2" },
+            { "1003", "pod3" }
+        };
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(3), "Should have 3 collection entries (one per node)");
+        
+        // Verify each node has its own local shards
+        var node1Collection = result.First(r => r.NodeUrl == "http://node1:6333");
+        var node2Collection = result.First(r => r.NodeUrl == "http://node2:6333");
+        var node3Collection = result.First(r => r.NodeUrl == "http://node3:6333");
+
+        // Node 1 should have shard 0
+        Assert.That(node1Collection.Metrics.ContainsKey("shards"), Is.True, "Node 1 should have shards");
+        var node1Shards = (List<ulong>)node1Collection.Metrics["shards"];
+        Assert.That(node1Shards, Has.Count.EqualTo(1), "Node 1 should have 1 shard");
+        Assert.That(node1Shards[0], Is.EqualTo(0), "Node 1 should have shard 0");
+
+        // Node 2 should have shard 1
+        Assert.That(node2Collection.Metrics.ContainsKey("shards"), Is.True, "Node 2 should have shards");
+        var node2Shards = (List<ulong>)node2Collection.Metrics["shards"];
+        Assert.That(node2Shards, Has.Count.EqualTo(1), "Node 2 should have 1 shard");
+        Assert.That(node2Shards[0], Is.EqualTo(1), "Node 2 should have shard 1");
+
+        // Node 3 should have shard 2
+        Assert.That(node3Collection.Metrics.ContainsKey("shards"), Is.True, "Node 3 should have shards");
+        var node3Shards = (List<ulong>)node3Collection.Metrics["shards"];
+        Assert.That(node3Shards, Has.Count.EqualTo(1), "Node 3 should have 1 shard");
+        Assert.That(node3Shards[0], Is.EqualTo(2), "Node 3 should have shard 2");
+
+        // Verify GetCollectionClusteringInfo was called for each node
+        await mockClient1.Received(1).GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>());
+        await mockClient2.Received(1).GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>());
+        await mockClient3.Received(1).GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WithOneUnhealthyNode_OnlyQueriesHealthyNodes()
+    {
+        // Arrange
+        var mockClient1 = Substitute.For<IQdrantHttpClient>();
+        var mockClient2 = Substitute.For<IQdrantHttpClient>();
+
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>())
+            .Returns(mockClient1);
+        _clientFactory.CreateClientFromUrl("http://node2:6333", Arg.Any<string?>())
+            .Returns(mockClient2);
+
+        var collectionsResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
+                }
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient1.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient2.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+
+        var clusteringInfo1 = new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+            {
+                PeerId = 1001,
+                ShardCount = 2,
+                LocalShards = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.LocalShardInfo
+                    {
+                        ShardId = 0,
+                        State = Aer.QdrantClient.Http.Models.Shared.ShardState.Active
+                    }
+                },
+                ShardTransfers = Array.Empty<Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        var clusteringInfo2 = new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+            {
+                PeerId = 1002,
+                ShardCount = 2,
+                LocalShards = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.LocalShardInfo
+                    {
+                        ShardId = 1,
+                        State = Aer.QdrantClient.Http.Models.Shared.ShardState.Active
+                    }
+                },
+                ShardTransfers = Array.Empty<Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient1.GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>())
+            .Returns(clusteringInfo1);
+        mockClient2.GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>())
+            .Returns(clusteringInfo2);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger, null);
+
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" },
+            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = "pod2" },
+            new() { Url = "http://node3:6333", PeerId = "1003", IsHealthy = false, PodName = "pod3" } // Unhealthy
+        };
+
+        var peerToPodMap = new Dictionary<string, string>
+        {
+            { "1001", "pod1" },
+            { "1002", "pod2" },
+            { "1003", "pod3" }
+        };
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(2), "Should only have collections from 2 healthy nodes");
+        
+        // Verify only healthy nodes have shards
+        var node1Collection = result.FirstOrDefault(r => r.NodeUrl == "http://node1:6333");
+        var node2Collection = result.FirstOrDefault(r => r.NodeUrl == "http://node2:6333");
+
+        Assert.That(node1Collection, Is.Not.Null);
+        Assert.That(node2Collection, Is.Not.Null);
+        
+        Assert.That(node1Collection.Metrics.ContainsKey("shards"), Is.True);
+        Assert.That(node2Collection.Metrics.ContainsKey("shards"), Is.True);
+
+        // Verify clustering info was only called for healthy nodes
+        await mockClient1.Received(1).GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>());
+        await mockClient2.Received(1).GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WithShardStates_EnrichesShardStateMetrics()
+    {
+        // Arrange
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>())
+            .Returns(mockClient);
+
+        var collectionsResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
+                }
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+
+        // Mock clustering info with multiple shards in different states
+        var clusteringInfo = new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+            {
+                PeerId = 1001,
+                ShardCount = 3,
+                LocalShards = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.LocalShardInfo
+                    {
+                        ShardId = 0,
+                        State = Aer.QdrantClient.Http.Models.Shared.ShardState.Active
+                    },
+                    new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.LocalShardInfo
+                    {
+                        ShardId = 1,
+                        State = Aer.QdrantClient.Http.Models.Shared.ShardState.Partial
+                    },
+                    new Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.LocalShardInfo
+                    {
+                        ShardId = 2,
+                        State = Aer.QdrantClient.Http.Models.Shared.ShardState.Initializing
+                    }
+                },
+                ShardTransfers = Array.Empty<Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>())
+            .Returns(clusteringInfo);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger, null);
+
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" }
+        };
+
+        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        
+        var collection = result[0];
+        Assert.That(collection.Metrics.ContainsKey("shards"), Is.True);
+        Assert.That(collection.Metrics.ContainsKey("shardStates"), Is.True);
+
+        var shards = (List<ulong>)collection.Metrics["shards"];
+        var shardStates = (Dictionary<string, string>)collection.Metrics["shardStates"];
+
+        Assert.That(shards, Has.Count.EqualTo(3));
+        Assert.That(shardStates, Has.Count.EqualTo(3));
+        
+        Assert.That(shardStates["0"], Is.EqualTo("Active"));
+        Assert.That(shardStates["1"], Is.EqualTo("Partial"));
+        Assert.That(shardStates["2"], Is.EqualTo("Initializing"));
+    }
+
+    #endregion
+
 
     /// <summary>
     /// Helper method to create CollectionService with mocked IPodCommandExecutor using reflection
