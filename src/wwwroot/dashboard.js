@@ -2510,18 +2510,18 @@ class VigilanteDashboard {
         header.style.cssText = `
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 24px;
+            padding: 14px 24px;
             border-radius: 12px 12px 0 0;
         `;
         
         const title = document.createElement('h3');
         title.textContent = '🔄 Sync Shards';
-        title.style.cssText = 'margin: 0; font-size: 24px; font-weight: 600;';
+        title.style.cssText = 'margin: 0; font-size: 18px; font-weight: 600;';
         header.appendChild(title);
         
         // Content area
         const contentArea = document.createElement('div');
-        contentArea.style.cssText = 'padding: 24px; overflow-y: auto; max-height: calc(85vh - 200px);';
+        contentArea.style.cssText = 'padding: 16px 24px; overflow-y: auto; max-height: calc(85vh - 160px);';
         
         const sourceDisplay = sourceNodeInfo.podName && sourceNodeInfo.podName !== 'unknown' 
             ? sourceNodeInfo.podName 
@@ -2532,24 +2532,24 @@ class VigilanteDashboard {
         infoCard.style.cssText = `
             background: #f8f9fa;
             border-left: 4px solid #667eea;
-            padding: 16px;
+            padding: 10px;
             border-radius: 6px;
-            margin-bottom: 24px;
+            margin-bottom: 14px;
         `;
         
         infoCard.innerHTML = `
-            <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; flex-direction: column; gap: 5px;">
                 <div style="display: flex; align-items: flex-start; gap: 8px;">
-                    <span style="font-weight: 600; color: #495057; min-width: 100px; flex-shrink: 0;">Collection:</span>
-                    <span style="color: #212529; font-family: monospace; background: white; padding: 4px 8px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0;">${collection.name}</span>
+                    <span style="font-weight: 600; color: #495057; min-width: 95px; flex-shrink: 0; font-size: 12px;">Collection:</span>
+                    <span style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${collection.name}</span>
                 </div>
                 <div style="display: flex; align-items: flex-start; gap: 8px;">
-                    <span style="font-weight: 600; color: #495057; min-width: 100px; flex-shrink: 0;">Source node:</span>
-                    <span style="color: #212529; font-family: monospace; background: white; padding: 4px 8px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0;">${sourceDisplay}</span>
+                    <span style="font-weight: 600; color: #495057; min-width: 95px; flex-shrink: 0; font-size: 12px;">Source node:</span>
+                    <span style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${sourceDisplay}</span>
                 </div>
                 <div style="display: flex; align-items: flex-start; gap: 8px;">
-                    <span style="font-weight: 600; color: #495057; min-width: 100px; flex-shrink: 0;">Shards:</span>
-                    <span style="color: #212529; font-family: monospace; background: white; padding: 4px 8px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0;">${selectedShards.join(', ')}</span>
+                    <span style="font-weight: 600; color: #495057; min-width: 95px; flex-shrink: 0; font-size: 12px;">Shards:</span>
+                    <span style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${selectedShards.join(', ')}</span>
                 </div>
             </div>
         `;
@@ -2558,16 +2558,16 @@ class VigilanteDashboard {
 
         // Target node selection
         const targetNodeSection = document.createElement('div');
-        targetNodeSection.style.cssText = 'margin-bottom: 24px;';
+        targetNodeSection.style.cssText = 'margin-bottom: 14px;';
         
         const targetLabel = document.createElement('label');
         targetLabel.textContent = 'Target Node';
         targetLabel.style.cssText = `
             display: block;
             font-weight: 600;
-            margin-bottom: 8px;
+            margin-bottom: 5px;
             color: #495057;
-            font-size: 14px;
+            font-size: 12px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         `;
@@ -2575,10 +2575,10 @@ class VigilanteDashboard {
         const targetSelect = document.createElement('select');
         targetSelect.style.cssText = `
             width: 100%;
-            padding: 12px;
+            padding: 9px;
             border: 2px solid #e9ecef;
             border-radius: 8px;
-            font-size: 14px;
+            font-size: 13px;
             font-family: inherit;
             background: white;
             cursor: pointer;
@@ -2612,14 +2612,81 @@ class VigilanteDashboard {
         targetNodeSection.appendChild(targetSelect);
         contentArea.appendChild(targetNodeSection);
 
+        // Transfer Method selection
+        const transferMethodSection = document.createElement('div');
+        transferMethodSection.style.cssText = 'margin-bottom: 14px;';
+        
+        const transferMethodLabel = document.createElement('label');
+        transferMethodLabel.textContent = 'Transfer Method';
+        transferMethodLabel.style.cssText = `
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #495057;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        `;
+        
+        const transferMethodSelect = document.createElement('select');
+        transferMethodSelect.style.cssText = `
+            width: 100%;
+            padding: 9px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: inherit;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        `;
+        transferMethodSelect.onmouseover = () => { transferMethodSelect.style.borderColor = '#667eea'; };
+        transferMethodSelect.onmouseout = () => { transferMethodSelect.style.borderColor = '#e9ecef'; };
+        transferMethodSelect.onfocus = () => { transferMethodSelect.style.borderColor = '#667eea'; transferMethodSelect.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.1)'; };
+        transferMethodSelect.onblur = () => { transferMethodSelect.style.borderColor = '#e9ecef'; transferMethodSelect.style.boxShadow = 'none'; };
+        
+        // Add transfer method options
+        const transferMethods = [
+            { value: 'Snapshot', label: 'Snapshot (Default)', description: 'Transfer using snapshot - includes index and quantized data' },
+            { value: 'StreamRecords', label: 'Stream Records', description: 'Stream records in batches' },
+            { value: 'WalDelta', label: 'WAL Delta', description: 'Transfer only missed operations via WAL difference' },
+            { value: 'ReshardingStreamRecords', label: 'Resharding Stream', description: 'Stream for resharding operations' }
+        ];
+        
+        transferMethods.forEach(method => {
+            const option = document.createElement('option');
+            option.value = method.value;
+            option.textContent = method.label;
+            option.title = method.description;
+            if (method.value === 'Snapshot') {
+                option.selected = true;
+            }
+            transferMethodSelect.appendChild(option);
+        });
+        
+        // Add description text that changes based on selection
+        const transferMethodDescription = document.createElement('div');
+        transferMethodDescription.style.cssText = 'font-size: 11px; color: #6c757d; margin-top: 3px; font-style: italic; line-height: 1.2;';
+        transferMethodDescription.textContent = transferMethods[0].description;
+        
+        transferMethodSelect.onchange = () => {
+            const selectedMethod = transferMethods.find(m => m.value === transferMethodSelect.value);
+            transferMethodDescription.textContent = selectedMethod ? selectedMethod.description : '';
+        };
+        
+        transferMethodSection.appendChild(transferMethodLabel);
+        transferMethodSection.appendChild(transferMethodSelect);
+        transferMethodSection.appendChild(transferMethodDescription);
+        contentArea.appendChild(transferMethodSection);
+
         // Move checkbox
         const moveSection = document.createElement('div');
         moveSection.style.cssText = `
             background: #fff3cd;
             border: 2px solid #ffc107;
             border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 24px;
+            padding: 10px;
+            margin-bottom: 0;
         `;
         
         const moveLabel = document.createElement('label');
@@ -2629,21 +2696,21 @@ class VigilanteDashboard {
         moveCheckbox.type = 'checkbox';
         moveCheckbox.id = 'move-shards-modal';
         moveCheckbox.style.cssText = `
-            margin-right: 12px;
+            margin-right: 10px;
             margin-top: 2px;
-            width: 18px;
-            height: 18px;
+            width: 16px;
+            height: 16px;
             cursor: pointer;
         `;
         
         const moveTextContainer = document.createElement('div');
         const moveTitle = document.createElement('div');
         moveTitle.textContent = '⚠️ Move shards';
-        moveTitle.style.cssText = 'font-weight: 600; color: #856404; margin-bottom: 4px;';
+        moveTitle.style.cssText = 'font-weight: 600; color: #856404; margin-bottom: 1px; font-size: 13px;';
         
         const moveDescription = document.createElement('div');
         moveDescription.textContent = 'Remove shards from source node after sync';
-        moveDescription.style.cssText = 'font-size: 13px; color: #856404;';
+        moveDescription.style.cssText = 'font-size: 11px; color: #856404; line-height: 1.2;';
         
         moveTextContainer.appendChild(moveTitle);
         moveTextContainer.appendChild(moveDescription);
@@ -2656,7 +2723,7 @@ class VigilanteDashboard {
         // Footer with buttons
         const footer = document.createElement('div');
         footer.style.cssText = `
-            padding: 20px 24px;
+            padding: 14px 24px;
             background: #f8f9fa;
             border-top: 1px solid #e9ecef;
             display: flex;
@@ -2703,6 +2770,7 @@ class VigilanteDashboard {
         confirmButton.onclick = async () => {
             const targetPeerId = targetSelect.value;
             const isMoveShards = moveCheckbox.checked;
+            const shardTransferMethod = transferMethodSelect.value;
             
             if (!targetPeerId) {
                 alert('Please select a target node');
@@ -2713,7 +2781,7 @@ class VigilanteDashboard {
             const operationType = isMoveShards ? 'move' : 'sync';
             const targetDisplayName = targetSelect.options[targetSelect.selectedIndex].textContent;
             
-            if (!confirm(`Are you sure you want to ${operationType} shards [${selectedShards.join(', ')}] to ${targetDisplayName}?`)) {
+            if (!confirm(`Are you sure you want to ${operationType} shards [${selectedShards.join(', ')}] to ${targetDisplayName} using ${shardTransferMethod} method?`)) {
                 return;
             }
 
@@ -2721,18 +2789,21 @@ class VigilanteDashboard {
             setTimeout(() => document.body.removeChild(modal), 200);
 
             try {
+                const requestBody = {
+                    sourcePeerId: sourceNodeInfo.peerId,
+                    targetPeerId: targetPeerId,
+                    collectionName: collection.name,
+                    shardIdsToReplicate: selectedShards,
+                    isMoveShards: isMoveShards,
+                    shardTransferMethod: shardTransferMethod
+                };
+                
                 const response = await fetch(this.replicateShardsEndpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({
-                        sourcePeerId: sourceNodeInfo.peerId,
-                        targetPeerId: targetPeerId,
-                        collectionName: collection.name,
-                        shardIdsToReplicate: selectedShards,
-                        isMoveShards: isMoveShards
-                    })
+                    body: JSON.stringify(requestBody)
                 });
 
                 if (!response.ok) {
@@ -2740,7 +2811,7 @@ class VigilanteDashboard {
                     throw new Error(error.details || `Failed to ${operationType} shards`);
                 }
 
-                this.showToast(`Shard ${operationType} initiated successfully`, 'success', 'Sync Started', 5000);
+                this.showToast(`Shard ${operationType} initiated successfully using ${shardTransferMethod} method`, 'success', 'Sync Started', 5000);
                 setTimeout(() => this.refresh(), 2000);
             } catch (error) {
                 this.showToast(`Error: ${error.message}`, 'error', 'Sync Failed', 10000);
