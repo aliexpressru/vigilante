@@ -1890,12 +1890,13 @@ public class ClusterManagerTests
                 collectionName,
                 shardIds,
                 false,
+                Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
         // Act
         var result = await _clusterManager.ReplicateShardsAsync(
-            sourcePeerId, targetPeerId, collectionName, shardIds, false, CancellationToken.None);
+            sourcePeerId, targetPeerId, collectionName, shardIds, false, null, CancellationToken.None);
 
         // Assert
         Assert.That(result, Is.True);
@@ -1939,12 +1940,13 @@ public class ClusterManagerTests
                 collectionName,
                 shardIds,
                 true, // isMove = true
+                Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
         // Act
         var result = await _clusterManager.ReplicateShardsAsync(
-            sourcePeerId, targetPeerId, collectionName, shardIds, true, CancellationToken.None);
+            sourcePeerId, targetPeerId, collectionName, shardIds, true, null, CancellationToken.None);
 
         // Assert
         Assert.That(result, Is.True);
@@ -1955,6 +1957,7 @@ public class ClusterManagerTests
             collectionName,
             shardIds,
             true,
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -1982,7 +1985,7 @@ public class ClusterManagerTests
 
         // Act
         var result = await _clusterManager.ReplicateShardsAsync(
-            sourcePeerId, targetPeerId, collectionName, shardIds, false, CancellationToken.None);
+            sourcePeerId, targetPeerId, collectionName, shardIds, false, null, CancellationToken.None);
 
         // Assert
         Assert.That(result, Is.False);

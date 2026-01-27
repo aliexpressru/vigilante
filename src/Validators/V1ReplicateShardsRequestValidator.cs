@@ -1,3 +1,4 @@
+using Aer.QdrantClient.Http.Models.Shared;
 using FluentValidation;
 using Vigilante.Models.Requests;
 
@@ -22,5 +23,11 @@ public class V1ReplicateShardsRequestValidator : AbstractValidator<V1ReplicateSh
 
         RuleFor(x => x.ShardIdsToReplicate)
             .NotEmpty();
+        
+        RuleFor(x => x.ShardTransferMethod)
+            .Must(method => string.IsNullOrEmpty(method) || Enum.TryParse<ShardTransferMethod>(method, true, out _))
+            .WithMessage($"ShardTransferMethod must be one of: {string.Join(", ", Enum.GetNames<ShardTransferMethod>())}");
     }
 }
+
+

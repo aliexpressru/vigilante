@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Requests;
 using Vigilante.Services.Interfaces;
@@ -42,12 +43,16 @@ public class ClusterController(
     {
         try
         {
+            // Parse ShardTransferMethod if provided using extension method
+            var transferMethod = request.ShardTransferMethod.TryParseEnum<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod>();
+
             var success = await clusterManager.ReplicateShardsAsync(
                 request.SourcePeerId!.Value,
                 request.TargetPeerId!.Value,
                 request.CollectionName,
                 request.ShardIdsToReplicate,
                 request.IsMoveShards,
+                transferMethod,
                 cancellationToken);
 
             if (success)

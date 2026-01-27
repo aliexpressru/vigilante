@@ -1,3 +1,4 @@
+using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Models;
 using Vigilante.Models.Requests;
 
@@ -27,6 +28,7 @@ public interface IClusterManager
         string collectionName,
         uint[] shardIds,
         bool moveShards,
+        ShardTransferMethod? shardTransferMethod = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

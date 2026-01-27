@@ -148,12 +148,14 @@ public class ClusterManager(
         string collectionName,
         uint[] shardIds,
         bool isMove,
+        Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod? shardTransferMethod,
         CancellationToken cancellationToken)
     {
         logger.LogInformation(
             "Starting shard replication. Source: {SourcePeerId}, Target: {TargetPeerId}, Collection: {Collection}, " +
-            "Shards: {ShardIds}, Move: {IsMove}",
-            sourcePeerId, targetPeerId, collectionName, string.Join(", ", shardIds), isMove);
+            "Shards: {ShardIds}, Move: {IsMove}, TransferMethod: {TransferMethod}",
+            sourcePeerId, targetPeerId, collectionName, string.Join(", ", shardIds), isMove, 
+            shardTransferMethod?.ToString() ?? "Snapshot (default)");
 
         var state = await GetClusterStateAsync(cancellationToken);
         var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
@@ -172,6 +174,7 @@ public class ClusterManager(
             collectionName,
             shardIds,
             isMove,
+            shardTransferMethod,
             cancellationToken);
     }
 

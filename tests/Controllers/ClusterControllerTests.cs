@@ -146,6 +146,7 @@ public class ClusterControllerTests
             request.CollectionName,
             request.ShardIdsToReplicate,
             request.IsMoveShards,
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
             Arg.Any<CancellationToken>())
             .Returns(true);
 
@@ -164,6 +165,7 @@ public class ClusterControllerTests
             request.CollectionName,
             request.ShardIdsToReplicate,
             request.IsMoveShards,
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -186,6 +188,7 @@ public class ClusterControllerTests
             Arg.Any<string>(),
             Arg.Any<uint[]>(),
             Arg.Any<bool>(),
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
             Arg.Any<CancellationToken>())
             .Returns(false);
 
@@ -217,6 +220,7 @@ public class ClusterControllerTests
             Arg.Any<string>(),
             Arg.Any<uint[]>(),
             true,
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
             Arg.Any<CancellationToken>())
             .Returns(true);
 
@@ -231,6 +235,7 @@ public class ClusterControllerTests
             request.CollectionName,
             request.ShardIdsToReplicate,
             true,
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -253,6 +258,7 @@ public class ClusterControllerTests
             Arg.Any<string>(),
             Arg.Is<uint[]>(arr => arr.Length == 4),
             Arg.Any<bool>(),
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
             Arg.Any<CancellationToken>())
             .Returns(true);
 
@@ -282,6 +288,7 @@ public class ClusterControllerTests
             Arg.Any<string>(),
             Arg.Any<uint[]>(),
             Arg.Any<bool>(),
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
             Arg.Any<CancellationToken>())
             .Returns(Task.FromException<bool>(new Exception("Test error")));
 
