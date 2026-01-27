@@ -793,6 +793,16 @@ body {
     flex: 1;
 }
 
+/* Collection aliases - smaller and grayed out */
+.collection-aliases {
+    font-size: 0.8rem;
+    color: #999;
+    font-style: italic;
+    font-weight: 400;
+    line-height: 1.2;
+    margin-top: 2px;
+}
+
 .collection-size {
     font-size: 0.85rem;
     color: #1976d2;
@@ -806,6 +816,19 @@ body {
     box-shadow: 0 1px 3px rgba(33, 150, 243, 0.1);
     min-width: 90px;
     text-align: center;
+}
+
+/* Collection shards count - smaller, next to size */
+.collection-shards-count {
+    font-size: 0.8rem;
+    color: #666;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.collection-shards-count i {
+    margin-right: 4px;
+    color: #888;
 }
 
 /* Delete buttons at collection level */

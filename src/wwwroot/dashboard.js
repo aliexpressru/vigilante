@@ -789,6 +789,7 @@ class VigilanteDashboard {
             if (!acc[info.collectionName]) {
                 acc[info.collectionName] = {
                     name: info.collectionName,
+                    aliases: info.aliases || [],
                     nodes: {}
                 };
             }
@@ -826,11 +827,17 @@ class VigilanteDashboard {
                 
                 // Calculate total size for this collection across all nodes
                 let collectionTotalSize = 0;
+                const uniqueShards = new Set();
                 Object.values(collection.nodes).forEach(nodeInfo => {
                     if (nodeInfo.metrics?.sizeBytes) {
                         collectionTotalSize += nodeInfo.metrics.sizeBytes;
                     }
+                    // Collect unique shard IDs from all nodes
+                    if (nodeInfo.metrics?.shards && Array.isArray(nodeInfo.metrics.shards)) {
+                        nodeInfo.metrics.shards.forEach(shardId => uniqueShards.add(shardId));
+                    }
                 });
+                const collectionTotalShards = uniqueShards.size;
                 
                 const nameCell = document.createElement('td');
                 nameCell.className = 'collection-name';
@@ -843,19 +850,57 @@ class VigilanteDashboard {
                 headerContainer.style.justifyContent = 'space-between';
                 headerContainer.style.alignItems = 'center';
                 
+                // Left side: Collection name and aliases
+                const nameContainer = document.createElement('div');
+                nameContainer.style.display = 'flex';
+                nameContainer.style.flexDirection = 'column';
+                nameContainer.style.gap = '4px';
+                
                 // Collection name
                 const nameDiv = document.createElement('div');
                 nameDiv.className = 'collection-name-line';
                 nameDiv.textContent = collection.name;
                 nameDiv.title = collection.name;
+                nameContainer.appendChild(nameDiv);
+                
+                // Aliases (if any)
+                if (collection.aliases && collection.aliases.length > 0) {
+                    const aliasesDiv = document.createElement('div');
+                    aliasesDiv.className = 'collection-aliases';
+                    aliasesDiv.style.fontSize = '0.85em';
+                    aliasesDiv.style.color = '#999';
+                    aliasesDiv.style.fontStyle = 'italic';
+                    aliasesDiv.textContent = `Aliases: ${collection.aliases.join(', ')}`;
+                    aliasesDiv.title = `Collection aliases: ${collection.aliases.join(', ')}`;
+                    nameContainer.appendChild(aliasesDiv);
+                }
+                
+                // Right side: Size and shards info
+                const infoContainer = document.createElement('div');
+                infoContainer.style.display = 'flex';
+                infoContainer.style.flexDirection = 'column';
+                infoContainer.style.alignItems = 'flex-end';
+                infoContainer.style.gap = '2px';
                 
                 // Size span
                 const sizeSpan = document.createElement('span');
                 sizeSpan.className = 'collection-size';
                 sizeSpan.textContent = this.formatSize(collectionTotalSize);
+                infoContainer.appendChild(sizeSpan);
                 
-                headerContainer.appendChild(nameDiv);
-                headerContainer.appendChild(sizeSpan);
+                // Shards count (if any)
+                if (collectionTotalShards > 0) {
+                    const shardsSpan = document.createElement('span');
+                    shardsSpan.className = 'collection-shards-count';
+                    shardsSpan.style.fontSize = '0.85em';
+                    shardsSpan.style.color = '#666';
+                    shardsSpan.innerHTML = `<i class="fas fa-layer-group"></i> ${collectionTotalShards} ${collectionTotalShards === 1 ? 'shard' : 'shards'}`;
+                    shardsSpan.title = `Unique shards in collection: ${collectionTotalShards}`;
+                    infoContainer.appendChild(shardsSpan);
+                }
+                
+                headerContainer.appendChild(nameContainer);
+                headerContainer.appendChild(infoContainer);
                 nameCell.appendChild(headerContainer);
                 row.appendChild(nameCell);
 
