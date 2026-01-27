@@ -1859,14 +1859,15 @@ class VigilanteDashboard {
         const nodesGrid = document.getElementById('nodesGrid');
         nodesGrid.innerHTML = '';
 
+        // Store nodes for StatefulSet management (do this BEFORE early return)
+        this.clusterNodes = nodes || [];
+
         if (!nodes || nodes.length === 0) {
             console.log('No nodes available to display');
             nodesGrid.innerHTML = '<p>No nodes available</p>';
             return;
         }
 
-        // Store nodes for StatefulSet management
-        this.clusterNodes = nodes;
 
         console.log(`Creating cards for ${nodes.length} nodes`);
         nodes.forEach(node => {
@@ -3194,7 +3195,7 @@ class VigilanteDashboard {
     showStatefulSetDialog() {
         // Get StatefulSet name from stored value or fall back to first node
         const firstNode = this.clusterNodes && this.clusterNodes.length > 0 ? this.clusterNodes[0] : null;
-        const storedStatefulSetName = this.statefulSetName || firstNode?.statefulSetName;
+        const storedStatefulSetName = this.statefulSetName || firstNode?.statefulSetName || 'qdrant1';
         const namespace = firstNode?.namespace || 'qdrant';
         const currentReplicas = this.clusterNodes?.length || 0;
 
@@ -3214,16 +3215,16 @@ class VigilanteDashboard {
         const modal = document.createElement('div');
         modal.className = 'modal-dialog statefulset-modal';
         
-        // If we don't have StatefulSet name, show input field
-        const statefulSetNameInput = !storedStatefulSetName ? `
+        // Always show editable StatefulSet name field with default value
+        const statefulSetNameInput = `
             <div class="form-group">
                 <label for="statefulSetNameInput">StatefulSet Name: <span style="color: red;">*</span></label>
-                <input type="text" id="statefulSetNameInput" class="form-input" placeholder="e.g., qdrant" required />
+                <input type="text" id="statefulSetNameInput" class="form-input" value="${storedStatefulSetName}" required />
                 <small style="color: #888; display: block; margin-top: 4px;">
                     Enter the name of your Qdrant StatefulSet
                 </small>
             </div>
-        ` : '';
+        `;
         
         modal.innerHTML = `
             <div class="modal-header">
@@ -3232,12 +3233,7 @@ class VigilanteDashboard {
             </div>
             <div class="modal-body">
                 ${statefulSetNameInput}
-                ${storedStatefulSetName ? `
                 <div class="statefulset-info">
-                    <div class="info-item">
-                        <span class="info-label">StatefulSet:</span>
-                        <span class="info-value">${storedStatefulSetName}</span>
-                    </div>
                     <div class="info-item">
                         <span class="info-label">Namespace:</span>
                         <span class="info-value">${namespace}</span>
@@ -3247,7 +3243,6 @@ class VigilanteDashboard {
                         <span class="info-value">${currentReplicas}</span>
                     </div>
                 </div>
-                ` : ''}
                 <div class="form-group">
                     <label>Operation Type:</label>
                     <div class="operation-type-buttons">
@@ -3306,16 +3301,13 @@ class VigilanteDashboard {
 
         // Execute handler
         modal.querySelector('#executeStatefulSetBtn').addEventListener('click', async () => {
-            // Get StatefulSet name from input or use stored value
-            let statefulSetName = storedStatefulSetName;
+            // Always get StatefulSet name from input field
+            const input = modal.querySelector('#statefulSetNameInput');
+            const statefulSetName = input?.value.trim();
+            
             if (!statefulSetName) {
-                const input = modal.querySelector('#statefulSetNameInput');
-                statefulSetName = input?.value.trim();
-                
-                if (!statefulSetName) {
-                    alert('Please enter the StatefulSet name');
-                    return;
-                }
+                alert('Please enter the StatefulSet name');
+                return;
             }
             
             const replicas = selectedOperation === 'scale' 
