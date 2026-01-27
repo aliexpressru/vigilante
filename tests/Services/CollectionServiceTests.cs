@@ -352,6 +352,244 @@ public class CollectionServiceTests
         Assert.That(result[0].Metrics["sizeBytes"], Is.EqualTo(0L)); // Not enriched
     }
 
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WithAliases_PopulatesAliasesField()
+    {
+        // Arrange
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
+            .Returns(mockClient);
+
+        var collectionsResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection"),
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit.CollectionName("products")
+                }
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        var aliasesResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionAliasesResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionAliasesResponse.CollectionAliasesResult
+            {
+                Aliases = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionAliasesResponse.CollectionAlias
+                    {
+                        AliasName = "test",
+                        CollectionName = "test_collection"
+                    },
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionAliasesResponse.CollectionAlias
+                    {
+                        AliasName = "test_alias",
+                        CollectionName = "test_collection"
+                    },
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionAliasesResponse.CollectionAlias
+                    {
+                        AliasName = "prod",
+                        CollectionName = "products"
+                    }
+                }
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(collectionsResponse);
+        mockClient.ListAllAliases(Arg.Any<CancellationToken>())
+            .Returns(aliasesResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger, null);
+        
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" }
+        };
+        
+        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(2));
+        
+        var testCollection = result.First(c => c.CollectionName == "test_collection");
+        Assert.That(testCollection.Aliases, Has.Count.EqualTo(2));
+        Assert.That(testCollection.Aliases, Does.Contain("test"));
+        Assert.That(testCollection.Aliases, Does.Contain("test_alias"));
+        
+        var productsCollection = result.First(c => c.CollectionName == "products");
+        Assert.That(productsCollection.Aliases, Has.Count.EqualTo(1));
+        Assert.That(productsCollection.Aliases, Does.Contain("prod"));
+        
+        // Verify both methods were called
+        await mockClient.Received(1).ListCollections(Arg.Any<CancellationToken>());
+        await mockClient.Received(1).ListAllAliases(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WithNoAliases_ReturnsEmptyAliasList()
+    {
+        // Arrange
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
+            .Returns(mockClient);
+
+        var collectionsResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
+                }
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        var aliasesResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionAliasesResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionAliasesResponse.CollectionAliasesResult
+            {
+                Aliases = Array.Empty<Aer.QdrantClient.Http.Models.Responses.ListCollectionAliasesResponse.CollectionAlias>()
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(collectionsResponse);
+        mockClient.ListAllAliases(Arg.Any<CancellationToken>())
+            .Returns(aliasesResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger, null);
+        
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true }
+        };
+        
+        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].Aliases, Is.Empty);
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WhenAliasesApiFails_ContinuesWithEmptyAliases()
+    {
+        // Arrange
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
+            .Returns(mockClient);
+
+        var collectionsResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
+                }
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        var aliasesResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionAliasesResponse
+        {
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Error)
+            {
+                Error = "Failed to fetch aliases"
+            }
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(collectionsResponse);
+        mockClient.ListAllAliases(Arg.Any<CancellationToken>())
+            .Returns(aliasesResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger, null);
+        
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true }
+        };
+        
+        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert - Should still return collection but with empty aliases
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].CollectionName, Is.EqualTo("test_collection"));
+        Assert.That(result[0].Aliases, Is.Empty);
+        
+        // Verify both methods were called
+        await mockClient.Received(1).ListCollections(Arg.Any<CancellationToken>());
+        await mockClient.Received(1).ListAllAliases(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WhenAliasesApiThrows_ContinuesWithEmptyAliases()
+    {
+        // Arrange
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
+            .Returns(mockClient);
+
+        var collectionsResponse = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse
+        {
+            Result = new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new Aer.QdrantClient.Http.Models.Responses.ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
+                }
+            },
+            Status = new Aer.QdrantClient.Http.Models.Shared.QdrantStatus(
+                Aer.QdrantClient.Http.Models.Shared.QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(collectionsResponse);
+        mockClient.ListAllAliases(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<Aer.QdrantClient.Http.Models.Responses.ListCollectionAliasesResponse>(
+                new Exception("Network error")));
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger, null);
+        
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true }
+        };
+        
+        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert - Should still return collection but with empty aliases
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].CollectionName, Is.EqualTo("test_collection"));
+        Assert.That(result[0].Aliases, Is.Empty);
+    }
+
     #endregion
 
     #region Clustering Info and Shards Tests

@@ -484,6 +484,35 @@ public class CollectionService : ICollectionService
                     continue;
                 }
 
+                // Get all aliases for this node
+                Dictionary<string, List<string>> collectionAliases = new();
+                try
+                {
+                    var aliasesResponse = await qdrantClient.ListAllAliases(cancellationToken);
+                    if (aliasesResponse?.Status?.IsSuccess == true && aliasesResponse.Result?.Aliases != null)
+                    {
+                        // Group aliases by collection name
+                        collectionAliases = aliasesResponse.Result.Aliases
+                            .GroupBy(a => a.CollectionName)
+                            .ToDictionary(
+                                g => g.Key,
+                                g => g.Select(a => a.AliasName).ToList()
+                            );
+                        
+                        _logger.LogInformation("Found {AliasCount} aliases on node {NodeUrl}", 
+                            aliasesResponse.Result.Aliases.Length, node.Url);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Failed to get aliases from node {NodeUrl}: {Error}",
+                            node.Url, aliasesResponse?.Status?.Error ?? "Unknown error");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to get aliases from node {NodeUrl}", node.Url);
+                }
+
                 // For each collection, get its info
                 foreach (var collection in collectionsResponse.Result.Collections)
                 {
@@ -497,6 +526,11 @@ public class CollectionService : ICollectionService
                             { MetricConstants.SizeBytesKey, 0L }
                         };
 
+                        // Get aliases for this collection
+                        var aliases = collectionAliases.TryGetValue(collectionName, out var aliasList) 
+                            ? aliasList 
+                            : new List<string>();
+
                         result.Add(new CollectionInfo
                         {
                             CollectionName = collectionName,
@@ -504,11 +538,12 @@ public class CollectionService : ICollectionService
                             PodName = node.PodName ?? MetricConstants.UnknownPodName,
                             PeerId = node.PeerId,
                             PodNamespace = node.Namespace ?? string.Empty,
-                            Metrics = metrics
+                            Metrics = metrics,
+                            Aliases = aliases
                         });
 
-                        _logger.LogDebug("Added collection {CollectionName} from node {NodeUrl}", collectionName,
-                            node.Url);
+                        _logger.LogDebug("Added collection {CollectionName} from node {NodeUrl} with {AliasCount} aliases", 
+                            collectionName, node.Url, aliases.Count);
                     }
                     catch (Exception ex)
                     {

@@ -23,6 +23,8 @@ public class V1GetCollectionsInfoPaginatedResponse
         public Dictionary<string, object> Metrics { get; set; } = new();
         
         public List<string> Issues { get; set; } = new();
+        
+        public List<string> Aliases { get; set; } = new();
     }
     
     public class PaginationInfo
