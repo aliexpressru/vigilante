@@ -14,6 +14,7 @@ class VigilanteDashboard {
         this.qdrantLogsEndpoint = '/api/v1/logs/qdrant';
         this.vigilanteLogsEndpoint = '/api/v1/logs/vigilante';
         this.refreshInterval = 0;
+        this.autoRefreshTimer = null;
         this.openSnapshots = new Set();
         this.selectedState = new Map();
         this.toastIdCounter = 0; // Counter for unique toast IDs
@@ -92,8 +93,15 @@ class VigilanteDashboard {
         const intervalSelect = document.getElementById('refreshInterval');
         const manualRefreshBtn = document.getElementById('manualRefresh');
 
-        // Set initial value
-        intervalSelect.value = this.refreshInterval.toString();
+        // Read initial value from HTML (15s by default)
+        const initialInterval = parseInt(intervalSelect.value || '0');
+        this.refreshInterval = initialInterval;
+        
+        // Start auto-refresh if interval is set
+        if (initialInterval > 0) {
+            console.log(`Starting auto-refresh with initial interval: ${initialInterval}ms`);
+            this.startAutoRefresh();
+        }
 
         // Handle interval changes
         intervalSelect.addEventListener('change', (e) => {
@@ -234,6 +242,27 @@ class VigilanteDashboard {
         this.loadClusterStatus();
         this.loadCollectionSizes(true); // Clear cache on manual/auto refresh
         this.loadSnapshots(true); // Clear cache on manual/auto refresh
+    }
+
+    startAutoRefresh() {
+        // Clear any existing timer first
+        this.stopAutoRefresh();
+        
+        if (this.refreshInterval > 0) {
+            console.log(`Starting auto-refresh with interval: ${this.refreshInterval}ms`);
+            this.autoRefreshTimer = setInterval(() => {
+                console.log('Auto-refreshing...');
+                this.refresh();
+            }, this.refreshInterval);
+        }
+    }
+
+    stopAutoRefresh() {
+        if (this.autoRefreshTimer) {
+            console.log('Stopping auto-refresh');
+            clearInterval(this.autoRefreshTimer);
+            this.autoRefreshTimer = null;
+        }
     }
 
     setupRecoveryModal() {
@@ -649,23 +678,17 @@ class VigilanteDashboard {
             
             return `
                 <div class="shards-container">
-                    <div class="target-nodes-section">
-                        <div class="target-nodes-label">Target nodes</div>
-                        <div class="peer-buttons-container">
-                            <!-- Peer buttons will be added dynamically -->
-                        </div>
-                    </div>
                     <div class="shards-section">
                         <div class="shards-label">Shards</div>
+                        <label class="select-all-shards-label">
+                            <input type="checkbox" class="select-all-shards-checkbox">
+                            Select All
+                        </label>
                         <div class="shards-grid">
                             ${shardsHtml}
                         </div>
                     </div>
                     <div class="action-controls">
-                        <label class="move-shards-label">
-                            <input type="checkbox" class="move-shards-checkbox">
-                            Move
-                        </label>
                         <button class="replicate-button">Sync</button>
                     </div>
                 </div>
@@ -692,82 +715,37 @@ class VigilanteDashboard {
         return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
     }
 
-    setupPeerButtons(nodeDetails, collection, nodeInfo, savedState) {
-        const peerButtonsContainer = nodeDetails.querySelector('.peer-buttons-container');
-        if (!peerButtonsContainer) return;
-
-        const stateKey = nodeDetails.getAttribute('data-state-key');
-        peerButtonsContainer.innerHTML = '';
-
-        Object.entries(collection.nodes)
-            .filter(([_, info]) => info.peerId && info.peerId !== nodeInfo.peerId)
-            .forEach(([_, info]) => {
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'peer-button';
-                button.setAttribute('data-peer-id', info.peerId);
-                
-                // Show podName if available and not 'unknown', otherwise show peerId
-                const displayName = info.podName && info.podName !== 'unknown' ? info.podName : info.peerId;
-                button.setAttribute('title', `${info.podName} (${info.peerId})`);
-                button.textContent = displayName;
-
-                // Restore selected button state
-                if (savedState.targetPeer === info.peerId) {
-                    button.classList.add('selected');
-                }
-
-                button.addEventListener('click', () => {
-                    this.clearOtherNodesState(stateKey);
-
-                    // Remove selection from all buttons
-                    peerButtonsContainer.querySelectorAll('.peer-button').forEach(btn => {
-                        btn.classList.remove('selected');
-                    });
-
-                    // Highlight the selected button
-                    button.classList.add('selected');
-
-                    // Save the selected peer
-                    const currentState = this.selectedState.get(stateKey) || {
-                        selectedShards: new Set(),
-                        targetPeer: '',
-                        moveChecked: false
-                    };
-
-                    currentState.targetPeer = info.peerId;
-                    this.selectedState.set(stateKey, currentState);
-                });
-
-                peerButtonsContainer.appendChild(button);
-            });
+    saveShardSelection(stateKey, shardCheckboxes) {
+        const selectedShards = new Set(
+            Array.from(shardCheckboxes)
+                .filter(cb => cb.checked)
+                .map(cb => parseInt(cb.dataset.shardId))
+        );
+        this.selectedState.set(stateKey, { selectedShards });
+        console.log(`Saved shard selection for ${stateKey}:`, Array.from(selectedShards));
     }
 
-    clearOtherNodesState(currentStateKey) {
-        // Clear selection on all nodes except the current one
-        for (const [key, _] of this.selectedState.entries()) {
-            if (key !== currentStateKey) {
-                const nodeDetails = document.querySelector(`[data-state-key="${key}"]`);
-                if (nodeDetails) {
-                    // Clear peer buttons selection
-                    nodeDetails.querySelectorAll('.peer-button').forEach(btn => {
-                        btn.classList.remove('selected');
-                    });
-
-                    // Uncheck shard checkboxes
-                    nodeDetails.querySelectorAll('.shard-checkbox').forEach(checkbox => {
-                        checkbox.checked = false;
-                    });
-
-                    // Uncheck move checkbox
-                    const moveCheckbox = nodeDetails.querySelector('.move-shards-checkbox');
-                    if (moveCheckbox) {
-                        moveCheckbox.checked = false;
-                    }
+    clearOtherNodesShardSelection(currentStateKey) {
+        // Clear shard selection on all other nodes
+        document.querySelectorAll('[data-state-key]').forEach(nodeDetails => {
+            const stateKey = nodeDetails.getAttribute('data-state-key');
+            if (stateKey && stateKey !== currentStateKey) {
+                // Uncheck all shard checkboxes
+                nodeDetails.querySelectorAll('.shard-checkbox').forEach(cb => {
+                    cb.checked = false;
+                });
+                
+                // Uncheck Select All
+                const selectAllCheckbox = nodeDetails.querySelector('.select-all-shards-checkbox');
+                if (selectAllCheckbox) {
+                    selectAllCheckbox.checked = false;
+                    selectAllCheckbox.indeterminate = false;
                 }
-                this.selectedState.delete(key);
+                
+                // Clear state
+                this.selectedState.delete(stateKey);
             }
-        }
+        });
     }
 
     updateCollectionSizes(collections) {
@@ -795,9 +773,11 @@ class VigilanteDashboard {
         document.querySelectorAll('.collection-details.visible').forEach(row => {
             const nameCell = row.previousElementSibling.querySelector('.collection-name-line');
             if (nameCell) {
-                openCollections.add(nameCell.textContent);
+                openCollections.add(nameCell.textContent.trim());
             }
         });
+        
+        console.log('Saving open collections state:', Array.from(openCollections));
         
         // Group collections by name and sort them
         const collectionsByName = collections.reduce((acc, info) => {
@@ -809,6 +789,7 @@ class VigilanteDashboard {
             if (!acc[info.collectionName]) {
                 acc[info.collectionName] = {
                     name: info.collectionName,
+                    aliases: info.aliases || [],
                     nodes: {}
                 };
             }
@@ -846,11 +827,17 @@ class VigilanteDashboard {
                 
                 // Calculate total size for this collection across all nodes
                 let collectionTotalSize = 0;
+                const uniqueShards = new Set();
                 Object.values(collection.nodes).forEach(nodeInfo => {
                     if (nodeInfo.metrics?.sizeBytes) {
                         collectionTotalSize += nodeInfo.metrics.sizeBytes;
                     }
+                    // Collect unique shard IDs from all nodes
+                    if (nodeInfo.metrics?.shards && Array.isArray(nodeInfo.metrics.shards)) {
+                        nodeInfo.metrics.shards.forEach(shardId => uniqueShards.add(shardId));
+                    }
                 });
+                const collectionTotalShards = uniqueShards.size;
                 
                 const nameCell = document.createElement('td');
                 nameCell.className = 'collection-name';
@@ -863,26 +850,66 @@ class VigilanteDashboard {
                 headerContainer.style.justifyContent = 'space-between';
                 headerContainer.style.alignItems = 'center';
                 
+                // Left side: Collection name and aliases
+                const nameContainer = document.createElement('div');
+                nameContainer.style.display = 'flex';
+                nameContainer.style.flexDirection = 'column';
+                nameContainer.style.gap = '4px';
+                
                 // Collection name
                 const nameDiv = document.createElement('div');
                 nameDiv.className = 'collection-name-line';
                 nameDiv.textContent = collection.name;
                 nameDiv.title = collection.name;
+                nameContainer.appendChild(nameDiv);
+                
+                // Aliases (if any)
+                if (collection.aliases && collection.aliases.length > 0) {
+                    const aliasesDiv = document.createElement('div');
+                    aliasesDiv.className = 'collection-aliases';
+                    aliasesDiv.style.fontSize = '0.85em';
+                    aliasesDiv.style.color = '#999';
+                    aliasesDiv.style.fontStyle = 'italic';
+                    aliasesDiv.textContent = `Aliases: ${collection.aliases.join(', ')}`;
+                    aliasesDiv.title = `Collection aliases: ${collection.aliases.join(', ')}`;
+                    nameContainer.appendChild(aliasesDiv);
+                }
+                
+                // Right side: Size and shards info
+                const infoContainer = document.createElement('div');
+                infoContainer.style.display = 'flex';
+                infoContainer.style.flexDirection = 'column';
+                infoContainer.style.alignItems = 'flex-end';
+                infoContainer.style.gap = '2px';
                 
                 // Size span
                 const sizeSpan = document.createElement('span');
                 sizeSpan.className = 'collection-size';
                 sizeSpan.textContent = this.formatSize(collectionTotalSize);
+                infoContainer.appendChild(sizeSpan);
                 
-                headerContainer.appendChild(nameDiv);
-                headerContainer.appendChild(sizeSpan);
+                // Shards count (if any)
+                if (collectionTotalShards > 0) {
+                    const shardsSpan = document.createElement('span');
+                    shardsSpan.className = 'collection-shards-count';
+                    shardsSpan.style.fontSize = '0.85em';
+                    shardsSpan.style.color = '#666';
+                    shardsSpan.innerHTML = `<i class="fas fa-layer-group"></i> ${collectionTotalShards} ${collectionTotalShards === 1 ? 'shard' : 'shards'}`;
+                    shardsSpan.title = `Unique shards in collection: ${collectionTotalShards}`;
+                    infoContainer.appendChild(shardsSpan);
+                }
+                
+                headerContainer.appendChild(nameContainer);
+                headerContainer.appendChild(infoContainer);
                 nameCell.appendChild(headerContainer);
                 row.appendChild(nameCell);
 
                 const detailsRow = document.createElement('tr');
                 detailsRow.className = 'collection-details';
-                if (openCollections.has(collection.name)) {
+                const shouldBeVisible = openCollections.has(collection.name);
+                if (shouldBeVisible) {
                     detailsRow.classList.add('visible');
+                    console.log(`Restoring visible state for collection: ${collection.name}`);
                 }
 
                 const detailsCell = document.createElement('td');
@@ -898,11 +925,6 @@ class VigilanteDashboard {
                         
                         const peerIdDisplay = nodeInfo.peerId ? ` <span class="node-peer-id">(${nodeInfo.peerId})</span>` : '';
                         const stateKey = `${collection.name}-${nodeInfo.peerId}`;
-                        const savedState = this.selectedState.get(stateKey) || {
-                            selectedShards: new Set(),
-                            targetPeer: '',
-                            moveChecked: false
-                        };
                         
                         // Get shards HTML (includes Target nodes, Shards, and action controls)
                         const shardsHtml = nodeInfo.metrics.shards ? 
@@ -952,15 +974,6 @@ class VigilanteDashboard {
                             sizeForHeader = `<span class="node-size-badge">${formattedSize}</span>`;
                         }
                         
-                        // Create Snapshot button only
-                        const createSnapshotHtml = `
-                            <div class="create-snapshot-section">
-                                <button class="create-snapshot-btn" title="Create new snapshot for this collection">
-                                    <i class="fas fa-camera"></i> Create Snapshot
-                                </button>
-                            </div>
-                        `;
-                        
                         nodeDetails.innerHTML = `
                             <div class="node-info-header">
                                 <h4 title="${fullNodeTitle}">${displayName}${peerIdDisplay}</h4>
@@ -970,158 +983,88 @@ class VigilanteDashboard {
                             </div>
                             ${shardsHtml}
                             ${otherMetricsHtml ? `<dl class="other-metrics">${otherMetricsHtml}</dl>` : ''}
-                            ${createSnapshotHtml}
-                            <div class="node-deletion-controls">
-                                <button class="delete-api-button" data-collection="${collection.name}" data-node-url="${nodeInfo.nodeUrl || ''}" data-pod-name="${nodeInfo.podName || ''}" data-pod-namespace="${nodeInfo.podNamespace || ''}" title="Delete collection via API on this node">
-                                    🗑️ API
-                                </button>
-                                <button class="delete-disk-button" data-collection="${collection.name}" data-node-url="${nodeInfo.nodeUrl || ''}" data-pod-name="${nodeInfo.podName || ''}" data-pod-namespace="${nodeInfo.podNamespace || ''}" title="Delete collection from disk on this node">
-                                    🗑️ Disk
-                                </button>
-                            </div>
                             ${transfersHtml ? `<dl class="transfers-metrics">${transfersHtml}</dl>` : ''}
                         `;
 
                         nodeDetails.setAttribute('data-state-key', stateKey);
                         
-                        // Set up peer buttons after the HTML is added
-                        this.setupPeerButtons(nodeDetails, collection, nodeInfo, savedState);
-
-                        // Restore move checkbox state
-                        const moveCheckbox = nodeDetails.querySelector('.move-shards-checkbox');
-                        if (moveCheckbox) {
-                            moveCheckbox.checked = savedState.moveChecked;
-                            moveCheckbox.addEventListener('change', () => {
-                                const currentState = this.selectedState.get(stateKey) || {
-                                    selectedShards: new Set(),
-                                    targetPeer: savedState.targetPeer,
-                                    moveChecked: false
-                                };
-                                this.selectedState.set(stateKey, {
-                                    ...currentState,
-                                    moveChecked: moveCheckbox.checked
+                        // Restore shard selection state
+                        const savedState = this.selectedState.get(stateKey) || { selectedShards: new Set() };
+                        console.log(`Restoring shard state for ${stateKey}:`, Array.from(savedState.selectedShards));
+                        
+                        // Setup Select All shards checkbox
+                        const selectAllCheckbox = nodeDetails.querySelector('.select-all-shards-checkbox');
+                        if (selectAllCheckbox) {
+                            const shardCheckboxes = nodeDetails.querySelectorAll('.shard-checkbox');
+                            
+                            // Restore previously selected shards
+                            shardCheckboxes.forEach(cb => {
+                                const shardId = parseInt(cb.dataset.shardId);
+                                if (savedState.selectedShards.has(shardId)) {
+                                    cb.checked = true;
+                                }
+                            });
+                            
+                            // Update Select All state based on individual checkboxes
+                            const updateSelectAllState = () => {
+                                const checkedCount = Array.from(shardCheckboxes).filter(cb => cb.checked).length;
+                                selectAllCheckbox.checked = checkedCount === shardCheckboxes.length && shardCheckboxes.length > 0;
+                                selectAllCheckbox.indeterminate = checkedCount > 0 && checkedCount < shardCheckboxes.length;
+                            };
+                            
+                            // Handle Select All change
+                            selectAllCheckbox.addEventListener('change', () => {
+                                // Clear selection on other nodes
+                                this.clearOtherNodesShardSelection(stateKey);
+                                
+                                shardCheckboxes.forEach(cb => {
+                                    cb.checked = selectAllCheckbox.checked;
+                                });
+                                this.saveShardSelection(stateKey, shardCheckboxes);
+                                updateSelectAllState();
+                            });
+                            
+                            // Update Select All when individual checkboxes change
+                            shardCheckboxes.forEach(cb => {
+                                cb.addEventListener('change', () => {
+                                    // Clear selection on other nodes when first shard is selected
+                                    const anyChecked = Array.from(shardCheckboxes).some(checkbox => checkbox.checked);
+                                    if (anyChecked) {
+                                        this.clearOtherNodesShardSelection(stateKey);
+                                    }
+                                    
+                                    this.saveShardSelection(stateKey, shardCheckboxes);
+                                    updateSelectAllState();
                                 });
                             });
+                            
+                            // Initial state
+                            updateSelectAllState();
                         }
-
-                        // Restore selected shards
-                        const shardCheckboxes = nodeDetails.querySelectorAll('.shard-checkbox');
-                        shardCheckboxes.forEach(checkbox => {
-                            const shardId = parseInt(checkbox.dataset.shardId);
-                            checkbox.checked = savedState.selectedShards.has(shardId);
-                            checkbox.addEventListener('change', () => {
-                                const stateKey = nodeDetails.getAttribute('data-state-key');
-                                this.clearOtherNodesState(stateKey);
-
-                                const currentState = this.selectedState.get(stateKey) || {
-                                    selectedShards: new Set(),
-                                    targetPeer: savedState.targetPeer,
-                                    moveChecked: savedState.moveChecked
-                                };
-                                
-                                if (checkbox.checked) {
-                                    currentState.selectedShards.add(shardId);
-                                } else {
-                                    currentState.selectedShards.delete(shardId);
-                                }
-                                
-                                this.selectedState.set(stateKey, currentState);
-                            });
-                        });
 
                         // Setup replicate button
                         const replicateButton = nodeDetails.querySelector('.replicate-button');
                         if (replicateButton) {
-                            replicateButton.addEventListener('click', async () => {
+                            replicateButton.addEventListener('click', () => {
                                 const selectedShards = Array.from(
                                     nodeDetails.querySelectorAll('.shard-checkbox:checked')
                                 ).map(cb => parseInt(cb.dataset.shardId));
 
-                                const selectedPeerButton = nodeDetails.querySelector('.peer-button.selected');
-                                const targetPeerId = selectedPeerButton?.getAttribute('data-peer-id');
-                                const isMoveShards = nodeDetails.querySelector('.move-shards-checkbox').checked;
-                                
-                                if (!targetPeerId) {
-                                    alert('Please select a target peer');
-                                    return;
-                                }
-                                
                                 if (selectedShards.length === 0) {
                                     alert('Please select at least one shard to sync');
                                     return;
                                 }
 
-                                const operationType = isMoveShards ? 'move' : 'sync';
-                                if (!confirm(`Are you sure you want to ${operationType} the selected shards to peer ${targetPeerId}?`)) {
-                                    return;
-                                }
-
-                                try {
-                                    const response = await fetch(this.replicateShardsEndpoint, {
-                                        method: 'POST',
-                                        headers: {
-                                            'Content-Type': 'application/json',
-                                        },
-                                        body: JSON.stringify({
-                                            sourcePeerId: nodeInfo.peerId,
-                                            targetPeerId: targetPeerId,
-                                            collectionName: collection.name,
-                                            shardIdsToReplicate: selectedShards,
-                                            isMoveShards: isMoveShards
-                                        })
-                                    });
-
-                                    if (!response.ok) {
-                                        const error = await response.json();
-                                        throw new Error(error.details || `Failed to ${operationType} shards`);
-                                    }
-
-                                    this.selectedState.delete(stateKey);
-                                    alert(`Shard ${operationType} initiated successfully`);
-                                    this.refresh();
-                                } catch (error) {
-                                    alert(`Error: ${error.message}`);
-                                }
+                                // Open shard sync modal
+                                this.showShardSyncModal(collection, nodeInfo, selectedShards);
                             });
                         }
-
-                        // Setup delete buttons
-                        const deleteApiButton = nodeDetails.querySelector('.delete-api-button');
-                        if (deleteApiButton) {
-                            deleteApiButton.addEventListener('click', async (e) => {
-                                e.stopPropagation();
-                                const collectionName = deleteApiButton.dataset.collection;
-                                const nodeUrl = deleteApiButton.dataset.nodeUrl;
-                                await this.deleteCollection(collectionName, 'Api', true, nodeUrl, null, null);
-                            });
-                        }
-
-                        const deleteDiskButton = nodeDetails.querySelector('.delete-disk-button');
-                        if (deleteDiskButton) {
-                            deleteDiskButton.addEventListener('click', async (e) => {
-                                e.stopPropagation();
-                                const collectionName = deleteDiskButton.dataset.collection;
-                                const podName = deleteDiskButton.dataset.podName;
-                                const podNamespace = deleteDiskButton.dataset.podNamespace;
-                                await this.deleteCollection(collectionName, 'Disk', true, null, podName, podNamespace);
-                            });
-                        }
-
-                        // Setup create snapshot button
-                        const createSnapshotBtn = nodeDetails.querySelector('.create-snapshot-btn');
-                        if (createSnapshotBtn) {
-                            createSnapshotBtn.addEventListener('click', async (e) => {
-                                e.stopPropagation();
-                                await this.createSnapshot(collection.name, nodeInfo.nodeUrl, false, nodeInfo.podName);
-                            });
-                        }
-
 
                         detailsContent.appendChild(nodeDetails);
                     }
                 });
 
-                // Add "Delete All" and "Create Snapshot All" buttons at the bottom
+                // Add collection-level action buttons at the bottom
                 const actionsFooter = document.createElement('div');
                 actionsFooter.className = 'collection-actions-footer';
                 actionsFooter.style.padding = '16px';
@@ -1131,36 +1074,36 @@ class VigilanteDashboard {
                 actionsFooter.style.gap = '8px';
                 actionsFooter.style.justifyContent = 'flex-end';
                 
-                const deleteAllApiButton = document.createElement('button');
-                deleteAllApiButton.className = 'action-button action-button-danger';
-                deleteAllApiButton.innerHTML = '<i class="fas fa-trash"></i> Delete All (API)';
-                deleteAllApiButton.title = 'Delete collection via API on all nodes';
-                deleteAllApiButton.onclick = async (e) => {
+                const deleteApiButton = document.createElement('button');
+                deleteApiButton.className = 'action-button action-button-danger';
+                deleteApiButton.innerHTML = '<i class="fas fa-trash"></i> Delete (API)';
+                deleteApiButton.title = 'Delete collection via API on selected nodes';
+                deleteApiButton.onclick = async (e) => {
                     e.stopPropagation();
-                    await this.deleteCollection(collection.name, 'Api', false);
+                    await this.showNodeSelectionDialog(collection, 'deleteApi');
                 };
                 
-                const deleteAllDiskButton = document.createElement('button');
-                deleteAllDiskButton.className = 'action-button action-button-danger';
-                deleteAllDiskButton.innerHTML = '<i class="fas fa-trash"></i> Delete All (Disk)';
-                deleteAllDiskButton.title = 'Delete collection from disk on all nodes';
-                deleteAllDiskButton.onclick = async (e) => {
+                const deleteDiskButton = document.createElement('button');
+                deleteDiskButton.className = 'action-button action-button-danger';
+                deleteDiskButton.innerHTML = '<i class="fas fa-trash"></i> Delete (Disk)';
+                deleteDiskButton.title = 'Delete collection from disk on selected nodes';
+                deleteDiskButton.onclick = async (e) => {
                     e.stopPropagation();
-                    await this.deleteCollection(collection.name, 'Disk', false);
+                    await this.showNodeSelectionDialog(collection, 'deleteDisk');
                 };
                 
-                const createSnapshotAllButton = document.createElement('button');
-                createSnapshotAllButton.className = 'action-button action-button-primary';
-                createSnapshotAllButton.innerHTML = '<i class="fas fa-camera"></i> Create Snapshot All';
-                createSnapshotAllButton.title = 'Create snapshot on all nodes';
-                createSnapshotAllButton.onclick = async (e) => {
+                const createSnapshotButton = document.createElement('button');
+                createSnapshotButton.className = 'action-button action-button-primary';
+                createSnapshotButton.innerHTML = '<i class="fas fa-camera"></i> Create Snapshot';
+                createSnapshotButton.title = 'Create snapshot on selected nodes';
+                createSnapshotButton.onclick = async (e) => {
                     e.stopPropagation();
-                    await this.createSnapshot(collection.name, null, true);
+                    await this.showNodeSelectionDialog(collection, 'createSnapshot');
                 };
                 
-                actionsFooter.appendChild(deleteAllApiButton);
-                actionsFooter.appendChild(deleteAllDiskButton);
-                actionsFooter.appendChild(createSnapshotAllButton);
+                actionsFooter.appendChild(deleteApiButton);
+                actionsFooter.appendChild(deleteDiskButton);
+                actionsFooter.appendChild(createSnapshotButton);
                 detailsContent.appendChild(actionsFooter);
 
                 detailsCell.appendChild(detailsContent);
@@ -1168,6 +1111,7 @@ class VigilanteDashboard {
 
                 row.addEventListener('click', () => {
                     const wasVisible = detailsRow.classList.contains('visible');
+                    console.log(`Collection ${collection.name} clicked, was visible: ${wasVisible}, will be: ${!wasVisible}`);
                     if (wasVisible) {
                         detailsRow.classList.remove('visible');
                     } else {
@@ -1843,6 +1787,9 @@ class VigilanteDashboard {
         // Store warnings (already includes warnings from all nodes, aggregated by backend)
         this.clusterWarnings = clusterState.health.warnings || [];
         
+        // Store StatefulSet name from API response
+        this.statefulSetName = clusterState.statefulSetName;
+        
         // Update combined issues and warnings display
         this.updateCombinedIssues();
         this.updateWarnings();
@@ -1957,14 +1904,15 @@ class VigilanteDashboard {
         const nodesGrid = document.getElementById('nodesGrid');
         nodesGrid.innerHTML = '';
 
+        // Store nodes for StatefulSet management (do this BEFORE early return)
+        this.clusterNodes = nodes || [];
+
         if (!nodes || nodes.length === 0) {
             console.log('No nodes available to display');
             nodesGrid.innerHTML = '<p>No nodes available</p>';
             return;
         }
 
-        // Store nodes for StatefulSet management
-        this.clusterNodes = nodes;
 
         console.log(`Creating cards for ${nodes.length} nodes`);
         nodes.forEach(node => {
@@ -2332,6 +2280,704 @@ class VigilanteDashboard {
     }
 
     // Snapshot management methods
+    async showNodeSelectionDialog(collection, action) {
+        // Create modal overlay
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+
+        const modalContent = document.createElement('div');
+        modalContent.style.cssText = `
+            background: white;
+            padding: 24px;
+            border-radius: 8px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            word-wrap: break-word;
+        `;
+
+        const actionTitles = {
+            deleteApi: 'Delete Collection via API',
+            deleteDisk: 'Delete Collection from Disk',
+            createSnapshot: 'Create Snapshot'
+        };
+
+        const title = document.createElement('h3');
+        title.textContent = `${actionTitles[action]} - Select Nodes`;
+        title.style.cssText = 'margin-top: 0; word-wrap: break-word; overflow-wrap: break-word;';
+        
+        const description = document.createElement('p');
+        description.textContent = `Select the nodes where you want to ${action === 'createSnapshot' ? 'create snapshot' : 'delete collection'} for "${collection.name}":`;
+        description.style.cssText = 'color: #666; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%;';
+
+        const nodesList = document.createElement('div');
+        nodesList.style.cssText = 'margin: 16px 0; max-height: 400px; overflow-y: auto;';
+
+        // Get nodes from collection
+        const nodes = Object.values(collection.nodes || {});
+        
+        // For deleteDisk action, filter to only nodes with pod information
+        let availableNodes = nodes;
+        if (action === 'deleteDisk') {
+            availableNodes = nodes.filter(n => n.podName && n.podName !== 'unknown' && n.podNamespace);
+            if (availableNodes.length === 0) {
+                alert('No nodes have pod information available. Cannot delete from disk.\n\nThis operation requires Kubernetes pod names, which are not available for these nodes.');
+                return;
+            }
+        }
+        
+        // Select all by default
+        const selectedNodes = new Set(availableNodes.map((_, index) => index));
+
+        // Add "Select All" checkbox
+        const selectAllContainer = document.createElement('div');
+        selectAllContainer.style.cssText = 'margin-bottom: 12px; padding-bottom: 12px; border-bottom: 2px solid #eee;';
+        const selectAllCheckbox = document.createElement('input');
+        selectAllCheckbox.type = 'checkbox';
+        selectAllCheckbox.checked = true;
+        selectAllCheckbox.id = 'select-all-nodes';
+        const selectAllLabel = document.createElement('label');
+        selectAllLabel.htmlFor = 'select-all-nodes';
+        selectAllLabel.textContent = ' Select All Nodes';
+        selectAllLabel.style.cssText = 'font-weight: bold; cursor: pointer; user-select: none;';
+        selectAllContainer.appendChild(selectAllCheckbox);
+        selectAllContainer.appendChild(selectAllLabel);
+        nodesList.appendChild(selectAllContainer);
+
+        // Add node checkboxes
+        availableNodes.forEach((node, index) => {
+            const nodeContainer = document.createElement('div');
+            nodeContainer.style.cssText = 'margin: 8px 0; padding: 8px; background: #f5f5f5; border-radius: 4px;';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = true;
+            checkbox.dataset.nodeIndex = index;
+            checkbox.id = `node-${index}`;
+            checkbox.className = 'node-checkbox';
+            
+            const label = document.createElement('label');
+            label.htmlFor = `node-${index}`;
+            const displayName = node.podName && node.podName !== 'unknown' ? node.podName : node.nodeUrl;
+            label.textContent = ` ${displayName}`;
+            if (node.peerId) {
+                label.textContent += ` (${node.peerId})`;
+            }
+            label.style.cssText = 'cursor: pointer; user-select: none;';
+            
+            checkbox.addEventListener('change', () => {
+                if (checkbox.checked) {
+                    selectedNodes.add(index);
+                } else {
+                    selectedNodes.delete(index);
+                }
+                // Update select all checkbox
+                selectAllCheckbox.checked = selectedNodes.size === availableNodes.length;
+                selectAllCheckbox.indeterminate = selectedNodes.size > 0 && selectedNodes.size < availableNodes.length;
+            });
+            
+            nodeContainer.appendChild(checkbox);
+            nodeContainer.appendChild(label);
+            nodesList.appendChild(nodeContainer);
+        });
+
+        // Select All functionality
+        selectAllCheckbox.addEventListener('change', () => {
+            const checkboxes = nodesList.querySelectorAll('.node-checkbox');
+            checkboxes.forEach((cb, index) => {
+                cb.checked = selectAllCheckbox.checked;
+                if (selectAllCheckbox.checked) {
+                    selectedNodes.add(index);
+                } else {
+                    selectedNodes.delete(index);
+                }
+            });
+        });
+
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.style.cssText = 'display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;';
+
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = 'Cancel';
+        cancelButton.className = 'action-button';
+        cancelButton.style.cssText = 'padding: 8px 16px;';
+        cancelButton.onclick = () => {
+            document.body.removeChild(modal);
+        };
+
+        const confirmButton = document.createElement('button');
+        confirmButton.textContent = 'Confirm';
+        confirmButton.className = action === 'createSnapshot' ? 'action-button action-button-primary' : 'action-button action-button-danger';
+        confirmButton.style.cssText = 'padding: 8px 16px;';
+        confirmButton.onclick = async () => {
+            if (selectedNodes.size === 0) {
+                alert('Please select at least one node');
+                return;
+            }
+
+            document.body.removeChild(modal);
+
+            const selectedNodeObjects = Array.from(selectedNodes).map(index => availableNodes[index]);
+            
+            if (action === 'deleteApi') {
+                const nodeUrls = selectedNodeObjects.map(n => n.nodeUrl).filter(url => url);
+                await this.deleteCollectionWithNodes(collection.name, 'Api', nodeUrls);
+            } else if (action === 'deleteDisk') {
+                const pods = selectedNodeObjects
+                    .filter(n => n.podName && n.podName !== 'unknown' && n.podNamespace)
+                    .map(n => ({ podName: n.podName, podNamespace: n.podNamespace }));
+                
+                if (pods.length === 0) {
+                    alert('Selected nodes do not have pod information available. Cannot delete from disk.');
+                    return;
+                }
+                
+                await this.deleteCollectionWithNodes(collection.name, 'Disk', null, pods);
+            } else if (action === 'createSnapshot') {
+                const nodeUrls = selectedNodeObjects.map(n => n.nodeUrl).filter(url => url);
+                await this.createSnapshotWithNodes(collection.name, nodeUrls);
+            }
+        };
+
+        buttonsContainer.appendChild(cancelButton);
+        buttonsContainer.appendChild(confirmButton);
+
+        modalContent.appendChild(title);
+        modalContent.appendChild(description);
+        modalContent.appendChild(nodesList);
+        modalContent.appendChild(buttonsContainer);
+        modal.appendChild(modalContent);
+
+        document.body.appendChild(modal);
+
+        // Close on overlay click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+            }
+        });
+    }
+
+    showShardSyncModal(collection, sourceNodeInfo, selectedShards) {
+        // Create modal overlay
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(2px);
+            animation: fadeIn 0.2s ease-out;
+        `;
+
+        const modalContent = document.createElement('div');
+        modalContent.style.cssText = `
+            background: white;
+            padding: 0;
+            border-radius: 12px;
+            max-width: 550px;
+            width: 90%;
+            max-height: 85vh;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            animation: slideIn 0.3s ease-out;
+        `;
+
+        // Header
+        const header = document.createElement('div');
+        header.style.cssText = `
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 14px 24px;
+            border-radius: 12px 12px 0 0;
+        `;
+        
+        const title = document.createElement('h3');
+        title.textContent = '🔄 Sync Shards';
+        title.style.cssText = 'margin: 0; font-size: 18px; font-weight: 600;';
+        header.appendChild(title);
+        
+        // Content area
+        const contentArea = document.createElement('div');
+        contentArea.style.cssText = 'padding: 16px 24px; overflow-y: auto; max-height: calc(85vh - 160px);';
+        
+        const sourceDisplay = sourceNodeInfo.podName && sourceNodeInfo.podName !== 'unknown' 
+            ? sourceNodeInfo.podName 
+            : sourceNodeInfo.peerId;
+        
+        // Info card
+        const infoCard = document.createElement('div');
+        infoCard.style.cssText = `
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 14px;
+        `;
+        
+        infoCard.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                    <span style="font-weight: 600; color: #495057; min-width: 95px; flex-shrink: 0; font-size: 12px;">Collection:</span>
+                    <span style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${collection.name}</span>
+                </div>
+                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                    <span style="font-weight: 600; color: #495057; min-width: 95px; flex-shrink: 0; font-size: 12px;">Source node:</span>
+                    <span style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${sourceDisplay}</span>
+                </div>
+                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                    <span style="font-weight: 600; color: #495057; min-width: 95px; flex-shrink: 0; font-size: 12px;">Shards:</span>
+                    <span style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${selectedShards.join(', ')}</span>
+                </div>
+            </div>
+        `;
+        
+        contentArea.appendChild(infoCard);
+
+        // Target node selection
+        const targetNodeSection = document.createElement('div');
+        targetNodeSection.style.cssText = 'margin-bottom: 14px;';
+        
+        const targetLabel = document.createElement('label');
+        targetLabel.textContent = 'Target Node';
+        targetLabel.style.cssText = `
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #495057;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        `;
+        
+        const targetSelect = document.createElement('select');
+        targetSelect.style.cssText = `
+            width: 100%;
+            padding: 9px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: inherit;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        `;
+        targetSelect.onmouseover = () => { targetSelect.style.borderColor = '#667eea'; };
+        targetSelect.onmouseout = () => { targetSelect.style.borderColor = '#e9ecef'; };
+        targetSelect.onfocus = () => { targetSelect.style.borderColor = '#667eea'; targetSelect.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.1)'; };
+        targetSelect.onblur = () => { targetSelect.style.borderColor = '#e9ecef'; targetSelect.style.boxShadow = 'none'; };
+        
+        // Add empty option
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = '-- Select target node --';
+        targetSelect.appendChild(emptyOption);
+        
+        // Add other nodes (except source)
+        Object.entries(collection.nodes || {})
+            .filter(([_, nodeInfo]) => nodeInfo.peerId && nodeInfo.peerId !== sourceNodeInfo.peerId)
+            .forEach(([_, nodeInfo]) => {
+                const option = document.createElement('option');
+                option.value = nodeInfo.peerId;
+                const displayName = nodeInfo.podName && nodeInfo.podName !== 'unknown' 
+                    ? nodeInfo.podName 
+                    : nodeInfo.peerId;
+                option.textContent = `${displayName} (${nodeInfo.peerId})`;
+                targetSelect.appendChild(option);
+            });
+        
+        targetNodeSection.appendChild(targetLabel);
+        targetNodeSection.appendChild(targetSelect);
+        contentArea.appendChild(targetNodeSection);
+
+        // Transfer Method selection
+        const transferMethodSection = document.createElement('div');
+        transferMethodSection.style.cssText = 'margin-bottom: 14px;';
+        
+        const transferMethodLabel = document.createElement('label');
+        transferMethodLabel.textContent = 'Transfer Method';
+        transferMethodLabel.style.cssText = `
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #495057;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        `;
+        
+        const transferMethodSelect = document.createElement('select');
+        transferMethodSelect.style.cssText = `
+            width: 100%;
+            padding: 9px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: inherit;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        `;
+        transferMethodSelect.onmouseover = () => { transferMethodSelect.style.borderColor = '#667eea'; };
+        transferMethodSelect.onmouseout = () => { transferMethodSelect.style.borderColor = '#e9ecef'; };
+        transferMethodSelect.onfocus = () => { transferMethodSelect.style.borderColor = '#667eea'; transferMethodSelect.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.1)'; };
+        transferMethodSelect.onblur = () => { transferMethodSelect.style.borderColor = '#e9ecef'; transferMethodSelect.style.boxShadow = 'none'; };
+        
+        // Add transfer method options
+        const transferMethods = [
+            { value: 'Snapshot', label: 'Snapshot (Default)', description: 'Transfer using snapshot - includes index and quantized data' },
+            { value: 'StreamRecords', label: 'Stream Records', description: 'Stream records in batches' },
+            { value: 'WalDelta', label: 'WAL Delta', description: 'Transfer only missed operations via WAL difference' },
+            { value: 'ReshardingStreamRecords', label: 'Resharding Stream', description: 'Stream for resharding operations' }
+        ];
+        
+        transferMethods.forEach(method => {
+            const option = document.createElement('option');
+            option.value = method.value;
+            option.textContent = method.label;
+            option.title = method.description;
+            if (method.value === 'Snapshot') {
+                option.selected = true;
+            }
+            transferMethodSelect.appendChild(option);
+        });
+        
+        // Add description text that changes based on selection
+        const transferMethodDescription = document.createElement('div');
+        transferMethodDescription.style.cssText = 'font-size: 11px; color: #6c757d; margin-top: 3px; font-style: italic; line-height: 1.2;';
+        transferMethodDescription.textContent = transferMethods[0].description;
+        
+        transferMethodSelect.onchange = () => {
+            const selectedMethod = transferMethods.find(m => m.value === transferMethodSelect.value);
+            transferMethodDescription.textContent = selectedMethod ? selectedMethod.description : '';
+        };
+        
+        transferMethodSection.appendChild(transferMethodLabel);
+        transferMethodSection.appendChild(transferMethodSelect);
+        transferMethodSection.appendChild(transferMethodDescription);
+        contentArea.appendChild(transferMethodSection);
+
+        // Move checkbox
+        const moveSection = document.createElement('div');
+        moveSection.style.cssText = `
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 0;
+        `;
+        
+        const moveLabel = document.createElement('label');
+        moveLabel.style.cssText = 'display: flex; align-items: flex-start; cursor: pointer;';
+        
+        const moveCheckbox = document.createElement('input');
+        moveCheckbox.type = 'checkbox';
+        moveCheckbox.id = 'move-shards-modal';
+        moveCheckbox.style.cssText = `
+            margin-right: 10px;
+            margin-top: 2px;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        `;
+        
+        const moveTextContainer = document.createElement('div');
+        const moveTitle = document.createElement('div');
+        moveTitle.textContent = '⚠️ Move shards';
+        moveTitle.style.cssText = 'font-weight: 600; color: #856404; margin-bottom: 1px; font-size: 13px;';
+        
+        const moveDescription = document.createElement('div');
+        moveDescription.textContent = 'Remove shards from source node after sync';
+        moveDescription.style.cssText = 'font-size: 11px; color: #856404; line-height: 1.2;';
+        
+        moveTextContainer.appendChild(moveTitle);
+        moveTextContainer.appendChild(moveDescription);
+        
+        moveLabel.appendChild(moveCheckbox);
+        moveLabel.appendChild(moveTextContainer);
+        moveSection.appendChild(moveLabel);
+        contentArea.appendChild(moveSection);
+
+        // Footer with buttons
+        const footer = document.createElement('div');
+        footer.style.cssText = `
+            padding: 14px 24px;
+            background: #f8f9fa;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        `;
+
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = 'Cancel';
+        cancelButton.style.cssText = `
+            padding: 10px 24px;
+            border: 2px solid #6c757d;
+            background: white;
+            color: #6c757d;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        `;
+        cancelButton.onmouseover = () => { cancelButton.style.background = '#6c757d'; cancelButton.style.color = 'white'; };
+        cancelButton.onmouseout = () => { cancelButton.style.background = 'white'; cancelButton.style.color = '#6c757d'; };
+        cancelButton.onclick = () => {
+            modal.style.animation = 'fadeOut 0.2s ease-out';
+            setTimeout(() => document.body.removeChild(modal), 200);
+        };
+
+        const confirmButton = document.createElement('button');
+        confirmButton.textContent = '🔄 Sync Shards';
+        confirmButton.style.cssText = `
+            padding: 10px 24px;
+            border: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        `;
+        confirmButton.onmouseover = () => { confirmButton.style.transform = 'translateY(-2px)'; confirmButton.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)'; };
+        confirmButton.onmouseout = () => { confirmButton.style.transform = 'translateY(0)'; confirmButton.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)'; };
+        confirmButton.onclick = async () => {
+            const targetPeerId = targetSelect.value;
+            const isMoveShards = moveCheckbox.checked;
+            const shardTransferMethod = transferMethodSelect.value;
+            
+            if (!targetPeerId) {
+                alert('Please select a target node');
+                targetSelect.focus();
+                return;
+            }
+
+            const operationType = isMoveShards ? 'move' : 'sync';
+            const targetDisplayName = targetSelect.options[targetSelect.selectedIndex].textContent;
+            
+            if (!confirm(`Are you sure you want to ${operationType} shards [${selectedShards.join(', ')}] to ${targetDisplayName} using ${shardTransferMethod} method?`)) {
+                return;
+            }
+
+            modal.style.animation = 'fadeOut 0.2s ease-out';
+            setTimeout(() => document.body.removeChild(modal), 200);
+
+            try {
+                const requestBody = {
+                    sourcePeerId: sourceNodeInfo.peerId,
+                    targetPeerId: targetPeerId,
+                    collectionName: collection.name,
+                    shardIdsToReplicate: selectedShards,
+                    isMoveShards: isMoveShards,
+                    shardTransferMethod: shardTransferMethod
+                };
+                
+                const response = await fetch(this.replicateShardsEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.details || `Failed to ${operationType} shards`);
+                }
+
+                this.showToast(`Shard ${operationType} initiated successfully using ${shardTransferMethod} method`, 'success', 'Sync Started', 5000);
+                setTimeout(() => this.refresh(), 2000);
+            } catch (error) {
+                this.showToast(`Error: ${error.message}`, 'error', 'Sync Failed', 10000);
+            }
+        };
+
+        footer.appendChild(cancelButton);
+        footer.appendChild(confirmButton);
+
+        modalContent.appendChild(header);
+        modalContent.appendChild(contentArea);
+        modalContent.appendChild(footer);
+        modal.appendChild(modalContent);
+
+        // Add CSS animations
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+            @keyframes fadeOut {
+                from { opacity: 1; }
+                to { opacity: 0; }
+            }
+            @keyframes slideIn {
+                from { transform: translateY(-20px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+
+        document.body.appendChild(modal);
+
+        // Close on overlay click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.animation = 'fadeOut 0.2s ease-out';
+                setTimeout(() => document.body.removeChild(modal), 200);
+            }
+        });
+        
+        // Focus on select
+        setTimeout(() => targetSelect.focus(), 100);
+    }
+
+    async deleteCollectionWithNodes(collectionName, deletionType, nodeUrls = null, pods = null) {
+        const typeLabel = deletionType === 'Api' ? 'API' : 'Disk';
+        const nodeCount = nodeUrls ? nodeUrls.length : (pods ? pods.length : 0);
+        
+        if (!confirm(`Are you sure you want to delete collection '${collectionName}' via ${typeLabel} on ${nodeCount} selected node(s)?\n\nThis action cannot be undone!`)) {
+            return;
+        }
+
+        const toastId = this.showToast(
+            `Deleting collection '${collectionName}' via ${typeLabel} on ${nodeCount} node(s)...`,
+            'info',
+            'Deletion in progress',
+            0,
+            true
+        );
+
+        try {
+            const requestBody = {
+                CollectionName: collectionName,
+                DeletionType: deletionType
+            };
+
+            if (deletionType === 'Api' && nodeUrls) {
+                requestBody.NodeUrls = nodeUrls;
+            } else if (deletionType === 'Disk' && pods) {
+                requestBody.Pods = pods.map(p => ({
+                    PodName: p.podName,
+                    PodNamespace: p.podNamespace
+                }));
+            }
+
+            console.log('Delete collection request:', requestBody);
+
+            const response = await fetch(this.deleteCollectionEndpoint, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const result = await response.json();
+            console.log('Delete collection response:', { status: response.status, result });
+            
+            if (response.ok && result.success) {
+                this.showDeletionResultToast(toastId, collectionName, result, true);
+                // Refresh after a short delay to allow deletion to complete
+                setTimeout(() => this.refresh(), 1000);
+            } else {
+                this.showDeletionResultToast(toastId, collectionName, result, false);
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`Error deleting collection: ${error.message}`, 'error', 'Deletion failed', 15000);
+        }
+    }
+
+    async createSnapshotWithNodes(collectionName, nodeUrls) {
+        const nodeCount = nodeUrls.length;
+        const toastId = this.showToast(
+            `Creating snapshot for collection '${collectionName}' on ${nodeCount} node(s)...`,
+            'info',
+            'Creating Snapshot',
+            0,
+            true
+        );
+
+        try {
+            const requestBody = {
+                CollectionName: collectionName,
+                NodeUrls: nodeUrls
+            };
+
+            console.log('Create snapshot request:', requestBody);
+
+            const response = await fetch(this.createSnapshotEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const result = await response.json();
+            console.log('Create snapshot response:', { status: response.status, result });
+
+            if (result.success) {
+                let detailsHtml = '';
+                if (result.results && Object.keys(result.results).length > 0) {
+                    const resultsList = Object.entries(result.results)
+                        .map(([node, snapshotName]) => {
+                            const icon = snapshotName ? '✓' : '✗';
+                            return `${icon} ${node}${snapshotName ? `: ${snapshotName}` : ''}`;
+                        })
+                        .join('<br>');
+                    detailsHtml = `<div style="margin-top: 8px; font-size: 0.9em;">${resultsList}</div>`;
+                }
+
+                this.updateToast(
+                    toastId,
+                    `${result.message || 'Snapshot creation completed'}${detailsHtml}`,
+                    'success',
+                    'Snapshot Created'
+                );
+
+                // Refresh snapshots after a short delay
+                setTimeout(() => {
+                    if (typeof this.loadSnapshots === 'function') {
+                        this.loadSnapshots();
+                    }
+                }, 1500);
+            } else {
+                this.updateToast(toastId, result.message || 'Failed to create snapshot', 'error', 'Snapshot Creation Failed');
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`Error creating snapshot: ${error.message}`, 'error', 'Snapshot Creation Failed', 15000);
+        }
+    }
+
     async createSnapshot(collectionName, nodeUrl, onAllNodes = false, podName = null) {
         // Show podName if available and not 'unknown', otherwise show 'node'
         const nodeIdentifier = podName && podName !== 'unknown' ? podName : (onAllNodes ? null : 'node');
@@ -2663,16 +3309,17 @@ class VigilanteDashboard {
     }
 
     showStatefulSetDialog() {
-        // Get StatefulSet name and namespace from first node
+        // Get StatefulSet name from stored value or fall back to first node
         const firstNode = this.clusterNodes && this.clusterNodes.length > 0 ? this.clusterNodes[0] : null;
-        const statefulSetName = firstNode?.statefulSetName || 'qdrant';
+        const storedStatefulSetName = this.statefulSetName || firstNode?.statefulSetName || 'qdrant1';
         const namespace = firstNode?.namespace || 'qdrant';
-        const currentReplicas = this.clusterNodes?.length || 3;
+        const currentReplicas = this.clusterNodes?.length || 0;
 
         console.log('Opening StatefulSet dialog with:', {
-            statefulSetName,
+            storedStatefulSetName,
             namespace,
             currentReplicas,
+            storedValue: this.statefulSetName,
             firstNode
         });
 
@@ -2683,17 +3330,26 @@ class VigilanteDashboard {
         // Create modal dialog
         const modal = document.createElement('div');
         modal.className = 'modal-dialog statefulset-modal';
+        
+        // Always show editable StatefulSet name field with default value
+        const statefulSetNameInput = `
+            <div class="form-group">
+                <label for="statefulSetNameInput">StatefulSet Name: <span style="color: red;">*</span></label>
+                <input type="text" id="statefulSetNameInput" class="form-input" value="${storedStatefulSetName}" required />
+                <small style="color: #888; display: block; margin-top: 4px;">
+                    Enter the name of your Qdrant StatefulSet
+                </small>
+            </div>
+        `;
+        
         modal.innerHTML = `
             <div class="modal-header">
                 <h3><i class="fas fa-cubes"></i> Manage StatefulSet</h3>
                 <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
+                ${statefulSetNameInput}
                 <div class="statefulset-info">
-                    <div class="info-item">
-                        <span class="info-label">StatefulSet:</span>
-                        <span class="info-value">${statefulSetName}</span>
-                    </div>
                     <div class="info-item">
                         <span class="info-label">Namespace:</span>
                         <span class="info-value">${namespace}</span>
@@ -2761,6 +3417,15 @@ class VigilanteDashboard {
 
         // Execute handler
         modal.querySelector('#executeStatefulSetBtn').addEventListener('click', async () => {
+            // Always get StatefulSet name from input field
+            const input = modal.querySelector('#statefulSetNameInput');
+            const statefulSetName = input?.value.trim();
+            
+            if (!statefulSetName) {
+                alert('Please enter the StatefulSet name');
+                return;
+            }
+            
             const replicas = selectedOperation === 'scale' 
                 ? parseInt(modal.querySelector('#replicaCount').value)
                 : null;

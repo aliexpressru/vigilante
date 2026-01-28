@@ -9,7 +9,6 @@ namespace Vigilante.Controllers;
 [Route("api/v1/collections")]
 public class CollectionsController(
     IClusterManager clusterManager,
-    ICollectionService collectionService,
     ILogger<CollectionsController> logger)
     : ControllerBase
 {
@@ -53,7 +52,8 @@ public class CollectionsController(
                             CollectionName = size.CollectionName,
                             PodNamespace = size.PodNamespace,
                             Metrics = size.Metrics,
-                            Issues = size.Issues
+                            Issues = size.Issues,
+                            Aliases = size.Aliases
                         };
                     }).ToList()
                 })
@@ -110,133 +110,99 @@ public class CollectionsController(
     {
         try
         {
-            if (request.SingleNode)
+            Dictionary<string, bool> results;
+
+            if (request.DeletionType == Models.Enums.CollectionDeletionType.Api)
             {
-                // Delete on specific node
-                if (request.DeletionType == Models.Enums.CollectionDeletionType.Api)
+                // Validate NodeUrls
+                if (request.NodeUrls == null || request.NodeUrls.Count == 0)
                 {
-                    var success = await collectionService.DeleteCollectionViaApiAsync(
-                        request.NodeUrl!, 
-                        request.CollectionName, 
-                        cancellationToken);
-                    
-                    var response = new V1DeleteCollectionResponse
+                    return BadRequest(new V1DeleteCollectionResponse
                     {
-                        Success = success,
-                        Message = success 
-                            ? $"Collection '{request.CollectionName}' deleted successfully via API on {request.NodeUrl}"
-                            : $"Failed to delete collection '{request.CollectionName}' via API on {request.NodeUrl}",
-                        Results = new Dictionary<string, NodeDeletionResult>
-                        {
-                            [request.NodeUrl!] = new NodeDeletionResult 
-                            { 
-                                Success = success,
-                                Error = success ? null : "Deletion failed"
-                            }
-                        }
-                    };
-                    
-                    return success ? Ok(response) : StatusCode(500, response);
+                        Success = false,
+                        Message = "NodeUrls list is required for API deletion",
+                        Results = new Dictionary<string, NodeDeletionResult>()
+                    });
                 }
-                else // Disk
+
+                results = await clusterManager.DeleteCollectionViaApiAsync(
+                    request.CollectionName,
+                    request.NodeUrls,
+                    cancellationToken);
+
+                var successCount = results.Values.Count(s => s);
+                var nodeResults = results.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => new NodeDeletionResult
+                    {
+                        Success = kvp.Value,
+                        Error = kvp.Value ? null : "Deletion failed"
+                    });
+
+                var response = new V1DeleteCollectionResponse
                 {
-                    var success = await collectionService.DeleteCollectionFromDiskAsync(
-                        request.PodName!, 
-                        request.PodNamespace!, 
-                        request.CollectionName, 
-                        cancellationToken);
-                    
-                    var response = new V1DeleteCollectionResponse
-                    {
-                        Success = success,
-                        Message = success 
-                            ? $"Collection '{request.CollectionName}' deleted successfully from disk on pod {request.PodName}"
-                            : $"Failed to delete collection '{request.CollectionName}' from disk on pod {request.PodName}",
-                        Results = new Dictionary<string, NodeDeletionResult>
-                        {
-                            [request.PodName!] = new NodeDeletionResult 
-                            { 
-                                Success = success,
-                                Error = success ? null : "Deletion failed"
-                            }
-                        }
-                    };
-                    
-                    return success ? Ok(response) : StatusCode(500, response);
-                }
+                    Success = successCount > 0,
+                    Message = successCount == 0
+                        ? "Failed to delete collection via API on any node"
+                        : $"Collection '{request.CollectionName}' deleted via API on {successCount}/{results.Count} nodes",
+                    Results = nodeResults
+                };
+
+                return successCount > 0 ? Ok(response) : StatusCode(500, response);
             }
-            else
+            else // Disk
             {
-                // Delete on all nodes
-                Dictionary<string, bool> results;
-                
-                if (request.DeletionType == Models.Enums.CollectionDeletionType.Api)
+                // Validate Pods
+                if (request.Pods == null || request.Pods.Count == 0)
                 {
-                    results = await clusterManager.DeleteCollectionViaApiOnAllNodesAsync(
-                        request.CollectionName, 
-                        cancellationToken);
-                    
-                    var successCount = results.Values.Count(s => s);
-                    var nodeResults = results.ToDictionary(
-                        kvp => kvp.Key,
-                        kvp => new NodeDeletionResult 
-                        { 
-                            Success = kvp.Value,
-                            Error = kvp.Value ? null : "Deletion failed"
-                        });
-                    
-                    var response = new V1DeleteCollectionResponse
+                    return BadRequest(new V1DeleteCollectionResponse
                     {
-                        Success = successCount > 0,
-                        Message = successCount == 0 
-                            ? "Failed to delete collection via API on any node"
-                            : $"Collection '{request.CollectionName}' deleted via API on {successCount}/{results.Count} nodes",
-                        Results = nodeResults
-                    };
-                    
-                    return successCount > 0 ? Ok(response) : StatusCode(500, response);
+                        Success = false,
+                        Message = "Pods list is required for disk deletion",
+                        Results = new Dictionary<string, NodeDeletionResult>()
+                    });
                 }
-                else // Disk
+
+                var pods = request.Pods.Select(p => (p.PodName, p.PodNamespace));
+                results = await clusterManager.DeleteCollectionFromDiskAsync(
+                    request.CollectionName,
+                    pods,
+                    cancellationToken);
+
+                var successCount = results.Values.Count(s => s);
+                var nodeResults = results.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => new NodeDeletionResult
+                    {
+                        Success = kvp.Value,
+                        Error = kvp.Value ? null : "Deletion failed"
+                    });
+
+                var response = new V1DeleteCollectionResponse
                 {
-                    results = await clusterManager.DeleteCollectionFromDiskOnAllNodesAsync(
-                        request.CollectionName, 
-                        cancellationToken);
-                    
-                    var successCount = results.Values.Count(s => s);
-                    var nodeResults = results.ToDictionary(
-                        kvp => kvp.Key,
-                        kvp => new NodeDeletionResult 
-                        { 
-                            Success = kvp.Value,
-                            Error = kvp.Value ? null : "Deletion failed"
-                        });
-                    
-                    var response = new V1DeleteCollectionResponse
-                    {
-                        Success = successCount > 0,
-                        Message = successCount == 0 
-                            ? "Failed to delete collection from disk on any pod"
-                            : $"Collection '{request.CollectionName}' deleted from disk on {successCount}/{results.Count} pods",
-                        Results = nodeResults
-                    };
-                    
-                    return successCount > 0 ? Ok(response) : StatusCode(500, response);
-                }
+                    Success = successCount > 0,
+                    Message = successCount == 0
+                        ? "Failed to delete collection from disk on any pod"
+                        : $"Collection '{request.CollectionName}' deleted from disk on {successCount}/{results.Count} pods",
+                    Results = nodeResults
+                };
+
+                return successCount > 0 ? Ok(response) : StatusCode(500, response);
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error during collection deletion");
             return StatusCode(500, new V1DeleteCollectionResponse
-            { 
+            {
                 Success = false,
                 Message = "Internal server error during collection deletion",
                 Results = new Dictionary<string, NodeDeletionResult>
                 {
-                    ["error"] = new NodeDeletionResult 
-                    { 
-                        Success = false, 
-                        Error = ex.Message 
+                    ["error"] = new NodeDeletionResult
+                    {
+                        Success = false,
+                        Error = ex.Message
                     }
                 }
             });

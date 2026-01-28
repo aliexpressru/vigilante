@@ -1,3 +1,4 @@
+using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Models;
 using Vigilante.Models.Requests;
 
@@ -27,20 +28,22 @@ public interface IClusterManager
         string collectionName,
         uint[] shardIds,
         bool moveShards,
+        ShardTransferMethod? shardTransferMethod = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes a collection via Qdrant API on all nodes
+    /// Deletes a collection via Qdrant API on specified nodes
     /// </summary>
-    Task<Dictionary<string, bool>> DeleteCollectionViaApiOnAllNodesAsync(
+    Task<Dictionary<string, bool>> DeleteCollectionViaApiAsync(
         string collectionName,
+        IEnumerable<string> nodeUrls,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes a collection from disk on all pods
+    /// Deletes a collection from disk on specified pods
     /// </summary>
-    Task<Dictionary<string, bool>> DeleteCollectionFromDiskOnAllNodesAsync(
+    Task<Dictionary<string, bool>> DeleteCollectionFromDiskAsync(
         string collectionName,
+        IEnumerable<(string PodName, string PodNamespace)> pods,
         CancellationToken cancellationToken = default);
 }
-

@@ -1,4 +1,5 @@
 using Aer.QdrantClient.Http.Abstractions;
+using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Models;
 
 namespace Vigilante.Services.Interfaces;
@@ -25,6 +26,7 @@ public interface ICollectionService
         string collectionName,
         uint[] shardIds,
         bool isMove,
+        ShardTransferMethod? shardTransferMethod,
         CancellationToken cancellationToken);
 
     /// <summary>

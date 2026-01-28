@@ -747,6 +747,78 @@ public class ClusterManagerTests
     }
 
     [Test]
+    public async Task GetClusterStateAsync_IncludesStatefulSetName_WhenAvailable()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "qdrant", PodName = "qdrant1-0" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        _nodesProvider.GetStatefulSetNameAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>("qdrant1"));
+
+        var pod1Id = 1001UL;
+        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // Act
+        var result = await _clusterManager.GetClusterStateAsync();
+
+        // Assert
+        Assert.That(result.StatefulSetName, Is.EqualTo("qdrant1"));
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_StatefulSetName_IsNull_WhenNotAvailable()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "qdrant", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        _nodesProvider.GetStatefulSetNameAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(null));
+
+        var pod1Id = 1001UL;
+        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        // Act
+        var result = await _clusterManager.GetClusterStateAsync();
+
+        // Assert
+        Assert.That(result.StatefulSetName, Is.Null);
+    }
+
+    [Test]
     public async Task GetClusterStateAsync_WhenAllNodesUnhealthy_ReturnsAllUnhealthy()
     {
         // Arrange
@@ -1498,6 +1570,212 @@ public class ClusterManagerTests
         Assert.That(node2Collection.Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
     }
 
+    [Test]
+    public async Task GetCollectionsInfoAsync_UsesCacheOnSecondCall()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var apiCollections = new List<CollectionInfo>
+        {
+            new()
+            {
+                CollectionName = "test_collection",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                Metrics = new Dictionary<string, object>
+                {
+                    { "prettySize", "1 MB" },
+                    { "sizeBytes", 1048576L }
+                }
+            }
+        };
+
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(apiCollections);
+
+        // Act - First call
+        var result1 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
+        
+        // Act - Second call (should use cache)
+        var result2 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
+
+        // Assert - Service should be called only once (first time)
+        await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
+            Arg.Any<IReadOnlyList<NodeInfo>>(),
+            Arg.Any<Dictionary<string, string>>(),
+            Arg.Any<CancellationToken>());
+
+        Assert.That(result1, Has.Count.EqualTo(1));
+        Assert.That(result2, Has.Count.EqualTo(1));
+        Assert.That(result1[0].CollectionName, Is.EqualTo("test_collection"));
+        Assert.That(result2[0].CollectionName, Is.EqualTo("test_collection"));
+    }
+
+    [Test]
+    public async Task GetCollectionsInfoAsync_ClearCacheRefreshesData()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var firstCollections = new List<CollectionInfo>
+        {
+            new()
+            {
+                CollectionName = "collection1",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                Metrics = new Dictionary<string, object> { { "sizeBytes", 1000L } }
+            }
+        };
+
+        var secondCollections = new List<CollectionInfo>
+        {
+            new()
+            {
+                CollectionName = "collection2",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                Metrics = new Dictionary<string, object> { { "sizeBytes", 2000L } }
+            }
+        };
+
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(firstCollections, secondCollections);
+
+        // Act - First call
+        var result1 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
+        
+        // Act - Second call with clearCache=true
+        var result2 = await _clusterManager.GetCollectionsInfoAsync(clearCache: true);
+
+        // Assert - Service should be called twice
+        await _collectionService.Received(2).GetEnrichedCollectionsInfoAsync(
+            Arg.Any<IReadOnlyList<NodeInfo>>(),
+            Arg.Any<Dictionary<string, string>>(),
+            Arg.Any<CancellationToken>());
+
+        Assert.That(result1[0].CollectionName, Is.EqualTo("collection1"));
+        Assert.That(result2[0].CollectionName, Is.EqualTo("collection2"));
+    }
+
+    [Test]
+    public async Task GetCollectionsInfoAsync_ClearsCacheWhenEmptyResultWithClearCache()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var initialCollections = new List<CollectionInfo>
+        {
+            new()
+            {
+                CollectionName = "collection1",
+                NodeUrl = "http://node1:6333",
+                PodName = "pod1",
+                PeerId = "1001",
+                Metrics = new Dictionary<string, object> { { "sizeBytes", 1000L } }
+            }
+        };
+
+        var emptyCollections = new List<CollectionInfo>();
+
+        _collectionService.GetEnrichedCollectionsInfoAsync(
+                Arg.Any<IReadOnlyList<NodeInfo>>(),
+                Arg.Any<Dictionary<string, string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(initialCollections, emptyCollections, emptyCollections);
+
+        // Act
+        // First call - gets real collections and caches them
+        var result1 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
+        
+        // Second call - clearCache=true but gets empty result, should clear cache and return test data
+        var result2 = await _clusterManager.GetCollectionsInfoAsync(clearCache: true);
+        
+        // Third call - clearCache=false, should NOT return stale cache (it was cleared), should fetch again
+        var result3 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
+
+        // Assert
+        Assert.That(result1[0].CollectionName, Is.EqualTo("collection1"), "First call should return real collection");
+        Assert.That(result2[0].CollectionName, Does.StartWith("test_"), "Second call should return test data");
+        Assert.That(result3[0].CollectionName, Does.StartWith("test_"), "Third call should return test data (cache was cleared)");
+        
+        // Service should be called 3 times (no cache reuse for call 3 because cache was cleared)
+        await _collectionService.Received(3).GetEnrichedCollectionsInfoAsync(
+            Arg.Any<IReadOnlyList<NodeInfo>>(),
+            Arg.Any<Dictionary<string, string>>(),
+            Arg.Any<CancellationToken>());
+    }
+
     #endregion
 
 
@@ -1557,8 +1835,13 @@ public class ClusterManagerTests
             .DeleteCollectionViaApiAsync(Arg.Any<string>(), collectionName, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
+        var nodeUrls = new[] { "http://node1:6333", "http://node2:6333" };
+
         // Act
-        var result = await _clusterManager.DeleteCollectionViaApiOnAllNodesAsync(collectionName, CancellationToken.None);
+        var result = await _clusterManager.DeleteCollectionViaApiAsync(
+            collectionName, 
+            nodeUrls, 
+            CancellationToken.None);
 
         // Assert
         Assert.That(result, Has.Count.EqualTo(2));
@@ -1607,12 +1890,13 @@ public class ClusterManagerTests
                 collectionName,
                 shardIds,
                 false,
+                Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
         // Act
         var result = await _clusterManager.ReplicateShardsAsync(
-            sourcePeerId, targetPeerId, collectionName, shardIds, false, CancellationToken.None);
+            sourcePeerId, targetPeerId, collectionName, shardIds, false, null, CancellationToken.None);
 
         // Assert
         Assert.That(result, Is.True);
@@ -1656,12 +1940,13 @@ public class ClusterManagerTests
                 collectionName,
                 shardIds,
                 true, // isMove = true
+                Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
         // Act
         var result = await _clusterManager.ReplicateShardsAsync(
-            sourcePeerId, targetPeerId, collectionName, shardIds, true, CancellationToken.None);
+            sourcePeerId, targetPeerId, collectionName, shardIds, true, null, CancellationToken.None);
 
         // Assert
         Assert.That(result, Is.True);
@@ -1672,6 +1957,7 @@ public class ClusterManagerTests
             collectionName,
             shardIds,
             true,
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -1699,7 +1985,7 @@ public class ClusterManagerTests
 
         // Act
         var result = await _clusterManager.ReplicateShardsAsync(
-            sourcePeerId, targetPeerId, collectionName, shardIds, false, CancellationToken.None);
+            sourcePeerId, targetPeerId, collectionName, shardIds, false, null, CancellationToken.None);
 
         // Assert
         Assert.That(result, Is.False);

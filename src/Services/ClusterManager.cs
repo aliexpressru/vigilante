@@ -50,7 +50,8 @@ public class ClusterManager(
         var state = new ClusterState
         {
             Nodes = nodeStatuses.ToList(),
-            LastUpdated = DateTime.UtcNow
+            LastUpdated = DateTime.UtcNow,
+            StatefulSetName = await nodesProvider.GetStatefulSetNameAsync(cancellationToken)
         };
 
         meterService.UpdateAliveNodes(state.Nodes.Count(n => n.IsHealthy));
@@ -87,8 +88,15 @@ public class ClusterManager(
             .Where(n => !string.IsNullOrEmpty(n.PeerId) && !string.IsNullOrEmpty(n.PodName))
             .ToDictionary(n => n.PeerId, n => n.PodName!);
 
-        logger.LogInformation("Found {NodesCount} nodes. Healthy nodes: {HealthyCount}",
-            state.Nodes.Count, state.Nodes.Count(n => n.IsHealthy));
+        logger.LogInformation("Found {NodesCount} nodes. Healthy nodes: {HealthyCount}. Nodes with PodName: {PodNameCount}",
+            state.Nodes.Count, state.Nodes.Count(n => n.IsHealthy), peerToPodMap.Count);
+
+        // Log node details for debugging
+        foreach (var node in state.Nodes)
+        {
+            logger.LogDebug("Node: URL={Url}, PeerId={PeerId}, PodName={PodName}, IsHealthy={IsHealthy}",
+                node.Url, node.PeerId ?? "null", node.PodName ?? "null", node.IsHealthy);
+        }
 
         // Get enriched collections info from CollectionService
         var result = await collectionService.GetEnrichedCollectionsInfoAsync(
@@ -99,7 +107,23 @@ public class ClusterManager(
         // Fallback to test data if no collections found
         if (result.Count == 0)
         {
-            logger.LogDebug("No collections found from API, attempting to return test data (only available in Development)");
+            logger.LogWarning("No collections found from API. This might be because: " +
+                "1) No healthy nodes available, " +
+                "2) Nodes have no collections, " +
+                "3) API connection failed. " +
+                "Returning test data (only available in Development)");
+            
+            // Clear cache if we were asked to refresh and got empty result
+            // This prevents returning stale cached data on next request
+            if (clearCache)
+            {
+                lock (_cacheLock)
+                {
+                    _cachedCollections = null;
+                    logger.LogInformation("Cleared collections cache due to empty result");
+                }
+            }
+            
             return testDataProvider.GenerateTestCollectionData();
         }
 
@@ -124,12 +148,14 @@ public class ClusterManager(
         string collectionName,
         uint[] shardIds,
         bool isMove,
+        Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod? shardTransferMethod,
         CancellationToken cancellationToken)
     {
         logger.LogInformation(
             "Starting shard replication. Source: {SourcePeerId}, Target: {TargetPeerId}, Collection: {Collection}, " +
-            "Shards: {ShardIds}, Move: {IsMove}",
-            sourcePeerId, targetPeerId, collectionName, string.Join(", ", shardIds), isMove);
+            "Shards: {ShardIds}, Move: {IsMove}, TransferMethod: {TransferMethod}",
+            sourcePeerId, targetPeerId, collectionName, string.Join(", ", shardIds), isMove, 
+            shardTransferMethod?.ToString() ?? "Snapshot (default)");
 
         var state = await GetClusterStateAsync(cancellationToken);
         var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
@@ -148,66 +174,73 @@ public class ClusterManager(
             collectionName,
             shardIds,
             isMove,
+            shardTransferMethod,
             cancellationToken);
     }
 
-
-    public async Task<Dictionary<string, bool>> DeleteCollectionViaApiOnAllNodesAsync(
+    public async Task<Dictionary<string, bool>> DeleteCollectionViaApiAsync(
         string collectionName,
+        IEnumerable<string> nodeUrls,
         CancellationToken cancellationToken)
     {
-        logger.LogInformation("Deleting collection {CollectionName} via API on all nodes", collectionName);
+        var nodeUrlsList = nodeUrls.ToList();
+        logger.LogInformation(
+            "Deleting collection {CollectionName} via API on {NodeCount} specified nodes", 
+            collectionName, 
+            nodeUrlsList.Count);
 
-        var state = await GetClusterStateAsync(cancellationToken);
         var results = new Dictionary<string, bool>();
 
-        var deleteTasks = state.Nodes.Select(async node =>
+        var deleteTasks = nodeUrlsList.Select(async nodeUrl =>
         {
             var success = await collectionService.DeleteCollectionViaApiAsync(
-                node.Url,
+                nodeUrl,
                 collectionName,
                 cancellationToken);
 
-            var nodeIdentifier = !string.IsNullOrEmpty(node.PodName) ? node.PodName : node.Url;
-
-            return (NodeIdentifier: nodeIdentifier, Success: success);
+            return (NodeUrl: nodeUrl, Success: success);
         });
 
         var deleteResults = await Task.WhenAll(deleteTasks);
 
         foreach (var result in deleteResults)
         {
-            results[result.NodeIdentifier] = result.Success;
+            results[result.NodeUrl] = result.Success;
         }
 
         var successCount = results.Values.Count(s => s);
-        logger.LogInformation("Collection {CollectionName} deleted via API: {SuccessCount}/{TotalCount} nodes",
-            collectionName, successCount, results.Count);
+        logger.LogInformation(
+            "Collection {CollectionName} deleted via API: {SuccessCount}/{TotalCount} nodes",
+            collectionName, 
+            successCount, 
+            results.Count);
 
         return results;
     }
 
-    public async Task<Dictionary<string, bool>> DeleteCollectionFromDiskOnAllNodesAsync(
+    public async Task<Dictionary<string, bool>> DeleteCollectionFromDiskAsync(
         string collectionName,
+        IEnumerable<(string PodName, string PodNamespace)> pods,
         CancellationToken cancellationToken)
     {
-        logger.LogInformation("Deleting collection {CollectionName} from disk on all nodes", collectionName);
+        var podsList = pods.ToList();
+        logger.LogInformation(
+            "Deleting collection {CollectionName} from disk on {PodCount} specified pods", 
+            collectionName, 
+            podsList.Count);
 
-        var state = await GetClusterStateAsync(cancellationToken);
         var results = new Dictionary<string, bool>();
 
-        var deleteTasks = state.Nodes
-            .Where(n => !string.IsNullOrEmpty(n.PodName) && !string.IsNullOrEmpty(n.Namespace))
-            .Select(async node =>
-            {
-                var success = await collectionService.DeleteCollectionFromDiskAsync(
-                    node.PodName!,
-                    node.Namespace!,
-                    collectionName,
-                    cancellationToken);
+        var deleteTasks = podsList.Select(async pod =>
+        {
+            var success = await collectionService.DeleteCollectionFromDiskAsync(
+                pod.PodName,
+                pod.PodNamespace,
+                collectionName,
+                cancellationToken);
 
-                return (PodName: node.PodName!, Success: success);
-            });
+            return (PodName: pod.PodName, Success: success);
+        });
 
         var deleteResults = await Task.WhenAll(deleteTasks);
 
@@ -217,8 +250,11 @@ public class ClusterManager(
         }
 
         var successCount = results.Values.Count(s => s);
-        logger.LogInformation("Collection {CollectionName} deleted from disk: {SuccessCount}/{TotalCount} pods",
-            collectionName, successCount, results.Count);
+        logger.LogInformation(
+            "Collection {CollectionName} deleted from disk: {SuccessCount}/{TotalCount} pods",
+            collectionName, 
+            successCount, 
+            results.Count);
 
         return results;
     }

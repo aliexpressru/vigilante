@@ -9,39 +9,55 @@ public class V1DeleteSnapshotRequestValidator : AbstractValidator<V1DeleteSnapsh
     public V1DeleteSnapshotRequestValidator()
     {
         RuleFor(x => x.CollectionName)
-            .NotEmpty();
+            .NotEmpty()
+            .WithMessage("Collection name is required");
 
         RuleFor(x => x.SnapshotName)
-            .NotEmpty();
+            .NotEmpty()
+            .WithMessage("Snapshot name is required");
 
-        // Source is required when deleting from single node
         RuleFor(x => x.Source)
-            .NotEmpty()
-            .When(x => x.SingleNode);
+            .IsInEnum()
+            .WithMessage("Invalid snapshot source");
 
-        // Validate Source is a valid enum value
-        RuleFor(x => x.Source)
-            .Must(source => Enum.TryParse<SnapshotSource>(source, out _))
-            .When(x => !string.IsNullOrWhiteSpace(x.Source));
+        // NodeUrls is required for QdrantApi source
+        When(x => x.Source == SnapshotSource.QdrantApi, () =>
+        {
+            RuleFor(x => x.NodeUrls)
+                .NotNull()
+                .WithMessage("NodeUrls list is required for QdrantApi source")
+                .Must(list => list != null && list.Count > 0)
+                .WithMessage("NodeUrls list must contain at least one node URL");
 
-        // NodeUrl is required for QdrantApi source when deleting from single node
-        RuleFor(x => x.NodeUrl)
-            .NotEmpty()
-            .When(x => x.SingleNode && x.Source == SnapshotSource.QdrantApi.ToString());
+            RuleForEach(x => x.NodeUrls)
+                .NotEmpty()
+                .WithMessage("Node URL cannot be empty")
+                .Must(uri => Uri.TryCreate(uri, UriKind.Absolute, out _))
+                .WithMessage("Node URL must be a valid absolute URI");
+        });
 
-        // Validate NodeUrl format only when it's provided
-        RuleFor(x => x.NodeUrl)
-            .Must(uri => Uri.TryCreate(uri, UriKind.Absolute, out _))
-            .When(x => !string.IsNullOrWhiteSpace(x.NodeUrl));
+        // Pods list is required for KubernetesStorage source
+        When(x => x.Source == SnapshotSource.KubernetesStorage, () =>
+        {
+            RuleFor(x => x.Pods)
+                .NotNull()
+                .WithMessage("Pods list is required for KubernetesStorage source")
+                .Must(list => list != null && list.Count > 0)
+                .WithMessage("Pods list must contain at least one pod");
 
-        // PodName and PodNamespace are required for KubernetesStorage source when deleting from single node
-        RuleFor(x => x.PodName)
-            .NotEmpty()
-            .When(x => x.SingleNode && x.Source == SnapshotSource.KubernetesStorage.ToString());
+            RuleForEach(x => x.Pods)
+                .ChildRules(pod =>
+                {
+                    pod.RuleFor(p => p.PodName)
+                        .NotEmpty()
+                        .WithMessage("Pod name is required");
 
-        RuleFor(x => x.PodNamespace)
-            .NotEmpty()
-            .When(x => x.SingleNode && x.Source == SnapshotSource.KubernetesStorage.ToString());
+                    pod.RuleFor(p => p.PodNamespace)
+                        .NotEmpty()
+                        .WithMessage("Pod namespace is required");
+                });
+        });
+
+        // For S3Storage source, no additional validation needed (single operation)
     }
 }
-

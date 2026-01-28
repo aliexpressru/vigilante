@@ -9,27 +9,47 @@ public class V1DeleteCollectionRequestValidator : AbstractValidator<V1DeleteColl
     public V1DeleteCollectionRequestValidator()
     {
         RuleFor(x => x.CollectionName)
-            .NotEmpty();
+            .NotEmpty()
+            .WithMessage("Collection name is required");
         
         RuleFor(x => x.DeletionType)
-            .IsInEnum();
+            .IsInEnum()
+            .WithMessage("Invalid deletion type");
         
-        // When SingleNode = true and DeletionType = Api, NodeUrl is required
-        When(x => x.SingleNode && x.DeletionType == CollectionDeletionType.Api, () =>
+        // When DeletionType = Api, NodeUrls list is required and must not be empty
+        When(x => x.DeletionType == CollectionDeletionType.Api, () =>
         {
-            RuleFor(x => x.NodeUrl)
-                .NotEmpty();
+            RuleFor(x => x.NodeUrls)
+                .NotNull()
+                .WithMessage("NodeUrls list is required for API deletion")
+                .Must(list => list != null && list.Count > 0)
+                .WithMessage("NodeUrls list must contain at least one node URL");
+            
+            RuleForEach(x => x.NodeUrls)
+                .NotEmpty()
+                .WithMessage("Node URL cannot be empty");
         });
         
-        // When SingleNode = true and DeletionType = Disk, PodName and PodNamespace are required
-        When(x => x.SingleNode && x.DeletionType == CollectionDeletionType.Disk, () =>
+        // When DeletionType = Disk, Pods list is required and must not be empty
+        When(x => x.DeletionType == CollectionDeletionType.Disk, () =>
         {
-            RuleFor(x => x.PodName)
-                .NotEmpty();
+            RuleFor(x => x.Pods)
+                .NotNull()
+                .WithMessage("Pods list is required for disk deletion")
+                .Must(list => list != null && list.Count > 0)
+                .WithMessage("Pods list must contain at least one pod");
             
-            RuleFor(x => x.PodNamespace)
-                .NotEmpty();
+            RuleForEach(x => x.Pods)
+                .ChildRules(pod =>
+                {
+                    pod.RuleFor(p => p.PodName)
+                        .NotEmpty()
+                        .WithMessage("Pod name is required");
+                    
+                    pod.RuleFor(p => p.PodNamespace)
+                        .NotEmpty()
+                        .WithMessage("Pod namespace is required");
+                });
         });
     }
 }
-

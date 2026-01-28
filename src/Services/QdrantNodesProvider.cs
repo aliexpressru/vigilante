@@ -23,38 +23,94 @@ public class QdrantNodesProvider(
     : IQdrantNodesProvider
 {
     private readonly QdrantOptions _options = options.Value;
+    private string? _statefulSetName;
+    private readonly Lock _statefulSetNameLock = new();
 
     public async Task<IReadOnlyList<QdrantNodeConfig>> GetNodesAsync(CancellationToken cancellationToken)
     {
-        try
+        // If Kubernetes client is available, use K8s discovery exclusively
+        // This prevents showing static config nodes when StatefulSet is scaled to 0
+        if (kubernetes != null)
         {
-            var nodes = await GetNodesFromK8sAsync(cancellationToken);
-            if (nodes.Count > 0)
+            try
             {
+                var nodes = await GetNodesFromK8sAsync(cancellationToken);
+                // Return K8s nodes even if empty - this is important for scaled-to-0 scenarios
+                logger.LogInformation("Using Kubernetes discovery: found {Count} nodes", nodes.Count);
                 return nodes;
             }
-        }
-        catch(Exception e)
-        {
-            logger.LogWarning(e, "Failed to get Qdrant nodes from Kubernetes, trying other methods");
+            catch(Exception e)
+            {
+                logger.LogWarning(e, "Failed to get Qdrant nodes from Kubernetes, falling back to other methods");
+            }
         }
 
         // Try to get nodes from environment variables
         var nodesFromEnv = GetNodesFromEnvironment();
         if (nodesFromEnv.Any())
         {
+            logger.LogInformation("Using environment variables: found {Count} nodes", nodesFromEnv.Count);
             return nodesFromEnv;
         }
 
-        // Try to get nodes from configuration
+        // Try to get nodes from configuration (only when not in K8s)
         var nodesFromConfig = configuration.GetSection(QdrantConstants.NodesConfigurationPath).Get<List<QdrantNodeConfig>>();
         if (nodesFromConfig != null && nodesFromConfig.Any())
         {
+            logger.LogInformation("Using configuration: found {Count} nodes", nodesFromConfig.Count);
             return nodesFromConfig;
         }
         
         logger.LogWarning("No Qdrant nodes found through any discovery method");
         return [];
+    }
+    
+    /// <summary>
+    /// Gets the StatefulSet name from memory, or attempts to discover it from nodes
+    /// </summary>
+    public async Task<string?> GetStatefulSetNameAsync(CancellationToken cancellationToken)
+    {
+        // First, check if we already have it stored in memory
+        lock (_statefulSetNameLock)
+        {
+            if (!string.IsNullOrEmpty(_statefulSetName))
+            {
+                logger.LogDebug("Using stored StatefulSet name: {StatefulSetName}", _statefulSetName);
+                return _statefulSetName;
+            }
+        }
+
+        // Try to discover from running nodes
+        var nodes = await GetNodesAsync(cancellationToken);
+        var statefulSetName = nodes.FirstOrDefault(n => !string.IsNullOrEmpty(n.StatefulSetName))?.StatefulSetName;
+        
+        if (!string.IsNullOrEmpty(statefulSetName))
+        {
+            // Store the discovered name
+            SetStatefulSetName(statefulSetName);
+            logger.LogInformation("Discovered and stored StatefulSet name: {StatefulSetName}", statefulSetName);
+            return statefulSetName;
+        }
+
+        logger.LogDebug("Could not determine StatefulSet name from memory or discovered nodes");
+        return null;
+    }
+    
+    /// <summary>
+    /// Sets the StatefulSet name in memory
+    /// </summary>
+    public void SetStatefulSetName(string statefulSetName)
+    {
+        if (string.IsNullOrWhiteSpace(statefulSetName))
+        {
+            throw new ArgumentException("StatefulSet name cannot be null or empty", nameof(statefulSetName));
+        }
+
+        lock (_statefulSetNameLock)
+        {
+            _statefulSetName = statefulSetName;
+            logger.LogInformation("StatefulSet name set to: {StatefulSetName}", statefulSetName);
+        }
     }
     
     /// <summary>
@@ -91,7 +147,7 @@ public class QdrantNodesProvider(
     /// <summary>
     /// Gets the peer ID for a specific node
     /// </summary>
-    public async Task<string?> GetPeerIdForNodeAsync(
+    private async Task<string?> GetPeerIdForNodeAsync(
         string nodeUrl, 
         QdrantNodeConfig nodeConfig, 
         CancellationToken cancellationToken)

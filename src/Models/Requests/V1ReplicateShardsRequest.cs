@@ -26,4 +26,9 @@ public class V1ReplicateShardsRequest
     /// Whether to move shards instead of copying
     /// </summary>
     public bool IsMoveShards { get; set; }
+    
+    /// <summary>
+    /// Shard transfer method. Default is Snapshot.
+    /// </summary>
+    public string? ShardTransferMethod { get; set; }
 }

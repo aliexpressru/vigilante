@@ -68,6 +68,14 @@ public class TestDataProvider
             { "analytics_data_warehouse_user_behavior_tracking_embeddings_v2_production_quantized_optimized_2024", ("22.1 GB", 23735685734L) }
         };
 
+        // Define test aliases for some collections
+        var collectionAliases = new Dictionary<string, List<string>>
+        {
+            { "test_collection", new List<string> { "test", "test_alias" } },
+            { "products", new List<string> { "prod" } },
+            { "embeddings", new List<string> { "vectors", "emb" } }
+        };
+
         foreach (var collection in testCollections)
         {
             var (prettySize, sizeBytes) = collectionSizes.GetValueOrDefault(collection, ("1.0 GB", 1073741824L));
@@ -118,12 +126,15 @@ public class TestDataProvider
                     { MetricConstants.ShardStatesKey, shardStates }
                 };
 
+                var aliases = collectionAliases.GetValueOrDefault(collection, new List<string>());
+
                 testData.Add(new CollectionInfo
                 {
                     CollectionName = collection,
                     PodName = podName,
                     PeerId = peerId,
-                    Metrics = metrics
+                    Metrics = metrics,
+                    Aliases = aliases
                 });
             }
         }

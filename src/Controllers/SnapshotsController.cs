@@ -107,44 +107,33 @@ public class SnapshotsController(
     {
         try
         {
-            if (request.SingleNode)
+            // Validate NodeUrls
+            if (request.NodeUrls == null || request.NodeUrls.Count == 0)
             {
-                // Create snapshot on specific node
-                var snapshotName = await snapshotService.CreateCollectionSnapshotAsync(
-                    request.NodeUrl!,
-                    request.CollectionName,
-                    cancellationToken);
-
-                var response = new V1CreateSnapshotResponse
+                return BadRequest(new V1CreateSnapshotResponse
                 {
-                    Success = snapshotName != null,
-                    SnapshotName = snapshotName,
-                    Message = snapshotName != null
-                        ? $"Snapshot '{snapshotName}' created successfully for collection '{request.CollectionName}' on {request.NodeUrl}"
-                        : $"Failed to create snapshot for collection '{request.CollectionName}' on {request.NodeUrl}"
-                };
-
-                return snapshotName != null ? Ok(response) : StatusCode(500, response);
+                    Success = false,
+                    Message = "NodeUrls list is required and cannot be empty"
+                });
             }
-            else
+
+            // Create snapshot on specified nodes
+            var results = await snapshotService.CreateCollectionSnapshotAsync(
+                request.CollectionName,
+                request.NodeUrls,
+                cancellationToken);
+
+            var successCount = results.Values.Count(s => s != null);
+            var response = new V1CreateSnapshotResponse
             {
-                // Create snapshot on all nodes
-                var results = await snapshotService.CreateCollectionSnapshotOnAllNodesAsync(
-                    request.CollectionName,
-                    cancellationToken);
+                Success = successCount > 0,
+                Message = successCount == 0
+                    ? "Failed to create snapshot on any node"
+                    : $"Snapshot created for collection '{request.CollectionName}' on {successCount}/{results.Count} nodes",
+                Results = results
+            };
 
-                var successCount = results.Values.Count(s => s != null);
-                var response = new V1CreateSnapshotResponse
-                {
-                    Success = successCount > 0,
-                    Message = successCount == 0
-                        ? "Failed to create snapshot on any node"
-                        : $"Snapshot created for collection '{request.CollectionName}' on {successCount}/{results.Count} nodes",
-                    Results = results
-                };
-
-                return successCount > 0 ? Ok(response) : StatusCode(500, response);
-            }
+            return successCount > 0 ? Ok(response) : StatusCode(500, response);
         }
         catch (Exception ex)
         {
@@ -167,84 +156,90 @@ public class SnapshotsController(
     {
         try
         {
-            if (request.SingleNode)
+            Dictionary<string, bool> results;
+
+            switch (request.Source)
             {
-                // Parse source from request
-                if (!Enum.TryParse<SnapshotSource>(request.Source, out var source))
-                {
+                case SnapshotSource.QdrantApi:
+                    // Validate NodeUrls
+                    if (request.NodeUrls == null || request.NodeUrls.Count == 0)
+                    {
+                        return BadRequest(new V1DeleteSnapshotResponse
+                        {
+                            Success = false,
+                            Message = "NodeUrls list is required for QdrantApi source",
+                            Results = new Dictionary<string, NodeSnapshotDeletionResult>()
+                        });
+                    }
+
+                    results = await snapshotService.DeleteCollectionSnapshotApiAsync(
+                        request.CollectionName,
+                        request.SnapshotName,
+                        request.NodeUrls,
+                        cancellationToken);
+
+                    break;
+
+                case SnapshotSource.KubernetesStorage:
+                    // Validate Pods
+                    if (request.Pods == null || request.Pods.Count == 0)
+                    {
+                        return BadRequest(new V1DeleteSnapshotResponse
+                        {
+                            Success = false,
+                            Message = "Pods list is required for KubernetesStorage source",
+                            Results = new Dictionary<string, NodeSnapshotDeletionResult>()
+                        });
+                    }
+
+                    var pods = request.Pods.Select(p => (p.PodName, p.PodNamespace));
+                    results = await snapshotService.DeleteSnapshotFromDiskAsync(
+                        request.CollectionName,
+                        request.SnapshotName,
+                        pods,
+                        cancellationToken);
+
+                    break;
+
+                case SnapshotSource.S3Storage:
+                    // S3 deletion - single operation
+                    var s3Success = await s3SnapshotService.DeleteSnapshotAsync(
+                        request.CollectionName,
+                        request.SnapshotName,
+                        null, // namespace not needed for direct S3 deletion
+                        cancellationToken);
+
+                    results = new Dictionary<string, bool> { ["S3"] = s3Success };
+                    break;
+
+                default:
                     return BadRequest(new V1DeleteSnapshotResponse
                     {
                         Success = false,
-                        Message = "Invalid Source value. Must be 'KubernetesStorage', 'QdrantApi', or 'S3Storage'",
+                        Message = $"Unknown snapshot source: {request.Source}",
                         Results = new Dictionary<string, NodeSnapshotDeletionResult>()
                     });
-                }
-
-                // Use universal deletion method from service
-                var success = await snapshotService.DeleteSnapshotAsync(
-                    request.CollectionName,
-                    request.SnapshotName,
-                    source,
-                    request.NodeUrl,
-                    request.PodName,
-                    request.PodNamespace,
-                    cancellationToken);
-
-                // Determine identifier based on source type
-                var identifier = source switch
-                {
-                    SnapshotSource.KubernetesStorage => request.PodName ?? "unknown-pod",
-                    SnapshotSource.S3Storage => "S3",
-                    SnapshotSource.QdrantApi => request.NodeUrl ?? "unknown-node",
-                    _ => "unknown"
-                };
-
-                var response = new V1DeleteSnapshotResponse
-                {
-                    Success = success,
-                    Message = success
-                        ? $"Snapshot '{request.SnapshotName}' deleted successfully for collection '{request.CollectionName}'"
-                        : $"Failed to delete snapshot '{request.SnapshotName}' for collection '{request.CollectionName}'",
-                    Results = new Dictionary<string, NodeSnapshotDeletionResult>
-                    {
-                        [identifier] = new NodeSnapshotDeletionResult
-                        {
-                            Success = success,
-                            Error = success ? null : "Deletion failed"
-                        }
-                    }
-                };
-
-                return success ? Ok(response) : StatusCode(500, response);
             }
-            else
+
+            var successCount = results.Values.Count(s => s);
+            var nodeResults = results.ToDictionary(
+                kvp => kvp.Key,
+                kvp => new NodeSnapshotDeletionResult
+                {
+                    Success = kvp.Value,
+                    Error = kvp.Value ? null : "Deletion failed"
+                });
+
+            var response = new V1DeleteSnapshotResponse
             {
-                // Delete snapshot on all nodes via API (default behavior for backward compatibility)
-                var results = await snapshotService.DeleteCollectionSnapshotOnAllNodesAsync(
-                    request.CollectionName,
-                    request.SnapshotName,
-                    cancellationToken);
+                Success = successCount > 0,
+                Message = successCount == 0
+                    ? "Failed to delete snapshot on any node"
+                    : $"Snapshot '{request.SnapshotName}' deleted for collection '{request.CollectionName}' on {successCount}/{results.Count} nodes",
+                Results = nodeResults
+            };
 
-                var successCount = results.Values.Count(s => s);
-                var nodeResults = results.ToDictionary(
-                    kvp => kvp.Key,
-                    kvp => new NodeSnapshotDeletionResult
-                    {
-                        Success = kvp.Value,
-                        Error = kvp.Value ? null : "Deletion failed"
-                    });
-
-                var response = new V1DeleteSnapshotResponse
-                {
-                    Success = successCount > 0,
-                    Message = successCount == 0
-                        ? "Failed to delete snapshot on any node"
-                        : $"Snapshot '{request.SnapshotName}' deleted for collection '{request.CollectionName}' on {successCount}/{results.Count} nodes",
-                    Results = nodeResults
-                };
-
-                return successCount > 0 ? Ok(response) : StatusCode(500, response);
-            }
+            return successCount > 0 ? Ok(response) : StatusCode(500, response);
         }
         catch (Exception ex)
         {

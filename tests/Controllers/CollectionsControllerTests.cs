@@ -15,7 +15,6 @@ namespace Aer.Vigilante.Tests.Controllers;
 public class CollectionsControllerTests
 {
     private IClusterManager _clusterManager = null!;
-    private ICollectionService _collectionService = null!;
     private ILogger<CollectionsController> _logger = null!;
     private CollectionsController _controller = null!;
 
@@ -23,10 +22,9 @@ public class CollectionsControllerTests
     public void Setup()
     {
         _clusterManager = Substitute.For<IClusterManager>();
-        _collectionService = Substitute.For<ICollectionService>();
         _logger = Substitute.For<ILogger<CollectionsController>>();
         
-        _controller = new CollectionsController(_clusterManager, _collectionService, _logger);
+        _controller = new CollectionsController(_clusterManager, _logger);
     }
 
     #region GetCollectionsInfo (Paginated) Tests
@@ -366,13 +364,20 @@ public class CollectionsControllerTests
         var request = new V1DeleteCollectionRequest
         {
             CollectionName = "test_collection",
-            SingleNode = true,
-            NodeUrl = "http://node1:6333",
+            NodeUrls = new List<string> { "http://node1:6333" },
             DeletionType = CollectionDeletionType.Api
         };
 
-        _collectionService.DeleteCollectionViaApiAsync(request.NodeUrl, request.CollectionName, Arg.Any<CancellationToken>())
-            .Returns(true);
+        var results = new Dictionary<string, bool>
+        {
+            ["http://node1:6333"] = true
+        };
+
+        _clusterManager.DeleteCollectionViaApiAsync(
+            request.CollectionName,
+            Arg.Is<IEnumerable<string>>(urls => urls.Count() == 1),
+            Arg.Any<CancellationToken>())
+            .Returns(results);
 
         // Act
         var result = await _controller.DeleteCollection(request, CancellationToken.None);
@@ -385,20 +390,29 @@ public class CollectionsControllerTests
     }
 
     [Test]
-    public async Task DeleteCollection_SingleNodeFromDisk_WhenSuccessful_ReturnsOk()
+    public async Task DeleteCollection_SpecificNodesFromDisk_WhenSuccessful_ReturnsOk()
     {
         // Arrange
         var request = new V1DeleteCollectionRequest
         {
             CollectionName = "test_collection",
-            SingleNode = true,
-            PodName = "pod1",
-            PodNamespace = "default",
-            DeletionType = CollectionDeletionType.Disk
+            DeletionType = CollectionDeletionType.Disk,
+            Pods = new List<V1DeleteCollectionRequest.PodSpecification>
+            {
+                new() { PodName = "pod1", PodNamespace = "default" }
+            }
         };
 
-        _collectionService.DeleteCollectionFromDiskAsync(request.PodName!, request.PodNamespace!, request.CollectionName, Arg.Any<CancellationToken>())
-            .Returns(true);
+        var results = new Dictionary<string, bool>
+        {
+            ["pod1"] = true
+        };
+
+        _clusterManager.DeleteCollectionFromDiskAsync(
+            request.CollectionName,
+            Arg.Is<IEnumerable<(string, string)>>(pods => pods.Count() == 1),
+            Arg.Any<CancellationToken>())
+            .Returns(results);
 
         // Act
         var result = await _controller.DeleteCollection(request, CancellationToken.None);
@@ -408,18 +422,22 @@ public class CollectionsControllerTests
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1DeleteCollectionResponse;
         Assert.That(response!.Success, Is.True);
-        Assert.That(response.Results, Contains.Key(request.PodName!));
+        Assert.That(response.Results, Contains.Key("pod1"));
     }
 
     [Test]
-    public async Task DeleteCollection_AllNodesViaApi_WhenSuccessful_ReturnsOk()
+    public async Task DeleteCollection_MultipleNodesViaApi_WhenSuccessful_ReturnsOk()
     {
         // Arrange
         var request = new V1DeleteCollectionRequest
         {
             CollectionName = "test_collection",
-            SingleNode = false,
-            DeletionType = CollectionDeletionType.Api
+            DeletionType = CollectionDeletionType.Api,
+            NodeUrls = new List<string>
+            {
+                "http://node1:6333",
+                "http://node2:6333"
+            }
         };
 
         var results = new Dictionary<string, bool>
@@ -428,7 +446,10 @@ public class CollectionsControllerTests
             ["http://node2:6333"] = true
         };
 
-        _clusterManager.DeleteCollectionViaApiOnAllNodesAsync(request.CollectionName, Arg.Any<CancellationToken>())
+        _clusterManager.DeleteCollectionViaApiAsync(
+            request.CollectionName,
+            Arg.Is<IEnumerable<string>>(urls => urls.Count() == 2),
+            Arg.Any<CancellationToken>())
             .Returns(results);
 
         // Act
@@ -443,14 +464,18 @@ public class CollectionsControllerTests
     }
 
     [Test]
-    public async Task DeleteCollection_AllNodesFromDisk_WhenPartialSuccess_ReturnsOk()
+    public async Task DeleteCollection_MultipleNodesFromDisk_WhenPartialSuccess_ReturnsOk()
     {
         // Arrange
         var request = new V1DeleteCollectionRequest
         {
             CollectionName = "test_collection",
-            SingleNode = false,
-            DeletionType = CollectionDeletionType.Disk
+            DeletionType = CollectionDeletionType.Disk,
+            Pods = new List<V1DeleteCollectionRequest.PodSpecification>
+            {
+                new() { PodName = "pod1", PodNamespace = "default" },
+                new() { PodName = "pod2", PodNamespace = "default" }
+            }
         };
 
         var results = new Dictionary<string, bool>
@@ -459,7 +484,10 @@ public class CollectionsControllerTests
             ["pod2"] = false
         };
 
-        _clusterManager.DeleteCollectionFromDiskOnAllNodesAsync(request.CollectionName, Arg.Any<CancellationToken>())
+        _clusterManager.DeleteCollectionFromDiskAsync(
+            request.CollectionName,
+            Arg.Is<IEnumerable<(string, string)>>(pods => pods.Count() == 2),
+            Arg.Any<CancellationToken>())
             .Returns(results);
 
         // Act
@@ -480,8 +508,12 @@ public class CollectionsControllerTests
         var request = new V1DeleteCollectionRequest
         {
             CollectionName = "test_collection",
-            SingleNode = false,
-            DeletionType = CollectionDeletionType.Api
+            DeletionType = CollectionDeletionType.Api,
+            NodeUrls = new List<string>
+            {
+                "http://node1:6333",
+                "http://node2:6333"
+            }
         };
 
         var results = new Dictionary<string, bool>
@@ -490,7 +522,10 @@ public class CollectionsControllerTests
             ["http://node2:6333"] = false
         };
 
-        _clusterManager.DeleteCollectionViaApiOnAllNodesAsync(request.CollectionName, Arg.Any<CancellationToken>())
+        _clusterManager.DeleteCollectionViaApiAsync(
+            request.CollectionName,
+            Arg.Is<IEnumerable<string>>(urls => urls.Count() == 2),
+            Arg.Any<CancellationToken>())
             .Returns(results);
 
         // Act
