@@ -46,4 +46,14 @@ public interface IClusterManager
         string collectionName,
         IEnumerable<(string PodName, string PodNamespace)> pods,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Drops specified shards from a peer node
+    /// </summary>
+    Task<bool> DropShardsFromPeerAsync(
+        string collectionName,
+        ulong peerId,
+        uint[] shardIds,
+        bool isDryRun,
+        CancellationToken cancellationToken = default);
 }

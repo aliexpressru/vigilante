@@ -465,6 +465,7 @@ body {
 
 /* Action buttons */
 .replicate-button,
+.drop-shards-button,
 .exec-button,
 .refresh-button {
     padding: 6px 16px;
@@ -477,6 +478,15 @@ body {
     font-size: 0.85rem;
     font-weight: 500;
     box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+
+.drop-shards-button {
+    background: linear-gradient(135deg, #f44336, #d32f2f);
+    margin-left: 8px;
+}
+
+.snapshot-button {
+    background: linear-gradient(135deg, #4caf50, #388e3c);
 }
 
 .replicate-button,
@@ -500,10 +510,34 @@ body {
     transform: translateY(-1px);
 }
 
+.drop-shards-button:hover {
+    background: linear-gradient(135deg, #e53935, #c62828);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    transform: translateY(-1px);
+}
+
+.snapshot-button:hover {
+    background: linear-gradient(135deg, #45a049, #2e7d32);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    transform: translateY(-1px);
+}
+
 .replicate-button:active,
 .exec-button:active,
 .refresh-button:active {
     background: linear-gradient(135deg, #1976d2, #0d47a1);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    transform: translateY(0);
+}
+
+.drop-shards-button:active {
+    background: linear-gradient(135deg, #d32f2f, #b71c1c);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    transform: translateY(0);
+}
+
+.snapshot-button:active {
+    background: linear-gradient(135deg, #388e3c, #1b5e20);
     box-shadow: 0 1px 2px rgba(0,0,0,0.2);
     transform: translateY(0);
 }

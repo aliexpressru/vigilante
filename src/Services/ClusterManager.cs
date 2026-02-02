@@ -259,6 +259,36 @@ public class ClusterManager(
         return results;
     }
 
+    public async Task<bool> DropShardsFromPeerAsync(
+        string collectionName,
+        ulong peerId,
+        uint[] shardIds,
+        bool isDryRun,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "Starting drop shards operation. Collection: {Collection}, PeerId: {PeerId}, " +
+            "Shards: {ShardIds}, DryRun: {IsDryRun}",
+            collectionName, peerId, string.Join(", ", shardIds), isDryRun);
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
+
+        if (healthyNode == null)
+        {
+            logger.LogError("No healthy nodes found to perform shard drop operation");
+            return false;
+        }
+
+        return await collectionService.DropShardsFromPeerAsync(
+            healthyNode.Url,
+            collectionName,
+            peerId,
+            shardIds,
+            isDryRun,
+            cancellationToken);
+    }
+
     private async Task<NodeInfo> GetNodeInfoAsync(QdrantNodeConfig node, CancellationToken cancellationToken)
     {
         // Get basic node info (URL, peer ID, pod name, etc.) from the nodes provider
@@ -813,3 +843,4 @@ public class ClusterManager(
         }
     }
 }
+

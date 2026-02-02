@@ -4,6 +4,7 @@ class VigilanteDashboard {
         this.sizesPaginatedApiEndpoint = '/api/v1/collections/info';
         this.snapshotsApiEndpoint = '/api/v1/snapshots/info';
         this.replicateShardsEndpoint = '/api/v1/cluster/replicate-shards';
+        this.dropShardsEndpoint = '/api/v1/cluster/drop-shards';
         this.deleteCollectionEndpoint = '/api/v1/collections';
         this.createSnapshotEndpoint = '/api/v1/snapshots';
         this.deleteSnapshotEndpoint = '/api/v1/snapshots';
@@ -688,9 +689,6 @@ class VigilanteDashboard {
                             ${shardsHtml}
                         </div>
                     </div>
-                    <div class="action-controls">
-                        <button class="replicate-button">Sync</button>
-                    </div>
                 </div>
             `;
         }
@@ -1042,24 +1040,6 @@ class VigilanteDashboard {
                             updateSelectAllState();
                         }
 
-                        // Setup replicate button
-                        const replicateButton = nodeDetails.querySelector('.replicate-button');
-                        if (replicateButton) {
-                            replicateButton.addEventListener('click', () => {
-                                const selectedShards = Array.from(
-                                    nodeDetails.querySelectorAll('.shard-checkbox:checked')
-                                ).map(cb => parseInt(cb.dataset.shardId));
-
-                                if (selectedShards.length === 0) {
-                                    alert('Please select at least one shard to sync');
-                                    return;
-                                }
-
-                                // Open shard sync modal
-                                this.showShardSyncModal(collection, nodeInfo, selectedShards);
-                            });
-                        }
-
                         detailsContent.appendChild(nodeDetails);
                     }
                 });
@@ -1072,11 +1052,20 @@ class VigilanteDashboard {
                 actionsFooter.style.borderTop = '2px solid #ddd';
                 actionsFooter.style.display = 'flex';
                 actionsFooter.style.gap = '8px';
-                actionsFooter.style.justifyContent = 'flex-end';
+                actionsFooter.style.justifyContent = 'space-between';
+                actionsFooter.style.alignItems = 'center';
+                
+                // Left side: Collection actions (Delete, Snapshot) - always visible
+                const collectionActionsContainer = document.createElement('div');
+                collectionActionsContainer.style.cssText = `
+                    display: flex;
+                    gap: 8px;
+                    align-items: center;
+                `;
                 
                 const deleteApiButton = document.createElement('button');
-                deleteApiButton.className = 'action-button action-button-danger';
-                deleteApiButton.innerHTML = '<i class="fas fa-trash"></i> Delete (API)';
+                deleteApiButton.className = 'drop-shards-button';
+                deleteApiButton.textContent = 'Delete (API)';
                 deleteApiButton.title = 'Delete collection via API on selected nodes';
                 deleteApiButton.onclick = async (e) => {
                     e.stopPropagation();
@@ -1084,8 +1073,8 @@ class VigilanteDashboard {
                 };
                 
                 const deleteDiskButton = document.createElement('button');
-                deleteDiskButton.className = 'action-button action-button-danger';
-                deleteDiskButton.innerHTML = '<i class="fas fa-trash"></i> Delete (Disk)';
+                deleteDiskButton.className = 'drop-shards-button';
+                deleteDiskButton.textContent = 'Delete (Disk)';
                 deleteDiskButton.title = 'Delete collection from disk on selected nodes';
                 deleteDiskButton.onclick = async (e) => {
                     e.stopPropagation();
@@ -1093,17 +1082,141 @@ class VigilanteDashboard {
                 };
                 
                 const createSnapshotButton = document.createElement('button');
-                createSnapshotButton.className = 'action-button action-button-primary';
-                createSnapshotButton.innerHTML = '<i class="fas fa-camera"></i> Create Snapshot';
+                createSnapshotButton.className = 'replicate-button';
+                createSnapshotButton.textContent = 'Create Snapshot';
                 createSnapshotButton.title = 'Create snapshot on selected nodes';
                 createSnapshotButton.onclick = async (e) => {
                     e.stopPropagation();
                     await this.showNodeSelectionDialog(collection, 'createSnapshot');
                 };
                 
-                actionsFooter.appendChild(deleteApiButton);
-                actionsFooter.appendChild(deleteDiskButton);
-                actionsFooter.appendChild(createSnapshotButton);
+                collectionActionsContainer.appendChild(deleteApiButton);
+                collectionActionsContainer.appendChild(deleteDiskButton);
+                collectionActionsContainer.appendChild(createSnapshotButton);
+                
+                // Right side: Shard actions (Sync/Drop) - initially hidden
+                const shardActionsContainer = document.createElement('div');
+                shardActionsContainer.className = 'shard-actions-container';
+                shardActionsContainer.style.cssText = `
+                    display: none;
+                    gap: 8px;
+                    align-items: center;
+                `;
+                
+                actionsFooter.appendChild(collectionActionsContainer);
+                actionsFooter.appendChild(shardActionsContainer);
+                
+                // Function to update shard action buttons
+                const updateShardActionButtons = () => {
+                    // Find all checked shard checkboxes in this collection
+                    const allShardCheckboxes = detailsContent.querySelectorAll('.shard-checkbox:checked');
+                    const selectedShards = Array.from(allShardCheckboxes).map(cb => ({
+                        shardId: parseInt(cb.dataset.shardId),
+                        nodeElement: cb.closest('.collection-node-info')
+                    }));
+                    
+                    if (selectedShards.length > 0) {
+                        // Get node info from the first selected shard's parent node
+                        let nodeInfo = null;
+                        const firstNodeElement = selectedShards[0].nodeElement;
+                        const allNodesInDetails = detailsContent.querySelectorAll('.collection-node-info');
+                        const nodeIndex = Array.from(allNodesInDetails).indexOf(firstNodeElement);
+                        if (nodeIndex !== -1 && nodeIndex < nodeKeys.length) {
+                            nodeInfo = collection.nodes[nodeKeys[nodeIndex]];
+                        }
+                        
+                        if (!nodeInfo) {
+                            nodeInfo = collection.nodes[nodeKeys[0]];
+                        }
+                        
+                        const shardIds = selectedShards.map(s => s.shardId);
+                        
+                        // Show container and recreate buttons
+                        shardActionsContainer.style.display = 'flex';
+                        shardActionsContainer.innerHTML = '';
+                        
+                        // Add info text
+                        const infoText = document.createElement('span');
+                        infoText.style.cssText = 'color: #555; font-size: 0.85rem; font-weight: 500;';
+                        infoText.textContent = `${shardIds.length} shard${shardIds.length > 1 ? 's' : ''} selected:`;
+                        shardActionsContainer.appendChild(infoText);
+                        
+                        // Create Sync button
+                        const syncButton = document.createElement('button');
+                        syncButton.className = 'replicate-button';
+                        syncButton.textContent = 'Sync';
+                        syncButton.style.margin = '0';
+                        syncButton.addEventListener('click', () => {
+                            this.showShardSyncModal(collection, nodeInfo, shardIds);
+                        });
+                        
+                        // Create Drop button
+                        const dropButton = document.createElement('button');
+                        dropButton.className = 'drop-shards-button';
+                        dropButton.textContent = 'Drop';
+                        dropButton.style.margin = '0';
+                        dropButton.addEventListener('click', async () => {
+                            // Get peerId
+                            const peerId = nodeInfo.peerId;
+                            if (!peerId) {
+                                alert('Peer ID is not available for this node');
+                                return;
+                            }
+
+                            const nodeDisplay = nodeInfo.podName && nodeInfo.podName !== 'unknown' 
+                                ? nodeInfo.podName 
+                                : nodeInfo.peerId;
+
+                            if (!confirm(`Are you sure you want to drop shards [${shardIds.join(', ')}] from node ${nodeDisplay}?\n\nThis action cannot be undone!`)) {
+                                return;
+                            }
+
+                            try {
+                                const requestBody = {
+                                    collectionName: collection.name,
+                                    peerId: parseInt(peerId),
+                                    shardIds: shardIds,
+                                    isDryRun: false
+                                };
+
+                                const response = await fetch(this.dropShardsEndpoint, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify(requestBody)
+                                });
+
+                                if (!response.ok) {
+                                    const error = await response.json();
+                                    throw new Error(error.details || 'Failed to drop shards');
+                                }
+
+                                this.showToast(`Shards [${shardIds.join(', ')}] dropped successfully from ${nodeDisplay}`, 'success', 'Drop Completed', 5000);
+                                setTimeout(() => this.refresh(), 2000);
+                            } catch (error) {
+                                this.showToast(`Error: ${error.message}`, 'error', 'Drop Failed', 10000);
+                            }
+                        });
+                        
+                        shardActionsContainer.appendChild(syncButton);
+                        shardActionsContainer.appendChild(dropButton);
+                    } else {
+                        // Hide container when no shards selected
+                        shardActionsContainer.style.display = 'none';
+                        shardActionsContainer.innerHTML = '';
+                    }
+                };
+                
+                // Add event listeners to all checkboxes to update shard action buttons
+                const allCheckboxes = detailsContent.querySelectorAll('.shard-checkbox, .select-all-shards-checkbox');
+                allCheckboxes.forEach(cb => {
+                    cb.addEventListener('change', updateShardActionButtons);
+                });
+                
+                // Initial update
+                updateShardActionButtons();
+                
                 detailsContent.appendChild(actionsFooter);
 
                 detailsCell.appendChild(detailsContent);

@@ -302,5 +302,174 @@ public class ClusterControllerTests
     }
 
     #endregion
-}
 
+    #region DropShardsFromPeer Tests
+
+    [Test]
+    public async Task DropShardsFromPeer_WithValidRequest_ReturnsOk()
+    {
+        // Arrange
+        var request = new V1DropShardsFromPeerRequest
+        {
+            CollectionName = "test_collection",
+            PeerId = 123456789,
+            ShardIds = new uint[] { 1, 2, 3 },
+            IsDryRun = false
+        };
+
+        _clusterManager.DropShardsFromPeerAsync(
+            Arg.Any<string>(),
+            Arg.Any<ulong>(),
+            Arg.Any<uint[]>(),
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.DropShardsFromPeer(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        var okResult = (OkObjectResult)result;
+        Assert.That(okResult.Value, Is.Not.Null);
+        
+        // Verify the method was called with correct parameters
+        await _clusterManager.Received(1).DropShardsFromPeerAsync(
+            request.CollectionName,
+            request.PeerId!.Value,
+            request.ShardIds,
+            request.IsDryRun,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DropShardsFromPeer_WithDryRun_ReturnsOk()
+    {
+        // Arrange
+        var request = new V1DropShardsFromPeerRequest
+        {
+            CollectionName = "test_collection",
+            PeerId = 987654321,
+            ShardIds = new uint[] { 5, 6 },
+            IsDryRun = true
+        };
+
+        _clusterManager.DropShardsFromPeerAsync(
+            Arg.Any<string>(),
+            Arg.Any<ulong>(),
+            Arg.Any<uint[]>(),
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.DropShardsFromPeer(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        
+        // Verify dry run flag was passed correctly
+        await _clusterManager.Received(1).DropShardsFromPeerAsync(
+            request.CollectionName,
+            request.PeerId!.Value,
+            request.ShardIds,
+            true,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DropShardsFromPeer_WhenFailed_Returns500()
+    {
+        // Arrange
+        var request = new V1DropShardsFromPeerRequest
+        {
+            CollectionName = "test_collection",
+            PeerId = 123456789,
+            ShardIds = new uint[] { 1 },
+            IsDryRun = false
+        };
+
+        _clusterManager.DropShardsFromPeerAsync(
+            Arg.Any<string>(),
+            Arg.Any<ulong>(),
+            Arg.Any<uint[]>(),
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        // Act
+        var result = await _controller.DropShardsFromPeer(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+    }
+
+    [Test]
+    public async Task DropShardsFromPeer_WhenExceptionThrown_Returns500WithErrorDetails()
+    {
+        // Arrange
+        var request = new V1DropShardsFromPeerRequest
+        {
+            CollectionName = "test_collection",
+            PeerId = 123456789,
+            ShardIds = new uint[] { 1 },
+            IsDryRun = false
+        };
+
+        _clusterManager.DropShardsFromPeerAsync(
+            Arg.Any<string>(),
+            Arg.Any<ulong>(),
+            Arg.Any<uint[]>(),
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new Exception("Test error")));
+
+        // Act
+        var result = await _controller.DropShardsFromPeer(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+    }
+
+    [Test]
+    public async Task DropShardsFromPeer_WithMultipleShards_CallsManagerCorrectly()
+    {
+        // Arrange
+        var shardIds = new uint[] { 1, 2, 3, 4, 5 };
+        var request = new V1DropShardsFromPeerRequest
+        {
+            CollectionName = "large_collection",
+            PeerId = 111222333,
+            ShardIds = shardIds,
+            IsDryRun = false
+        };
+
+        _clusterManager.DropShardsFromPeerAsync(
+            Arg.Any<string>(),
+            Arg.Any<ulong>(),
+            Arg.Any<uint[]>(),
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.DropShardsFromPeer(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        
+        // Verify all shards were passed
+        await _clusterManager.Received(1).DropShardsFromPeerAsync(
+            request.CollectionName,
+            request.PeerId!.Value,
+            Arg.Is<uint[]>(arr => arr.SequenceEqual(shardIds)),
+            false,
+            Arg.Any<CancellationToken>());
+    }
+
+    #endregion
+}

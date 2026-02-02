@@ -57,7 +57,8 @@ public class CollectionService : ICollectionService
             var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodeUrl, _options.ApiKey);
 
             // Use provided transfer method or default to Snapshot
-            var transferMethod = shardTransferMethod ?? Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod.Snapshot;
+            var transferMethod =
+                shardTransferMethod ?? Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod.Snapshot;
 
             var result = await qdrantClient.ReplicateShards(
                 sourcePeerId: sourcePeerId,
@@ -70,7 +71,8 @@ public class CollectionService : ICollectionService
 
             if (result?.Status?.IsSuccess == true)
             {
-                _logger.LogInformation("Shard replication initiated: {Collection} [{SourcePeer}→{TargetPeer}] using {TransferMethod}",
+                _logger.LogInformation(
+                    "Shard replication initiated: {Collection} [{SourcePeer}→{TargetPeer}] using {TransferMethod}",
                     collectionName, sourcePeerId, targetPeerId, transferMethod);
 
                 return true;
@@ -416,7 +418,8 @@ public class CollectionService : ICollectionService
             {
                 try
                 {
-                    var clusteringInfo = await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
+                    var clusteringInfo =
+                        await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
 
                     if (clusteringInfo?.Status?.IsSuccess != true || clusteringInfo.Result == null)
                         continue;
@@ -442,19 +445,21 @@ public class CollectionService : ICollectionService
             _logger.LogError(ex, "Failed to setup QdrantClient for node {NodeUrl}", healthyNodeUrl);
         }
     }
-    
+
     public async Task<List<CollectionInfo>> GetCollectionsFromQdrantAsync(
         IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken)
     {
         var nodesList = nodes.ToList();
         var hasApiKey = !string.IsNullOrEmpty(_options.ApiKey);
-        _logger.LogInformation("Getting collections from Qdrant API from {NodeCount} nodes (API key configured: {HasApiKey})", 
+        _logger.LogInformation(
+            "Getting collections from Qdrant API from {NodeCount} nodes (API key configured: {HasApiKey})",
             nodesList.Count, hasApiKey);
 
         if (nodesList.Count == 0)
         {
             _logger.LogWarning("No nodes provided to GetCollectionsFromQdrantAsync");
+
             return new List<CollectionInfo>();
         }
 
@@ -464,7 +469,7 @@ public class CollectionService : ICollectionService
         {
             try
             {
-                _logger.LogDebug("Getting collections from node {NodeUrl} (PeerId: {PeerId})", 
+                _logger.LogDebug("Getting collections from node {NodeUrl} (PeerId: {PeerId})",
                     node.Url, node.PeerId ?? "null");
 
                 var qdrantClient = _clientFactory.CreateClientFromUrl(node.Url, _options.ApiKey);
@@ -480,12 +485,13 @@ public class CollectionService : ICollectionService
                 }
 
                 // Changed to Info to always see this in logs
-                _logger.LogInformation("Found {CollectionCount} collections on node {NodeUrl}", 
+                _logger.LogInformation("Found {CollectionCount} collections on node {NodeUrl}",
                     collectionsResponse.Result.Collections.Length, node.Url);
 
                 if (collectionsResponse.Result.Collections.Length == 0)
                 {
                     _logger.LogDebug("Node {NodeUrl} returned empty collections list", node.Url);
+
                     continue;
                 }
 
@@ -503,8 +509,8 @@ public class CollectionService : ICollectionService
                                 g => g.Key,
                                 g => g.Select(a => a.AliasName).ToList()
                             );
-                        
-                        _logger.LogInformation("Found {AliasCount} aliases on node {NodeUrl}", 
+
+                        _logger.LogInformation("Found {AliasCount} aliases on node {NodeUrl}",
                             aliasesResponse.Result.Aliases.Length, node.Url);
                     }
                     else
@@ -532,8 +538,8 @@ public class CollectionService : ICollectionService
                         };
 
                         // Get aliases for this collection
-                        var aliases = collectionAliases.TryGetValue(collectionName, out var aliasList) 
-                            ? aliasList 
+                        var aliases = collectionAliases.TryGetValue(collectionName, out var aliasList)
+                            ? aliasList
                             : new List<string>();
 
                         result.Add(new CollectionInfo
@@ -547,7 +553,8 @@ public class CollectionService : ICollectionService
                             Aliases = aliases
                         });
 
-                        _logger.LogDebug("Added collection {CollectionName} from node {NodeUrl} with {AliasCount} aliases", 
+                        _logger.LogDebug(
+                            "Added collection {CollectionName} from node {NodeUrl} with {AliasCount} aliases",
                             collectionName, node.Url, aliases.Count);
                     }
                     catch (Exception ex)
@@ -574,19 +581,21 @@ public class CollectionService : ICollectionService
         Dictionary<string, string> peerToPodMap,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Getting enriched collections info from {NodesCount} nodes (peerToPodMap has {MapCount} entries)", 
+        _logger.LogInformation(
+            "Getting enriched collections info from {NodesCount} nodes (peerToPodMap has {MapCount} entries)",
             nodes.Count, peerToPodMap.Count);
 
         // Get collections from Qdrant API (only from healthy nodes)
         var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
-        
+
         if (healthyNodes.Count == 0)
         {
             _logger.LogWarning("No healthy nodes available to get collections from");
+
             return new List<CollectionInfo>();
         }
-        
-        _logger.LogInformation("Using {HealthyCount} healthy nodes out of {TotalCount}", 
+
+        _logger.LogInformation("Using {HealthyCount} healthy nodes out of {TotalCount}",
             healthyNodes.Count, nodes.Count);
 
         var collections = await GetCollectionsFromQdrantAsync(
@@ -596,6 +605,7 @@ public class CollectionService : ICollectionService
         if (collections.Count == 0)
         {
             _logger.LogWarning("No collections found from Qdrant API");
+
             return collections;
         }
 
@@ -619,6 +629,51 @@ public class CollectionService : ICollectionService
         _logger.LogInformation("Retrieved and enriched {Count} collections", collections.Count);
 
         return collections;
+    }
+
+    public async Task<bool> DropShardsFromPeerAsync(
+        string healthyNodeUrl,
+        string collectionName,
+        ulong peerId,
+        uint[] shardIds,
+        bool isDryRun,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodeUrl, _options.ApiKey);
+
+            var result = await qdrantClient.DropCollectionShardsFromPeer(
+                collectionName: collectionName,
+                peerId: peerId,
+                shardIds: shardIds,
+                cancellationToken: cancellationToken,
+                logger: _logger,
+                isDryRun: isDryRun);
+
+            if (result?.Status?.IsSuccess == true)
+            {
+                _logger.LogInformation("Shards drop {Mode} for {Collection} from peer {PeerId}: {ShardIds}",
+                    isDryRun ? "simulated" : "completed",
+                    collectionName,
+                    peerId,
+                    string.Join(", ", shardIds));
+
+                return true;
+            }
+
+            _logger.LogError("Failed to drop shards for {Collection} from peer {PeerId}: {Error}",
+                collectionName, peerId, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to drop shards for collection {Collection} from peer {PeerId}",
+                collectionName, peerId);
+
+            return false;
+        }
     }
 
     private void UpdateShardMetrics(CollectionInfo info,
@@ -687,10 +742,11 @@ public class CollectionService : ICollectionService
                 if (string.IsNullOrEmpty(node.PodName))
                 {
                     _logger.LogDebug("Skipping node {NodeUrl} - no pod name available", node.Url);
+
                     continue;
                 }
 
-                _logger.LogInformation("Fetching storage info from pod {PodName} for node {NodeUrl}", 
+                _logger.LogInformation("Fetching storage info from pod {PodName} for node {NodeUrl}",
                     node.PodName, node.Url);
 
                 var collectionSizes = (await GetCollectionsSizesForPodAsync(
@@ -749,10 +805,11 @@ public class CollectionService : ICollectionService
 
         // Get clustering info from each healthy node to get their local shards
         var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
-        
+
         if (healthyNodes.Count == 0)
         {
             _logger.LogWarning("No healthy nodes available for clustering info");
+
             return;
         }
 
@@ -765,4 +822,3 @@ public class CollectionService : ICollectionService
         }
     }
 }
-

@@ -68,4 +68,35 @@ public class ClusterController(
             return StatusCode(500, new { error = "Internal server error during shard replication", details = ex.Message });
         }
     }
+
+    [HttpPost("drop-shards")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DropShardsFromPeer(
+        [FromBody] V1DropShardsFromPeerRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var success = await clusterManager.DropShardsFromPeerAsync(
+                request.CollectionName,
+                request.PeerId!.Value,
+                request.ShardIds,
+                request.IsDryRun,
+                cancellationToken);
+
+            if (success)
+            {
+                return Ok(new { message = "Shard drop operation completed successfully" });
+            }
+
+            return StatusCode(500, new { error = "Failed to drop shards from peer" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during shard drop operation");
+            return StatusCode(500, new { error = "Internal server error during shard drop", details = ex.Message });
+        }
+    }
 }
