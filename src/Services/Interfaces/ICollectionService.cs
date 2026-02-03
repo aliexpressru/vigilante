@@ -114,5 +114,15 @@ public interface ICollectionService
         uint[] shardIds,
         bool isDryRun,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Starts resharding operation for a collection
+    /// </summary>
+    Task<bool> StartReshardingAsync(
+        string healthyNodeUrl,
+        string collectionName,
+        ReshardingOperationDirection direction,
+        ulong? peerId,
+        CancellationToken cancellationToken);
 }
 

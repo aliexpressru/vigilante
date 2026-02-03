@@ -371,3 +371,191 @@ public class V1ReplicateShardsRequestValidatorTests
         result.ShouldHaveValidationErrorFor(x => x.ShardTransferMethod);
     }
 }
+
+[TestFixture]
+public class V1StartReshardingRequestValidatorTests
+{
+    private V1StartReshardingRequestValidator _validator = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _validator = new V1StartReshardingRequestValidator();
+    }
+
+    [Test]
+    public void Validate_WithValidRequestUp_ShouldNotHaveErrors()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = "Up",
+            PeerId = 123456789
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Test]
+    public void Validate_WithValidRequestDown_ShouldNotHaveErrors()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = "Down",
+            PeerId = null
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Test]
+    public void Validate_WithoutPeerId_ShouldNotHaveErrors()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = "Up"
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Test]
+    public void Validate_WithCaseInsensitiveDirection_ShouldNotHaveErrors()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = "up"
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Test]
+    public void Validate_WithEmptyCollectionName_ShouldHaveError()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "",
+            Direction = "Up"
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.CollectionName)
+            .WithErrorMessage("Collection name is required");
+    }
+
+    [Test]
+    public void Validate_WithNullCollectionName_ShouldHaveError()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = null!,
+            Direction = "Up"
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.CollectionName);
+    }
+
+    [Test]
+    public void Validate_WithEmptyDirection_ShouldHaveError()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = ""
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.Direction)
+            .WithErrorMessage("Direction is required");
+    }
+
+    [Test]
+    public void Validate_WithNullDirection_ShouldHaveError()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = null
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.Direction);
+    }
+
+    [Test]
+    public void Validate_WithInvalidDirection_ShouldHaveError()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = "Invalid"
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.Direction);
+    }
+
+    [Test]
+    public void Validate_WithMultipleErrors_ShouldHaveAllErrors()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "",
+            Direction = "InvalidDirection"
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.CollectionName);
+        result.ShouldHaveValidationErrorFor(x => x.Direction);
+    }
+}
+

@@ -472,4 +472,180 @@ public class ClusterControllerTests
     }
 
     #endregion
+
+    #region StartResharding Tests
+
+    [Test]
+    public async Task StartResharding_WithValidRequestUp_ReturnsOk()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = "Up",
+            PeerId = 123456789
+        };
+
+        _clusterManager.StartReshardingAsync(
+            Arg.Any<string>(),
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ReshardingOperationDirection>(),
+            Arg.Any<ulong?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.StartResharding(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        var okResult = (OkObjectResult)result;
+        Assert.That(okResult.Value, Is.Not.Null);
+        
+        // Verify the method was called with correct parameters
+        await _clusterManager.Received(1).StartReshardingAsync(
+            request.CollectionName,
+            Aer.QdrantClient.Http.Models.Shared.ReshardingOperationDirection.Up,
+            request.PeerId,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task StartResharding_WithValidRequestDown_ReturnsOk()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = "Down",
+            PeerId = null
+        };
+
+        _clusterManager.StartReshardingAsync(
+            Arg.Any<string>(),
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ReshardingOperationDirection>(),
+            Arg.Any<ulong?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.StartResharding(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        
+        // Verify the method was called with correct parameters
+        await _clusterManager.Received(1).StartReshardingAsync(
+            request.CollectionName,
+            Aer.QdrantClient.Http.Models.Shared.ReshardingOperationDirection.Down,
+            null,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task StartResharding_WithInvalidDirection_ReturnsBadRequest()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = "Invalid",
+            PeerId = 123456789
+        };
+
+        // Act
+        var result = await _controller.StartResharding(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
+        var badRequestResult = (BadRequestObjectResult)result;
+        Assert.That(badRequestResult.StatusCode, Is.EqualTo(400));
+        
+        // Verify the service was never called
+        await _clusterManager.DidNotReceive().StartReshardingAsync(
+            Arg.Any<string>(),
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ReshardingOperationDirection>(),
+            Arg.Any<ulong?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task StartResharding_WhenFailed_Returns500()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = "Up",
+            PeerId = 123456789
+        };
+
+        _clusterManager.StartReshardingAsync(
+            Arg.Any<string>(),
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ReshardingOperationDirection>(),
+            Arg.Any<ulong?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        // Act
+        var result = await _controller.StartResharding(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+    }
+
+    [Test]
+    public async Task StartResharding_WhenExceptionThrown_Returns500WithErrorDetails()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = "Up",
+            PeerId = 123456789
+        };
+
+        _clusterManager.StartReshardingAsync(
+            Arg.Any<string>(),
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ReshardingOperationDirection>(),
+            Arg.Any<ulong?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new Exception("Test error")));
+
+        // Act
+        var result = await _controller.StartResharding(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+    }
+
+    [Test]
+    public async Task StartResharding_WithCaseInsensitiveDirection_ReturnsOk()
+    {
+        // Arrange
+        var request = new V1StartReshardingRequest
+        {
+            CollectionName = "test_collection",
+            Direction = "up",
+            PeerId = null
+        };
+
+        _clusterManager.StartReshardingAsync(
+            Arg.Any<string>(),
+            Arg.Any<Aer.QdrantClient.Http.Models.Shared.ReshardingOperationDirection>(),
+            Arg.Any<ulong?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.StartResharding(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+    }
+
+    #endregion
 }

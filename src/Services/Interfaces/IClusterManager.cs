@@ -56,4 +56,13 @@ public interface IClusterManager
         uint[] shardIds,
         bool isDryRun,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Starts resharding operation for a collection
+    /// </summary>
+    Task<bool> StartReshardingAsync(
+        string collectionName,
+        ReshardingOperationDirection direction,
+        ulong? peerId,
+        CancellationToken cancellationToken = default);
 }

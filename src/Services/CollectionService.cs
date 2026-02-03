@@ -1,4 +1,6 @@
 using Aer.QdrantClient.Http.Abstractions;
+using Aer.QdrantClient.Http.Models.Requests;
+using Aer.QdrantClient.Http.Models.Shared;
 using k8s;
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
@@ -671,6 +673,51 @@ public class CollectionService : ICollectionService
         {
             _logger.LogError(ex, "Failed to drop shards for collection {Collection} from peer {PeerId}",
                 collectionName, peerId);
+
+            return false;
+        }
+    }
+
+    public async Task<bool> StartReshardingAsync(
+        string healthyNodeUrl,
+        string collectionName,
+        ReshardingOperationDirection direction,
+        ulong? peerId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodeUrl, _options.ApiKey);
+
+            var request = UpdateCollectionClusteringSetupRequest.CreateStartReshardingRequest(
+                direction,
+                peerId);
+
+            var result = await qdrantClient.UpdateCollectionClusteringSetup(
+                collectionName,
+                request,
+                cancellationToken);
+
+            if (result?.Status?.IsSuccess == true)
+            {
+                var peerInfo = peerId.HasValue ? $" on peer {peerId.Value}" : " on all peers";
+                _logger.LogInformation("Resharding operation started for {Collection} (direction: {Direction}){PeerInfo}",
+                    collectionName,
+                    direction.ToString(),
+                    peerInfo);
+
+                return true;
+            }
+
+            _logger.LogError("Failed to start resharding for {Collection} (direction: {Direction}): {Error}",
+                collectionName, direction.ToString(), result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start resharding for collection {Collection} (direction: {Direction})",
+                collectionName, direction.ToString());
 
             return false;
         }

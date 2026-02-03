@@ -5,6 +5,7 @@ class VigilanteDashboard {
         this.snapshotsApiEndpoint = '/api/v1/snapshots/info';
         this.replicateShardsEndpoint = '/api/v1/cluster/replicate-shards';
         this.dropShardsEndpoint = '/api/v1/cluster/drop-shards';
+        this.startReshardingEndpoint = '/api/v1/cluster/start-resharding';
         this.deleteCollectionEndpoint = '/api/v1/collections';
         this.createSnapshotEndpoint = '/api/v1/snapshots';
         this.deleteSnapshotEndpoint = '/api/v1/snapshots';
@@ -1067,6 +1068,7 @@ class VigilanteDashboard {
                 deleteApiButton.className = 'drop-shards-button';
                 deleteApiButton.textContent = 'Delete (API)';
                 deleteApiButton.title = 'Delete collection via API on selected nodes';
+                deleteApiButton.style.margin = '0';
                 deleteApiButton.onclick = async (e) => {
                     e.stopPropagation();
                     await this.showNodeSelectionDialog(collection, 'deleteApi');
@@ -1076,6 +1078,7 @@ class VigilanteDashboard {
                 deleteDiskButton.className = 'drop-shards-button';
                 deleteDiskButton.textContent = 'Delete (Disk)';
                 deleteDiskButton.title = 'Delete collection from disk on selected nodes';
+                deleteDiskButton.style.margin = '0';
                 deleteDiskButton.onclick = async (e) => {
                     e.stopPropagation();
                     await this.showNodeSelectionDialog(collection, 'deleteDisk');
@@ -1085,14 +1088,28 @@ class VigilanteDashboard {
                 createSnapshotButton.className = 'replicate-button';
                 createSnapshotButton.textContent = 'Create Snapshot';
                 createSnapshotButton.title = 'Create snapshot on selected nodes';
+                createSnapshotButton.style.margin = '0';
                 createSnapshotButton.onclick = async (e) => {
                     e.stopPropagation();
                     await this.showNodeSelectionDialog(collection, 'createSnapshot');
                 };
                 
+                // TODO: Resharding functionality - temporarily disabled
+                // const startReshardingButton = document.createElement('button');
+                // startReshardingButton.className = 'replicate-button';
+                // startReshardingButton.style.background = 'linear-gradient(135deg, #9c27b0, #7b1fa2)';
+                // startReshardingButton.style.margin = '0';
+                // startReshardingButton.textContent = 'Start Resharding';
+                // startReshardingButton.title = 'Start resharding operation (scale up or down)';
+                // startReshardingButton.onclick = async (e) => {
+                //     e.stopPropagation();
+                //     await this.showReshardingModal(collection);
+                // };
+                
                 collectionActionsContainer.appendChild(deleteApiButton);
                 collectionActionsContainer.appendChild(deleteDiskButton);
                 collectionActionsContainer.appendChild(createSnapshotButton);
+                // collectionActionsContainer.appendChild(startReshardingButton); // Disabled
                 
                 // Right side: Shard actions (Sync/Drop) - initially hidden
                 const shardActionsContainer = document.createElement('div');
@@ -2969,6 +2986,247 @@ class VigilanteDashboard {
         
         // Focus on select
         setTimeout(() => targetSelect.focus(), 100);
+    }
+
+    showReshardingModal(collection) {
+        // Create modal overlay
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(2px);
+            animation: fadeIn 0.2s ease-out;
+        `;
+
+        const modalContent = document.createElement('div');
+        modalContent.style.cssText = `
+            background: white;
+            padding: 0;
+            border-radius: 12px;
+            max-width: 450px;
+            width: 90%;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            animation: slideIn 0.3s ease-out;
+        `;
+
+        // Header
+        const header = document.createElement('div');
+        header.style.cssText = `
+            background: linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%);
+            color: white;
+            padding: 14px 24px;
+            border-radius: 12px 12px 0 0;
+        `;
+        
+        const title = document.createElement('h3');
+        title.textContent = '🔧 Start Resharding';
+        title.style.cssText = 'margin: 0; font-size: 18px; font-weight: 600;';
+        header.appendChild(title);
+        
+        // Content area
+        const contentArea = document.createElement('div');
+        contentArea.style.cssText = 'padding: 16px 24px;';
+        
+        // Info card
+        const infoCard = document.createElement('div');
+        infoCard.style.cssText = `
+            background: #f8f9fa;
+            border-left: 4px solid #9c27b0;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 14px;
+        `;
+        
+        infoCard.innerHTML = `
+            <div style="display: flex; align-items: flex-start; gap: 8px;">
+                <span style="font-weight: 600; color: #495057; min-width: 80px; flex-shrink: 0; font-size: 12px;">Collection:</span>
+                <span style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${collection.name}</span>
+            </div>
+        `;
+        
+        contentArea.appendChild(infoCard);
+
+        // Direction selection
+        const directionSection = document.createElement('div');
+        directionSection.style.cssText = 'margin-bottom: 14px;';
+        
+        const directionLabel = document.createElement('label');
+        directionLabel.textContent = 'Resharding Direction';
+        directionLabel.style.cssText = `
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #495057;
+            font-size: 12px;
+            text-transform: uppercase;
+        `;
+        directionSection.appendChild(directionLabel);
+        
+        const directionSelect = document.createElement('select');
+        directionSelect.style.cssText = `
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 13px;
+            background: white;
+        `;
+        
+        const upOption = document.createElement('option');
+        upOption.value = 'Up';
+        upOption.textContent = '⬆️ Scale Up (Add Shard)';
+        directionSelect.appendChild(upOption);
+        
+        const downOption = document.createElement('option');
+        downOption.value = 'Down';
+        downOption.textContent = '⬇️ Scale Down (Remove Shard)';
+        directionSelect.appendChild(downOption);
+        
+        directionSection.appendChild(directionSelect);
+        contentArea.appendChild(directionSection);
+
+        // Info text
+        const infoText = document.createElement('div');
+        infoText.style.cssText = `
+            padding: 10px;
+            background: #e3f2fd;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #1976d2;
+            margin-bottom: 14px;
+        `;
+        infoText.innerHTML = `
+            <strong>ℹ️ Info:</strong> Resharding will automatically redistribute data across shards. 
+            <strong>Up</strong> increases the number of shards, <strong>Down</strong> decreases it.
+        `;
+        contentArea.appendChild(infoText);
+
+        modalContent.appendChild(header);
+        modalContent.appendChild(contentArea);
+
+        // Footer with buttons
+        const footer = document.createElement('div');
+        footer.style.cssText = `
+            padding: 12px 24px;
+            background: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            border-radius: 0 0 12px 12px;
+        `;
+
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = 'Cancel';
+        cancelButton.style.cssText = `
+            padding: 7px 16px;
+            background: white;
+            color: #6c757d;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s ease;
+            font-weight: 500;
+        `;
+        cancelButton.onmouseover = () => { cancelButton.style.background = '#e9ecef'; };
+        cancelButton.onmouseout = () => { cancelButton.style.background = 'white'; };
+        cancelButton.onclick = () => {
+            modal.style.animation = 'fadeOut 0.2s ease-out';
+            setTimeout(() => document.body.removeChild(modal), 200);
+        };
+
+        const confirmButton = document.createElement('button');
+        confirmButton.textContent = '🔧 Start Resharding';
+        confirmButton.style.cssText = `
+            padding: 7px 16px;
+            background: linear-gradient(135deg, #9c27b0, #7b1fa2);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s ease;
+            font-weight: 500;
+            box-shadow: 0 2px 4px rgba(156, 39, 176, 0.2);
+        `;
+        confirmButton.onmouseover = () => {
+            confirmButton.style.background = 'linear-gradient(135deg, #8e24aa, #6a1b9a)';
+            confirmButton.style.transform = 'translateY(-1px)';
+            confirmButton.style.boxShadow = '0 4px 8px rgba(156, 39, 176, 0.3)';
+        };
+        confirmButton.onmouseout = () => {
+            confirmButton.style.background = 'linear-gradient(135deg, #9c27b0, #7b1fa2)';
+            confirmButton.style.transform = 'translateY(0)';
+            confirmButton.style.boxShadow = '0 2px 4px rgba(156, 39, 176, 0.2)';
+        };
+
+        confirmButton.onclick = async () => {
+            const direction = directionSelect.value;
+            const directionLabel = direction === 'Up' ? 'scale up' : 'scale down';
+
+            if (!confirm(`Are you sure you want to start resharding for collection '${collection.name}' to ${directionLabel}?`)) {
+                return;
+            }
+
+            modal.style.animation = 'fadeOut 0.2s ease-out';
+            setTimeout(() => document.body.removeChild(modal), 200);
+
+            try {
+                const requestBody = {
+                    collectionName: collection.name,
+                    direction: direction,
+                    peerId: null
+                };
+                
+                const response = await fetch(this.startReshardingEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to start resharding');
+                }
+
+                this.showToast(`Resharding operation started successfully for ${collection.name} (${directionLabel})`, 'success', 'Resharding Started', 5000);
+                setTimeout(() => this.refresh(), 2000);
+            } catch (error) {
+                this.showToast(`Error: ${error.message}`, 'error', 'Resharding Failed', 10000);
+            }
+        };
+
+        footer.appendChild(cancelButton);
+        footer.appendChild(confirmButton);
+
+        modalContent.appendChild(footer);
+        modal.appendChild(modalContent);
+
+        document.body.appendChild(modal);
+
+        // Close on overlay click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.animation = 'fadeOut 0.2s ease-out';
+                setTimeout(() => document.body.removeChild(modal), 200);
+            }
+        });
+        
+        // Focus on select
+        setTimeout(() => directionSelect.focus(), 100);
     }
 
     async deleteCollectionWithNodes(collectionName, deletionType, nodeUrls = null, pods = null) {

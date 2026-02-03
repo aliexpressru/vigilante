@@ -478,15 +478,19 @@ body {
     font-size: 0.85rem;
     font-weight: 500;
     box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    vertical-align: middle;
 }
 
 .drop-shards-button {
     background: linear-gradient(135deg, #f44336, #d32f2f);
-    margin-left: 8px;
 }
 
 .snapshot-button {
     background: linear-gradient(135deg, #4caf50, #388e3c);
+}
+
+.resharding-button {
+    background: linear-gradient(135deg, #9c27b0, #7b1fa2);
 }
 
 .replicate-button,
@@ -522,6 +526,12 @@ body {
     transform: translateY(-1px);
 }
 
+.resharding-button:hover {
+    background: linear-gradient(135deg, #8e24aa, #6a1b9a);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    transform: translateY(-1px);
+}
+
 .replicate-button:active,
 .exec-button:active,
 .refresh-button:active {
@@ -538,6 +548,12 @@ body {
 
 .snapshot-button:active {
     background: linear-gradient(135deg, #388e3c, #1b5e20);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    transform: translateY(0);
+}
+
+.resharding-button:active {
+    background: linear-gradient(135deg, #7b1fa2, #4a148c);
     box-shadow: 0 1px 2px rgba(0,0,0,0.2);
     transform: translateY(0);
 }

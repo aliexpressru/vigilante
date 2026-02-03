@@ -7,6 +7,7 @@ using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
 using System.Text.Json;
+using Aer.QdrantClient.Http.Models.Shared;
 using ClusterInfoResult = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.ClusterInfo;
 using MessageSendFailureUnit = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.MessageSendFailureUnit;
 
@@ -286,6 +287,34 @@ public class ClusterManager(
             peerId,
             shardIds,
             isDryRun,
+            cancellationToken);
+    }
+
+    public async Task<bool> StartReshardingAsync(
+        string collectionName,
+        ReshardingOperationDirection direction,
+        ulong? peerId,
+        CancellationToken cancellationToken)
+    {
+        var peerInfo = peerId.HasValue ? $", PeerId: {peerId.Value}" : ", All peers";
+        logger.LogInformation(
+            "Starting resharding operation. Collection: {Collection}, Direction: {Direction}{PeerInfo}",
+            collectionName, direction, peerInfo);
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
+
+        if (healthyNode == null)
+        {
+            logger.LogError("No healthy nodes found to perform resharding operation");
+            return false;
+        }
+
+        return await collectionService.StartReshardingAsync(
+            healthyNode.Url,
+            collectionName,
+            direction,
+            peerId,
             cancellationToken);
     }
 
