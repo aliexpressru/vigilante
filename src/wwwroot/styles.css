@@ -570,6 +570,92 @@ body {
     border-radius: 4px;
 }
 
+/* Sticky Refresh Controls (Left Side) */
+.sticky-refresh-controls {
+    position: fixed;
+    left: 20px;
+    top: 10px;
+    z-index: 999;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+}
+
+.sticky-refresh-controls:hover {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.sticky-refresh-controls label {
+    font-size: 0.85rem;
+    color: #666;
+    font-weight: 500;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.sticky-refresh-controls .refresh-select {
+    min-width: 70px;
+}
+
+.sticky-refresh-controls .refresh-button {
+    margin: 0;
+    padding: 6px 10px;
+}
+
+/* Refresh button icon animation */
+.sticky-refresh-controls .refresh-button.refreshing i,
+.refresh-button.refreshing i,
+.refresh-indicator.spinning i {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Responsive adjustments for sticky refresh controls */
+@media (max-width: 1200px) {
+    .sticky-refresh-controls {
+        left: 10px;
+        top: 10px;
+        padding: 8px 10px;
+    }
+}
+
+@media (max-width: 768px) {
+    .sticky-refresh-controls {
+        left: 5px;
+        top: 8px;
+        padding: 6px 8px;
+        gap: 6px;
+    }
+    
+    .sticky-refresh-controls label {
+        font-size: 0.75rem;
+    }
+    
+    .sticky-refresh-controls .refresh-select {
+        min-width: 60px;
+        font-size: 0.8rem;
+        padding: 4px 6px;
+    }
+    
+    .sticky-refresh-controls .refresh-button {
+        padding: 4px 8px;
+    }
+}
+
 .refresh-select {
     padding: 6px 10px;
     border-radius: 4px;

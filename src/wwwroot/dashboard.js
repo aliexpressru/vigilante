@@ -94,10 +94,17 @@ class VigilanteDashboard {
     setupRefreshControls() {
         const intervalSelect = document.getElementById('refreshInterval');
         const manualRefreshBtn = document.getElementById('manualRefresh');
+        const stickyIntervalSelect = document.getElementById('stickyRefreshInterval');
+        const stickyManualRefreshBtn = document.getElementById('stickyManualRefresh');
 
         // Read initial value from HTML (15s by default)
         const initialInterval = parseInt(intervalSelect.value || '0');
         this.refreshInterval = initialInterval;
+        
+        // Sync sticky controls with main controls
+        if (stickyIntervalSelect) {
+            stickyIntervalSelect.value = intervalSelect.value;
+        }
         
         // Start auto-refresh if interval is set
         if (initialInterval > 0) {
@@ -105,10 +112,15 @@ class VigilanteDashboard {
             this.startAutoRefresh();
         }
 
-        // Handle interval changes
+        // Handle interval changes from main control
         intervalSelect.addEventListener('change', (e) => {
             const newInterval = parseInt(e.target.value);
             this.refreshInterval = newInterval;
+            
+            // Sync sticky control
+            if (stickyIntervalSelect) {
+                stickyIntervalSelect.value = e.target.value;
+            }
             
             this.stopAutoRefresh();
             if (newInterval > 0) {
@@ -116,10 +128,33 @@ class VigilanteDashboard {
             }
         });
 
-        // Handle manual refresh
+        // Handle interval changes from sticky control
+        if (stickyIntervalSelect) {
+            stickyIntervalSelect.addEventListener('change', (e) => {
+                const newInterval = parseInt(e.target.value);
+                this.refreshInterval = newInterval;
+                
+                // Sync main control
+                intervalSelect.value = e.target.value;
+                
+                this.stopAutoRefresh();
+                if (newInterval > 0) {
+                    this.startAutoRefresh();
+                }
+            });
+        }
+
+        // Handle manual refresh from main button
         manualRefreshBtn.addEventListener('click', () => {
             this.refresh();
         });
+
+        // Handle manual refresh from sticky button
+        if (stickyManualRefreshBtn) {
+            stickyManualRefreshBtn.addEventListener('click', () => {
+                this.refresh();
+            });
+        }
     }
 
     setupCollectionControls() {
@@ -2245,6 +2280,7 @@ class VigilanteDashboard {
     showRefreshAnimation() {
         const statusCard = document.getElementById('overallStatus');
         const refreshButton = document.getElementById('manualRefresh');
+        const stickyRefreshButton = document.getElementById('stickyManualRefresh');
         const refreshIndicator = document.getElementById('refreshIndicator');
         
         // Remove previous animation if it exists
@@ -2252,6 +2288,9 @@ class VigilanteDashboard {
         
         statusCard.classList.add('refreshing');
         refreshButton.classList.add('refreshing');
+        if (stickyRefreshButton) {
+            stickyRefreshButton.classList.add('refreshing');
+        }
         refreshIndicator.classList.add('refreshing');
 
         // Remove animation classes after animation completes
@@ -2263,10 +2302,14 @@ class VigilanteDashboard {
     hideRefreshAnimation() {
         const statusCard = document.getElementById('overallStatus');
         const refreshButton = document.getElementById('manualRefresh');
+        const stickyRefreshButton = document.getElementById('stickyManualRefresh');
         const refreshIndicator = document.getElementById('refreshIndicator');
         
         statusCard.classList.remove('refreshing');
         refreshButton.classList.remove('refreshing');
+        if (stickyRefreshButton) {
+            stickyRefreshButton.classList.remove('refreshing');
+        }
         refreshIndicator.classList.remove('refreshing');
     }
 
