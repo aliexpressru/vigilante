@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
+using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
 
@@ -27,7 +28,7 @@ public class QdrantMonitorService(
                 {
                     var state = await clusterManager.GetClusterStateAsync(stoppingToken);
                     
-                    TrackClusterStatusChange(state.Status);
+                    TrackClusterStatusChange(state);
                     
                     // Log only if there are issues or important status changes
                     if (!state.Health.IsHealthy || state.Health.Issues.Any())
@@ -86,8 +87,20 @@ public class QdrantMonitorService(
         await base.StopAsync(cancellationToken);
     }
 
-    internal void TrackClusterStatusChange(ClusterStatus currentStatus)
+    internal void TrackClusterStatusChange(ClusterState state)
     {
+        var currentStatus = state.Status;
+        var hasIssues = state.Health.Issues.Any();
+        
+        // Always set attention if there are issues
+        if (hasIssues)
+        {
+            meterService.UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+            _previousStatus = currentStatus;
+            return;
+        }
+        
+        // Original logic for status changes
         if (_previousStatus.HasValue && _previousStatus.Value != currentStatus)
         {
             switch (_previousStatus.Value)
@@ -98,7 +111,11 @@ public class QdrantMonitorService(
                     // Cluster degraded from Healthy - needs attention!
                     logger.LogWarning("Cluster status changed from {PreviousStatus} to {CurrentStatus} - NEEDS ATTENTION",
                         _previousStatus.Value, currentStatus);
-                    meterService.UpdateClusterNeedsAttention(true);
+                    
+                    var reason = currentStatus == ClusterStatus.Degraded 
+                        ? ClusterAttentionReason.ClusterStatusDegraded 
+                        : ClusterAttentionReason.ClusterStatusUnavailable;
+                    meterService.UpdateClusterNeedsAttention(true, reason);
 
                     break;
                 case ClusterStatus.Degraded or ClusterStatus.Unavailable
@@ -123,7 +140,10 @@ public class QdrantMonitorService(
             if (currentStatus == ClusterStatus.Degraded || currentStatus == ClusterStatus.Unavailable)
             {
                 logger.LogWarning("Initial cluster status is {Status} - NEEDS ATTENTION", currentStatus);
-                meterService.UpdateClusterNeedsAttention(true);
+                var reason = currentStatus == ClusterStatus.Degraded 
+                    ? ClusterAttentionReason.ClusterStatusDegraded 
+                    : ClusterAttentionReason.ClusterStatusUnavailable;
+                meterService.UpdateClusterNeedsAttention(true, reason);
             }
             else
             {
