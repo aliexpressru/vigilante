@@ -15,6 +15,7 @@ public class QdrantMonitorService(
 {
     private readonly QdrantOptions _options = options.Value;
     private ClusterStatus? _previousStatus;
+    private bool _previousHadIssues;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -97,8 +98,20 @@ public class QdrantMonitorService(
         {
             meterService.UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
             _previousStatus = currentStatus;
+            _previousHadIssues = true;
             return;
         }
+        
+        // If we previously had issues but now don't, and cluster is healthy, clear the attention flag
+        if (_previousHadIssues && !hasIssues && currentStatus == ClusterStatus.Healthy)
+        {
+            meterService.UpdateClusterNeedsAttention(false);
+            _previousHadIssues = false;
+            _previousStatus = currentStatus;
+            return;
+        }
+        
+        _previousHadIssues = false;
         
         // Original logic for status changes
         if (_previousStatus.HasValue && _previousStatus.Value != currentStatus)

@@ -73,8 +73,12 @@ public class MeterService : IMeterService
 
     public void UpdateClusterNeedsAttention(bool needsAttention, ClusterAttentionReason reason = ClusterAttentionReason.None)
     {
+        // Always set the reason, even when clearing the attention flag
+        // This ensures the metric label is updated properly
+        var effectiveReason = needsAttention ? reason : ClusterAttentionReason.None;
+        
         Interlocked.Exchange(ref _clusterNeedsAttention, needsAttention ? 1 : 0);
-        _attentionReason = reason;
+        Interlocked.Exchange(ref _attentionReason, effectiveReason);
     }
 
     public void UpdateCollectionSize(CollectionSize collectionSize)

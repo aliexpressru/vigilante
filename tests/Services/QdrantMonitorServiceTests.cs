@@ -425,9 +425,66 @@ public class QdrantMonitorServiceTests
         // Act - full recovery: no issues, healthy status
         _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: false));
 
-        // Assert - should not update since status is same and both are healthy
+        // Assert - should clear attention since issues were resolved
+        _meterService.Received(1).UpdateClusterNeedsAttention(false);
+    }
+
+    [Test]
+    public void TrackClusterStatusChange_IssuesDisappearButStatusUnavailable_ShouldNotClearAttention()
+    {
+        // Arrange - start with issues
+        _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: true));
+        _meterService.ClearReceivedCalls();
+
+        // Act - issues gone but status unavailable (status changed but not healthy)
+        _monitorService.TrackClusterStatusChange(CreateUnavailableState(hasIssues: false));
+
+        // Assert - should set attention with unavailable reason, not clear it
+        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.ClusterStatusUnavailable);
+    }
+
+    [Test]
+    public void TrackClusterStatusChange_ComplexTransition_IssuesAppearedAndDisappeared_ShouldTrackCorrectly()
+    {
+        // Start: Healthy, no issues
+        _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: false));
+        _meterService.Received(1).UpdateClusterNeedsAttention(false);
+        _meterService.ClearReceivedCalls();
+
+        // Issues appear while healthy
+        _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: true));
+        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+        _meterService.ClearReceivedCalls();
+
+        // Issues persist
+        _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: true));
+        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+        _meterService.ClearReceivedCalls();
+
+        // Issues resolved
+        _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: false));
+        _meterService.Received(1).UpdateClusterNeedsAttention(false);
+        _meterService.ClearReceivedCalls();
+
+        // Status stays healthy, no issues - should not update
+        _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: false));
         _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
         _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>(), Arg.Any<ClusterAttentionReason>());
+    }
+
+    [Test]
+    public void TrackClusterStatusChange_IssuesClearedDuringStatusTransition_ShouldClearAttentionOnRecovery()
+    {
+        // Arrange - start degraded with issues
+        _monitorService.TrackClusterStatusChange(CreateDegradedState(hasIssues: true));
+        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+        _meterService.ClearReceivedCalls();
+
+        // Act - transition to healthy and issues cleared simultaneously
+        _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: false));
+
+        // Assert - should clear attention since both status recovered and issues cleared
+        _meterService.Received(1).UpdateClusterNeedsAttention(false);
     }
 
     #endregion
