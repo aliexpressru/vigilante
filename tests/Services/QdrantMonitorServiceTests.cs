@@ -4,7 +4,6 @@ using NSubstitute;
 using NUnit.Framework;
 using Vigilante.Configuration;
 using Vigilante.Models;
-using Vigilante.Models.Enums;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
 
@@ -133,7 +132,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(state);
 
         // Assert
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.ClusterStatusDegraded);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     [Test]
@@ -146,7 +145,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(state);
 
         // Assert
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.ClusterStatusUnavailable);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     #endregion
@@ -164,7 +163,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(CreateDegradedState());
 
         // Assert
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.ClusterStatusDegraded);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     [Test]
@@ -178,7 +177,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(CreateUnavailableState());
 
         // Assert
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.ClusterStatusUnavailable);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     #endregion
@@ -229,7 +228,6 @@ public class QdrantMonitorServiceTests
 
         // Assert - should not update metric, already needs attention
         _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
-        _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>(), Arg.Any<ClusterAttentionReason>());
     }
 
     [Test]
@@ -244,7 +242,6 @@ public class QdrantMonitorServiceTests
 
         // Assert - should not update metric, already needs attention
         _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
-        _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>(), Arg.Any<ClusterAttentionReason>());
     }
 
     #endregion
@@ -263,7 +260,6 @@ public class QdrantMonitorServiceTests
 
         // Assert
         _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
-        _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>(), Arg.Any<ClusterAttentionReason>());
     }
 
     #endregion
@@ -280,13 +276,13 @@ public class QdrantMonitorServiceTests
 
         // Degraded -> needs attention
         _monitorService.TrackClusterStatusChange(CreateDegradedState());
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.ClusterStatusDegraded);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
         _meterService.ClearReceivedCalls();
 
         // Unavailable -> still needs attention (no new call)
         _monitorService.TrackClusterStatusChange(CreateUnavailableState());
         _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
-        _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>(), Arg.Any<ClusterAttentionReason>());
+        _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
 
         // Healthy -> attention cleared
         _monitorService.TrackClusterStatusChange(CreateHealthyState());
@@ -303,7 +299,7 @@ public class QdrantMonitorServiceTests
 
         // Degraded
         _monitorService.TrackClusterStatusChange(CreateDegradedState());
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.ClusterStatusDegraded);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
         _meterService.ClearReceivedCalls();
 
         // Healthy again
@@ -313,7 +309,7 @@ public class QdrantMonitorServiceTests
 
         // Degraded again
         _monitorService.TrackClusterStatusChange(CreateDegradedState());
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.ClusterStatusDegraded);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     #endregion
@@ -330,7 +326,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(state);
 
         // Assert
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     [Test]
@@ -343,7 +339,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(state);
 
         // Assert - Issues take priority over status
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     [Test]
@@ -356,7 +352,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(state);
 
         // Assert - Issues take priority over status
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     [Test]
@@ -370,7 +366,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: true));
 
         // Assert
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     [Test]
@@ -384,7 +380,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(CreateDegradedState(hasIssues: false));
 
         // Assert - should use degraded status reason
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.ClusterStatusDegraded);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     [Test]
@@ -398,7 +394,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: true));
 
         // Assert - should still set attention even though status didn't change
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     [Test]
@@ -412,7 +408,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: true));
 
         // Assert - attention should remain true due to issues
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     [Test]
@@ -440,7 +436,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(CreateUnavailableState(hasIssues: false));
 
         // Assert - should set attention with unavailable reason, not clear it
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.ClusterStatusUnavailable);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     [Test]
@@ -453,12 +449,12 @@ public class QdrantMonitorServiceTests
 
         // Issues appear while healthy
         _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: true));
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
         _meterService.ClearReceivedCalls();
 
         // Issues persist
         _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: true));
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
         _meterService.ClearReceivedCalls();
 
         // Issues resolved
@@ -469,7 +465,7 @@ public class QdrantMonitorServiceTests
         // Status stays healthy, no issues - should not update
         _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: false));
         _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
-        _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>(), Arg.Any<ClusterAttentionReason>());
+        _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
     }
 
     [Test]
@@ -477,7 +473,7 @@ public class QdrantMonitorServiceTests
     {
         // Arrange - start degraded with issues
         _monitorService.TrackClusterStatusChange(CreateDegradedState(hasIssues: true));
-        _meterService.Received(1).UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
         _meterService.ClearReceivedCalls();
 
         // Act - transition to healthy and issues cleared simultaneously

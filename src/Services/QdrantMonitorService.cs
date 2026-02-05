@@ -96,7 +96,7 @@ public class QdrantMonitorService(
         // Always set attention if there are issues
         if (hasIssues)
         {
-            meterService.UpdateClusterNeedsAttention(true, ClusterAttentionReason.HasActiveIssues);
+            meterService.UpdateClusterNeedsAttention(true);
             _previousStatus = currentStatus;
             _previousHadIssues = true;
             return;
@@ -125,10 +125,7 @@ public class QdrantMonitorService(
                     logger.LogWarning("Cluster status changed from {PreviousStatus} to {CurrentStatus} - NEEDS ATTENTION",
                         _previousStatus.Value, currentStatus);
                     
-                    var reason = currentStatus == ClusterStatus.Degraded 
-                        ? ClusterAttentionReason.ClusterStatusDegraded 
-                        : ClusterAttentionReason.ClusterStatusUnavailable;
-                    meterService.UpdateClusterNeedsAttention(true, reason);
+                    meterService.UpdateClusterNeedsAttention(true);
 
                     break;
                 case ClusterStatus.Degraded or ClusterStatus.Unavailable
@@ -153,10 +150,7 @@ public class QdrantMonitorService(
             if (currentStatus == ClusterStatus.Degraded || currentStatus == ClusterStatus.Unavailable)
             {
                 logger.LogWarning("Initial cluster status is {Status} - NEEDS ATTENTION", currentStatus);
-                var reason = currentStatus == ClusterStatus.Degraded 
-                    ? ClusterAttentionReason.ClusterStatusDegraded 
-                    : ClusterAttentionReason.ClusterStatusUnavailable;
-                meterService.UpdateClusterNeedsAttention(true, reason);
+                meterService.UpdateClusterNeedsAttention(true);
             }
             else
             {

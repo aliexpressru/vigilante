@@ -1,5 +1,4 @@
 using Vigilante.Models;
-using Vigilante.Models.Enums;
 
 namespace Vigilante.Services.Interfaces;
 
@@ -9,5 +8,5 @@ public interface IMeterService
 
     void UpdateCollectionSize(CollectionSize collectionSize);
 
-    void UpdateClusterNeedsAttention(bool needsAttention, ClusterAttentionReason reason = ClusterAttentionReason.None);
+    void UpdateClusterNeedsAttention(bool needsAttention);
 }
