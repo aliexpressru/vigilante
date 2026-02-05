@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using Vigilante.Models;
+using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services;
@@ -10,6 +11,7 @@ public class MeterService : IMeterService
     public const string MeterName = "vigilante";
     private int _aliveNodesCount;
     private int _clusterNeedsAttention;
+    private ClusterAttentionReason _attentionReason = ClusterAttentionReason.None;
     private readonly ConcurrentDictionary<(string Pod, string Collection), (long Size, DateTime LastUpdated)> _collectionSizes = new();
     private readonly TimeSpan _staleDataThreshold = TimeSpan.FromMinutes(5);
     
@@ -25,9 +27,14 @@ public class MeterService : IMeterService
 
         meter.CreateObservableGauge(
             name: $"{MeterName}_cluster_needs_attention",
-            observeValue: () => _clusterNeedsAttention,
+            observeValue: () => new Measurement<int>(
+                _clusterNeedsAttention,
+                new KeyValuePair<string, object?>[]
+                {
+                    new("reason", _attentionReason.ToString())
+                }),
             unit: "{status}",
-            description: "Indicates if the cluster needs attention (1 = needs attention, 0 = healthy). Set to 1 when cluster transitions from Healthy to Degraded or Unavailable.");
+            description: "Indicates if the cluster needs attention (1 = needs attention, 0 = healthy). Set to 1 when cluster transitions from Healthy to Degraded or Unavailable, or when there are active issues.");
 
         meter.CreateObservableGauge(
             name: $"{MeterName}_collection_size_bytes",
@@ -64,9 +71,10 @@ public class MeterService : IMeterService
         Interlocked.Exchange(ref _aliveNodesCount, count);
     }
 
-    public void UpdateClusterNeedsAttention(bool needsAttention)
+    public void UpdateClusterNeedsAttention(bool needsAttention, ClusterAttentionReason reason = ClusterAttentionReason.None)
     {
         Interlocked.Exchange(ref _clusterNeedsAttention, needsAttention ? 1 : 0);
+        _attentionReason = reason;
     }
 
     public void UpdateCollectionSize(CollectionSize collectionSize)

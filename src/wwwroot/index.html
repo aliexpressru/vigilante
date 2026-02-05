@@ -21,23 +21,35 @@
             </div>
         </header>
 
+        <!-- Sticky Refresh Controls (Left Side) -->
+        <div class="sticky-refresh-controls">
+            <label for="stickyRefreshInterval">Auto:</label>
+            <select id="stickyRefreshInterval" class="refresh-select">
+                <option value="0" selected>Off</option>
+                <option value="15000">15s</option>
+                <option value="30000">30s</option>
+                <option value="60000">1m</option>
+            </select>
+            <button id="stickyManualRefresh" class="refresh-button" title="Refresh now">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+        </div>
+
         <div class="main-content">
             <!-- Overall Status Card -->
             <div class="status-card" id="overallStatus">
                 <div class="status-header">
                     <div class="status-header-left">
                         <h2><i class="fas fa-heartbeat"></i> Cluster Status</h2>
-                        <div class="refresh-controls">
-                            <span>Auto-refresh:</span>
+                        <!-- Hidden controls for backward compatibility -->
+                        <div style="display: none;">
                             <select id="refreshInterval" class="refresh-select">
                                 <option value="0" selected>Off</option>
                                 <option value="15000">15s</option>
                                 <option value="30000">30s</option>
                                 <option value="60000">1m</option>
                             </select>
-                            <button id="manualRefresh" class="refresh-button" title="Refresh now">
-                                <i class="fas fa-sync-alt"></i>
-                            </button>
+                            <button id="manualRefresh" class="refresh-button"></button>
                         </div>
                     </div>
                     <div class="refresh-indicator" id="refreshIndicator">

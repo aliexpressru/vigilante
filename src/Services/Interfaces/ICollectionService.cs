@@ -103,5 +103,26 @@ public interface ICollectionService
         IReadOnlyList<NodeInfo> nodes,
         Dictionary<string, string> peerToPodMap,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Drops specified shards from a peer node in the cluster
+    /// </summary>
+    Task<bool> DropShardsFromPeerAsync(
+        string healthyNodeUrl,
+        string collectionName,
+        ulong peerId,
+        uint[] shardIds,
+        bool isDryRun,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Starts resharding operation for a collection
+    /// </summary>
+    Task<bool> StartReshardingAsync(
+        string healthyNodeUrl,
+        string collectionName,
+        ReshardingOperationDirection direction,
+        ulong? peerId,
+        CancellationToken cancellationToken);
 }
 

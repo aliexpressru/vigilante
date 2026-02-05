@@ -1,3 +1,4 @@
+using Aer.QdrantClient.Http.Models.Shared;
 using Microsoft.AspNetCore.Mvc;
 using Vigilante.Extensions;
 using Vigilante.Models;
@@ -66,6 +67,75 @@ public class ClusterController(
         {
             logger.LogError(ex, "Error during shard replication");
             return StatusCode(500, new { error = "Internal server error during shard replication", details = ex.Message });
+        }
+    }
+
+    [HttpPost("drop-shards")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DropShardsFromPeer(
+        [FromBody] V1DropShardsFromPeerRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var success = await clusterManager.DropShardsFromPeerAsync(
+                request.CollectionName,
+                request.PeerId!.Value,
+                request.ShardIds,
+                request.IsDryRun,
+                cancellationToken);
+
+            if (success)
+            {
+                return Ok(new { message = "Shard drop operation completed successfully" });
+            }
+
+            return StatusCode(500, new { error = "Failed to drop shards from peer" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during shard drop operation");
+            return StatusCode(500, new { error = "Internal server error during shard drop", details = ex.Message });
+        }
+    }
+
+    [HttpPost("start-resharding")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> StartResharding(
+        [FromBody] V1StartReshardingRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Parse ReshardingOperationDirection using extension method
+            var direction = request.Direction.TryParseEnum<ReshardingOperationDirection>();
+
+            if (!direction.HasValue)
+            {
+                return BadRequest(new { error = "Invalid direction value. Must be 'Up' or 'Down'." });
+            }
+
+            var success = await clusterManager.StartReshardingAsync(
+                request.CollectionName,
+                direction.Value,
+                request.PeerId,
+                cancellationToken);
+
+            if (success)
+            {
+                return Ok(new { message = "Resharding operation started successfully" });
+            }
+
+            return StatusCode(500, new { error = "Failed to start resharding operation" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during resharding operation");
+            return StatusCode(500, new { error = "Internal server error during resharding", details = ex.Message });
         }
     }
 }

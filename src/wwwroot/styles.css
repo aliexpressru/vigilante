@@ -465,6 +465,7 @@ body {
 
 /* Action buttons */
 .replicate-button,
+.drop-shards-button,
 .exec-button,
 .refresh-button {
     padding: 6px 16px;
@@ -477,6 +478,19 @@ body {
     font-size: 0.85rem;
     font-weight: 500;
     box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    vertical-align: middle;
+}
+
+.drop-shards-button {
+    background: linear-gradient(135deg, #f44336, #d32f2f);
+}
+
+.snapshot-button {
+    background: linear-gradient(135deg, #4caf50, #388e3c);
+}
+
+.resharding-button {
+    background: linear-gradient(135deg, #9c27b0, #7b1fa2);
 }
 
 .replicate-button,
@@ -500,10 +514,46 @@ body {
     transform: translateY(-1px);
 }
 
+.drop-shards-button:hover {
+    background: linear-gradient(135deg, #e53935, #c62828);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    transform: translateY(-1px);
+}
+
+.snapshot-button:hover {
+    background: linear-gradient(135deg, #45a049, #2e7d32);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    transform: translateY(-1px);
+}
+
+.resharding-button:hover {
+    background: linear-gradient(135deg, #8e24aa, #6a1b9a);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    transform: translateY(-1px);
+}
+
 .replicate-button:active,
 .exec-button:active,
 .refresh-button:active {
     background: linear-gradient(135deg, #1976d2, #0d47a1);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    transform: translateY(0);
+}
+
+.drop-shards-button:active {
+    background: linear-gradient(135deg, #d32f2f, #b71c1c);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    transform: translateY(0);
+}
+
+.snapshot-button:active {
+    background: linear-gradient(135deg, #388e3c, #1b5e20);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    transform: translateY(0);
+}
+
+.resharding-button:active {
+    background: linear-gradient(135deg, #7b1fa2, #4a148c);
     box-shadow: 0 1px 2px rgba(0,0,0,0.2);
     transform: translateY(0);
 }
@@ -518,6 +568,92 @@ body {
     background: #f8f9fa;
     padding: 4px;
     border-radius: 4px;
+}
+
+/* Sticky Refresh Controls (Left Side) */
+.sticky-refresh-controls {
+    position: fixed;
+    left: 20px;
+    top: 10px;
+    z-index: 999;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+}
+
+.sticky-refresh-controls:hover {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.sticky-refresh-controls label {
+    font-size: 0.85rem;
+    color: #666;
+    font-weight: 500;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.sticky-refresh-controls .refresh-select {
+    min-width: 70px;
+}
+
+.sticky-refresh-controls .refresh-button {
+    margin: 0;
+    padding: 6px 10px;
+}
+
+/* Refresh button icon animation */
+.sticky-refresh-controls .refresh-button.refreshing i,
+.refresh-button.refreshing i,
+.refresh-indicator.spinning i {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Responsive adjustments for sticky refresh controls */
+@media (max-width: 1200px) {
+    .sticky-refresh-controls {
+        left: 10px;
+        top: 10px;
+        padding: 8px 10px;
+    }
+}
+
+@media (max-width: 768px) {
+    .sticky-refresh-controls {
+        left: 5px;
+        top: 8px;
+        padding: 6px 8px;
+        gap: 6px;
+    }
+    
+    .sticky-refresh-controls label {
+        font-size: 0.75rem;
+    }
+    
+    .sticky-refresh-controls .refresh-select {
+        min-width: 60px;
+        font-size: 0.8rem;
+        padding: 4px 6px;
+    }
+    
+    .sticky-refresh-controls .refresh-button {
+        padding: 4px 8px;
+    }
 }
 
 .refresh-select {
