@@ -18,6 +18,7 @@ public class DynamicConfigService : IDynamicConfigService
     private readonly SemaphoreSlim _lock = new(1, 1);
     private FileSystemWatcher? _fileWatcher;
     private readonly string _configFilePath;
+    private bool _initialized;
 
     /// <summary>
     /// Event raised when configuration is updated
@@ -32,6 +33,7 @@ public class DynamicConfigService : IDynamicConfigService
         _logger = logger;
         _cachedConfig = new DynamicConfig(); // Default config
         _configFilePath = KubernetesConstants.DynamicConfigFilePath;
+        _initialized = false;
     }
 
     public async Task<DynamicConfig> GetConfigAsync(CancellationToken cancellationToken = default)
@@ -39,31 +41,11 @@ public class DynamicConfigService : IDynamicConfigService
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            // Try to read from mounted ConfigMap file
-            if (File.Exists(_configFilePath))
+            // Load from file only on first access
+            if (!_initialized)
             {
-                try
-                {
-                    var configJson = await File.ReadAllTextAsync(_configFilePath, cancellationToken);
-                    var config = JsonSerializer.Deserialize<DynamicConfig>(configJson);
-                    if (config != null)
-                    {
-                        _cachedConfig = config;
-                        return config;
-                    }
-                }
-                catch (JsonException ex)
-                {
-                    _logger.LogError(ex, "Failed to deserialize dynamic config from file {FilePath}", _configFilePath);
-                }
-                catch (IOException ex)
-                {
-                    _logger.LogError(ex, "Failed to read dynamic config file {FilePath}", _configFilePath);
-                }
-            }
-            else
-            {
-                _logger.LogWarning("Dynamic config file not found at {FilePath}, using cached or default config", _configFilePath);
+                await LoadConfigFromFileAsync(cancellationToken);
+                _initialized = true;
             }
 
             return _cachedConfig;
@@ -71,6 +53,39 @@ public class DynamicConfigService : IDynamicConfigService
         finally
         {
             _lock.Release();
+        }
+    }
+
+    private async Task LoadConfigFromFileAsync(CancellationToken cancellationToken)
+    {
+        // Try to read from mounted ConfigMap file
+        if (File.Exists(_configFilePath))
+        {
+            try
+            {
+                var configJson = await File.ReadAllTextAsync(_configFilePath, cancellationToken);
+                var config = JsonSerializer.Deserialize<DynamicConfig>(configJson);
+                if (config != null)
+                {
+                    _cachedConfig = config;
+                    _logger.LogInformation(
+                        "Loaded dynamic config from file: MonitoringIntervalSeconds={Interval}",
+                        config.MonitoringIntervalSeconds);
+                    return;
+                }
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Failed to deserialize dynamic config from file {FilePath}", _configFilePath);
+            }
+            catch (IOException ex)
+            {
+                _logger.LogError(ex, "Failed to read dynamic config file {FilePath}", _configFilePath);
+            }
+        }
+        else
+        {
+            _logger.LogWarning("Dynamic config file not found at {FilePath}, using default config", _configFilePath);
         }
     }
 
