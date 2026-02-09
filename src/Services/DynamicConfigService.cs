@@ -128,7 +128,6 @@ public class DynamicConfigService : IDynamicConfigService
         try
         {
             var directory = Path.GetDirectoryName(_configFilePath);
-            var fileName = Path.GetFileName(_configFilePath);
             
             if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
             {
@@ -136,48 +135,70 @@ public class DynamicConfigService : IDynamicConfigService
                 return Task.CompletedTask;
             }
 
+            // Kubernetes ConfigMap updates work via symlinks. Watch for the ..data symlink changes
+            // which is how Kubernetes atomically updates mounted ConfigMaps
             _fileWatcher = new FileSystemWatcher(directory)
             {
-                Filter = fileName,
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.Size,
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.DirectoryName,
                 EnableRaisingEvents = true
             };
 
-            _fileWatcher.Changed += async (_, args) =>
+            // Handle all types of file system events because Kubernetes uses atomic symlink swaps
+            void ReloadConfig(object sender, FileSystemEventArgs args)
             {
-                _logger.LogInformation("Detected config file change: {ChangeType}", args.ChangeType);
-                
-                // Debounce - wait a bit for file write to complete
-                await Task.Delay(100);
-                
-                await _lock.WaitAsync(cancellationToken);
-                try
+                // Only react to ..data changes (Kubernetes atomic update mechanism) or direct file changes
+                if (!args.Name?.Contains("..data") == true && args.Name != Path.GetFileName(_configFilePath))
                 {
-                    var configJson = await File.ReadAllTextAsync(_configFilePath, cancellationToken);
-                    var config = JsonSerializer.Deserialize<DynamicConfig>(configJson);
-                    
-                    if (config != null && !config.Equals(_cachedConfig))
-                    {
-                        _cachedConfig = config;
-                        _logger.LogInformation(
-                            "Config reloaded from file: MonitoringIntervalSeconds={Interval}",
-                            config.MonitoringIntervalSeconds);
-                        
-                        // Raise event to notify subscribers
-                        ConfigChanged?.Invoke(this, config);
-                    }
+                    return;
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to reload config from file");
-                }
-                finally
-                {
-                    _lock.Release();
-                }
-            };
 
-            _logger.LogInformation("FileSystemWatcher started successfully");
+                _logger.LogInformation("Detected config directory change: {ChangeType} - {Name}", args.ChangeType, args.Name);
+                
+                // Fire and forget async reload
+                _ = Task.Run(async () =>
+                {
+                    // Wait for the atomic update to complete
+                    await Task.Delay(500, cancellationToken);
+                    
+                    await _lock.WaitAsync(cancellationToken);
+                    try
+                    {
+                        if (!File.Exists(_configFilePath))
+                        {
+                            _logger.LogWarning("Config file disappeared during reload");
+                            return;
+                        }
+
+                        var configJson = await File.ReadAllTextAsync(_configFilePath, cancellationToken);
+                        var config = JsonSerializer.Deserialize<DynamicConfig>(configJson);
+                        
+                        if (config != null && !config.Equals(_cachedConfig))
+                        {
+                            _cachedConfig = config;
+                            _logger.LogInformation(
+                                "Config reloaded from file: MonitoringIntervalSeconds={Interval}",
+                                config.MonitoringIntervalSeconds);
+                            
+                            // Raise event to notify subscribers
+                            ConfigChanged?.Invoke(this, config);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to reload config from file");
+                    }
+                    finally
+                    {
+                        _lock.Release();
+                    }
+                }, cancellationToken);
+            }
+
+            _fileWatcher.Changed += ReloadConfig;
+            _fileWatcher.Created += ReloadConfig;
+            _fileWatcher.Deleted += ReloadConfig;
+
+            _logger.LogInformation("FileSystemWatcher started successfully for directory {Directory}", directory);
         }
         catch (Exception ex)
         {

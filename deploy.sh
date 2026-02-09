@@ -64,8 +64,8 @@ if [ ! -f "configmap.yaml" ]; then
     exit 1
 fi
 
-if [ ! -f "dynamic-config-endpoints.yaml" ]; then
-    echo "❌ dynamic-config-endpoints.yaml not found in current directory"
+if [ ! -f "dynamic-configmap.yaml" ]; then
+    echo "❌ dynamic-configmap.yaml not found in current directory"
     echo "💡 Make sure you're in k8s/dev or k8s/prod directory"
     exit 1
 fi

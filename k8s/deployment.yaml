@@ -61,6 +61,8 @@ spec:
         - name: config-volume
           mountPath: /app/appsettings.Production.json
           subPath: appsettings.json
+        - name: dynamic-config-volume
+          mountPath: /app/config
         resources:
           requests:
             memory: "128Mi"
