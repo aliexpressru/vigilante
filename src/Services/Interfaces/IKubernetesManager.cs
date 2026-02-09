@@ -31,30 +31,12 @@ public interface IKubernetesManager
     string GetCurrentNamespace();
     
     /// <summary>
-    /// Reads an Endpoints resource, or creates it if it doesn't exist
+    /// Updates a specific key in ConfigMap data
     /// </summary>
-    Task<k8s.Models.V1Endpoints> GetOrCreateEndpointsAsync(
-        string endpointsName,
-        Dictionary<string, string>? labels = null,
-        Dictionary<string, string>? annotations = null,
-        string? namespaceParameter = null,
-        CancellationToken cancellationToken = default);
-    
-    /// <summary>
-    /// Updates annotations on an Endpoints resource
-    /// </summary>
-    Task UpdateEndpointsAnnotationsAsync(
-        string endpointsName,
-        Dictionary<string, string> annotations,
-        string? namespaceParameter = null,
-        CancellationToken cancellationToken = default);
-    
-    /// <summary>
-    /// Watches for changes to a specific Endpoints resource
-    /// </summary>
-    Task WatchEndpointsAsync(
-        string endpointsName,
-        Action<k8s.WatchEventType, k8s.Models.V1Endpoints> onEvent,
+    Task UpdateConfigMapDataAsync(
+        string configMapName,
+        string key,
+        string value,
         string? namespaceParameter = null,
         CancellationToken cancellationToken = default);
 }

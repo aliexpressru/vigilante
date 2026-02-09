@@ -24,8 +24,8 @@ public interface IDynamicConfigService
     Task UpdateConfigAsync(DynamicConfig config, CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// Start watching for configuration changes in Kubernetes (if available)
-    /// This method runs until cancellation is requested
+    /// Start watching for configuration file changes using FileSystemWatcher
+    /// Monitors the mounted ConfigMap volume for updates
     /// </summary>
     Task StartWatchingAsync(CancellationToken cancellationToken = default);
 }

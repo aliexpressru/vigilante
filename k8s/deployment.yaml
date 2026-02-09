@@ -84,3 +84,6 @@ spec:
       - name: config-volume
         configMap:
           name: vigilante-config
+      - name: dynamic-config-volume
+        configMap:
+          name: vigilante-dynamic-config

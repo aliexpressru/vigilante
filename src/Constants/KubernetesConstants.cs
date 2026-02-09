@@ -138,14 +138,19 @@ public static class KubernetesConstants
 
     // Dynamic Configuration
     /// <summary>
-    /// Name of the Endpoints resource used for storing dynamic configuration
+    /// Name of the ConfigMap used for storing dynamic configuration
     /// </summary>
-    public const string DynamicConfigEndpointsName = "vigilante-dynamic-config";
+    public const string DynamicConfigMapName = "vigilante-dynamic-config";
 
     /// <summary>
-    /// Annotation key for storing dynamic configuration in Endpoints
+    /// Key in ConfigMap data for dynamic configuration JSON
     /// </summary>
-    public const string DynamicConfigAnnotationKey = "vigilante.io/dynamic-config";
+    public const string DynamicConfigMapKey = "dynamic-config.json";
+
+    /// <summary>
+    /// Path to the mounted dynamic config file in the pod
+    /// </summary>
+    public const string DynamicConfigFilePath = "/app/config/dynamic-config.json";
 
     /// <summary>
     /// Label for Vigilante app

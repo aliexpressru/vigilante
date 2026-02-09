@@ -140,24 +140,24 @@ echo "☸️  Applying Kubernetes configurations..."
 kubectl apply -f ../rbac.yaml
 kubectl apply -f configmap.yaml
 
-# Bootstrap dynamic configuration in Endpoints if it doesn't exist
+# Bootstrap dynamic configuration ConfigMap if it doesn't exist or needs update
 echo "🔧 Bootstrapping dynamic configuration..."
-if kubectl get endpoints vigilante-dynamic-config -n "$KUBE_NAMESPACE" &> /dev/null; then
-    echo "✓ Dynamic config Endpoints already exists"
-    CURRENT_CONFIG=$(kubectl get endpoints vigilante-dynamic-config -n "$KUBE_NAMESPACE" \
-      -o jsonpath='{.metadata.annotations.vigilante\.io/dynamic-config}' 2>/dev/null || echo "")
+if kubectl get configmap vigilante-dynamic-config -n "$KUBE_NAMESPACE" &> /dev/null; then
+    echo "✓ Dynamic config ConfigMap already exists"
+    CURRENT_CONFIG=$(kubectl get configmap vigilante-dynamic-config -n "$KUBE_NAMESPACE" \
+      -o jsonpath='{.data.dynamic-config\.json}' 2>/dev/null || echo "")
     if [ -z "$CURRENT_CONFIG" ]; then
-        echo "⚠️  Endpoints exists but has no config annotation, applying from file..."
-        kubectl apply -f dynamic-config-endpoints.yaml
+        echo "⚠️  ConfigMap exists but has no config data, applying from file..."
+        kubectl apply -f dynamic-configmap.yaml
         echo "✓ Dynamic config initialized from file"
     else
         echo "✓ Current config: $CURRENT_CONFIG"
-        echo "💡 To update, edit dynamic-config-endpoints.yaml and apply manually or use API"
+        echo "💡 ConfigMap not updated to preserve runtime changes. To reset, delete and redeploy."
     fi
 else
-    echo "Creating dynamic config Endpoints from file..."
-    kubectl apply -f dynamic-config-endpoints.yaml
-    echo "✓ Dynamic config Endpoints created from: $PWD/dynamic-config-endpoints.yaml"
+    echo "Creating dynamic config ConfigMap from file..."
+    kubectl apply -f dynamic-configmap.yaml
+    echo "✓ Dynamic config ConfigMap created from: $PWD/dynamic-configmap.yaml"
 fi
 
 kubectl apply -f "$TEMP_DEPLOYMENT"
