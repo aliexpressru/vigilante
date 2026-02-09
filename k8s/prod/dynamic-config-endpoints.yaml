@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: vigilante-dynamic-config
+  labels:
+    app: vigilante
+    managed-by: vigilante
+  annotations:
+    description: "Dynamic configuration for Vigilante - do not delete"
+    vigilante.io/dynamic-config: |
+      {
+        "MonitoringIntervalSeconds": 30
+      }
+subsets: []

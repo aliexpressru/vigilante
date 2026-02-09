@@ -64,6 +64,12 @@ if [ ! -f "configmap.yaml" ]; then
     exit 1
 fi
 
+if [ ! -f "dynamic-config-endpoints.yaml" ]; then
+    echo "❌ dynamic-config-endpoints.yaml not found in current directory"
+    echo "💡 Make sure you're in k8s/dev or k8s/prod directory"
+    exit 1
+fi
+
 if [ ! -f "../deployment.yaml" ]; then
     echo "❌ ../deployment.yaml not found"
     echo "💡 Make sure k8s/deployment.yaml exists"
@@ -133,6 +139,27 @@ fi
 echo "☸️  Applying Kubernetes configurations..."
 kubectl apply -f ../rbac.yaml
 kubectl apply -f configmap.yaml
+
+# Bootstrap dynamic configuration in Endpoints if it doesn't exist
+echo "🔧 Bootstrapping dynamic configuration..."
+if kubectl get endpoints vigilante-dynamic-config -n "$KUBE_NAMESPACE" &> /dev/null; then
+    echo "✓ Dynamic config Endpoints already exists"
+    CURRENT_CONFIG=$(kubectl get endpoints vigilante-dynamic-config -n "$KUBE_NAMESPACE" \
+      -o jsonpath='{.metadata.annotations.vigilante\.io/dynamic-config}' 2>/dev/null || echo "")
+    if [ -z "$CURRENT_CONFIG" ]; then
+        echo "⚠️  Endpoints exists but has no config annotation, applying from file..."
+        kubectl apply -f dynamic-config-endpoints.yaml
+        echo "✓ Dynamic config initialized from file"
+    else
+        echo "✓ Current config: $CURRENT_CONFIG"
+        echo "💡 To update, edit dynamic-config-endpoints.yaml and apply manually or use API"
+    fi
+else
+    echo "Creating dynamic config Endpoints from file..."
+    kubectl apply -f dynamic-config-endpoints.yaml
+    echo "✓ Dynamic config Endpoints created from: $PWD/dynamic-config-endpoints.yaml"
+fi
+
 kubectl apply -f "$TEMP_DEPLOYMENT"
 kubectl apply -f ../service.yaml
 kubectl apply -f ../service-monitor.yaml

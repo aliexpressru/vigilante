@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Options;
-using Vigilante.Configuration;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
@@ -9,16 +7,40 @@ namespace Vigilante.Services;
 public class QdrantMonitorService(
     IClusterManager clusterManager,
     IMeterService meterService,
-    IOptions<QdrantOptions> options,
+    IDynamicConfigService dynamicConfigService,
     ILogger<QdrantMonitorService> logger)
     : BackgroundService
 {
-    private readonly QdrantOptions _options = options.Value;
+    private DynamicConfig _dynamicConfig = new();
     private ClusterStatus? _previousStatus;
+    private CancellationTokenSource? _delayCts;
+    private readonly object _configLock = new();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("Vigilante is now watching over Qdrant cluster");
+        
+        // Load initial dynamic config
+        _dynamicConfig = await dynamicConfigService.GetConfigAsync(stoppingToken);
+        logger.LogInformation(
+            "Loaded dynamic config: MonitoringIntervalSeconds={Interval}",
+            _dynamicConfig.MonitoringIntervalSeconds);
+        
+        // Subscribe to config changes
+        dynamicConfigService.ConfigChanged += OnConfigChanged;
+        
+        // Start watching for config changes from Kubernetes in background
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await dynamicConfigService.StartWatchingAsync(stoppingToken);
+            }
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+            {
+                logger.LogError(ex, "Error watching config changes from Kubernetes");
+            }
+        }, stoppingToken);
         
         try
         {
@@ -45,12 +67,6 @@ public class QdrantMonitorService(
                         // Clear cache on background refresh to ensure data is up-to-date
                         await clusterManager.GetCollectionsInfoAsync(clearCache: true, stoppingToken);
                     }
-
-                    if (_options.EnableAutoRecovery && !state.Health.IsHealthy)
-                    {
-                        logger.LogWarning("Auto-recovery is enabled but not yet implemented");
-                        // TODO: Implement auto-recovery logic
-                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -61,7 +77,8 @@ public class QdrantMonitorService(
                     logger.LogError(ex, "Error during cluster monitoring");
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(_options.MonitoringIntervalSeconds), stoppingToken);
+                // Wait with ability to interrupt on config change
+                await WaitForNextIterationAsync(stoppingToken);
             }
         }
         catch (Exception ex)
@@ -84,7 +101,47 @@ public class QdrantMonitorService(
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Vigilante stopping");
+        
+        // Unsubscribe from config changes
+        dynamicConfigService.ConfigChanged -= OnConfigChanged;
+        
         await base.StopAsync(cancellationToken);
+    }
+
+    private void OnConfigChanged(object? sender, DynamicConfig newConfig)
+    {
+        lock (_configLock)
+        {
+            _dynamicConfig = newConfig;
+            logger.LogInformation(
+                "Configuration reloaded: MonitoringIntervalSeconds={Interval}, interrupting current delay",
+                newConfig.MonitoringIntervalSeconds);
+            
+            // Cancel current delay to immediately apply new interval
+            _delayCts?.Cancel();
+        }
+    }
+
+    private async Task WaitForNextIterationAsync(CancellationToken stoppingToken)
+    {
+        int intervalSeconds;
+        lock (_configLock)
+        {
+            intervalSeconds = _dynamicConfig.MonitoringIntervalSeconds;
+            // Create new CTS for this delay
+            _delayCts?.Dispose();
+            _delayCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        }
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), _delayCts.Token);
+        }
+        catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
+        {
+            // Delay was cancelled due to config change, not service stopping
+            logger.LogDebug("Delay interrupted due to configuration change");
+        }
     }
 
     internal void TrackClusterStatusChange(ClusterState state)

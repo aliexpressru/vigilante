@@ -1,8 +1,6 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 using NUnit.Framework;
-using Vigilante.Configuration;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services;
@@ -16,7 +14,7 @@ public class QdrantMonitorServiceTests
     private IClusterManager _clusterManager = null!;
     private IMeterService _meterService = null!;
     private ILogger<QdrantMonitorService> _logger = null!;
-    private IOptions<QdrantOptions> _options = null!;
+    private IDynamicConfigService _dynamicConfigService = null!;
     private QdrantMonitorService _monitorService = null!;
 
     [SetUp]
@@ -25,17 +23,16 @@ public class QdrantMonitorServiceTests
         _clusterManager = Substitute.For<IClusterManager>();
         _meterService = Substitute.For<IMeterService>();
         _logger = Substitute.For<ILogger<QdrantMonitorService>>();
+        _dynamicConfigService = Substitute.For<IDynamicConfigService>();
         
-        _options = Options.Create(new QdrantOptions
-        {
-            MonitoringIntervalSeconds = 5,
-            EnableAutoRecovery = false
-        });
+        // Setup dynamic config service to return default config
+        _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new DynamicConfig { MonitoringIntervalSeconds = 5 }));
 
         _monitorService = new QdrantMonitorService(
             _clusterManager,
             _meterService,
-            _options,
+            _dynamicConfigService,
             _logger);
     }
 

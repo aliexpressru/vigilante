@@ -15,9 +15,14 @@
                     <h1><i class="fas fa-shield-alt"></i> Vigilante Dashboard</h1>
                     <p>Qdrant Cluster Guardian</p>
                 </div>
-                <button id="viewVigilanteLogs" class="view-vigilante-logs-button" title="View Vigilante service logs">
-                    <i class="fas fa-file-alt"></i> View Vigilante Logs
-                </button>
+                <div class="header-actions">
+                    <button id="viewConfig" class="header-action-button" title="View and edit dynamic configuration">
+                        <i class="fas fa-cog"></i> Configuration
+                    </button>
+                    <button id="viewVigilanteLogs" class="header-action-button" title="View Vigilante service logs">
+                        <i class="fas fa-file-alt"></i> View Logs
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -240,6 +245,52 @@
             <div class="modal-footer">
                 <button id="cancelRecovery" class="modal-button modal-button-secondary">Cancel</button>
                 <button id="confirmRecovery" class="modal-button modal-button-primary">Recover</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuration Modal -->
+    <div id="configModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-cog"></i> Dynamic Configuration</h2>
+                <button class="modal-close" id="closeConfigModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="config-info">
+                    <i class="fas fa-info-circle"></i>
+                    <span>Changes are applied immediately without pod restart</span>
+                </div>
+                
+                <div class="form-group">
+                    <label for="monitoringInterval">
+                        Monitoring Interval (seconds)
+                        <span class="config-label-hint">How often to check cluster health</span>
+                    </label>
+                    <input 
+                        type="number" 
+                        id="monitoringInterval" 
+                        class="form-input" 
+                        min="1" 
+                        max="3600" 
+                        placeholder="120">
+                    <small class="form-hint">Valid range: 1-3600 seconds (1 second to 1 hour)</small>
+                </div>
+
+                <div class="config-current">
+                    <h3>Current Configuration</h3>
+                    <div id="configDisplay" class="config-display">
+                        <div class="config-loading">
+                            <i class="fas fa-spinner fa-spin"></i> Loading...
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelConfig" class="modal-button modal-button-secondary">Cancel</button>
+                <button id="saveConfig" class="modal-button modal-button-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
             </div>
         </div>
     </div>

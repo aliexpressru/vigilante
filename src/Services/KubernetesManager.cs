@@ -194,6 +194,125 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         return KubernetesConstants.DefaultNamespace;
     }
 
+    public async Task<V1Endpoints> GetOrCreateEndpointsAsync(
+        string endpointsName,
+        Dictionary<string, string>? labels = null,
+        Dictionary<string, string>? annotations = null,
+        string? namespaceParameter = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (kubernetes == null)
+        {
+            throw new InvalidOperationException(KubernetesConstants.KubernetesClientNotAvailableMessage);
+        }
+
+        var ns = namespaceParameter ?? GetCurrentNamespace();
+
+        try
+        {
+            return await kubernetes.CoreV1.ReadNamespacedEndpointsAsync(
+                endpointsName,
+                ns,
+                cancellationToken: cancellationToken);
+        }
+        catch (k8s.Autorest.HttpOperationException ex) when (ex.Response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            logger.LogInformation("Endpoints {Name} not found in namespace {Namespace}, creating...", 
+                endpointsName, ns);
+
+            var endpoints = new V1Endpoints
+            {
+                Metadata = new V1ObjectMeta
+                {
+                    Name = endpointsName,
+                    Labels = labels ?? new Dictionary<string, string>(),
+                    Annotations = annotations ?? new Dictionary<string, string>()
+                },
+                Subsets = new List<V1EndpointSubset>()
+            };
+
+            return await kubernetes.CoreV1.CreateNamespacedEndpointsAsync(
+                endpoints,
+                ns,
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    public async Task UpdateEndpointsAnnotationsAsync(
+        string endpointsName,
+        Dictionary<string, string> annotations,
+        string? namespaceParameter = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (kubernetes == null)
+        {
+            throw new InvalidOperationException(KubernetesConstants.KubernetesClientNotAvailableMessage);
+        }
+
+        var ns = namespaceParameter ?? GetCurrentNamespace();
+
+        var patch = new V1Endpoints
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Annotations = annotations
+            }
+        };
+
+        await kubernetes.CoreV1.PatchNamespacedEndpointsAsync(
+            new V1Patch(patch, V1Patch.PatchType.MergePatch),
+            endpointsName,
+            ns,
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task WatchEndpointsAsync(
+        string endpointsName,
+        Action<WatchEventType, V1Endpoints> onEvent,
+        string? namespaceParameter = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (kubernetes == null)
+        {
+            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
+            return;
+        }
+
+        var ns = namespaceParameter ?? GetCurrentNamespace();
+
+        logger.LogInformation("Starting watch for Endpoints {Name} in namespace {Namespace}", 
+            endpointsName, ns);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+#pragma warning disable CS0618 // Type or member is obsolete
+                var watchTask = kubernetes.CoreV1.ListNamespacedEndpointsWithHttpMessagesAsync(
+                    ns,
+                    fieldSelector: $"metadata.name={endpointsName}",
+                    watch: true,
+                    cancellationToken: cancellationToken);
+
+                var watchEnumerable = watchTask.WatchAsync<V1Endpoints, V1EndpointsList>(
+                    onError: ex => logger.LogError(ex, "Error in Endpoints watch stream"),
+                    cancellationToken: cancellationToken);
+#pragma warning restore CS0618 // Type or member is obsolete
+
+                await foreach (var (type, item) in watchEnumerable)
+                {
+                    onEvent(type, item);
+                }
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(ex, "Watch connection lost for Endpoints {Name}, reconnecting in 5 seconds...", 
+                    endpointsName);
+                await Task.Delay(5000, cancellationToken);
+            }
+        }
+    }
+
     private async Task<bool> UpdateStatefulSetAsync(
         string statefulSetName,
         string? namespaceParameter,

@@ -34,6 +34,7 @@ public class Startup(IConfiguration configuration)
         });
         services.AddSingleton<IKubernetesManager, KubernetesManager>();
         services.AddSingleton<IPodCommandExecutor, PodCommandExecutor>();
+        services.AddSingleton<IDynamicConfigService, DynamicConfigService>();
 
         // Add health checks
         services.AddHealthChecks();

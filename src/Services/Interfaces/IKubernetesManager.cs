@@ -29,4 +29,32 @@ public interface IKubernetesManager
     /// Gets the current namespace from the service account namespace file, or returns default namespace
     /// </summary>
     string GetCurrentNamespace();
+    
+    /// <summary>
+    /// Reads an Endpoints resource, or creates it if it doesn't exist
+    /// </summary>
+    Task<k8s.Models.V1Endpoints> GetOrCreateEndpointsAsync(
+        string endpointsName,
+        Dictionary<string, string>? labels = null,
+        Dictionary<string, string>? annotations = null,
+        string? namespaceParameter = null,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Updates annotations on an Endpoints resource
+    /// </summary>
+    Task UpdateEndpointsAnnotationsAsync(
+        string endpointsName,
+        Dictionary<string, string> annotations,
+        string? namespaceParameter = null,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Watches for changes to a specific Endpoints resource
+    /// </summary>
+    Task WatchEndpointsAsync(
+        string endpointsName,
+        Action<k8s.WatchEventType, k8s.Models.V1Endpoints> onEvent,
+        string? namespaceParameter = null,
+        CancellationToken cancellationToken = default);
 }

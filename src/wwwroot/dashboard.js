@@ -42,6 +42,7 @@ class VigilanteDashboard {
         this.setupCollectionControls();
         this.setupSnapshotControls();
         this.setupLogsControls();
+        this.setupConfigControls();
     }
 
     // Convert numeric status to string
@@ -4153,6 +4154,127 @@ class VigilanteDashboard {
             this.logsRefreshTimer = null;
         }
     }
+
+    // Configuration Management
+    setupConfigControls() {
+        const viewConfigBtn = document.getElementById('viewConfig');
+        const configModal = document.getElementById('configModal');
+        const closeConfigModal = document.getElementById('closeConfigModal');
+        const cancelConfigBtn = document.getElementById('cancelConfig');
+        const saveConfigBtn = document.getElementById('saveConfig');
+
+        // Open modal
+        viewConfigBtn?.addEventListener('click', async () => {
+            configModal.style.display = 'flex';
+            await this.loadConfiguration();
+        });
+
+        // Close modal
+        const closeModal = () => {
+            configModal.style.display = 'none';
+        };
+
+        closeConfigModal?.addEventListener('click', closeModal);
+        cancelConfigBtn?.addEventListener('click', closeModal);
+
+        // Close on outside click
+        configModal?.addEventListener('click', (e) => {
+            if (e.target === configModal) {
+                closeModal();
+            }
+        });
+
+        // Save configuration
+        saveConfigBtn?.addEventListener('click', async () => {
+            await this.saveConfiguration();
+        });
+    }
+
+    async loadConfiguration() {
+        const configDisplay = document.getElementById('configDisplay');
+        const monitoringIntervalInput = document.getElementById('monitoringInterval');
+
+        configDisplay.innerHTML = '<div class="config-loading"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+
+        try {
+            const response = await fetch('/api/v1/config');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const config = await response.json();
+
+            // Update input field
+            monitoringIntervalInput.value = config.monitoringIntervalSeconds || 120;
+
+            // Display current config
+            configDisplay.innerHTML = `
+                <div class="config-item">
+                    <span class="config-key">Monitoring Interval:</span>
+                    <span class="config-value">${config.monitoringIntervalSeconds} seconds</span>
+                </div>
+            `;
+
+        } catch (error) {
+            console.error('Failed to load configuration:', error);
+            configDisplay.innerHTML = `
+                <div class="error-message">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Failed to load configuration: ${error.message}
+                </div>
+            `;
+            this.showToast(`Failed to load configuration: ${error.message}`, 'error');
+        }
+    }
+
+    async saveConfiguration() {
+        const monitoringIntervalInput = document.getElementById('monitoringInterval');
+        const saveConfigBtn = document.getElementById('saveConfig');
+
+        const monitoringInterval = parseInt(monitoringIntervalInput.value);
+
+        // Validation
+        if (isNaN(monitoringInterval) || monitoringInterval < 1 || monitoringInterval > 3600) {
+            this.showToast('Monitoring interval must be between 1 and 3600 seconds', 'error');
+            return;
+        }
+
+        // Disable button during save
+        saveConfigBtn.disabled = true;
+        saveConfigBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+        try {
+            const response = await fetch('/api/v1/config', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    monitoringIntervalSeconds: monitoringInterval
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            await response.json(); // Consume response
+
+            this.showToast('Configuration updated successfully!', 'success');
+
+            // Reload to show updated values
+            await this.loadConfiguration();
+
+        } catch (error) {
+            console.error('Failed to save configuration:', error);
+            this.showToast(`Failed to save configuration: ${error.message}`, 'error');
+        } finally {
+            // Re-enable button
+            saveConfigBtn.disabled = false;
+            saveConfigBtn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
+        }
+    }
 }
 
 // Initialize dashboard when page loads and store it globally
@@ -4174,3 +4296,4 @@ document.addEventListener('visibilitychange', () => {
         }
     }
 });
+

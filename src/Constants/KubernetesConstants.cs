@@ -135,5 +135,31 @@ public static class KubernetesConstants
     /// ISO 8601 round-trip date/time format
     /// </summary>
     public const string Iso8601Format = "o";
+
+    // Dynamic Configuration
+    /// <summary>
+    /// Name of the Endpoints resource used for storing dynamic configuration
+    /// </summary>
+    public const string DynamicConfigEndpointsName = "vigilante-dynamic-config";
+
+    /// <summary>
+    /// Annotation key for storing dynamic configuration in Endpoints
+    /// </summary>
+    public const string DynamicConfigAnnotationKey = "vigilante.io/dynamic-config";
+
+    /// <summary>
+    /// Label for Vigilante app
+    /// </summary>
+    public const string VigilanteAppLabel = "vigilante";
+
+    /// <summary>
+    /// Label value for managed-by
+    /// </summary>
+    public const string ManagedByVigilanteLabel = "vigilante";
+
+    /// <summary>
+    /// Description annotation for dynamic config Endpoints
+    /// </summary>
+    public const string DynamicConfigDescription = "Dynamic configuration for Vigilante - do not delete";
 }
 
