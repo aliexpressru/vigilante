@@ -309,7 +309,8 @@ public class CollectionService : ICollectionService
                 collectionName,
                 snapshotName,
                 cancellationToken,
-                isWaitForResult: true);
+                isWaitForResult: true,
+                snapshotPriority: SnapshotPriority.Snapshot);
 
             if (result.IsAcceptedOrSuccess())
             {
@@ -361,6 +362,7 @@ public class CollectionService : ICollectionService
                 snapshotLocationUri,
                 cancellationToken,
                 isWaitForResult: waitForResult,
+                snapshotPriority: SnapshotPriority.Snapshot,
                 snapshotChecksum: snapshotChecksum);
 
             if (result.IsAcceptedOrSuccess())
