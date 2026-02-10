@@ -18,6 +18,7 @@ class VigilanteDashboard {
         this.refreshInterval = 0;
         this.autoRefreshTimer = null;
         this.openSnapshots = new Set();
+        this.openCollections = new Set(); // Track which collections are open
         this.selectedState = new Map();
         this.toastIdCounter = 0; // Counter for unique toast IDs
         this.clusterIssues = []; // Issues from cluster/status
@@ -803,16 +804,9 @@ class VigilanteDashboard {
             totalSizeElement.textContent = `Total Size: ${this.formatSize(totalSizeBytes)}`;
         }
         
-        // Remember which collections were open before update
-        const openCollections = new Set();
-        document.querySelectorAll('.collection-details.visible').forEach(row => {
-            const nameCell = row.previousElementSibling.querySelector('.collection-name-line');
-            if (nameCell) {
-                openCollections.add(nameCell.textContent.trim());
-            }
-        });
-        
-        console.log('Saving open collections state:', Array.from(openCollections));
+        // Use persistent state to remember which collections were open
+        // (instead of querying DOM which can have timing issues)
+        console.log('Saving open collections state:', Array.from(this.openCollections));
         
         // Group collections by name and sort them
         const collectionsByName = collections.reduce((acc, info) => {
@@ -941,7 +935,7 @@ class VigilanteDashboard {
 
                 const detailsRow = document.createElement('tr');
                 detailsRow.className = 'collection-details';
-                const shouldBeVisible = openCollections.has(collection.name);
+                const shouldBeVisible = this.openCollections.has(collection.name);
                 if (shouldBeVisible) {
                     detailsRow.classList.add('visible');
                     console.log(`Restoring visible state for collection: ${collection.name}`);
@@ -1280,8 +1274,10 @@ class VigilanteDashboard {
                     console.log(`Collection ${collection.name} clicked, was visible: ${wasVisible}, will be: ${!wasVisible}`);
                     if (wasVisible) {
                         detailsRow.classList.remove('visible');
+                        this.openCollections.delete(collection.name);
                     } else {
                         detailsRow.classList.add('visible');
+                        this.openCollections.add(collection.name);
                     }
                 });
 
