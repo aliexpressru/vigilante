@@ -51,7 +51,7 @@ public class CollectionService : ICollectionService
         string collectionName,
         uint[] shardIds,
         bool isMove,
-        Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod? shardTransferMethod,
+        ShardTransferMethod? shardTransferMethod,
         CancellationToken cancellationToken)
     {
         try
@@ -60,7 +60,12 @@ public class CollectionService : ICollectionService
 
             // Use provided transfer method or default to Snapshot
             var transferMethod =
-                shardTransferMethod ?? Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod.Snapshot;
+                shardTransferMethod ?? ShardTransferMethod.Snapshot;
+
+            _logger.LogInformation(
+                "Initiating shard replication via Qdrant client: Collection={Collection}, Source={SourcePeerId}, Target={TargetPeerId}, " +
+                "Shards=[{ShardIds}], Move={IsMove}, TransferMethod={TransferMethod}",
+                collectionName, sourcePeerId, targetPeerId, string.Join(", ", shardIds), isMove, transferMethod);
 
             var result = await qdrantClient.ReplicateShards(
                 sourcePeerId: sourcePeerId,

@@ -270,6 +270,201 @@ public class ClusterControllerTests
     }
 
     [Test]
+    public async Task ReplicateShards_WithSnapshotTransferMethod_PassesCorrectValue()
+    {
+        // Arrange
+        var request = new V1ReplicateShardsRequest
+        {
+            SourcePeerId = 1001,
+            TargetPeerId = 1002,
+            CollectionName = "test_collection",
+            ShardIdsToReplicate = new uint[] { 0 },
+            IsMoveShards = false,
+            ShardTransferMethod = "Snapshot"
+        };
+
+        _clusterManager.ReplicateShardsAsync(
+            Arg.Any<ulong>(),
+            Arg.Any<ulong>(),
+            Arg.Any<string>(),
+            Arg.Any<uint[]>(),
+            Arg.Any<bool>(),
+            Arg.Is<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(m => m == Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod.Snapshot),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.ReplicateShards(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        await _clusterManager.Received(1).ReplicateShardsAsync(
+            request.SourcePeerId!.Value,
+            request.TargetPeerId!.Value,
+            request.CollectionName,
+            request.ShardIdsToReplicate,
+            request.IsMoveShards,
+            Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod.Snapshot,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReplicateShards_WithStreamRecordsTransferMethod_PassesCorrectValue()
+    {
+        // Arrange
+        var request = new V1ReplicateShardsRequest
+        {
+            SourcePeerId = 1001,
+            TargetPeerId = 1002,
+            CollectionName = "test_collection",
+            ShardIdsToReplicate = new uint[] { 0 },
+            IsMoveShards = false,
+            ShardTransferMethod = "StreamRecords"
+        };
+
+        _clusterManager.ReplicateShardsAsync(
+            Arg.Any<ulong>(),
+            Arg.Any<ulong>(),
+            Arg.Any<string>(),
+            Arg.Any<uint[]>(),
+            Arg.Any<bool>(),
+            Arg.Is<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(m => m == Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod.StreamRecords),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.ReplicateShards(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        await _clusterManager.Received(1).ReplicateShardsAsync(
+            request.SourcePeerId!.Value,
+            request.TargetPeerId!.Value,
+            request.CollectionName,
+            request.ShardIdsToReplicate,
+            request.IsMoveShards,
+            Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod.StreamRecords,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReplicateShards_WithWalDeltaTransferMethod_PassesCorrectValue()
+    {
+        // Arrange
+        var request = new V1ReplicateShardsRequest
+        {
+            SourcePeerId = 1001,
+            TargetPeerId = 1002,
+            CollectionName = "test_collection",
+            ShardIdsToReplicate = new uint[] { 0 },
+            IsMoveShards = false,
+            ShardTransferMethod = "WalDelta"
+        };
+
+        _clusterManager.ReplicateShardsAsync(
+            Arg.Any<ulong>(),
+            Arg.Any<ulong>(),
+            Arg.Any<string>(),
+            Arg.Any<uint[]>(),
+            Arg.Any<bool>(),
+            Arg.Is<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(m => m == Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod.WalDelta),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.ReplicateShards(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        await _clusterManager.Received(1).ReplicateShardsAsync(
+            request.SourcePeerId!.Value,
+            request.TargetPeerId!.Value,
+            request.CollectionName,
+            request.ShardIdsToReplicate,
+            request.IsMoveShards,
+            Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod.WalDelta,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReplicateShards_WithReshardingStreamRecordsTransferMethod_PassesCorrectValue()
+    {
+        // Arrange
+        var request = new V1ReplicateShardsRequest
+        {
+            SourcePeerId = 1001,
+            TargetPeerId = 1002,
+            CollectionName = "test_collection",
+            ShardIdsToReplicate = new uint[] { 0 },
+            IsMoveShards = false,
+            ShardTransferMethod = "ReshardingStreamRecords"
+        };
+
+        _clusterManager.ReplicateShardsAsync(
+            Arg.Any<ulong>(),
+            Arg.Any<ulong>(),
+            Arg.Any<string>(),
+            Arg.Any<uint[]>(),
+            Arg.Any<bool>(),
+            Arg.Is<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(m => m == Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod.ReshardingStreamRecords),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.ReplicateShards(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        await _clusterManager.Received(1).ReplicateShardsAsync(
+            request.SourcePeerId!.Value,
+            request.TargetPeerId!.Value,
+            request.CollectionName,
+            request.ShardIdsToReplicate,
+            request.IsMoveShards,
+            Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod.ReshardingStreamRecords,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReplicateShards_WithNullTransferMethod_PassesNull()
+    {
+        // Arrange
+        var request = new V1ReplicateShardsRequest
+        {
+            SourcePeerId = 1001,
+            TargetPeerId = 1002,
+            CollectionName = "test_collection",
+            ShardIdsToReplicate = new uint[] { 0 },
+            IsMoveShards = false,
+            ShardTransferMethod = null
+        };
+
+        _clusterManager.ReplicateShardsAsync(
+            Arg.Any<ulong>(),
+            Arg.Any<ulong>(),
+            Arg.Any<string>(),
+            Arg.Any<uint[]>(),
+            Arg.Any<bool>(),
+            Arg.Is<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(m => m == null),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.ReplicateShards(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        await _clusterManager.Received(1).ReplicateShardsAsync(
+            request.SourcePeerId!.Value,
+            request.TargetPeerId!.Value,
+            request.CollectionName,
+            request.ShardIdsToReplicate,
+            request.IsMoveShards,
+            null,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task ReplicateShards_WhenExceptionThrown_Returns500()
     {
         // Arrange

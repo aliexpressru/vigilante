@@ -45,7 +45,7 @@ public class ClusterController(
         try
         {
             // Parse ShardTransferMethod if provided using extension method
-            var transferMethod = request.ShardTransferMethod.TryParseEnum<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod>();
+            var transferMethod = request.ShardTransferMethod.TryParseEnum<ShardTransferMethod>();
 
             var success = await clusterManager.ReplicateShardsAsync(
                 request.SourcePeerId!.Value,
