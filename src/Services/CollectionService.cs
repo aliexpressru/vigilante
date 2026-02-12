@@ -333,12 +333,13 @@ public class CollectionService : ICollectionService
         string snapshotUrl,
         string? snapshotChecksum,
         bool waitForResult,
+        SnapshotPriority snapshotPriority,
         CancellationToken cancellationToken)
     {
         try
         {
-            _logger.LogInformation("Recovering collection {CollectionName} from URL {SnapshotUrl} on node {NodeUrl}",
-                collectionName, snapshotUrl, nodeUrl);
+            _logger.LogInformation("Recovering collection {CollectionName} from URL {SnapshotUrl} on node {NodeUrl} with priority {SnapshotPriority}",
+                collectionName, snapshotUrl, nodeUrl, snapshotPriority);
 
             var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
 
@@ -349,7 +350,7 @@ public class CollectionService : ICollectionService
                 snapshotLocationUri,
                 cancellationToken,
                 isWaitForResult: waitForResult,
-                snapshotPriority: SnapshotPriority.Snapshot,
+                snapshotPriority: snapshotPriority,
                 snapshotChecksum: snapshotChecksum);
 
             if (result.IsAcceptedOrSuccess())

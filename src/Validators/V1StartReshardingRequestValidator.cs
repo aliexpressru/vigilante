@@ -15,7 +15,7 @@ public class V1StartReshardingRequestValidator : AbstractValidator<V1StartReshar
         RuleFor(x => x.Direction)
             .NotEmpty()
             .WithMessage("Direction is required")
-            .Must(direction => Enum.TryParse<ReshardingOperationDirection>(direction, true, out _))
+            .IsEnumName(typeof(ReshardingOperationDirection), caseSensitive: false)
             .WithMessage($"Direction must be one of: {string.Join(", ", Enum.GetNames<ReshardingOperationDirection>())}");
     }
 }

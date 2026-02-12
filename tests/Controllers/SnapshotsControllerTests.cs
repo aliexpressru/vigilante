@@ -1,13 +1,14 @@
+using Aer.QdrantClient.Http.Models.Shared;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Vigilante.Controllers;
-using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
 using Vigilante.Services.Interfaces;
+using SnapshotInfo = Vigilante.Models.SnapshotInfo;
 
 namespace Aer.Vigilante.Tests.Controllers;
 
@@ -577,12 +578,13 @@ public class SnapshotsControllerTests
             .Returns(presignedUrl);
 
         _collectionService.RecoverCollectionFromUrlAsync(
-            request.TargetNodeUrl,
-            "new_collection",  // Should use CollectionName
-            presignedUrl,
-            Arg.Any<string?>(),
-            true,
-            Arg.Any<CancellationToken>())
+                request.TargetNodeUrl,
+                "new_collection",
+                presignedUrl,
+                Arg.Any<string?>(),
+                true,
+                Arg.Any<SnapshotPriority>(),
+                Arg.Any<CancellationToken>())
             .Returns(true);
 
         // Act
@@ -606,6 +608,7 @@ public class SnapshotsControllerTests
             presignedUrl,
             Arg.Any<string?>(),
             true,
+            Arg.Any<SnapshotPriority>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -638,6 +641,7 @@ public class SnapshotsControllerTests
             Arg.Any<string>(),
             Arg.Any<string?>(),
             Arg.Any<bool>(),
+            Arg.Any<SnapshotPriority>(),
             Arg.Any<CancellationToken>())
             .Returns(true);
 
@@ -787,6 +791,7 @@ public class SnapshotsControllerTests
             request.SnapshotUrl,
             request.SnapshotChecksum,
             request.WaitForResult,
+            Arg.Any<SnapshotPriority>(),
             Arg.Any<CancellationToken>())
             .Returns(true);
 
@@ -818,6 +823,7 @@ public class SnapshotsControllerTests
             Arg.Any<string>(),
             Arg.Any<string?>(),
             Arg.Any<bool>(),
+            Arg.Any<SnapshotPriority>(),
             Arg.Any<CancellationToken>())
             .Returns(false);
 

@@ -29,5 +29,11 @@ public class V1RecoverFromUrlRequest
     /// Wait for operation to complete (default: true)
     /// </summary>
     public bool WaitForResult { get; set; } = true;
+
+    /// <summary>
+    /// Snapshot priority for recovery (default: Snapshot)
+    /// Possible values: NoSync, Snapshot, Replica
+    /// </summary>
+    public string? SnapshotPriority { get; set; }
 }
 
