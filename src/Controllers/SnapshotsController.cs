@@ -1,3 +1,4 @@
+using Aer.QdrantClient.Http.Models.Shared;
 using Microsoft.AspNetCore.Mvc;
 using Vigilante.Constants;
 using Vigilante.Extensions;
@@ -361,6 +362,7 @@ public class SnapshotsController(
                     presignedUrl,
                     snapshotChecksum: null,
                     waitForResult: true,
+                    SnapshotPriority.Snapshot,
                     cancellationToken);
             }
             else if (source == SnapshotSource.KubernetesStorage)
@@ -387,6 +389,7 @@ public class SnapshotsController(
                         snapshotPath,
                         snapshotChecksum: null,
                         waitForResult: true,
+                        SnapshotPriority.Snapshot,
                         cancellationToken);
                 }
                 else
@@ -487,12 +490,16 @@ public class SnapshotsController(
     {
         try
         {
+            // Parse SnapshotPriority, default to Snapshot if not provided
+            var snapshotPriority = request.SnapshotPriority.ParseEnumOrDefault(SnapshotPriority.Snapshot);
+
             var success = await collectionService.RecoverCollectionFromUrlAsync(
                 request.NodeUrl,
                 request.CollectionName,
                 request.SnapshotUrl,
                 request.SnapshotChecksum,
                 request.WaitForResult,
+                snapshotPriority,
                 cancellationToken);
 
             var response = new V1RecoverFromSnapshotResponse

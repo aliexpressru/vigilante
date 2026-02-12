@@ -1,3 +1,4 @@
+using Aer.QdrantClient.Http.Models.Shared;
 using FluentValidation;
 using Vigilante.Models.Requests;
 
@@ -17,6 +18,11 @@ public class V1RecoverFromUrlRequestValidator : AbstractValidator<V1RecoverFromU
         RuleFor(x => x.SnapshotUrl)
             .NotEmpty()
             .Must(BeValidUrl);
+
+        RuleFor(x => x.SnapshotPriority)
+            .IsEnumName(typeof(SnapshotPriority), caseSensitive: false)
+            .When(x => !string.IsNullOrWhiteSpace(x.SnapshotPriority))
+            .WithMessage($"SnapshotPriority must be one of: {string.Join(", ", Enum.GetNames<SnapshotPriority>())}");
     }
 
     private bool BeValidUrl(string url)

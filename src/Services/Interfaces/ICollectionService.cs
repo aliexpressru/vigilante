@@ -78,6 +78,7 @@ public interface ICollectionService
         string snapshotUrl,
         string? snapshotChecksum,
         bool waitForResult,
+        SnapshotPriority snapshotPriority,
         CancellationToken cancellationToken);
 
     /// <summary>

@@ -1760,6 +1760,15 @@ class VigilanteDashboard {
                     <input type="text" id="recoverFromUrlChecksum" placeholder="Enter snapshot checksum" class="form-input" />
                 </div>
                 <div class="form-group">
+                    <label for="recoverFromUrlSnapshotPriority">Snapshot Priority:</label>
+                    <select id="recoverFromUrlSnapshotPriority" class="form-select">
+                        <option value="Snapshot" selected>Snapshot (prefer snapshot data)</option>
+                        <option value="Replica">Replica (prefer existing data)</option>
+                        <option value="NoSync">NoSync (restore without sync)</option>
+                    </select>
+                    <small class="form-hint">Source of truth for snapshot recovery</small>
+                </div>
+                <div class="form-group">
                     <label class="checkbox-label">
                         <input type="checkbox" id="recoverFromUrlWaitForResult" checked />
                         Wait for result
@@ -1814,12 +1823,14 @@ class VigilanteDashboard {
             const collectionNameInput = overlay.querySelector('#recoverFromUrlCollectionName');
             const snapshotUrlInput = overlay.querySelector('#recoverFromUrlSnapshotUrl');
             const snapshotChecksumInput = overlay.querySelector('#recoverFromUrlChecksum');
+            const snapshotPriorityInput = overlay.querySelector('#recoverFromUrlSnapshotPriority');
             const waitForResultInput = overlay.querySelector('#recoverFromUrlWaitForResult');
             
             console.log('Form elements:', {
                 collectionNameInput,
                 snapshotUrlInput,
                 snapshotChecksumInput,
+                snapshotPriorityInput,
                 waitForResultInput
             });
             
@@ -1835,6 +1846,7 @@ class VigilanteDashboard {
             const collectionName = collectionNameInput.value.trim();
             const snapshotUrl = snapshotUrlInput.value.trim();
             const snapshotChecksum = snapshotChecksumInput?.value.trim() || null;
+            const snapshotPriority = snapshotPriorityInput?.value || 'Snapshot';
             const waitForResult = waitForResultInput?.checked ?? true;
             
             console.log('Recover from URL form values:', {
@@ -1843,6 +1855,7 @@ class VigilanteDashboard {
                 snapshotUrl,
                 snapshotUrlLength: snapshotUrl.length,
                 snapshotChecksum,
+                snapshotPriority,
                 waitForResult,
                 nodeUrl
             });
@@ -1878,7 +1891,7 @@ class VigilanteDashboard {
             
             console.log('Validation passed, closing modal and calling recoverCollectionFromUrl');
             closeModal();
-            await this.recoverCollectionFromUrl(nodeUrl, collectionName, snapshotUrl, snapshotChecksum, waitForResult);
+            await this.recoverCollectionFromUrl(nodeUrl, collectionName, snapshotUrl, snapshotChecksum, snapshotPriority, waitForResult);
         });
         
         // Enter key handler for form inputs
@@ -1894,7 +1907,7 @@ class VigilanteDashboard {
         });
     }
 
-    async recoverCollectionFromUrl(nodeUrl, collectionName, snapshotUrl, snapshotChecksum, waitForResult) {
+    async recoverCollectionFromUrl(nodeUrl, collectionName, snapshotUrl, snapshotChecksum, snapshotPriority, waitForResult) {
         const toastId = this.showToast(
             `Recovering collection '${collectionName}' from URL on node ${nodeUrl}...`, 
             'info',
@@ -1913,6 +1926,11 @@ class VigilanteDashboard {
             // Add SnapshotChecksum only if it has a value
             if (snapshotChecksum && snapshotChecksum.trim() !== '') {
                 requestBody.SnapshotChecksum = snapshotChecksum;
+            }
+
+            // Add SnapshotPriority if provided
+            if (snapshotPriority) {
+                requestBody.SnapshotPriority = snapshotPriority;
             }
 
             console.log('Recover from URL request:', requestBody);
