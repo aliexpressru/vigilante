@@ -64,6 +64,12 @@ if [ ! -f "configmap.yaml" ]; then
     exit 1
 fi
 
+if [ ! -f "dynamic-configmap.yaml" ]; then
+    echo "❌ dynamic-configmap.yaml not found in current directory"
+    echo "💡 Make sure you're in k8s/dev or k8s/prod directory"
+    exit 1
+fi
+
 if [ ! -f "../deployment.yaml" ]; then
     echo "❌ ../deployment.yaml not found"
     echo "💡 Make sure k8s/deployment.yaml exists"
@@ -133,6 +139,27 @@ fi
 echo "☸️  Applying Kubernetes configurations..."
 kubectl apply -f ../rbac.yaml
 kubectl apply -f configmap.yaml
+
+# Bootstrap dynamic configuration ConfigMap if it doesn't exist or needs update
+echo "🔧 Bootstrapping dynamic configuration..."
+if kubectl get configmap vigilante-dynamic-config -n "$KUBE_NAMESPACE" &> /dev/null; then
+    echo "✓ Dynamic config ConfigMap already exists"
+    CURRENT_CONFIG=$(kubectl get configmap vigilante-dynamic-config -n "$KUBE_NAMESPACE" \
+      -o jsonpath='{.data.dynamic-config\.json}' 2>/dev/null || echo "")
+    if [ -z "$CURRENT_CONFIG" ]; then
+        echo "⚠️  ConfigMap exists but has no config data, applying from file..."
+        kubectl apply -f dynamic-configmap.yaml
+        echo "✓ Dynamic config initialized from file"
+    else
+        echo "✓ Current config: $CURRENT_CONFIG"
+        echo "💡 ConfigMap not updated to preserve runtime changes. To reset, delete and redeploy."
+    fi
+else
+    echo "Creating dynamic config ConfigMap from file..."
+    kubectl apply -f dynamic-configmap.yaml
+    echo "✓ Dynamic config ConfigMap created from: $PWD/dynamic-configmap.yaml"
+fi
+
 kubectl apply -f "$TEMP_DEPLOYMENT"
 kubectl apply -f ../service.yaml
 kubectl apply -f ../service-monitor.yaml

@@ -3420,8 +3420,14 @@ body {
     transform: translateY(0);
 }
 
-/* View Vigilante Logs Button */
-.view-vigilante-logs-button {
+/* Header Actions */
+.header-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.header-action-button {
     padding: 8px 16px;
     background: linear-gradient(135deg, #667eea, #764ba2);
     color: white;
@@ -3437,14 +3443,93 @@ body {
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
-.view-vigilante-logs-button:hover {
+.header-action-button:hover {
     background: linear-gradient(135deg, #5568d3, #6a3f8f);
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
-.view-vigilante-logs-button:active {
+.header-action-button:active {
     transform: translateY(0);
+}
+
+/* Configuration Modal Specific Styles */
+.config-info {
+    background: #e3f2fd;
+    border-left: 4px solid #2196f3;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #1976d2;
+}
+
+.config-info i {
+    font-size: 1.2rem;
+}
+
+.config-label-hint {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: normal;
+    color: #666;
+    margin-top: 4px;
+}
+
+.config-current {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.config-current h3 {
+    margin-bottom: 12px;
+    color: #333;
+    font-size: 1rem;
+}
+
+.config-display {
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 16px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
+.config-loading {
+    text-align: center;
+    color: #666;
+    padding: 20px;
+}
+
+.config-display pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.config-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.config-item:last-child {
+    border-bottom: none;
+}
+
+.config-key {
+    font-weight: 600;
+    color: #555;
+}
+
+.config-value {
+    color: #2196f3;
+    font-weight: 500;
 }
 
 /* Responsive styles */
@@ -3453,5 +3538,14 @@ body {
         width: 100%;
         right: -100%;
     }
+    
+    .header-actions {
+        justify-content: center;
+        width: 100%;
+    }
+    
+    .header-action-button {
+        flex: 1;
+        justify-content: center;
+    }
 }
-

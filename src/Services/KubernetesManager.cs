@@ -194,6 +194,41 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         return KubernetesConstants.DefaultNamespace;
     }
 
+    public async Task UpdateConfigMapDataAsync(
+        string configMapName,
+        string key,
+        string value,
+        string? namespaceParameter = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (kubernetes == null)
+        {
+            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
+            return;
+        }
+
+        var ns = namespaceParameter ?? GetCurrentNamespace();
+
+        logger.LogInformation("Updating ConfigMap {Name} key {Key} in namespace {Namespace}", 
+            configMapName, key, ns);
+
+        var patch = new
+        {
+            data = new Dictionary<string, string>
+            {
+                [key] = value
+            }
+        };
+
+        await kubernetes.CoreV1.PatchNamespacedConfigMapAsync(
+            new V1Patch(patch, V1Patch.PatchType.MergePatch),
+            configMapName,
+            ns,
+            cancellationToken: cancellationToken);
+        
+        logger.LogInformation("Successfully updated ConfigMap {Name} key {Key}", configMapName, key);
+    }
+
     private async Task<bool> UpdateStatefulSetAsync(
         string statefulSetName,
         string? namespaceParameter,

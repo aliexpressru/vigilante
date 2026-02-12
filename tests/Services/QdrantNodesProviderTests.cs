@@ -29,9 +29,7 @@ public class QdrantNodesProviderTests
         _clientFactory = Substitute.For<IQdrantClientFactory>();
         _options = Options.Create(new QdrantOptions
         {
-            MonitoringIntervalSeconds = 30,
-            HttpTimeoutSeconds = 5,
-            EnableAutoRecovery = true
+            HttpTimeoutSeconds = 5
         });
         _logger = Substitute.For<ILogger<QdrantNodesProvider>>();
     }

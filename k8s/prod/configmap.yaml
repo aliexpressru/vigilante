@@ -8,9 +8,7 @@ data:
   appsettings.json: |
     {
       "Qdrant": {
-        "MonitoringIntervalSeconds": 30,
         "HttpTimeoutSeconds": 5,
-        "EnableAutoRecovery": true,
         "ApiKey": "test"
       }
     }

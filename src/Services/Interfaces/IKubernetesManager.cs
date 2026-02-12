@@ -29,4 +29,14 @@ public interface IKubernetesManager
     /// Gets the current namespace from the service account namespace file, or returns default namespace
     /// </summary>
     string GetCurrentNamespace();
+    
+    /// <summary>
+    /// Updates a specific key in ConfigMap data
+    /// </summary>
+    Task UpdateConfigMapDataAsync(
+        string configMapName,
+        string key,
+        string value,
+        string? namespaceParameter = null,
+        CancellationToken cancellationToken = default);
 }

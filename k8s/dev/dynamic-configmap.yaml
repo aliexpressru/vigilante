@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vigilante-dynamic-config
+  labels:
+    app: vigilante
+    managed-by: vigilante
+  annotations:
+    description: "Dynamic configuration for Vigilante - can be updated at runtime"
+data:
+  dynamic-config.json: |
+    {
+      "MonitoringIntervalSeconds": 120
+    }
