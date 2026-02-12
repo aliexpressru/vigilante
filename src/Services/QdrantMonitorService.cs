@@ -22,9 +22,6 @@ public class QdrantMonitorService(
         
         // Load initial dynamic config
         _dynamicConfig = await dynamicConfigService.GetConfigAsync(stoppingToken);
-        logger.LogInformation(
-            "Loaded dynamic config: MonitoringIntervalSeconds={Interval}",
-            _dynamicConfig.MonitoringIntervalSeconds);
         
         // Subscribe to config changes
         dynamicConfigService.ConfigChanged += OnConfigChanged;

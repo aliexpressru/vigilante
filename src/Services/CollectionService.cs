@@ -105,10 +105,6 @@ public class CollectionService : ICollectionService
         string peerId,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "Starting to get collection sizes for pod {PodName} (Node URL {NodeUrl}) in namespace {Namespace}",
-            podName, nodeUrl, podNamespace);
-
         if (_commandExecutor == null)
         {
             return [];
@@ -123,8 +119,6 @@ public class CollectionService : ICollectionService
                 podNamespace,
                 QdrantConstants.StoragePath,
                 cancellationToken);
-
-            _logger.LogDebug("Found {Count} collections on pod {PodName}", collections.Count, podName);
 
             foreach (var collection in collections)
             {
@@ -164,7 +158,6 @@ public class CollectionService : ICollectionService
     {
         try
         {
-            _logger.LogDebug("Checking collections health");
             var collectionsResponse = await client.ListCollections(cancellationToken);
 
             if (!collectionsResponse.Status.IsSuccess)
@@ -181,13 +174,11 @@ public class CollectionService : ICollectionService
             {
                 var collections = collectionsResponse.Result.Collections;
 
-                _logger.LogDebug("Checking health for {CollectionCount} collections in parallel", collections.Length);
                 // Create tasks for all collection health checks
                 var checkTasks = collections.Select(async collection =>
                 {
                     var collectionName = collection.Name;
 
-                    _logger.LogDebug("Checking collection info for {CollectionName}", collectionName);
                     var collectionInfo = await client.GetCollectionInfo(collectionName, cancellationToken);
 
                     if (!collectionInfo.Status.IsSuccess)
@@ -199,8 +190,6 @@ public class CollectionService : ICollectionService
 
                         return (IsHealthy: false, CollectionName: collectionName, Error: errorDetails);
                     }
-
-                    _logger.LogDebug("Collection {CollectionName} is healthy", collectionName);
 
                     return (IsHealthy: true, CollectionName: collectionName, Error: (string?)null);
                 }).ToArray();
@@ -215,13 +204,6 @@ public class CollectionService : ICollectionService
                     return (false,
                         $"Failed to get info for collection '{failedCollection.CollectionName}': {failedCollection.Error}");
                 }
-
-                _logger.LogDebug("Collections health check passed for all {CollectionCount} collections",
-                    collections.Length);
-            }
-            else
-            {
-                _logger.LogDebug("Collections health check passed (no collections to verify)");
             }
 
             return (true, null);
@@ -460,10 +442,6 @@ public class CollectionService : ICollectionService
         CancellationToken cancellationToken)
     {
         var nodesList = nodes.ToList();
-        var hasApiKey = !string.IsNullOrEmpty(_options.ApiKey);
-        _logger.LogInformation(
-            "Getting collections from Qdrant API from {NodeCount} nodes (API key configured: {HasApiKey})",
-            nodesList.Count, hasApiKey);
 
         if (nodesList.Count == 0)
         {
@@ -478,9 +456,6 @@ public class CollectionService : ICollectionService
         {
             try
             {
-                _logger.LogDebug("Getting collections from node {NodeUrl} (PeerId: {PeerId})",
-                    node.Url, node.PeerId ?? "null");
-
                 var qdrantClient = _clientFactory.CreateClientFromUrl(node.Url, _options.ApiKey);
 
                 // Get list of collections
@@ -493,14 +468,8 @@ public class CollectionService : ICollectionService
                     continue;
                 }
 
-                // Changed to Info to always see this in logs
-                _logger.LogInformation("Found {CollectionCount} collections on node {NodeUrl}",
-                    collectionsResponse.Result.Collections.Length, node.Url);
-
                 if (collectionsResponse.Result.Collections.Length == 0)
                 {
-                    _logger.LogDebug("Node {NodeUrl} returned empty collections list", node.Url);
-
                     continue;
                 }
 
@@ -518,14 +487,6 @@ public class CollectionService : ICollectionService
                                 g => g.Key,
                                 g => g.Select(a => a.AliasName).ToList()
                             );
-
-                        _logger.LogInformation("Found {AliasCount} aliases on node {NodeUrl}",
-                            aliasesResponse.Result.Aliases.Length, node.Url);
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Failed to get aliases from node {NodeUrl}: {Error}",
-                            node.Url, aliasesResponse?.Status?.Error ?? "Unknown error");
                     }
                 }
                 catch (Exception ex)
@@ -561,10 +522,6 @@ public class CollectionService : ICollectionService
                             Metrics = metrics,
                             Aliases = aliases
                         });
-
-                        _logger.LogDebug(
-                            "Added collection {CollectionName} from node {NodeUrl} with {AliasCount} aliases",
-                            collectionName, node.Url, aliases.Count);
                     }
                     catch (Exception ex)
                     {
@@ -579,8 +536,6 @@ public class CollectionService : ICollectionService
             }
         }
 
-        _logger.LogInformation("Retrieved {Count} collections from Qdrant API", result.Count);
-
         return result;
     }
 
@@ -590,10 +545,6 @@ public class CollectionService : ICollectionService
         Dictionary<string, string> peerToPodMap,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "Getting enriched collections info from {NodesCount} nodes (peerToPodMap has {MapCount} entries)",
-            nodes.Count, peerToPodMap.Count);
-
         // Get collections from Qdrant API (only from healthy nodes)
         var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
 
@@ -603,9 +554,6 @@ public class CollectionService : ICollectionService
 
             return new List<CollectionInfo>();
         }
-
-        _logger.LogInformation("Using {HealthyCount} healthy nodes out of {TotalCount}",
-            healthyNodes.Count, nodes.Count);
 
         var collections = await GetCollectionsFromQdrantAsync(
             healthyNodes.Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName)),
@@ -618,24 +566,23 @@ public class CollectionService : ICollectionService
             return collections;
         }
 
-        _logger.LogInformation("Found {CollectionCount} collections from Qdrant API", collections.Count);
-
         // Enrich with storage info if nodes have pod names
         if (healthyNodes.Any(n => !string.IsNullOrEmpty(n.PodName)))
         {
-            _logger.LogDebug("Enriching collections with storage info (some nodes have PodName)");
             await EnrichCollectionsWithStorageInfoAsync(healthyNodes, collections, cancellationToken);
-        }
-        else
-        {
-            _logger.LogDebug("Skipping storage info enrichment (no nodes have PodName)");
         }
 
         // Enrich with clustering info
-        _logger.LogDebug("Enriching collections with clustering info");
         await EnrichCollectionsWithClusteringInfoAsync(healthyNodes, collections, peerToPodMap, cancellationToken);
 
-        _logger.LogInformation("Retrieved and enriched {Count} collections", collections.Count);
+        // Log summary with unique collection names
+        var uniqueCollections = collections.Select(c => c.CollectionName).Distinct().ToList();
+        _logger.LogInformation(
+            "Retrieved {TotalInstances} collection instances across {NodeCount} nodes. Unique collections: {UniqueCount} ({CollectionNames})",
+            collections.Count, 
+            healthyNodes.Count,
+            uniqueCollections.Count,
+            string.Join(", ", uniqueCollections));
 
         return collections;
     }
@@ -785,8 +732,6 @@ public class CollectionService : ICollectionService
         List<CollectionInfo> collections,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Enriching collections with storage information from Kubernetes");
-
         var storageCollections = new Dictionary<(string NodeUrl, string CollectionName), CollectionSize>();
 
         foreach (var node in nodes)
@@ -795,13 +740,8 @@ public class CollectionService : ICollectionService
             {
                 if (string.IsNullOrEmpty(node.PodName))
                 {
-                    _logger.LogDebug("Skipping node {NodeUrl} - no pod name available", node.Url);
-
                     continue;
                 }
-
-                _logger.LogInformation("Fetching storage info from pod {PodName} for node {NodeUrl}",
-                    node.PodName, node.Url);
 
                 var collectionSizes = (await GetCollectionsSizesForPodAsync(
                     node.PodName,
@@ -814,17 +754,12 @@ public class CollectionService : ICollectionService
                 {
                     storageCollections[(size.NodeUrl, size.CollectionName)] = size;
                 }
-
-                _logger.LogInformation("Retrieved {SizesCount} collection sizes from pod {PodName}",
-                    collectionSizes.Count, node.PodName);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to get collection sizes for node {NodeUrl}", node.Url);
             }
         }
-
-        _logger.LogInformation("Found {Count} collections in storage across all nodes", storageCollections.Count);
 
         // Enrich collections with storage data
         foreach (var collection in collections)
@@ -835,9 +770,6 @@ public class CollectionService : ICollectionService
             {
                 collection.Metrics[MetricConstants.PrettySizeKey] = storageInfo.PrettySize;
                 collection.Metrics[MetricConstants.SizeBytesKey] = storageInfo.SizeBytes;
-
-                _logger.LogDebug("Enriched collection {CollectionName} on {NodeUrl} with storage data: {Size}",
-                    collection.CollectionName, collection.NodeUrl, storageInfo.PrettySize);
             }
             else
             {
@@ -855,8 +787,6 @@ public class CollectionService : ICollectionService
         Dictionary<string, string> peerToPodMap,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Enriching collections with clustering information");
-
         // Get clustering info from each healthy node to get their local shards
         var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
 
@@ -867,7 +797,6 @@ public class CollectionService : ICollectionService
             return;
         }
 
-        _logger.LogInformation("Getting clustering info from {Count} healthy nodes", healthyNodes.Count);
 
         // Query each healthy node to get its local shards
         foreach (var node in healthyNodes)

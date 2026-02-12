@@ -89,16 +89,6 @@ public class ClusterManager(
             .Where(n => !string.IsNullOrEmpty(n.PeerId) && !string.IsNullOrEmpty(n.PodName))
             .ToDictionary(n => n.PeerId, n => n.PodName!);
 
-        logger.LogInformation("Found {NodesCount} nodes. Healthy nodes: {HealthyCount}. Nodes with PodName: {PodNameCount}",
-            state.Nodes.Count, state.Nodes.Count(n => n.IsHealthy), peerToPodMap.Count);
-
-        // Log node details for debugging
-        foreach (var node in state.Nodes)
-        {
-            logger.LogDebug("Node: URL={Url}, PeerId={PeerId}, PodName={PodName}, IsHealthy={IsHealthy}",
-                node.Url, node.PeerId ?? "null", node.PodName ?? "null", node.IsHealthy);
-        }
-
         // Get enriched collections info from CollectionService
         var result = await collectionService.GetEnrichedCollectionsInfoAsync(
             state.Nodes,
@@ -121,7 +111,6 @@ public class ClusterManager(
                 lock (_cacheLock)
                 {
                     _cachedCollections = null;
-                    logger.LogInformation("Cleared collections cache due to empty result");
                 }
             }
             
@@ -664,27 +653,19 @@ public class ClusterManager(
     {
         if (kubernetesManager == null)
         {
-            logger.LogDebug("KubernetesManager is not available, skipping K8s events");
-
             return;
         }
 
         if (state.Status != ClusterStatus.Degraded)
         {
-            logger.LogDebug("Cluster status is {Status}, skipping K8s events (only fetch for Degraded)", state.Status);
-
             return;
         }
 
-        logger.LogInformation("Cluster is degraded, fetching Kubernetes warning events");
-
         var namespaceToUse = state.Nodes.FirstOrDefault(n => !string.IsNullOrEmpty(n.Namespace))?.Namespace;
-        logger.LogInformation("Using namespace: {Namespace}", namespaceToUse ?? "default");
 
         try
         {
             var warningEvents = await kubernetesManager.GetWarningEventsAsync(namespaceToUse, cancellationToken);
-            logger.LogInformation("Fetched {Count} K8s warning events", warningEvents.Count);
 
             if (warningEvents.Count > 0)
             {
@@ -695,26 +676,15 @@ public class ClusterManager(
                     foreach (var warning in warningEvents)
                     {
                         targetNode.Warnings.Add(ClusterConstants.KubernetesEventPrefix + warning);
-                        logger.LogDebug("Added K8s event to node {NodeUrl}: {Warning}", targetNode.Url, warning);
                     }
 
                     logger.LogInformation(
-                        "Added {Count} Kubernetes warning events to node {NodeUrl}. Total warnings on node: {TotalWarnings}",
-                        warningEvents.Count, targetNode.Url, targetNode.Warnings.Count);
+                        "Added {Count} Kubernetes warning events to degraded node {NodeUrl}",
+                        warningEvents.Count, targetNode.Url);
 
                     // Force recalculation of Health to include new warnings
                     state.InvalidateCache();
-                    logger.LogDebug("Invalidated ClusterState cache to recalculate health with new warnings");
                 }
-                else
-                {
-                    logger.LogWarning("No target node found to attach {Count} K8s warning events", warningEvents.Count);
-                }
-            }
-            else
-            {
-                logger.LogInformation("No K8s warning events found in namespace {Namespace}",
-                    namespaceToUse ?? "default");
             }
         }
         catch (Exception ex)
