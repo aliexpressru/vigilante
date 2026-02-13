@@ -1,3 +1,5 @@
+using Aer.QdrantClient.Http.Models.Shared;
+
 namespace Vigilante.Models;
 
 public class CollectionInfo
@@ -17,4 +19,10 @@ public class CollectionInfo
     public List<string> Issues { get; set; } = new();
     
     public List<string> Aliases { get; set; } = new();
+    
+    /// <summary>
+    /// Collection status from Qdrant API.
+    /// Green - all good, Yellow - optimization is running, Red - some operations failed.
+    /// </summary>
+    public QdrantCollectionStatus? Status { get; set; }
 }

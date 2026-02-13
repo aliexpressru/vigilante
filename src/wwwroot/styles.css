@@ -5,6 +5,51 @@
     box-sizing: border-box;
 }
 
+/* Custom fast tooltip for collection status */
+.collection-status[data-tooltip] {
+    position: relative;
+    cursor: help;
+}
+
+.collection-status[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-4px);
+    padding: 6px 10px;
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    border-radius: 4px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease-in;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.collection-status[data-tooltip]::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(1px);
+    border: 5px solid transparent;
+    border-top-color: rgba(0, 0, 0, 0.9);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease-in;
+    z-index: 1000;
+}
+
+.collection-status[data-tooltip]:hover::after,
+.collection-status[data-tooltip]:hover::before {
+    opacity: 1;
+    transition-delay: 0.1s;
+}
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -937,6 +982,52 @@ body {
     font-weight: 400;
     line-height: 1.2;
     margin-top: 2px;
+}
+
+/* Collection Status Badge */
+.collection-status {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.3rem 0.8rem;
+    border-radius: 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.collection-status i {
+    font-size: 0.9em;
+}
+
+/* Green Status - Healthy */
+.collection-status-green {
+    color: #2e7d32;
+    background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+    border: 1px solid #81c784;
+}
+
+/* Yellow Status - Optimizing */
+.collection-status-yellow {
+    color: #f57c00;
+    background: linear-gradient(135deg, #fff3e0, #ffe0b2);
+    border: 1px solid #ffb74d;
+}
+
+/* Red Status - Error */
+.collection-status-red {
+    color: #c62828;
+    background: linear-gradient(135deg, #ffebee, #ffcdd2);
+    border: 1px solid #e57373;
+}
+
+/* Grey Status - Pending optimizations */
+.collection-status-grey {
+    color: #616161;
+    background: linear-gradient(135deg, #f5f5f5, #e0e0e0);
+    border: 1px solid #bdbdbd;
 }
 
 .collection-size {

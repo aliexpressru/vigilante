@@ -60,6 +60,14 @@ public class ClusterManagerTests
             .CheckCollectionsHealthAsync(Arg.Any<IQdrantHttpClient>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult((true, (string?)null)));
         
+        // Setup GetCollectionsFromQdrantAsync to return healthy status by default
+        _collectionService
+            .GetCollectionsFromQdrantAsync(
+                Arg.Any<IEnumerable<(string, string, string?, string?)>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
+            .Returns((new List<CollectionInfo>(), true, (string?)null));
+        
         // Setup client factory to return mocked clients
         _clientFactory
             .CreateClient(
@@ -1109,7 +1117,8 @@ public class ClusterManagerTests
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
                 Arg.Any<Dictionary<string, string>>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
             .Returns(apiCollections);
 
         // Act
@@ -1119,7 +1128,8 @@ public class ClusterManagerTests
         await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
             Arg.Any<IReadOnlyList<NodeInfo>>(),
             Arg.Any<Dictionary<string, string>>(),
-            Arg.Any<CancellationToken>());
+            Arg.Any<CancellationToken>(),
+                Arg.Any<bool>());
 
         Assert.That(result, Has.Count.EqualTo(1));
         Assert.That(result[0].CollectionName, Is.EqualTo("test_collection"));
@@ -1173,7 +1183,8 @@ public class ClusterManagerTests
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
                 Arg.Any<Dictionary<string, string>>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
             .Returns(apiCollections);
 
         // Storage returns empty (collection not found in storage)
@@ -1243,7 +1254,8 @@ public class ClusterManagerTests
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
                 Arg.Any<Dictionary<string, string>>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
             .Returns(apiCollections);
 
         // Storage returns the same collection with size info
@@ -1349,7 +1361,8 @@ public class ClusterManagerTests
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
                 Arg.Any<Dictionary<string, string>>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
             .Returns(apiCollections);
 
         // Storage returns only 2 collections (one is missing)
@@ -1432,7 +1445,8 @@ public class ClusterManagerTests
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
                 Arg.Any<Dictionary<string, string>>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
             .Returns(new List<CollectionInfo>());
 
         // Act
@@ -1525,7 +1539,8 @@ public class ClusterManagerTests
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
                 Arg.Any<Dictionary<string, string>>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
             .Returns(apiCollections);
 
         // Storage returns size for node1 but not node2
@@ -1615,20 +1630,22 @@ public class ClusterManagerTests
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
                 Arg.Any<Dictionary<string, string>>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
             .Returns(apiCollections);
 
         // Act - First call
         var result1 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
         
-        // Act - Second call (should use cache)
+        // Act - Second call (ClusterManager will call CollectionService again, but CollectionService handles caching internally)
         var result2 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
 
-        // Assert - Service should be called only once (first time)
-        await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
+        // Assert - ClusterManager calls CollectionService twice (caching is now handled inside CollectionService)
+        await _collectionService.Received(2).GetEnrichedCollectionsInfoAsync(
             Arg.Any<IReadOnlyList<NodeInfo>>(),
             Arg.Any<Dictionary<string, string>>(),
-            Arg.Any<CancellationToken>());
+            Arg.Any<CancellationToken>(),
+            false); // Both calls should have clearCache=false
 
         Assert.That(result1, Has.Count.EqualTo(1));
         Assert.That(result2, Has.Count.EqualTo(1));
@@ -1689,7 +1706,8 @@ public class ClusterManagerTests
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
                 Arg.Any<Dictionary<string, string>>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
             .Returns(firstCollections, secondCollections);
 
         // Act - First call
@@ -1698,11 +1716,19 @@ public class ClusterManagerTests
         // Act - Second call with clearCache=true
         var result2 = await _clusterManager.GetCollectionsInfoAsync(clearCache: true);
 
-        // Assert - Service should be called twice
-        await _collectionService.Received(2).GetEnrichedCollectionsInfoAsync(
+        // Assert - First call should have clearCache=false
+        await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
             Arg.Any<IReadOnlyList<NodeInfo>>(),
             Arg.Any<Dictionary<string, string>>(),
-            Arg.Any<CancellationToken>());
+            Arg.Any<CancellationToken>(),
+            false);
+        
+        // Assert - Second call should have clearCache=true
+        await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
+            Arg.Any<IReadOnlyList<NodeInfo>>(),
+            Arg.Any<Dictionary<string, string>>(),
+            Arg.Any<CancellationToken>(),
+            true);
 
         Assert.That(result1[0].CollectionName, Is.EqualTo("collection1"));
         Assert.That(result2[0].CollectionName, Is.EqualTo("collection2"));
@@ -1751,7 +1777,8 @@ public class ClusterManagerTests
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
                 Arg.Any<Dictionary<string, string>>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
             .Returns(initialCollections, emptyCollections, emptyCollections);
 
         // Act
@@ -1769,11 +1796,12 @@ public class ClusterManagerTests
         Assert.That(result2[0].CollectionName, Does.StartWith("test_"), "Second call should return test data");
         Assert.That(result3[0].CollectionName, Does.StartWith("test_"), "Third call should return test data (cache was cleared)");
         
-        // Service should be called 3 times (no cache reuse for call 3 because cache was cleared)
+        // Service should be called 3 times - caching is handled inside CollectionService
         await _collectionService.Received(3).GetEnrichedCollectionsInfoAsync(
             Arg.Any<IReadOnlyList<NodeInfo>>(),
             Arg.Any<Dictionary<string, string>>(),
-            Arg.Any<CancellationToken>());
+            Arg.Any<CancellationToken>(),
+            Arg.Any<bool>());
     }
 
     #endregion

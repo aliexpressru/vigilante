@@ -25,8 +25,6 @@ public class ClusterManager(
 {
     private readonly QdrantOptions _options = options.Value;
     private readonly ClusterPeerState _clusterState = new();
-    private IReadOnlyList<CollectionInfo>? _cachedCollections;
-    private readonly Lock _cacheLock = new();
 
     public async Task<ClusterState> GetClusterStateAsync(CancellationToken cancellationToken = default)
     {
@@ -66,34 +64,18 @@ public class ClusterManager(
     {
         logger.LogInformation("Starting GetCollectionsInfoAsync (clearCache={ClearCache})", clearCache);
 
-        // Check cache first if not clearing
-        if (!clearCache)
-        {
-            lock (_cacheLock)
-            {
-                if (_cachedCollections != null)
-                {
-                    logger.LogInformation("Returning cached collections ({Count} items)", _cachedCollections.Count);
-
-                    return _cachedCollections;
-                }
-            }
-        }
-        else
-        {
-            logger.LogInformation("Clearing collections cache");
-        }
-
         var state = await GetClusterStateAsync(cancellationToken);
         var peerToPodMap = state.Nodes
             .Where(n => !string.IsNullOrEmpty(n.PeerId) && !string.IsNullOrEmpty(n.PodName))
             .ToDictionary(n => n.PeerId, n => n.PodName!);
 
         // Get enriched collections info from CollectionService
+        // CollectionService handles caching internally
         var result = await collectionService.GetEnrichedCollectionsInfoAsync(
             state.Nodes,
             peerToPodMap,
-            cancellationToken);
+            cancellationToken,
+            clearCache);
 
         // Fallback to test data if no collections found
         if (result.Count == 0)
@@ -104,30 +86,15 @@ public class ClusterManager(
                 "3) API connection failed. " +
                 "Returning test data (only available in Development)");
             
-            // Clear cache if we were asked to refresh and got empty result
-            // This prevents returning stale cached data on next request
-            if (clearCache)
-            {
-                lock (_cacheLock)
-                {
-                    _cachedCollections = null;
-                }
-            }
-            
             return testDataProvider.GenerateTestCollectionData();
         }
 
         var collectionsWithIssues = result.Count(c => c.Issues.Count > 0);
+        var uniqueCollectionCount = result.Select(c => c.CollectionName).Distinct().Count();
         logger.LogInformation(
-            "Completed GetCollectionsInfoAsync, found {TotalCollections} collections in total ({IssuesCount} with issues)",
-            result.Count, collectionsWithIssues);
+            "Completed GetCollectionsInfoAsync: {UniqueCollectionCount} collections, {IssuesCount} with issues",
+            uniqueCollectionCount, collectionsWithIssues);
 
-        // Cache the result
-        lock (_cacheLock)
-        {
-            _cachedCollections = result;
-            logger.LogInformation("Cached {Count} collections", result.Count);
-        }
 
         return result;
     }
@@ -370,7 +337,7 @@ public class ClusterManager(
         CheckConsensusErrors(nodeInfo, clusterInfoResult);
         CheckMessageSendFailures(nodeInfo, clusterInfoResult);
         CollectPeerInformation(nodeInfo, clusterInfoResult);
-        await CheckCollectionsHealthAsync(nodeInfo, client, linkedToken, originalCancellationToken);
+        await CheckCollectionsHealthAsync(nodeInfo, linkedToken, originalCancellationToken);
         await FetchQdrantIssuesAsync(nodeInfo, client, linkedToken);
 
         // Set IsHealthy based on error type:
@@ -492,14 +459,16 @@ public class ClusterManager(
 
     private async Task CheckCollectionsHealthAsync(
         NodeInfo nodeInfo,
-        IQdrantHttpClient client,
         CancellationToken linkedToken,
         CancellationToken originalCancellationToken)
     {
         try
         {
-            var (isHealthy, errorMessage) = await collectionService
-                .CheckCollectionsHealthAsync(client, linkedToken);
+            // Use GetCollectionsFromQdrantAsync directly - it reuses cached data and returns health status
+            var (_, isHealthy, errorMessage) = await collectionService.GetCollectionsFromQdrantAsync(
+                new[] { (nodeInfo.Url, nodeInfo.PeerId, nodeInfo.Namespace, nodeInfo.PodName) },
+                linkedToken,
+                clearCache: false); // Use cache for health checks
 
             if (!isHealthy)
             {

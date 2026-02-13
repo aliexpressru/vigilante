@@ -819,6 +819,7 @@ class VigilanteDashboard {
                 acc[info.collectionName] = {
                     name: info.collectionName,
                     aliases: info.aliases || [],
+                    status: info.status, // Save collection status (Green/Yellow/Red)
                     nodes: {}
                 };
             }
@@ -904,24 +905,68 @@ class VigilanteDashboard {
                     nameContainer.appendChild(aliasesDiv);
                 }
                 
-                // Right side: Size and shards info
+                // Right side: Status, Size and shards info
                 const infoContainer = document.createElement('div');
                 infoContainer.style.display = 'flex';
                 infoContainer.style.flexDirection = 'column';
                 infoContainer.style.alignItems = 'flex-end';
-                infoContainer.style.gap = '2px';
+                infoContainer.style.gap = '4px';
+                
+                // Top row: Status and Size on same line
+                const topRow = document.createElement('div');
+                topRow.style.display = 'flex';
+                topRow.style.flexDirection = 'row';
+                topRow.style.alignItems = 'center';
+                topRow.style.gap = '8px';
+                
+                // Collection Status (if available)
+                if (collection.status) {
+                    const statusSpan = document.createElement('span');
+                    statusSpan.className = `collection-status collection-status-${collection.status.toLowerCase()}`;
+                    
+                    // Add icon and tooltip based on status
+                    let icon = '';
+                    let tooltipText = '';
+                    switch (collection.status) {
+                        case 'Green':
+                            icon = '<i class="fas fa-check-circle"></i>';
+                            tooltipText = 'All the points are processed and indexing is done, collection is ready';
+                            break;
+                        case 'Yellow':
+                            icon = '<i class="fas fa-exclamation-triangle"></i>';
+                            tooltipText = 'Optimization process is still running';
+                            break;
+                        case 'Red':
+                            icon = '<i class="fas fa-times-circle"></i>';
+                            tooltipText = 'An error occurred which the engine could not recover from';
+                            break;
+                        case 'Grey':
+                            icon = '<i class="fas fa-pause-circle"></i>';
+                            tooltipText = 'Optimizations are pending after restart';
+                            break;
+                        default:
+                            icon = '';
+                            tooltipText = `Status: ${collection.status}`;
+                    }
+                    
+                    statusSpan.innerHTML = `${icon} ${collection.status}`;
+                    statusSpan.setAttribute('data-tooltip', tooltipText);
+                    topRow.appendChild(statusSpan);
+                }
                 
                 // Size span
                 const sizeSpan = document.createElement('span');
                 sizeSpan.className = 'collection-size';
                 sizeSpan.textContent = this.formatSize(collectionTotalSize);
-                infoContainer.appendChild(sizeSpan);
+                topRow.appendChild(sizeSpan);
                 
-                // Shards count (if any)
+                infoContainer.appendChild(topRow);
+                
+                // Bottom row: Shards count (if any)
                 if (collectionTotalShards > 0) {
                     const shardsSpan = document.createElement('span');
                     shardsSpan.className = 'collection-shards-count';
-                    shardsSpan.style.fontSize = '0.85em';
+                    shardsSpan.style.fontSize = '0.8rem';
                     shardsSpan.style.color = '#666';
                     shardsSpan.innerHTML = `<i class="fas fa-layer-group"></i> ${collectionTotalShards} ${collectionTotalShards === 1 ? 'shard' : 'shards'}`;
                     shardsSpan.title = `Unique shards in collection: ${collectionTotalShards}`;
