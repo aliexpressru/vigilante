@@ -15,15 +15,20 @@ class VigilanteDashboard {
         this.manageStatefulSetEndpoint = '/api/v1/kubernetes/manage-statefulset';
         this.qdrantLogsEndpoint = '/api/v1/logs/qdrant';
         this.vigilanteLogsEndpoint = '/api/v1/logs/vigilante';
+        this.environmentEndpoint = '/api/v1/config/environment';
         this.refreshInterval = 0;
         this.autoRefreshTimer = null;
         this.openSnapshots = new Set();
         this.openCollections = new Set(); // Track which collections are open
         this.selectedState = new Map();
+        this.openNodeMenus = new Set(); // Track which node menus are open (by peerId)
+        this.openCollectionMenus = new Set(); // Track which collection menus are open (by collection name)
+        this.stickyActionsMenuOpen = false; // Track if sticky actions menu is open
         this.toastIdCounter = 0; // Counter for unique toast IDs
         this.clusterIssues = []; // Issues from cluster/status
         this.collectionIssues = []; // Issues from collections-info
         this.clusterNodes = []; // Store cluster nodes for StatefulSet management
+        this.environment = 'Loading...'; // Current environment name
         // Logs state
         this.logsRefreshInterval = 0;
         this.logsRefreshTimer = null;
@@ -44,6 +49,7 @@ class VigilanteDashboard {
         this.setupSnapshotControls();
         this.setupLogsControls();
         this.setupConfigControls();
+        this.setupStickyActionsMenu();
     }
 
     // Convert numeric status to string
@@ -80,6 +86,7 @@ class VigilanteDashboard {
         this.loadClusterStatus();
         this.loadCollectionSizes();
         this.loadSnapshots();
+        this.loadEnvironment();
         
         // Setup StatefulSet management button
         const manageStatefulSetBtn = document.getElementById('manageStatefulSetBtn');
@@ -281,6 +288,9 @@ class VigilanteDashboard {
         this.loadClusterStatus();
         this.loadCollectionSizes(true); // Clear cache on manual/auto refresh
         this.loadSnapshots(true); // Clear cache on manual/auto refresh
+        
+        // Restore sticky actions menu state after refresh
+        this.restoreStickyActionsMenuState();
     }
 
     startAutoRefresh() {
@@ -301,6 +311,57 @@ class VigilanteDashboard {
             console.log('Stopping auto-refresh');
             clearInterval(this.autoRefreshTimer);
             this.autoRefreshTimer = null;
+        }
+    }
+
+    restoreStickyActionsMenuState() {
+        if (this.stickyActionsMenuOpen) {
+            const menuButton = document.getElementById('stickyActionsMenuButton');
+            const dropdown = document.getElementById('stickyActionsDropdown');
+            
+            if (menuButton && dropdown) {
+                // Use setTimeout to ensure DOM is fully updated
+                setTimeout(() => {
+                    dropdown.classList.add('show');
+                    menuButton.classList.add('active');
+                    console.log('Restored sticky actions menu state');
+                }, 0);
+            }
+        }
+    }
+
+    async loadEnvironment() {
+        try {
+            const response = await fetch(this.environmentEndpoint);
+            if (response.ok) {
+                const data = await response.json();
+                this.environment = data.environment || 'Unknown';
+                this.updateEnvironmentDisplay();
+            } else {
+                console.warn('Failed to load environment:', response.status);
+                this.environment = 'Unknown';
+                this.updateEnvironmentDisplay();
+            }
+        } catch (error) {
+            console.error('Error loading environment:', error);
+            this.environment = 'Unknown';
+            this.updateEnvironmentDisplay();
+        }
+    }
+
+    updateEnvironmentDisplay() {
+        const envElement = document.getElementById('environmentBadge');
+        if (envElement) {
+            envElement.textContent = this.environment;
+            // Add color based on environment
+            envElement.className = 'environment-badge';
+            if (this.environment === 'Production') {
+                envElement.classList.add('env-production');
+            } else if (this.environment === 'Development') {
+                envElement.classList.add('env-development');
+            } else if (this.environment === 'Staging') {
+                envElement.classList.add('env-staging');
+            }
         }
     }
 
@@ -790,6 +851,22 @@ class VigilanteDashboard {
             collections = [];
         }
         
+        // Save currently open collection menus before updating DOM
+        this.openCollectionMenus.clear();
+        document.querySelectorAll('.collection-actions-menu-button.active').forEach(btn => {
+            const row = btn.closest('.collection-row');
+            if (row) {
+                const nameCell = row.querySelector('.collection-name-line');
+                if (nameCell) {
+                    const collectionName = nameCell.textContent?.trim();
+                    if (collectionName) {
+                        this.openCollectionMenus.add(collectionName);
+                        console.log('Saved open menu state for collection:', collectionName);
+                    }
+                }
+            }
+        });
+        
         // Calculate total size for current page
         let totalSizeBytes = 0;
         collections.forEach(info => {
@@ -973,6 +1050,116 @@ class VigilanteDashboard {
                     infoContainer.appendChild(shardsSpan);
                 }
                 
+                // Create collection actions menu container (three dots menu)
+                const collectionActionsMenuContainer = document.createElement('div');
+                collectionActionsMenuContainer.className = 'collection-actions-menu-container';
+                
+                const collectionActionsMenuButton = document.createElement('button');
+                collectionActionsMenuButton.className = 'collection-actions-menu-button';
+                collectionActionsMenuButton.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
+                collectionActionsMenuButton.setAttribute('aria-label', 'Collection actions');
+                
+                const collectionActionsDropdown = document.createElement('div');
+                collectionActionsDropdown.className = 'collection-actions-dropdown';
+                
+                // Delete (API) action
+                const deleteApiAction = document.createElement('button');
+                deleteApiAction.className = 'collection-action-item';
+                deleteApiAction.innerHTML = '<i class="fas fa-trash"></i> Delete (API)';
+                deleteApiAction.title = 'Delete collection via API on selected nodes';
+                deleteApiAction.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    collectionActionsDropdown.classList.remove('show');
+                    collectionActionsMenuButton.classList.remove('active');
+                    this.openCollectionMenus.delete(collection.name);
+                    await this.showNodeSelectionDialog(collection, 'deleteApi');
+                });
+                collectionActionsDropdown.appendChild(deleteApiAction);
+                
+                // Delete (Disk) action
+                const deleteDiskAction = document.createElement('button');
+                deleteDiskAction.className = 'collection-action-item collection-action-item-danger';
+                deleteDiskAction.innerHTML = '<i class="fas fa-hdd"></i> Delete (Disk)';
+                deleteDiskAction.title = 'Delete collection from disk on selected nodes';
+                deleteDiskAction.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    collectionActionsDropdown.classList.remove('show');
+                    collectionActionsMenuButton.classList.remove('active');
+                    this.openCollectionMenus.delete(collection.name);
+                    await this.showNodeSelectionDialog(collection, 'deleteDisk');
+                });
+                collectionActionsDropdown.appendChild(deleteDiskAction);
+                
+                // Create Snapshot action
+                const createSnapshotAction = document.createElement('button');
+                createSnapshotAction.className = 'collection-action-item';
+                createSnapshotAction.innerHTML = '<i class="fas fa-camera"></i> Create Snapshot';
+                createSnapshotAction.title = 'Create snapshot on selected nodes';
+                createSnapshotAction.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    collectionActionsDropdown.classList.remove('show');
+                    collectionActionsMenuButton.classList.remove('active');
+                    this.openCollectionMenus.delete(collection.name);
+                    await this.showNodeSelectionDialog(collection, 'createSnapshot');
+                });
+                collectionActionsDropdown.appendChild(createSnapshotAction);
+                
+                collectionActionsMenuContainer.appendChild(collectionActionsMenuButton);
+                collectionActionsMenuContainer.appendChild(collectionActionsDropdown);
+                
+                // Add click handler to the menu button
+                collectionActionsMenuButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const wasOpen = collectionActionsMenuButton.classList.contains('active');
+                    // Close all other open collection menus
+                    document.querySelectorAll('.collection-actions-menu-button.active').forEach(btn => {
+                        btn.classList.remove('active');
+                        const container = btn.parentElement;
+                        const menu = container?.querySelector('.collection-actions-dropdown');
+                        if (menu) {
+                            menu.classList.remove('show');
+                        }
+                        // Update state for closed menus
+                        const row = btn.closest('.collection-row');
+                        if (row) {
+                            const nameCell = row.querySelector('.collection-name-line');
+                            if (nameCell) {
+                                const collectionName = nameCell.textContent?.trim();
+                                if (collectionName) {
+                                    this.openCollectionMenus.delete(collectionName);
+                                }
+                            }
+                        }
+                    });
+                    
+                    if (!wasOpen) {
+                        collectionActionsMenuButton.classList.add('active');
+                        collectionActionsDropdown.classList.add('show');
+                        // Update state for opened menu
+                        this.openCollectionMenus.add(collection.name);
+                    }
+                });
+                
+                // Close dropdown when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!collectionActionsMenuContainer.contains(e.target)) {
+                        collectionActionsDropdown.classList.remove('show');
+                        collectionActionsMenuButton.classList.remove('active');
+                        // Update state when closed by outside click
+                        this.openCollectionMenus.delete(collection.name);
+                    }
+                });
+                
+                // Restore menu state if it was open before refresh
+                if (this.openCollectionMenus.has(collection.name)) {
+                    collectionActionsMenuButton.classList.add('active');
+                    collectionActionsDropdown.classList.add('show');
+                    console.log('Restored open menu state for collection:', collection.name);
+                }
+                
+                // Add menu button to the top row (after size)
+                topRow.appendChild(collectionActionsMenuContainer);
+                
                 headerContainer.appendChild(nameContainer);
                 headerContainer.appendChild(infoContainer);
                 nameCell.appendChild(headerContainer);
@@ -1131,7 +1318,7 @@ class VigilanteDashboard {
                 actionsFooter.style.justifyContent = 'space-between';
                 actionsFooter.style.alignItems = 'center';
                 
-                // Left side: Collection actions (Delete, Snapshot) - always visible
+                // Left side: Collection info or placeholder (buttons moved to dropdown menu in header)
                 const collectionActionsContainer = document.createElement('div');
                 collectionActionsContainer.style.cssText = `
                     display: flex;
@@ -1139,52 +1326,7 @@ class VigilanteDashboard {
                     align-items: center;
                 `;
                 
-                const deleteApiButton = document.createElement('button');
-                deleteApiButton.className = 'drop-shards-button';
-                deleteApiButton.textContent = 'Delete (API)';
-                deleteApiButton.title = 'Delete collection via API on selected nodes';
-                deleteApiButton.style.margin = '0';
-                deleteApiButton.onclick = async (e) => {
-                    e.stopPropagation();
-                    await this.showNodeSelectionDialog(collection, 'deleteApi');
-                };
-                
-                const deleteDiskButton = document.createElement('button');
-                deleteDiskButton.className = 'drop-shards-button';
-                deleteDiskButton.textContent = 'Delete (Disk)';
-                deleteDiskButton.title = 'Delete collection from disk on selected nodes';
-                deleteDiskButton.style.margin = '0';
-                deleteDiskButton.onclick = async (e) => {
-                    e.stopPropagation();
-                    await this.showNodeSelectionDialog(collection, 'deleteDisk');
-                };
-                
-                const createSnapshotButton = document.createElement('button');
-                createSnapshotButton.className = 'replicate-button';
-                createSnapshotButton.textContent = 'Create Snapshot';
-                createSnapshotButton.title = 'Create snapshot on selected nodes';
-                createSnapshotButton.style.margin = '0';
-                createSnapshotButton.onclick = async (e) => {
-                    e.stopPropagation();
-                    await this.showNodeSelectionDialog(collection, 'createSnapshot');
-                };
-                
-                // TODO: Resharding functionality - temporarily disabled
-                // const startReshardingButton = document.createElement('button');
-                // startReshardingButton.className = 'replicate-button';
-                // startReshardingButton.style.background = 'linear-gradient(135deg, #9c27b0, #7b1fa2)';
-                // startReshardingButton.style.margin = '0';
-                // startReshardingButton.textContent = 'Start Resharding';
-                // startReshardingButton.title = 'Start resharding operation (scale up or down)';
-                // startReshardingButton.onclick = async (e) => {
-                //     e.stopPropagation();
-                //     await this.showReshardingModal(collection);
-                // };
-                
-                collectionActionsContainer.appendChild(deleteApiButton);
-                collectionActionsContainer.appendChild(deleteDiskButton);
-                collectionActionsContainer.appendChild(createSnapshotButton);
-                // collectionActionsContainer.appendChild(startReshardingButton); // Disabled
+                // Note: Delete (API), Delete (Disk), and Create Snapshot buttons are now in the dropdown menu
                 
                 // Right side: Shard actions (Sync/Drop) - initially hidden
                 const shardActionsContainer = document.createElement('div');
@@ -1433,12 +1575,76 @@ class VigilanteDashboard {
             nameDiv.innerHTML = `<i class="fas fa-camera" style="color: #7b1fa2; margin-right: 8px;"></i>${collection.collectionName}`;
             nameDiv.title = collection.collectionName;
             
+            const rightContainer = document.createElement('div');
+            rightContainer.style.display = 'flex';
+            rightContainer.style.alignItems = 'center';
+            rightContainer.style.gap = '8px';
+            
             const sizeSpan = document.createElement('span');
             sizeSpan.className = 'collection-size';
             sizeSpan.textContent = this.formatSize(collection.totalSize);
+            rightContainer.appendChild(sizeSpan);
+            
+            // Create snapshot collection actions menu (three dots)
+            const snapshotCollectionMenuContainer = document.createElement('div');
+            snapshotCollectionMenuContainer.className = 'snapshot-collection-menu-container';
+            
+            const snapshotCollectionMenuButton = document.createElement('button');
+            snapshotCollectionMenuButton.className = 'snapshot-collection-menu-button';
+            snapshotCollectionMenuButton.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
+            snapshotCollectionMenuButton.setAttribute('aria-label', 'Snapshot collection actions');
+            
+            const snapshotCollectionDropdown = document.createElement('div');
+            snapshotCollectionDropdown.className = 'snapshot-collection-dropdown';
+            
+            // Delete All Snapshots action
+            const deleteAllAction = document.createElement('button');
+            deleteAllAction.className = 'snapshot-collection-action-item snapshot-collection-action-item-danger';
+            deleteAllAction.innerHTML = '<i class="fas fa-trash"></i> Delete All Snapshots';
+            deleteAllAction.title = 'Delete all snapshots for this collection from all nodes';
+            deleteAllAction.addEventListener('click', (e) => {
+                e.stopPropagation();
+                snapshotCollectionDropdown.classList.remove('show');
+                snapshotCollectionMenuButton.classList.remove('active');
+                this.deleteSnapshotFromAllNodes(collection);
+            });
+            snapshotCollectionDropdown.appendChild(deleteAllAction);
+            
+            snapshotCollectionMenuContainer.appendChild(snapshotCollectionMenuButton);
+            snapshotCollectionMenuContainer.appendChild(snapshotCollectionDropdown);
+            
+            // Add click handler to the menu button
+            snapshotCollectionMenuButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const wasOpen = snapshotCollectionMenuButton.classList.contains('active');
+                // Close all other open snapshot collection menus
+                document.querySelectorAll('.snapshot-collection-menu-button.active').forEach(btn => {
+                    btn.classList.remove('active');
+                    const container = btn.parentElement;
+                    const menu = container?.querySelector('.snapshot-collection-dropdown');
+                    if (menu) {
+                        menu.classList.remove('show');
+                    }
+                });
+                
+                if (!wasOpen) {
+                    snapshotCollectionMenuButton.classList.add('active');
+                    snapshotCollectionDropdown.classList.add('show');
+                }
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!snapshotCollectionMenuContainer.contains(e.target)) {
+                    snapshotCollectionDropdown.classList.remove('show');
+                    snapshotCollectionMenuButton.classList.remove('active');
+                }
+            });
+            
+            rightContainer.appendChild(snapshotCollectionMenuContainer);
             
             headerContainer.appendChild(nameDiv);
-            headerContainer.appendChild(sizeSpan);
+            headerContainer.appendChild(rightContainer);
             nameCell.appendChild(headerContainer);
             row.appendChild(nameCell);
 
@@ -1460,12 +1666,14 @@ class VigilanteDashboard {
                 <th>Pod</th>
                 <th>Snapshot Name</th>
                 <th>Size</th>
-                <th>Actions</th>
             `;
             nodesTable.appendChild(nodesHeader);
 
-            collection.snapshots.forEach(snapshot => {
+            collection.snapshots.forEach((snapshot, index) => {
                 const nodeRow = document.createElement('tr');
+                nodeRow.className = 'snapshot-table-row';
+                nodeRow.setAttribute('data-snapshot-index', index);
+                
                 // Create cells
                 const cellNode = document.createElement('td');
                 cellNode.textContent = snapshot.nodeUrl;
@@ -1480,87 +1688,136 @@ class VigilanteDashboard {
                 cellSnapshot.textContent = snapshot.snapshotName;
                 
                 const cellSize = document.createElement('td');
-                cellSize.textContent = snapshot.prettySize;
+                cellSize.style.position = 'relative';
                 
-                const cellActions = document.createElement('td');
-                const actionsContainer = document.createElement('div');
-                actionsContainer.className = 'snapshot-actions-cell';
+                // Create container for size and menu button
+                const sizeContainer = document.createElement('div');
+                sizeContainer.style.display = 'flex';
+                sizeContainer.style.alignItems = 'center';
+                sizeContainer.style.justifyContent = 'space-between';
+                sizeContainer.style.gap = '8px';
                 
-                const downloadBtn = document.createElement('button');
-                downloadBtn.className = 'action-button action-button-primary action-button-sm';
-                downloadBtn.innerHTML = '<i class="fas fa-download"></i>';
-                downloadBtn.title = 'Download snapshot (tries API first, then disk fallback)';
-                downloadBtn.onclick = () => this.downloadSnapshot(
-                    collection.collectionName, 
-                    snapshot.snapshotName, 
-                    snapshot.nodeUrl,
-                    snapshot.podName, 
-                    snapshot.podNamespace || 'qdrant',
-                    snapshot.source
-                );
+                const sizeSpan = document.createElement('span');
+                sizeSpan.textContent = snapshot.prettySize;
+                sizeContainer.appendChild(sizeSpan);
                 
-                // Add "Get Download URL" button for S3 snapshots
-                if (snapshot.source === 'S3Storage') {
-                    const getUrlBtn = document.createElement('button');
-                    getUrlBtn.className = 'action-button action-button-info action-button-sm';
-                    getUrlBtn.innerHTML = '<i class="fas fa-link"></i>';
-                    getUrlBtn.title = 'Get presigned download URL (valid for 1 hour)';
-                    getUrlBtn.onclick = () => this.getS3DownloadUrl(
-                        collection.collectionName,
-                        snapshot.snapshotName
+                // Create snapshot actions menu (three dots) in Size cell
+                const snapshotActionsMenuContainer = document.createElement('div');
+                snapshotActionsMenuContainer.className = 'snapshot-actions-menu-container-inline';
+                snapshotActionsMenuContainer.style.flexShrink = '0';
+                
+                const snapshotActionsMenuButton = document.createElement('button');
+                snapshotActionsMenuButton.className = 'snapshot-actions-menu-button';
+                snapshotActionsMenuButton.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
+                snapshotActionsMenuButton.setAttribute('aria-label', 'Snapshot actions');
+                
+                const snapshotActionsDropdown = document.createElement('div');
+                snapshotActionsDropdown.className = 'snapshot-actions-dropdown';
+                
+                // Download action
+                const downloadAction = document.createElement('button');
+                downloadAction.className = 'snapshot-action-item';
+                downloadAction.innerHTML = '<i class="fas fa-download"></i> Download';
+                downloadAction.title = 'Download snapshot (tries API first, then disk fallback)';
+                downloadAction.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    snapshotActionsDropdown.classList.remove('show');
+                    snapshotActionsMenuButton.classList.remove('active');
+                    this.downloadSnapshot(
+                        collection.collectionName, 
+                        snapshot.snapshotName, 
+                        snapshot.nodeUrl,
+                        snapshot.podName, 
+                        snapshot.podNamespace || 'qdrant',
+                        snapshot.source
                     );
-                    actionsContainer.appendChild(getUrlBtn);
+                });
+                snapshotActionsDropdown.appendChild(downloadAction);
+                
+                // Get Download URL action (only for S3 snapshots)
+                if (snapshot.source === 'S3Storage') {
+                    const getUrlAction = document.createElement('button');
+                    getUrlAction.className = 'snapshot-action-item';
+                    getUrlAction.innerHTML = '<i class="fas fa-link"></i> Get Download URL';
+                    getUrlAction.title = 'Get presigned download URL (valid for 1 hour)';
+                    getUrlAction.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        snapshotActionsDropdown.classList.remove('show');
+                        snapshotActionsMenuButton.classList.remove('active');
+                        this.getS3DownloadUrl(collection.collectionName, snapshot.snapshotName);
+                    });
+                    snapshotActionsDropdown.appendChild(getUrlAction);
                 }
                 
-                const recoverBtn = document.createElement('button');
-                recoverBtn.className = 'action-button action-button-success action-button-sm';
-                recoverBtn.innerHTML = '<i class="fas fa-undo"></i>';
-                recoverBtn.title = 'Recover from this snapshot';
-                recoverBtn.onclick = () => this.openRecoveryModal(snapshot, collection.collectionName, snapshot.snapshotName);
+                // Recover action
+                const recoverAction = document.createElement('button');
+                recoverAction.className = 'snapshot-action-item';
+                recoverAction.innerHTML = '<i class="fas fa-undo"></i> Recover';
+                recoverAction.title = 'Recover from this snapshot';
+                recoverAction.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    snapshotActionsDropdown.classList.remove('show');
+                    snapshotActionsMenuButton.classList.remove('active');
+                    this.openRecoveryModal(snapshot, collection.collectionName, snapshot.snapshotName);
+                });
+                snapshotActionsDropdown.appendChild(recoverAction);
                 
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'action-button action-button-danger action-button-sm';
-                deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
-                deleteBtn.title = 'Delete this snapshot';
-                deleteBtn.onclick = () => this.deleteSnapshotFromNode(snapshot);
+                // Delete action
+                const deleteAction = document.createElement('button');
+                deleteAction.className = 'snapshot-action-item snapshot-action-item-danger';
+                deleteAction.innerHTML = '<i class="fas fa-trash"></i> Delete';
+                deleteAction.title = 'Delete this snapshot';
+                deleteAction.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    snapshotActionsDropdown.classList.remove('show');
+                    snapshotActionsMenuButton.classList.remove('active');
+                    this.deleteSnapshotFromNode(snapshot);
+                });
+                snapshotActionsDropdown.appendChild(deleteAction);
                 
-                actionsContainer.appendChild(downloadBtn);
-                actionsContainer.appendChild(recoverBtn);
-                actionsContainer.appendChild(deleteBtn);
-                cellActions.appendChild(actionsContainer);
+                snapshotActionsMenuContainer.appendChild(snapshotActionsMenuButton);
+                snapshotActionsMenuContainer.appendChild(snapshotActionsDropdown);
+                
+                // Add click handler to the menu button
+                snapshotActionsMenuButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const wasOpen = snapshotActionsMenuButton.classList.contains('active');
+                    // Close all other open snapshot action menus
+                    document.querySelectorAll('.snapshot-actions-menu-button.active').forEach(btn => {
+                        btn.classList.remove('active');
+                        const container = btn.parentElement;
+                        const menu = container?.querySelector('.snapshot-actions-dropdown');
+                        if (menu) {
+                            menu.classList.remove('show');
+                        }
+                    });
+                    
+                    if (!wasOpen) {
+                        snapshotActionsMenuButton.classList.add('active');
+                        snapshotActionsDropdown.classList.add('show');
+                    }
+                });
+                
+                // Close dropdown when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!snapshotActionsMenuContainer.contains(e.target)) {
+                        snapshotActionsDropdown.classList.remove('show');
+                        snapshotActionsMenuButton.classList.remove('active');
+                    }
+                });
+                
+                sizeContainer.appendChild(snapshotActionsMenuContainer);
+                cellSize.appendChild(sizeContainer);
                 
                 nodeRow.appendChild(cellNode);
                 nodeRow.appendChild(cellPeer);
                 nodeRow.appendChild(cellPod);
                 nodeRow.appendChild(cellSnapshot);
                 nodeRow.appendChild(cellSize);
-                nodeRow.appendChild(cellActions);
                 
                 nodesTable.appendChild(nodeRow);
             });
 
-            // Add "Delete All" row at the bottom
-            const deleteAllRow = document.createElement('tr');
-            deleteAllRow.className = 'delete-all-row';
-            const deleteAllCell = document.createElement('td');
-            deleteAllCell.colSpan = 6;
-            deleteAllCell.style.textAlign = 'right';
-            deleteAllCell.style.padding = '12px 8px';
-            deleteAllCell.style.backgroundColor = '#f5f5f5';
-            deleteAllCell.style.borderTop = '2px solid #ddd';
-            
-            const deleteAllBtn = document.createElement('button');
-            deleteAllBtn.className = 'action-button action-button-danger';
-            deleteAllBtn.innerHTML = '<i class="fas fa-trash"></i> Delete All Snapshots';
-            deleteAllBtn.title = 'Delete all snapshots for this collection from all nodes';
-            deleteAllBtn.onclick = (e) => {
-                e.stopPropagation();
-                this.deleteSnapshotFromAllNodes(collection);
-            };
-            
-            deleteAllCell.appendChild(deleteAllBtn);
-            deleteAllRow.appendChild(deleteAllCell);
-            nodesTable.appendChild(deleteAllRow);
 
             detailsContent.appendChild(nodesTable);
             detailsCell.appendChild(detailsContent);
@@ -2126,6 +2383,20 @@ class VigilanteDashboard {
 
     updateNodes(nodes) {
         console.log('Updating nodes UI with:', nodes);
+        
+        // Save currently open node menus before clearing DOM
+        this.openNodeMenus.clear();
+        document.querySelectorAll('.node-actions-menu-button-header.active').forEach(btn => {
+            const card = btn.closest('.node-card');
+            if (card) {
+                const peerId = card.querySelector('.node-id')?.textContent?.split('\n')[0]?.trim();
+                if (peerId) {
+                    this.openNodeMenus.add(peerId);
+                    console.log('Saved open menu state for node:', peerId);
+                }
+            }
+        });
+        
         const nodesGrid = document.getElementById('nodesGrid');
         nodesGrid.innerHTML = '';
 
@@ -2176,6 +2447,18 @@ class VigilanteDashboard {
 
         header.appendChild(nodeId);
 
+        // Create actions menu button in header (three dots in top-right corner)
+        const actionsMenuButton = document.createElement('button');
+        actionsMenuButton.className = 'node-actions-menu-button-header';
+        actionsMenuButton.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
+        actionsMenuButton.setAttribute('aria-label', 'Node actions');
+        
+        const actionsMenuContainer = document.createElement('div');
+        actionsMenuContainer.className = 'node-actions-menu-container-header';
+        actionsMenuContainer.appendChild(actionsMenuButton);
+        
+        header.appendChild(actionsMenuContainer);
+
         const details = document.createElement('div');
         details.className = 'node-details';
 
@@ -2186,54 +2469,6 @@ class VigilanteDashboard {
             
             const podDetail = this.createNodeDetail('Pod', node.podName);
             podDetailsContainer.appendChild(podDetail);
-
-            // Add kubectl exec button
-            const execButton = document.createElement('button');
-            execButton.className = 'kubectl-exec-button';
-            execButton.innerHTML = '<i class="fas fa-terminal"></i> Generate exec';
-            execButton.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const command = `kubectl exec -n qdrant -c qdrant --stdin --tty ${node.podName} -- /bin/bash`;
-                
-                // Create temporary textarea for copying
-                const textarea = document.createElement('textarea');
-                textarea.value = command;
-                textarea.setAttribute('readonly', '');
-                textarea.style.position = 'absolute';
-                textarea.style.left = '-9999px';
-                document.body.appendChild(textarea);
-                
-                try {
-                    textarea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textarea);
-                    
-                    // Show success feedback
-                    const originalText = execButton.innerHTML;
-                    execButton.innerHTML = '<i class="fas fa-check"></i> Copied!';
-                    execButton.classList.add('copied');
-                    console.log('Command copied:', command);
-                    
-                    setTimeout(() => {
-                        execButton.innerHTML = originalText;
-                        execButton.classList.remove('copied');
-                    }, 2000);
-                } catch (err) {
-                    console.error('Failed to copy command:', err);
-                    document.body.removeChild(textarea);
-                    
-                    // Show error feedback
-                    const originalText = execButton.innerHTML;
-                    execButton.innerHTML = '<i class="fas fa-times"></i> Failed to copy';
-                    execButton.style.background = '#f44336';
-                    
-                    setTimeout(() => {
-                        execButton.innerHTML = originalText;
-                        execButton.style.background = '';
-                    }, 2000);
-                }
-            });
-            podDetailsContainer.appendChild(execButton);
             
             details.appendChild(podDetailsContainer);
         }
@@ -2254,51 +2489,172 @@ class VigilanteDashboard {
             details.appendChild(namespaceDetail);
         }
 
-        // Dashboard button after namespace
-        const dashboardBtn = document.createElement('button');
-        dashboardBtn.className = 'dashboard-button';
-        dashboardBtn.innerHTML = '<i class="fas fa-chart-line"></i> Open Dashboard';
-        dashboardBtn.addEventListener('click', (e) => {
+        // Create dropdown menu (attached to the header button)
+        const actionsDropdown = document.createElement('div');
+        actionsDropdown.className = 'node-actions-dropdown';
+        
+        // Generate Exec action (always show, but handle missing podName)
+        const execAction = document.createElement('button');
+        execAction.className = 'node-action-item';
+        execAction.innerHTML = '<i class="fas fa-terminal"></i> Generate exec';
+        execAction.addEventListener('click', (e) => {
+            e.stopPropagation();
+            
+            if (!node.podName) {
+                alert('Cannot generate exec command: Pod information is not available.\n\nThis node is not running in a Kubernetes cluster.');
+                actionsDropdown.classList.remove('show');
+                actionsMenuButton.classList.remove('active');
+                this.openNodeMenus.delete(node.peerId);
+                return;
+            }
+            
+            const command = `kubectl exec -n qdrant -c qdrant --stdin --tty ${node.podName} -- /bin/bash`;
+            
+            const textarea = document.createElement('textarea');
+            textarea.value = command;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'absolute';
+            textarea.style.left = '-9999px';
+            document.body.appendChild(textarea);
+            
+            try {
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                
+                execAction.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                console.log('Command copied:', command);
+                
+                setTimeout(() => {
+                    execAction.innerHTML = '<i class="fas fa-terminal"></i> Generate exec';
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy command:', err);
+                document.body.removeChild(textarea);
+                
+                execAction.innerHTML = '<i class="fas fa-times"></i> Failed to copy';
+                
+                setTimeout(() => {
+                    execAction.innerHTML = '<i class="fas fa-terminal"></i> Generate exec';
+                }, 2000);
+            }
+            
+            actionsDropdown.classList.remove('show');
+            actionsMenuButton.classList.remove('active');
+            this.openNodeMenus.delete(node.peerId);
+        });
+        actionsDropdown.appendChild(execAction);
+        
+        // Open Dashboard action
+        const dashboardAction = document.createElement('button');
+        dashboardAction.className = 'node-action-item';
+        dashboardAction.innerHTML = '<i class="fas fa-chart-line"></i> Open Dashboard';
+        dashboardAction.addEventListener('click', (e) => {
             e.stopPropagation();
             const dashboardUrl = new URL(node.url);
             dashboardUrl.pathname = '/dashboard';
             window.open(dashboardUrl.toString(), '_blank');
+            actionsDropdown.classList.remove('show');
+            actionsMenuButton.classList.remove('active');
+            this.openNodeMenus.delete(node.peerId);
         });
-        details.appendChild(dashboardBtn);
-
-        // View Logs button
-        const viewLogsBtn = document.createElement('button');
-        viewLogsBtn.className = 'view-logs-button';
-        viewLogsBtn.innerHTML = '<i class="fas fa-file-alt"></i> View Logs';
-        viewLogsBtn.addEventListener('click', (e) => {
+        actionsDropdown.appendChild(dashboardAction);
+        
+        // View Logs action
+        const viewLogsAction = document.createElement('button');
+        viewLogsAction.className = 'node-action-item';
+        viewLogsAction.innerHTML = '<i class="fas fa-file-alt"></i> View Logs';
+        viewLogsAction.addEventListener('click', (e) => {
             e.stopPropagation();
             this.openQdrantLogs(node.podName, node.namespace, node.url);
+            actionsDropdown.classList.remove('show');
+            actionsMenuButton.classList.remove('active');
+            this.openNodeMenus.delete(node.peerId);
         });
-        details.appendChild(viewLogsBtn);
-
-        // Recover from URL button
-        const recoverFromUrlBtn = document.createElement('button');
-        recoverFromUrlBtn.className = 'recover-from-url-button';
-        recoverFromUrlBtn.innerHTML = '<i class="fas fa-cloud-download-alt"></i> Recover from URL';
-        recoverFromUrlBtn.addEventListener('click', (e) => {
+        actionsDropdown.appendChild(viewLogsAction);
+        
+        // Recover from URL action
+        const recoverFromUrlAction = document.createElement('button');
+        recoverFromUrlAction.className = 'node-action-item';
+        recoverFromUrlAction.innerHTML = '<i class="fas fa-cloud-download-alt"></i> Recover from URL';
+        recoverFromUrlAction.addEventListener('click', (e) => {
             e.stopPropagation();
             this.showRecoverFromUrlDialog(node.url);
+            actionsDropdown.classList.remove('show');
+            actionsMenuButton.classList.remove('active');
+            this.openNodeMenus.delete(node.peerId);
         });
-        details.appendChild(recoverFromUrlBtn);
-
-        // Delete Pod button (always show)
-        const deletePodBtn = document.createElement('button');
-        deletePodBtn.className = 'delete-pod-button';
-        deletePodBtn.innerHTML = '<i class="fas fa-trash-alt"></i> Delete Pod';
-        deletePodBtn.addEventListener('click', (e) => {
+        actionsDropdown.appendChild(recoverFromUrlAction);
+        
+        // Delete Pod action
+        const deletePodAction = document.createElement('button');
+        deletePodAction.className = 'node-action-item node-action-item-danger';
+        deletePodAction.innerHTML = '<i class="fas fa-trash-alt"></i> Delete Pod';
+        deletePodAction.addEventListener('click', (e) => {
             e.stopPropagation();
             if (!node.podName) {
                 alert('Cannot delete pod: Not running in Kubernetes cluster.\n\nPod information is not available.');
+                actionsDropdown.classList.remove('show');
+                actionsMenuButton.classList.remove('active');
+                this.openNodeMenus.delete(node.peerId);
                 return;
             }
             this.deletePod(node.podName, node.namespace);
+            actionsDropdown.classList.remove('show');
+            actionsMenuButton.classList.remove('active');
+            this.openNodeMenus.delete(node.peerId);
         });
-        details.appendChild(deletePodBtn);
+        actionsDropdown.appendChild(deletePodAction);
+        
+        // Add dropdown to the menu container that was already created in header
+        actionsMenuContainer.appendChild(actionsDropdown);
+        
+        // Add click handler to the menu button
+        actionsMenuButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const wasOpen = actionsMenuButton.classList.contains('active');
+            // Close all other open menus
+            document.querySelectorAll('.node-actions-menu-button-header.active').forEach(btn => {
+                btn.classList.remove('active');
+                const container = btn.parentElement;
+                const menu = container?.querySelector('.node-actions-dropdown');
+                if (menu) {
+                    menu.classList.remove('show');
+                }
+                // Update state for closed menus
+                const card = btn.closest('.node-card');
+                if (card) {
+                    const peerId = card.querySelector('.node-id')?.textContent?.split('\n')[0]?.trim();
+                    if (peerId) {
+                        this.openNodeMenus.delete(peerId);
+                    }
+                }
+            });
+            
+            if (!wasOpen) {
+                actionsMenuButton.classList.add('active');
+                actionsDropdown.classList.add('show');
+                // Update state for opened menu
+                this.openNodeMenus.add(node.peerId);
+            }
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!actionsMenuContainer.contains(e.target)) {
+                actionsDropdown.classList.remove('show');
+                actionsMenuButton.classList.remove('active');
+                // Update state when closed by outside click
+                this.openNodeMenus.delete(node.peerId);
+            }
+        });
+        
+        // Restore menu state if it was open before refresh
+        if (this.openNodeMenus.has(node.peerId)) {
+            actionsMenuButton.classList.add('active');
+            actionsDropdown.classList.add('show');
+            console.log('Restored open menu state for node:', node.peerId);
+        }
 
         card.appendChild(header);
         card.appendChild(details);
@@ -3995,14 +4351,6 @@ class VigilanteDashboard {
                 }
             });
         }
-
-        // View Vigilante Logs button in header
-        const viewVigilanteLogsBtn = document.getElementById('viewVigilanteLogs');
-        if (viewVigilanteLogsBtn) {
-            viewVigilanteLogsBtn.addEventListener('click', () => {
-                this.openVigilanteLogs();
-            });
-        }
     }
 
     openQdrantLogs(podName, namespace, nodeUrl) {
@@ -4216,17 +4564,10 @@ class VigilanteDashboard {
 
     // Configuration Management
     setupConfigControls() {
-        const viewConfigBtn = document.getElementById('viewConfig');
         const configModal = document.getElementById('configModal');
         const closeConfigModal = document.getElementById('closeConfigModal');
         const cancelConfigBtn = document.getElementById('cancelConfig');
         const saveConfigBtn = document.getElementById('saveConfig');
-
-        // Open modal
-        viewConfigBtn?.addEventListener('click', async () => {
-            configModal.style.display = 'flex';
-            await this.loadConfiguration();
-        });
 
         // Close modal
         const closeModal = () => {
@@ -4247,6 +4588,14 @@ class VigilanteDashboard {
         saveConfigBtn?.addEventListener('click', async () => {
             await this.saveConfiguration();
         });
+    }
+
+    async openConfigModal() {
+        const configModal = document.getElementById('configModal');
+        if (configModal) {
+            configModal.style.display = 'flex';
+            await this.loadConfiguration();
+        }
     }
 
     async loadConfiguration() {
@@ -4333,6 +4682,65 @@ class VigilanteDashboard {
             saveConfigBtn.disabled = false;
             saveConfigBtn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
         }
+    }
+
+    setupStickyActionsMenu() {
+        const menuButton = document.getElementById('stickyActionsMenuButton');
+        const dropdown = document.getElementById('stickyActionsDropdown');
+        const configAction = document.getElementById('stickyConfigAction');
+        const logsAction = document.getElementById('stickyLogsAction');
+
+        if (!menuButton || !dropdown) {
+            console.warn('Sticky actions menu elements not found');
+            return;
+        }
+
+        // Toggle menu on button click
+        menuButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const wasOpen = dropdown.classList.contains('show');
+            
+            if (wasOpen) {
+                dropdown.classList.remove('show');
+                menuButton.classList.remove('active');
+                this.stickyActionsMenuOpen = false;
+            } else {
+                dropdown.classList.add('show');
+                menuButton.classList.add('active');
+                this.stickyActionsMenuOpen = true;
+            }
+        });
+
+        // Configuration action
+        configAction?.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            dropdown.classList.remove('show');
+            menuButton.classList.remove('active');
+            this.stickyActionsMenuOpen = false;
+            
+            // Open config modal directly
+            await this.openConfigModal();
+        });
+
+        // View Logs action
+        logsAction?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdown.classList.remove('show');
+            menuButton.classList.remove('active');
+            this.stickyActionsMenuOpen = false;
+            
+            // Open Vigilante logs directly
+            this.openVigilanteLogs();
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!menuButton.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.remove('show');
+                menuButton.classList.remove('active');
+                this.stickyActionsMenuOpen = false;
+            }
+        });
     }
 }
 

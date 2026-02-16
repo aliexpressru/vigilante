@@ -446,6 +446,7 @@ body {
     align-items: center;
     margin-bottom: 12px;
     padding-bottom: 8px;
+    position: relative;
 }
 
 .node-id {
@@ -669,6 +670,136 @@ body {
     }
 }
 
+/* Environment Badge */
+.environment-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    background: #e0e0e0;
+    color: #666;
+    transition: all 0.2s ease;
+}
+
+.environment-badge.env-production {
+    background: linear-gradient(135deg, #f44336, #e91e63);
+    color: white;
+    box-shadow: 0 2px 4px rgba(244, 67, 54, 0.3);
+}
+
+.environment-badge.env-development {
+    background: linear-gradient(135deg, #4caf50, #8bc34a);
+    color: white;
+    box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+}
+
+.environment-badge.env-staging {
+    background: linear-gradient(135deg, #ff9800, #ffc107);
+    color: white;
+    box-shadow: 0 2px 4px rgba(255, 152, 0, 0.3);
+}
+
+/* Sticky Actions Menu (Three Dots) */
+.sticky-actions-menu-container {
+    position: relative;
+    display: inline-flex;
+}
+
+.sticky-actions-menu-button {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.sticky-actions-menu-button:hover {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    transform: scale(1.1);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+}
+
+.sticky-actions-menu-button:active {
+    transform: scale(0.95);
+}
+
+.sticky-actions-menu-button.active {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+.sticky-actions-menu-button i {
+    font-size: 0.9rem;
+}
+
+.sticky-actions-dropdown {
+    position: absolute;
+    left: 0;
+    top: 38px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    min-width: 180px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.2s ease;
+    z-index: 10001;
+    overflow: hidden;
+}
+
+.sticky-actions-dropdown.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.sticky-action-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 16px;
+    background: white;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #333;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.sticky-action-item:last-child {
+    border-bottom: none;
+}
+
+.sticky-action-item:hover {
+    background: linear-gradient(135deg, #f5f7ff, #f0f2ff);
+    color: #667eea;
+}
+
+.sticky-action-item:active {
+    background: linear-gradient(135deg, #e8ebff, #dfe3ff);
+}
+
+.sticky-action-item i {
+    font-size: 1rem;
+    width: 20px;
+    text-align: center;
+}
+
 /* Responsive adjustments for sticky refresh controls */
 @media (max-width: 1200px) {
     .sticky-refresh-controls {
@@ -698,6 +829,29 @@ body {
     
     .sticky-refresh-controls .refresh-button {
         padding: 4px 8px;
+    }
+    
+    .sticky-refresh-controls .environment-badge {
+        font-size: 0.65rem;
+        padding: 3px 8px;
+    }
+    
+    .sticky-refresh-controls .sticky-actions-menu-button {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .sticky-refresh-controls .sticky-actions-menu-button i {
+        font-size: 0.8rem;
+    }
+    
+    .sticky-actions-dropdown {
+        min-width: 160px;
+    }
+    
+    .sticky-action-item {
+        padding: 10px 14px;
+        font-size: 0.85rem;
     }
 }
 
@@ -2790,6 +2944,11 @@ body {
     background: #ffffff;
 }
 
+/* Ensure dropdown menus are not clipped by table rows */
+.nodes-table tr {
+    position: relative;
+}
+
 .nodes-table code {
     background: #e9ecef;
     padding: 2px 5px;
@@ -2807,12 +2966,73 @@ body {
     max-width: 0;
 }
 
-/* Actions cell - horizontal button layout aligned to the right */
-.nodes-table td:nth-child(6) {
+/* Size cell with inline menu */
+.nodes-table td:nth-child(5) {
     white-space: nowrap;
-    text-align: right;
-    min-width: 200px;
-    width: auto;
+    position: relative;
+    overflow: visible;
+}
+
+/* Inline snapshot actions menu container (in Size cell) */
+.snapshot-actions-menu-container-inline {
+    position: relative;
+    display: inline-flex;
+}
+
+.snapshot-actions-menu-container-inline .snapshot-actions-menu-button {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.snapshot-actions-menu-container-inline .snapshot-actions-menu-button:hover {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    transform: scale(1.1);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+}
+
+.snapshot-actions-menu-container-inline .snapshot-actions-menu-button:active {
+    transform: scale(0.95);
+}
+
+.snapshot-actions-menu-container-inline .snapshot-actions-menu-button.active {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+.snapshot-actions-menu-container-inline .snapshot-actions-menu-button i {
+    font-size: 0.8rem;
+}
+
+.snapshot-actions-menu-container-inline .snapshot-actions-dropdown {
+    position: absolute;
+    right: 0;
+    top: 30px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    min-width: 180px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.2s ease;
+    z-index: 10001;
+    overflow: hidden;
+}
+
+.snapshot-actions-menu-container-inline .snapshot-actions-dropdown.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
 }
 
 .nodes-table .snapshot-actions-cell {
@@ -3511,39 +3731,6 @@ body {
     transform: translateY(0);
 }
 
-/* Header Actions */
-.header-actions {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-
-.header-action-button {
-    padding: 8px 16px;
-    background: linear-gradient(135deg, #667eea, #764ba2);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-}
-
-.header-action-button:hover {
-    background: linear-gradient(135deg, #5568d3, #6a3f8f);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-}
-
-.header-action-button:active {
-    transform: translateY(0);
-}
-
 /* Configuration Modal Specific Styles */
 .config-info {
     background: #e3f2fd;
@@ -3623,6 +3810,394 @@ body {
     font-weight: 500;
 }
 
+/* Node Actions Menu (Three Dots Dropdown in Header) */
+.node-actions-menu-container-header {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 10;
+}
+
+.node-actions-menu-button-header {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    position: relative;
+}
+
+.node-actions-menu-button-header:hover {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    transform: scale(1.1);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+}
+
+.node-actions-menu-button-header:active {
+    transform: scale(0.95);
+}
+
+.node-actions-menu-button-header.active {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+.node-actions-menu-button-header i {
+    font-size: 0.95rem;
+}
+
+.node-actions-dropdown {
+    position: absolute;
+    right: 0;
+    top: 38px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    min-width: 200px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.2s ease;
+    z-index: 1000;
+    overflow: hidden;
+}
+
+.node-actions-dropdown.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.node-action-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 16px;
+    background: white;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #333;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.node-action-item:last-child {
+    border-bottom: none;
+}
+
+.node-action-item:hover {
+    background: linear-gradient(135deg, #f5f7ff, #f0f2ff);
+    color: #667eea;
+}
+
+.node-action-item:active {
+    background: linear-gradient(135deg, #e8ebff, #dfe3ff);
+}
+
+.node-action-item i {
+    font-size: 1rem;
+    width: 20px;
+    text-align: center;
+}
+
+.node-action-item-danger {
+    color: #f44336;
+}
+
+.node-action-item-danger:hover {
+    background: linear-gradient(135deg, #ffebee, #ffcdd2);
+    color: #d32f2f;
+}
+
+.node-action-item-danger:active {
+    background: linear-gradient(135deg, #ffcdd2, #ef9a9a);
+}
+
+/* Collection Actions Menu (Three Dots Dropdown) */
+.collection-actions-menu-container {
+    position: relative;
+    display: inline-flex;
+    margin-left: 8px;
+}
+
+.collection-actions-menu-button {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.collection-actions-menu-button:hover {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    transform: scale(1.1);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+}
+
+.collection-actions-menu-button:active {
+    transform: scale(0.95);
+}
+
+.collection-actions-menu-button.active {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+.collection-actions-menu-button i {
+    font-size: 0.9rem;
+}
+
+.collection-actions-dropdown {
+    position: absolute;
+    right: 0;
+    top: 34px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    min-width: 200px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.2s ease;
+    z-index: 1000;
+    overflow: hidden;
+}
+
+.collection-actions-dropdown.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.collection-action-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 16px;
+    background: white;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #333;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.collection-action-item:last-child {
+    border-bottom: none;
+}
+
+.collection-action-item:hover {
+    background: linear-gradient(135deg, #f5f7ff, #f0f2ff);
+    color: #667eea;
+}
+
+.collection-action-item:active {
+    background: linear-gradient(135deg, #e8ebff, #dfe3ff);
+}
+
+.collection-action-item i {
+    font-size: 1rem;
+    width: 20px;
+    text-align: center;
+}
+
+.collection-action-item-danger {
+    color: #f44336;
+}
+
+.collection-action-item-danger:hover {
+    background: linear-gradient(135deg, #ffebee, #ffcdd2);
+    color: #d32f2f;
+}
+
+.collection-action-item-danger:active {
+    background: linear-gradient(135deg, #ffcdd2, #ef9a9a);
+}
+
+/* Snapshot Collection Menu (Three Dots in Snapshot Collection Header) */
+.snapshot-collection-menu-container {
+    position: relative;
+    display: inline-flex;
+}
+
+.snapshot-collection-menu-button {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.snapshot-collection-menu-button:hover {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    transform: scale(1.1);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+}
+
+.snapshot-collection-menu-button:active {
+    transform: scale(0.95);
+}
+
+.snapshot-collection-menu-button.active {
+    background: linear-gradient(135deg, #5568d3, #6a3f8f);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+.snapshot-collection-menu-button i {
+    font-size: 0.9rem;
+}
+
+.snapshot-collection-dropdown {
+    position: absolute;
+    right: 0;
+    top: 34px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    min-width: 200px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.2s ease;
+    z-index: 10001;
+    overflow: hidden;
+}
+
+.snapshot-collection-dropdown.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.snapshot-collection-action-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 16px;
+    background: white;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #333;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.snapshot-collection-action-item:last-child {
+    border-bottom: none;
+}
+
+.snapshot-collection-action-item:hover {
+    background: linear-gradient(135deg, #f5f7ff, #f0f2ff);
+    color: #667eea;
+}
+
+.snapshot-collection-action-item:active {
+    background: linear-gradient(135deg, #e8ebff, #dfe3ff);
+}
+
+.snapshot-collection-action-item i {
+    font-size: 1rem;
+    width: 20px;
+    text-align: center;
+}
+
+.snapshot-collection-action-item-danger {
+    color: #f44336;
+}
+
+.snapshot-collection-action-item-danger:hover {
+    background: linear-gradient(135deg, #ffebee, #ffcdd2);
+    color: #d32f2f;
+}
+
+.snapshot-collection-action-item-danger:active {
+    background: linear-gradient(135deg, #ffcdd2, #ef9a9a);
+}
+
+/* Snapshot Actions Menu (inline in Size cell) - already defined above as .snapshot-actions-menu-container-inline */
+
+.snapshot-action-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 16px;
+    background: white;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #333;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.snapshot-action-item:last-child {
+    border-bottom: none;
+}
+
+.snapshot-action-item:hover {
+    background: linear-gradient(135deg, #f5f7ff, #f0f2ff);
+    color: #667eea;
+}
+
+.snapshot-action-item:active {
+    background: linear-gradient(135deg, #e8ebff, #dfe3ff);
+}
+
+.snapshot-action-item i {
+    font-size: 1rem;
+    width: 20px;
+    text-align: center;
+}
+
+.snapshot-action-item-danger {
+    color: #f44336;
+}
+
+.snapshot-action-item-danger:hover {
+    background: linear-gradient(135deg, #ffebee, #ffcdd2);
+    color: #d32f2f;
+}
+
+.snapshot-action-item-danger:active {
+    background: linear-gradient(135deg, #ffcdd2, #ef9a9a);
+}
+
 /* Responsive styles */
 @media (max-width: 768px) {
     .logs-side-panel {
@@ -3630,13 +4205,9 @@ body {
         right: -100%;
     }
     
-    .header-actions {
-        justify-content: center;
-        width: 100%;
-    }
-    
-    .header-action-button {
-        flex: 1;
-        justify-content: center;
+    .node-actions-dropdown {
+        right: 0;
+        min-width: 180px;
     }
 }
+

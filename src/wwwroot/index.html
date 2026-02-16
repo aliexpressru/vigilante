@@ -15,14 +15,6 @@
                     <h1><i class="fas fa-shield-alt"></i> Vigilante Dashboard</h1>
                     <p>Qdrant Cluster Guardian</p>
                 </div>
-                <div class="header-actions">
-                    <button id="viewConfig" class="header-action-button" title="View and edit dynamic configuration">
-                        <i class="fas fa-cog"></i> Configuration
-                    </button>
-                    <button id="viewVigilanteLogs" class="header-action-button" title="View Vigilante service logs">
-                        <i class="fas fa-file-alt"></i> View Logs
-                    </button>
-                </div>
             </div>
         </header>
 
@@ -38,6 +30,22 @@
             <button id="stickyManualRefresh" class="refresh-button" title="Refresh now">
                 <i class="fas fa-sync-alt"></i>
             </button>
+            <span id="environmentBadge" class="environment-badge">Loading...</span>
+            
+            <!-- Three-dots menu for actions -->
+            <div class="sticky-actions-menu-container">
+                <button id="stickyActionsMenuButton" class="sticky-actions-menu-button" title="Actions">
+                    <i class="fas fa-ellipsis-v"></i>
+                </button>
+                <div id="stickyActionsDropdown" class="sticky-actions-dropdown">
+                    <button class="sticky-action-item" id="stickyConfigAction">
+                        <i class="fas fa-cog"></i> Configuration
+                    </button>
+                    <button class="sticky-action-item" id="stickyLogsAction">
+                        <i class="fas fa-file-alt"></i> View Logs
+                    </button>
+                </div>
+            </div>
         </div>
 
         <div class="main-content">
