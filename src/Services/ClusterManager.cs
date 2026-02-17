@@ -46,9 +46,14 @@ public class ClusterManager(
             }
         }
 
+        // Sort nodes: by PodName if available, otherwise by PeerId
+        var sortedNodes = nodeStatuses
+            .OrderBy(n => !string.IsNullOrEmpty(n.PodName) ? n.PodName : n.PeerId)
+            .ToList();
+
         var state = new ClusterState
         {
-            Nodes = nodeStatuses.ToList(),
+            Nodes = sortedNodes,
             LastUpdated = DateTime.UtcNow,
             StatefulSetName = await nodesProvider.GetStatefulSetNameAsync(cancellationToken)
         };

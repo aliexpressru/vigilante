@@ -1259,6 +1259,268 @@ public class CollectionServiceTests
 
     #endregion
 
+    #region Collection Node Sorting Tests
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_SortsCollectionNodesByPodName()
+    {
+        // Arrange
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "qdrant-2" },
+            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = "qdrant-0" },
+            new() { Url = "http://node3:6333", PeerId = "1003", IsHealthy = true, PodName = "qdrant-1" }
+        };
+
+        var peerToPodMap = new Dictionary<string, string>
+        {
+            { "1001", "qdrant-2" },
+            { "1002", "qdrant-0" },
+            { "1003", "qdrant-1" }
+        };
+
+        var mockClient1 = Substitute.For<IQdrantHttpClient>();
+        var mockClient2 = Substitute.For<IQdrantHttpClient>();
+        var mockClient3 = Substitute.For<IQdrantHttpClient>();
+
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
+            .Returns(callInfo =>
+            {
+                var uri = callInfo.ArgAt<Uri>(0);
+                if (uri.ToString().Contains("node1")) return mockClient1;
+                if (uri.ToString().Contains("node2")) return mockClient2;
+                return mockClient3;
+            });
+
+        // Setup GetCollectionInfo for all clients
+        SetupGetCollectionInfoMock(mockClient1);
+        SetupGetCollectionInfoMock(mockClient2);
+        SetupGetCollectionInfoMock(mockClient3);
+
+        var collectionsResponse = new ListCollectionsResponse
+        {
+            Result = new ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[] { new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test-collection") }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        var aliasesResponse = new ListCollectionAliasesResponse
+        {
+            Result = new ListCollectionAliasesResponse.CollectionAliasesResult
+            {
+                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        // Setup ListCollections and ListAllAliases for all clients
+        mockClient1.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient1.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+        
+        mockClient2.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient2.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+        
+        mockClient3.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient3.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+
+        var service = new CollectionService(
+            _logger,
+            _meterService,
+            _clientFactory,
+            _options,
+            _commandExecutorLogger);
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert - collection nodes should be sorted by PodName
+        Assert.That(result, Has.Count.EqualTo(3));
+        Assert.That(result[0].PodName, Is.EqualTo("qdrant-0"));
+        Assert.That(result[0].PeerId, Is.EqualTo("1002"));
+        Assert.That(result[1].PodName, Is.EqualTo("qdrant-1"));
+        Assert.That(result[1].PeerId, Is.EqualTo("1003"));
+        Assert.That(result[2].PodName, Is.EqualTo("qdrant-2"));
+        Assert.That(result[2].PeerId, Is.EqualTo("1001"));
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_SortsCollectionNodesByPeerId_WhenPodNameNotAvailable()
+    {
+        // Arrange
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "3001", IsHealthy = true, PodName = null },
+            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = null },
+            new() { Url = "http://node3:6333", PeerId = "2003", IsHealthy = true, PodName = null }
+        };
+
+        var peerToPodMap = new Dictionary<string, string>();
+
+        var mockClient1 = Substitute.For<IQdrantHttpClient>();
+        var mockClient2 = Substitute.For<IQdrantHttpClient>();
+        var mockClient3 = Substitute.For<IQdrantHttpClient>();
+
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
+            .Returns(callInfo =>
+            {
+                var uri = callInfo.ArgAt<Uri>(0);
+                if (uri.ToString().Contains("node1")) return mockClient1;
+                if (uri.ToString().Contains("node2")) return mockClient2;
+                return mockClient3;
+            });
+
+        // Setup GetCollectionInfo for all clients
+        SetupGetCollectionInfoMock(mockClient1);
+        SetupGetCollectionInfoMock(mockClient2);
+        SetupGetCollectionInfoMock(mockClient3);
+
+        var collectionsResponse = new ListCollectionsResponse
+        {
+            Result = new ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[] { new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test-collection") }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        var aliasesResponse = new ListCollectionAliasesResponse
+        {
+            Result = new ListCollectionAliasesResponse.CollectionAliasesResult
+            {
+                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        // Setup ListCollections and ListAllAliases for all clients
+        mockClient1.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient1.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+        
+        mockClient2.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient2.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+        
+        mockClient3.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient3.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+
+        var service = new CollectionService(
+            _logger,
+            _meterService,
+            _clientFactory,
+            _options,
+            _commandExecutorLogger);
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert - collection nodes should be sorted by PeerId when PodName is not available
+        Assert.That(result, Has.Count.EqualTo(3));
+        Assert.That(result[0].PeerId, Is.EqualTo("1002"));
+        Assert.That(result[1].PeerId, Is.EqualTo("2003"));
+        Assert.That(result[2].PeerId, Is.EqualTo("3001"));
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_SortsMultipleCollections_ByNodeIndependently()
+    {
+        // Arrange - two collections on nodes in different order
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "qdrant-2" },
+            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = "qdrant-0" },
+            new() { Url = "http://node3:6333", PeerId = "1003", IsHealthy = true, PodName = "qdrant-1" }
+        };
+
+        var peerToPodMap = new Dictionary<string, string>
+        {
+            { "1001", "qdrant-2" },
+            { "1002", "qdrant-0" },
+            { "1003", "qdrant-1" }
+        };
+
+        var mockClient1 = Substitute.For<IQdrantHttpClient>();
+        var mockClient2 = Substitute.For<IQdrantHttpClient>();
+        var mockClient3 = Substitute.For<IQdrantHttpClient>();
+
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
+            .Returns(callInfo =>
+            {
+                var uri = callInfo.ArgAt<Uri>(0);
+                if (uri.ToString().Contains("node1")) return mockClient1;
+                if (uri.ToString().Contains("node2")) return mockClient2;
+                return mockClient3;
+            });
+
+        // Setup GetCollectionInfo for all clients
+        SetupGetCollectionInfoMock(mockClient1);
+        SetupGetCollectionInfoMock(mockClient2);
+        SetupGetCollectionInfoMock(mockClient3);
+
+        var collectionsResponse = new ListCollectionsResponse
+        {
+            Result = new ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection-a"),
+                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection-b")
+                }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        var aliasesResponse = new ListCollectionAliasesResponse
+        {
+            Result = new ListCollectionAliasesResponse.CollectionAliasesResult
+            {
+                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        // Setup ListCollections and ListAllAliases for all clients
+        mockClient1.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient1.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+        
+        mockClient2.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient2.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+        
+        mockClient3.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient3.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+
+        var service = new CollectionService(
+            _logger,
+            _meterService,
+            _clientFactory,
+            _options,
+            _commandExecutorLogger);
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert - 6 total entries (2 collections x 3 nodes), each collection sorted by node
+        Assert.That(result, Has.Count.EqualTo(6));
+        
+        // First 3 should be collection-a sorted by pod name
+        Assert.That(result[0].CollectionName, Is.EqualTo("collection-a"));
+        Assert.That(result[0].PodName, Is.EqualTo("qdrant-0"));
+        Assert.That(result[1].CollectionName, Is.EqualTo("collection-a"));
+        Assert.That(result[1].PodName, Is.EqualTo("qdrant-1"));
+        Assert.That(result[2].CollectionName, Is.EqualTo("collection-a"));
+        Assert.That(result[2].PodName, Is.EqualTo("qdrant-2"));
+        
+        // Next 3 should be collection-b sorted by pod name
+        Assert.That(result[3].CollectionName, Is.EqualTo("collection-b"));
+        Assert.That(result[3].PodName, Is.EqualTo("qdrant-0"));
+        Assert.That(result[4].CollectionName, Is.EqualTo("collection-b"));
+        Assert.That(result[4].PodName, Is.EqualTo("qdrant-1"));
+        Assert.That(result[5].CollectionName, Is.EqualTo("collection-b"));
+        Assert.That(result[5].PodName, Is.EqualTo("qdrant-2"));
+    }
+
+    #endregion
+
 
     /// <summary>
     /// Helper method to create CollectionService with mocked IPodCommandExecutor using reflection

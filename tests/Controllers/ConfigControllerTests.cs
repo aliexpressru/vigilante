@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -12,6 +13,7 @@ namespace Aer.Vigilante.Tests.Controllers;
 public class ConfigControllerTests
 {
     private IDynamicConfigService _dynamicConfigService = null!;
+    private IWebHostEnvironment _environment = null!;
     private ILogger<ConfigController> _logger = null!;
     private ConfigController _controller = null!;
 
@@ -19,8 +21,9 @@ public class ConfigControllerTests
     public void SetUp()
     {
         _dynamicConfigService = Substitute.For<IDynamicConfigService>();
+        _environment = Substitute.For<IWebHostEnvironment>();
         _logger = Substitute.For<ILogger<ConfigController>>();
-        _controller = new ConfigController(_dynamicConfigService, _logger);
+        _controller = new ConfigController(_dynamicConfigService, _environment, _logger);
     }
 
     [Test]

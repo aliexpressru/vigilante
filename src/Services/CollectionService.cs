@@ -598,6 +598,21 @@ public class CollectionService : ICollectionService
         // Enrich with clustering info
         await EnrichCollectionsWithClusteringInfoAsync(healthyNodes, collections, peerToPodMap, cancellationToken);
 
+        // Sort collection shards by node within each collection:
+        // Group by collection name, sort nodes within each group, then flatten back
+        collections = collections
+            .GroupBy(c => c.CollectionName)
+            .SelectMany(group => group.OrderBy(c => 
+            {
+                // Use PodName if it's available and not 'unknown', otherwise use PeerId
+                if (!string.IsNullOrEmpty(c.PodName) && c.PodName != MetricConstants.UnknownPodName)
+                {
+                    return c.PodName;
+                }
+                return c.PeerId;
+            }))
+            .ToList();
+
         // Log summary with unique collection names
         var uniqueCollectionCount = GetUniqueCollectionCount(collections);
         var uniqueCollectionNames = collections.Select(c => c.CollectionName).Distinct().OrderBy(n => n).ToList();
