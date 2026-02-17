@@ -2508,7 +2508,8 @@ class VigilanteDashboard {
                 return;
             }
             
-            const command = `kubectl exec -n qdrant -c qdrant --stdin --tty ${node.podName} -- /bin/bash`;
+            const namespace = node.namespace || 'qdrant';
+            const command = `kubectl exec -n ${namespace} -c qdrant --stdin --tty ${node.podName} -- /bin/bash`;
             
             const textarea = document.createElement('textarea');
             textarea.value = command;
