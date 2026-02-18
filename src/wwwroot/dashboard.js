@@ -23,6 +23,8 @@ class VigilanteDashboard {
         this.selectedState = new Map();
         this.openNodeMenus = new Set(); // Track which node menus are open (by peerId)
         this.openCollectionMenus = new Set(); // Track which collection menus are open (by collection name)
+        this.openSnapshotCollectionMenus = new Set(); // Track which snapshot collection menus are open (by collection name)
+        this.openSnapshotMenus = new Set(); // Track which individual snapshot menus are open (by snapshot key)
         this.stickyActionsMenuOpen = false; // Track if sticky actions menu is open
         this.toastIdCounter = 0; // Counter for unique toast IDs
         this.clusterIssues = []; // Issues from cluster/status
@@ -1659,6 +1661,7 @@ class VigilanteDashboard {
                 e.stopPropagation();
                 snapshotCollectionDropdown.classList.remove('show');
                 snapshotCollectionMenuButton.classList.remove('active');
+                this.openSnapshotCollectionMenus.delete(collection.collectionName);
                 this.deleteSnapshotFromAllNodes(collection);
             });
             snapshotCollectionDropdown.appendChild(deleteAllAction);
@@ -1678,11 +1681,25 @@ class VigilanteDashboard {
                     if (menu) {
                         menu.classList.remove('show');
                     }
+                    // Remove from tracking when closing other menus
+                    const parentRow = btn.closest('tr');
+                    if (parentRow) {
+                        const collectionNameEl = parentRow.querySelector('.collection-name-line span');
+                        if (collectionNameEl) {
+                            const collectionName = collectionNameEl.textContent?.replace(/^\s*\S+\s*/, '').trim(); // Remove icon
+                            if (collectionName) {
+                                this.openSnapshotCollectionMenus.delete(collectionName);
+                            }
+                        }
+                    }
                 });
                 
                 if (!wasOpen) {
                     snapshotCollectionMenuButton.classList.add('active');
                     snapshotCollectionDropdown.classList.add('show');
+                    this.openSnapshotCollectionMenus.add(collection.collectionName);
+                } else {
+                    this.openSnapshotCollectionMenus.delete(collection.collectionName);
                 }
             });
             
@@ -1691,8 +1708,15 @@ class VigilanteDashboard {
                 if (!snapshotCollectionMenuContainer.contains(e.target)) {
                     snapshotCollectionDropdown.classList.remove('show');
                     snapshotCollectionMenuButton.classList.remove('active');
+                    this.openSnapshotCollectionMenus.delete(collection.collectionName);
                 }
             });
+            
+            // Restore menu state if it was open before refresh
+            if (this.openSnapshotCollectionMenus.has(collection.collectionName)) {
+                snapshotCollectionMenuButton.classList.add('active');
+                snapshotCollectionDropdown.classList.add('show');
+            }
             
             rightContainer.appendChild(snapshotCollectionMenuContainer);
             
@@ -1723,6 +1747,9 @@ class VigilanteDashboard {
             nodesTable.appendChild(nodesHeader);
 
             collection.snapshots.forEach((snapshot, index) => {
+                // Create unique key for this snapshot (collection + snapshot name + node)
+                const snapshotKey = `${collection.collectionName}|${snapshot.snapshotName}|${snapshot.nodeUrl}`;
+                
                 const nodeRow = document.createElement('tr');
                 nodeRow.className = 'snapshot-table-row';
                 nodeRow.setAttribute('data-snapshot-index', index);
@@ -1776,6 +1803,7 @@ class VigilanteDashboard {
                     e.stopPropagation();
                     snapshotActionsDropdown.classList.remove('show');
                     snapshotActionsMenuButton.classList.remove('active');
+                    this.openSnapshotMenus.delete(snapshotKey);
                     this.downloadSnapshot(
                         collection.collectionName, 
                         snapshot.snapshotName, 
@@ -1797,6 +1825,7 @@ class VigilanteDashboard {
                         e.stopPropagation();
                         snapshotActionsDropdown.classList.remove('show');
                         snapshotActionsMenuButton.classList.remove('active');
+                        this.openSnapshotMenus.delete(snapshotKey);
                         this.getS3DownloadUrl(collection.collectionName, snapshot.snapshotName);
                     });
                     snapshotActionsDropdown.appendChild(getUrlAction);
@@ -1811,6 +1840,7 @@ class VigilanteDashboard {
                     e.stopPropagation();
                     snapshotActionsDropdown.classList.remove('show');
                     snapshotActionsMenuButton.classList.remove('active');
+                    this.openSnapshotMenus.delete(snapshotKey);
                     this.openRecoveryModal(snapshot, collection.collectionName, snapshot.snapshotName);
                 });
                 snapshotActionsDropdown.appendChild(recoverAction);
@@ -1824,6 +1854,7 @@ class VigilanteDashboard {
                     e.stopPropagation();
                     snapshotActionsDropdown.classList.remove('show');
                     snapshotActionsMenuButton.classList.remove('active');
+                    this.openSnapshotMenus.delete(snapshotKey);
                     this.deleteSnapshotFromNode(snapshot);
                 });
                 snapshotActionsDropdown.appendChild(deleteAction);
@@ -1845,9 +1876,13 @@ class VigilanteDashboard {
                         }
                     });
                     
+                    // Clear all tracked open menus when closing others
+                    this.openSnapshotMenus.clear();
+                    
                     if (!wasOpen) {
                         snapshotActionsMenuButton.classList.add('active');
                         snapshotActionsDropdown.classList.add('show');
+                        this.openSnapshotMenus.add(snapshotKey);
                     }
                 });
                 
@@ -1856,8 +1891,15 @@ class VigilanteDashboard {
                     if (!snapshotActionsMenuContainer.contains(e.target)) {
                         snapshotActionsDropdown.classList.remove('show');
                         snapshotActionsMenuButton.classList.remove('active');
+                        this.openSnapshotMenus.delete(snapshotKey);
                     }
                 });
+                
+                // Restore menu state if it was open before refresh
+                if (this.openSnapshotMenus.has(snapshotKey)) {
+                    snapshotActionsMenuButton.classList.add('active');
+                    snapshotActionsDropdown.classList.add('show');
+                }
                 
                 sizeContainer.appendChild(snapshotActionsMenuContainer);
                 cellSize.appendChild(sizeContainer);
