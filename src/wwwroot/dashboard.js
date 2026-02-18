@@ -994,12 +994,39 @@ class VigilanteDashboard {
                 copyButton.title = 'Copy collection name to clipboard';
                 copyButton.addEventListener('click', (e) => {
                     e.stopPropagation(); // Prevent row click
-                    navigator.clipboard.writeText(collection.name).then(() => {
-                        this.showToast(`Collection name "${collection.name}" copied to clipboard`, 'success', 'Copied', 2000);
-                    }).catch(err => {
-                        console.error('Failed to copy:', err);
-                        this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
-                    });
+                    
+                    // Try modern clipboard API first, fallback for HTTP contexts
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(collection.name).then(() => {
+                            this.showToast(`Collection name "${collection.name}" copied to clipboard`, 'success', 'Copied', 2000);
+                        }).catch(err => {
+                            console.error('Failed to copy:', err);
+                            this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                        });
+                    } else {
+                        // Fallback for HTTP contexts where Clipboard API is not available
+                        try {
+                            const textArea = document.createElement('textarea');
+                            textArea.value = collection.name;
+                            textArea.style.position = 'fixed';
+                            textArea.style.left = '-999999px';
+                            textArea.style.top = '-999999px';
+                            document.body.appendChild(textArea);
+                            textArea.focus();
+                            textArea.select();
+                            const successful = document.execCommand('copy');
+                            document.body.removeChild(textArea);
+                            
+                            if (successful) {
+                                this.showToast(`Collection name "${collection.name}" copied to clipboard`, 'success', 'Copied', 2000);
+                            } else {
+                                this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                            }
+                        } catch (err) {
+                            console.error('Fallback: Could not copy text', err);
+                            this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                        }
+                    }
                 });
                 nameDiv.appendChild(copyButton);
                 
@@ -1621,12 +1648,39 @@ class VigilanteDashboard {
             copyButton.title = 'Copy collection name to clipboard';
             copyButton.addEventListener('click', (e) => {
                 e.stopPropagation(); // Prevent row click
-                navigator.clipboard.writeText(collection.collectionName).then(() => {
-                    this.showToast(`Collection name "${collection.collectionName}" copied to clipboard`, 'success', 'Copied', 2000);
-                }).catch(err => {
-                    console.error('Failed to copy:', err);
-                    this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
-                });
+                
+                // Try modern clipboard API first, fallback for HTTP contexts
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(collection.collectionName).then(() => {
+                        this.showToast(`Collection name "${collection.collectionName}" copied to clipboard`, 'success', 'Copied', 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                    });
+                } else {
+                    // Fallback for HTTP contexts where Clipboard API is not available
+                    try {
+                        const textArea = document.createElement('textarea');
+                        textArea.value = collection.collectionName;
+                        textArea.style.position = 'fixed';
+                        textArea.style.left = '-999999px';
+                        textArea.style.top = '-999999px';
+                        document.body.appendChild(textArea);
+                        textArea.focus();
+                        textArea.select();
+                        const successful = document.execCommand('copy');
+                        document.body.removeChild(textArea);
+                        
+                        if (successful) {
+                            this.showToast(`Collection name "${collection.collectionName}" copied to clipboard`, 'success', 'Copied', 2000);
+                        } else {
+                            this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                        }
+                    } catch (err) {
+                        console.error('Fallback: Could not copy text', err);
+                        this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                    }
+                }
             });
             nameDiv.appendChild(copyButton);
             
