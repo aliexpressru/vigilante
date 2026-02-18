@@ -92,7 +92,9 @@ TEMP_DEPLOYMENT="/tmp/vigilante-deployment-${ENV_NAME}.yaml"
 cp ../deployment.yaml "$TEMP_DEPLOYMENT"
 
 # Update deployment with environment-specific settings
-sed -i '' "s/value: \"Development\"/value: \"$ENV\"/" "$TEMP_DEPLOYMENT" || true
+# Replace ASPNETCORE_ENVIRONMENT value regardless of current value
+sed -i '' "s/value: \"Production\"/value: \"$ENV\"/" "$TEMP_DEPLOYMENT"
+sed -i '' "s/value: \"Development\"/value: \"$ENV\"/" "$TEMP_DEPLOYMENT"
 
 # Replace owner label placeholder with actual values if set
 if [ ! -z "$OWNER_LABEL_NAME" ] && [ ! -z "$OWNER_LABEL_VALUE" ] && [ "$OWNER_LABEL_VALUE" != "YOUR_NAME_HERE" ]; then
