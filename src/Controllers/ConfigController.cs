@@ -9,13 +9,16 @@ namespace Vigilante.Controllers;
 public class ConfigController : ControllerBase
 {
     private readonly IDynamicConfigService _dynamicConfigService;
+    private readonly IWebHostEnvironment _environment;
     private readonly ILogger<ConfigController> _logger;
 
     public ConfigController(
         IDynamicConfigService dynamicConfigService,
+        IWebHostEnvironment environment,
         ILogger<ConfigController> logger)
     {
         _dynamicConfigService = dynamicConfigService;
+        _environment = environment;
         _logger = logger;
     }
 
@@ -36,6 +39,16 @@ public class ConfigController : ControllerBase
             _logger.LogError(ex, "Failed to get dynamic config");
             return StatusCode(500, new { error = "Failed to get configuration" });
         }
+    }
+
+    /// <summary>
+    /// Get current environment name
+    /// </summary>
+    [HttpGet("environment")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    public IActionResult GetEnvironment()
+    {
+        return Ok(new { environment = _environment.EnvironmentName });
     }
 
     /// <summary>

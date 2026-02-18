@@ -18,6 +18,8 @@ public class CollectionService : ICollectionService
     private readonly IPodCommandExecutor? _commandExecutor;
     private readonly QdrantOptions _options;
     private readonly IQdrantClientFactory _clientFactory;
+    private List<CollectionInfo>? _cachedCollections;
+    private readonly Lock _cacheLock = new();
 
     public CollectionService(
         ILogger<CollectionService> logger,
@@ -156,6 +158,9 @@ public class CollectionService : ICollectionService
     public async Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client,
         CancellationToken cancellationToken = default)
     {
+        // This method is kept for backward compatibility with old code that passes IQdrantHttpClient
+        // It performs a simple health check without caching
+        
         try
         {
             var collectionsResponse = await client.ListCollections(cancellationToken);
@@ -381,77 +386,58 @@ public class CollectionService : ICollectionService
         }
     }
 
-    public async Task EnrichWithClusteringInfoAsync(
-        string healthyNodeUrl,
-        IList<CollectionInfo> collectionInfos,
-        Dictionary<string, string> peerToPodMap,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodeUrl, _options.ApiKey);
-
-            var healthyNodePeerId = collectionInfos
-                .FirstOrDefault(c => c.NodeUrl == healthyNodeUrl)?.PeerId;
-
-            if (string.IsNullOrEmpty(healthyNodePeerId))
-            {
-                _logger.LogWarning("Could not find peer ID for node {NodeUrl}", healthyNodeUrl);
-
-                return;
-            }
-
-            var collectionNames = collectionInfos
-                .Where(c => c.NodeUrl == healthyNodeUrl)
-                .Select(c => c.CollectionName)
-                .Distinct();
-
-            foreach (var collectionName in collectionNames)
-            {
-                try
-                {
-                    var clusteringInfo =
-                        await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
-
-                    if (clusteringInfo?.Status?.IsSuccess != true || clusteringInfo.Result == null)
-                        continue;
-
-                    var info = collectionInfos.FirstOrDefault(c =>
-                        c.CollectionName == collectionName && c.NodeUrl == healthyNodeUrl);
-
-                    if (info == null)
-                        continue;
-
-                    UpdateShardMetrics(info, clusteringInfo.Result);
-                    UpdateTransferMetrics(info, clusteringInfo.Result, peerToPodMap);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to get clustering info for collection {Collection} on node {NodeUrl}",
-                        collectionName, healthyNodeUrl);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to setup QdrantClient for node {NodeUrl}", healthyNodeUrl);
-        }
-    }
-
-    public async Task<List<CollectionInfo>> GetCollectionsFromQdrantAsync(
+    public async Task<(List<CollectionInfo> Collections, bool IsHealthy, string? ErrorMessage)> GetCollectionsFromQdrantAsync(
         IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool clearCache = false)
     {
         var nodesList = nodes.ToList();
 
         if (nodesList.Count == 0)
         {
             _logger.LogWarning("No nodes provided to GetCollectionsFromQdrantAsync");
-
-            return new List<CollectionInfo>();
+            return (new List<CollectionInfo>(), true, null);
         }
 
+        // Check cache first if not clearing
+        if (!clearCache)
+        {
+            lock (_cacheLock)
+            {
+                if (_cachedCollections != null && _cachedCollections.Count > 0)
+                {
+                    // Check if cache contains data from all requested nodes
+                    var cachedNodeUrls = _cachedCollections.Select(c => c.NodeUrl).Distinct().ToHashSet();
+                    var requestedNodeUrls = nodesList.Select(n => n.Url).ToHashSet();
+                    
+                    // If cache contains all requested nodes, return cached data
+                    if (requestedNodeUrls.All(url => cachedNodeUrls.Contains(url)))
+                    {
+                        _logger.LogInformation("Returning cached {UniqueCollectionCount} collections from {NodeCount} nodes", 
+                            GetUniqueCollectionCount(_cachedCollections), requestedNodeUrls.Count);
+                        return (_cachedCollections, true, null);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Cache doesn't contain all requested nodes. Requested: {Requested}, Cached: {Cached}. Fetching fresh data.",
+                            string.Join(", ", requestedNodeUrls), string.Join(", ", cachedNodeUrls));
+                    }
+                }
+            }
+        }
+        else
+        {
+            _logger.LogInformation("Clearing collections cache");
+            lock (_cacheLock)
+            {
+                _cachedCollections = null;
+            }
+        }
+
+
         var result = new List<CollectionInfo>();
+        var overallHealthy = true;
+        string? overallErrorMessage = null;
 
         foreach (var node in nodesList)
         {
@@ -463,9 +449,12 @@ public class CollectionService : ICollectionService
                 var collectionsResponse = await qdrantClient.ListCollections(cancellationToken);
                 if (!collectionsResponse.Status.IsSuccess || collectionsResponse.Result?.Collections == null)
                 {
+                    var errorDetails = collectionsResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage;
                     _logger.LogWarning("Failed to get collections from node {NodeUrl}: {Error}",
-                        node.Url, collectionsResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+                        node.Url, errorDetails);
 
+                    overallHealthy = false;
+                    overallErrorMessage = $"Failed to list collections from node {node.Url}: {errorDetails}";
                     continue;
                 }
 
@@ -495,12 +484,26 @@ public class CollectionService : ICollectionService
                     _logger.LogWarning(ex, "Failed to get aliases from node {NodeUrl}", node.Url);
                 }
 
-                // For each collection, get its info
+                // For each collection, get its detailed info including status
                 foreach (var collection in collectionsResponse.Result.Collections)
                 {
                     try
                     {
                         var collectionName = collection.Name;
+
+                        // Get detailed collection info to retrieve status
+                        var collectionInfoResponse = await qdrantClient.GetCollectionInfo(collectionName, cancellationToken);
+                        
+                        if (!collectionInfoResponse.Status.IsSuccess)
+                        {
+                            var errorDetails = collectionInfoResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage;
+                            _logger.LogWarning("Failed to get info for collection {CollectionName} from node {NodeUrl}: {Error}",
+                                collectionName, node.Url, errorDetails);
+                            
+                            overallHealthy = false;
+                            overallErrorMessage = $"Failed to get info for collection '{collectionName}': {errorDetails}";
+                            continue;
+                        }
 
                         var metrics = new Dictionary<string, object>
                         {
@@ -521,30 +524,48 @@ public class CollectionService : ICollectionService
                             PeerId = node.PeerId,
                             PodNamespace = node.Namespace ?? string.Empty,
                             Metrics = metrics,
-                            Aliases = aliases
+                            Aliases = aliases,
+                            Status = collectionInfoResponse.Result?.Status
                         });
                     }
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Failed to get info for collection {CollectionName} from node {NodeUrl}",
                             collection.Name, node.Url);
+                        
+                        overallHealthy = false;
+                        overallErrorMessage = $"Exception while getting collection '{collection.Name}' info: {ex.Message}";
                     }
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to get collections from node {NodeUrl}", node.Url);
+                overallHealthy = false;
+                overallErrorMessage = $"Exception during collections check from node {node.Url}: {ex.Message}";
             }
         }
 
-        return result;
+        // Cache the result if successful
+        if (overallHealthy && result.Count > 0)
+        {
+            lock (_cacheLock)
+            {
+                _cachedCollections = result;
+                _logger.LogInformation("Cached {UniqueCollectionCount} collections from {NodeCount} nodes", 
+                    GetUniqueCollectionCount(result), nodesList.Count);
+            }
+        }
+
+        return (result, overallHealthy, overallErrorMessage);
     }
 
 
     public async Task<IReadOnlyList<CollectionInfo>> GetEnrichedCollectionsInfoAsync(
         IReadOnlyList<NodeInfo> nodes,
         Dictionary<string, string> peerToPodMap,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool clearCache = false)
     {
         // Get collections from Qdrant API (only from healthy nodes)
         var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
@@ -556,9 +577,10 @@ public class CollectionService : ICollectionService
             return new List<CollectionInfo>();
         }
 
-        var collections = await GetCollectionsFromQdrantAsync(
+        var (collections, _, _) = await GetCollectionsFromQdrantAsync(
             healthyNodes.Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName)),
-            cancellationToken);
+            cancellationToken,
+            clearCache);
 
         if (collections.Count == 0)
         {
@@ -576,14 +598,21 @@ public class CollectionService : ICollectionService
         // Enrich with clustering info
         await EnrichCollectionsWithClusteringInfoAsync(healthyNodes, collections, peerToPodMap, cancellationToken);
 
+        // Sort collection shards by node within each collection:
+        // Group by collection name, sort nodes within each group, then flatten back
+        collections = collections
+            .GroupBy(c => c.CollectionName)
+            .SelectMany(group => group.OrderBy(c => NodeSortingExtensions.GetNodeSortKey(c.PodName, c.PeerId)))
+            .ToList();
+
         // Log summary with unique collection names
-        var uniqueCollections = collections.Select(c => c.CollectionName).Distinct().ToList();
+        var uniqueCollectionCount = GetUniqueCollectionCount(collections);
+        var uniqueCollectionNames = collections.Select(c => c.CollectionName).Distinct().OrderBy(n => n).ToList();
         _logger.LogInformation(
-            "Retrieved {TotalInstances} collection instances across {NodeCount} nodes. Unique collections: {UniqueCount} ({CollectionNames})",
-            collections.Count, 
+            "Retrieved {UniqueCount} collections from {NodeCount} nodes: {CollectionNames}",
+            uniqueCollectionCount,
             healthyNodes.Count,
-            uniqueCollections.Count,
-            string.Join(", ", uniqueCollections));
+            string.Join(", ", uniqueCollectionNames));
 
         return collections;
     }
@@ -675,6 +704,71 @@ public class CollectionService : ICollectionService
                 collectionName, direction.ToString());
 
             return false;
+        }
+    }
+    
+    /// <summary>
+    /// Gets the number of unique collections from a list of CollectionInfo instances
+    /// </summary>
+    private static int GetUniqueCollectionCount(IEnumerable<CollectionInfo> collections)
+    {
+        return collections.Select(c => c.CollectionName).Distinct().Count();
+    }
+
+    private async Task EnrichWithClusteringInfoAsync(
+        string healthyNodeUrl,
+        IList<CollectionInfo> collectionInfos,
+        Dictionary<string, string> peerToPodMap,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodeUrl, _options.ApiKey);
+
+            var healthyNodePeerId = collectionInfos
+                .FirstOrDefault(c => c.NodeUrl == healthyNodeUrl)?.PeerId;
+
+            if (string.IsNullOrEmpty(healthyNodePeerId))
+            {
+                _logger.LogWarning("Could not find peer ID for node {NodeUrl}", healthyNodeUrl);
+
+                return;
+            }
+
+            var collectionNames = collectionInfos
+                .Where(c => c.NodeUrl == healthyNodeUrl)
+                .Select(c => c.CollectionName)
+                .Distinct();
+
+            foreach (var collectionName in collectionNames)
+            {
+                try
+                {
+                    var clusteringInfo =
+                        await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
+
+                    if (clusteringInfo?.Status?.IsSuccess != true || clusteringInfo.Result == null)
+                        continue;
+
+                    var info = collectionInfos.FirstOrDefault(c =>
+                        c.CollectionName == collectionName && c.NodeUrl == healthyNodeUrl);
+
+                    if (info == null)
+                        continue;
+
+                    UpdateShardMetrics(info, clusteringInfo.Result);
+                    UpdateTransferMetrics(info, clusteringInfo.Result, peerToPodMap);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to get clustering info for collection {Collection} on node {NodeUrl}",
+                        collectionName, healthyNodeUrl);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to setup QdrantClient for node {NodeUrl}", healthyNodeUrl);
         }
     }
 

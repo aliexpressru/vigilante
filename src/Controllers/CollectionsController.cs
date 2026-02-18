@@ -28,11 +28,12 @@ public class CollectionsController(
             var allIssues = new List<string>();
             
             // Group by collection name first
+            // Note: result is already sorted by node (PodName/PeerId) from the service layer
             var collectionGroups = result
-                .GroupBy(size => size.CollectionName)
-                .Select(group => new
+                .GroupBy(size => size.CollectionName, (key, group) => new
                 {
-                    CollectionName = group.Key,
+                    CollectionName = key,
+                    // Preserve the original order from service (sorted by PodName/PeerId)
                     Infos = group.Select(size =>
                     {
                         // Add formatted issues for collections with problems
@@ -53,7 +54,8 @@ public class CollectionsController(
                             PodNamespace = size.PodNamespace,
                             Metrics = size.Metrics,
                             Issues = size.Issues,
-                            Aliases = size.Aliases
+                            Aliases = size.Aliases,
+                            Status = size.Status?.ToString()
                         };
                     }).ToList()
                 })

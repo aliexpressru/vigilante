@@ -59,7 +59,7 @@ spec:
               optional: true
         volumeMounts:
         - name: config-volume
-          mountPath: /app/appsettings.Production.json
+          mountPath: /app/appsettings.json
           subPath: appsettings.json
         - name: dynamic-config-volume
           mountPath: /app/config

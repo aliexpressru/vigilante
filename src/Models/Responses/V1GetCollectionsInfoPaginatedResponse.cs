@@ -25,6 +25,12 @@ public class V1GetCollectionsInfoPaginatedResponse
         public List<string> Issues { get; set; } = new();
         
         public List<string> Aliases { get; set; } = new();
+        
+        /// <summary>
+        /// Collection status from Qdrant API.
+        /// Possible values: "Green" (healthy), "Yellow" (optimizing), "Red" (error).
+        /// </summary>
+        public string? Status { get; set; }
     }
     
     public class PaginationInfo

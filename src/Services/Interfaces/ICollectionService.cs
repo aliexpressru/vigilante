@@ -82,28 +82,24 @@ public interface ICollectionService
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Gets clustering information for a collection and enriches collection infos with shard data
-    /// </summary>
-    Task EnrichWithClusteringInfoAsync(
-        string healthyNodeUrl,
-        IList<CollectionInfo> collectionInfos,
-        Dictionary<string, string> peerToPodMap,
-        CancellationToken cancellationToken);
-
-    /// <summary>
     /// Gets collections list from a Qdrant node directly (fallback when Kubernetes is not available)
     /// </summary>
-    Task<List<CollectionInfo>> GetCollectionsFromQdrantAsync(
+    /// <param name="clearCache">If true, clears the cache and fetches fresh data</param>
+    /// <returns>Tuple containing list of collections, health status, and error message if any</returns>
+    Task<(List<CollectionInfo> Collections, bool IsHealthy, string? ErrorMessage)> GetCollectionsFromQdrantAsync(
         IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        bool clearCache = false);
     
     /// <summary>
     /// Gets enriched collections information from healthy nodes with storage and clustering data
     /// </summary>
+    /// <param name="clearCache">If true, clears the cache and fetches fresh data</param>
     Task<IReadOnlyList<CollectionInfo>> GetEnrichedCollectionsInfoAsync(
         IReadOnlyList<NodeInfo> nodes,
         Dictionary<string, string> peerToPodMap,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        bool clearCache = false);
 
     /// <summary>
     /// Drops specified shards from a peer node in the cluster
