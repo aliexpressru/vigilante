@@ -498,6 +498,104 @@ public class ClusterControllerTests
 
     #endregion
 
+    #region AbortShardTransfer Tests
+
+    [Test]
+    public async Task AbortShardTransfer_WhenSuccessful_ReturnsOk()
+    {
+        // Arrange
+        var request = new V1AbortShardTransferRequest
+        {
+            SourcePeerId = 1001,
+            TargetPeerId = 1002,
+            CollectionName = "test_collection",
+            ShardId = 0
+        };
+
+        _clusterManager.AbortShardTransferAsync(
+            request.SourcePeerId!.Value,
+            request.TargetPeerId!.Value,
+            request.CollectionName,
+            request.ShardId!.Value,
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var result = await _controller.AbortShardTransfer(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        var okResult = (OkObjectResult)result;
+        Assert.That(okResult.Value, Is.Not.Null);
+        
+        await _clusterManager.Received(1).AbortShardTransferAsync(
+            request.SourcePeerId!.Value,
+            request.TargetPeerId!.Value,
+            request.CollectionName,
+            request.ShardId!.Value,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AbortShardTransfer_WhenFailed_Returns500()
+    {
+        // Arrange
+        var request = new V1AbortShardTransferRequest
+        {
+            SourcePeerId = 1001,
+            TargetPeerId = 1002,
+            CollectionName = "test_collection",
+            ShardId = 0
+        };
+
+        _clusterManager.AbortShardTransferAsync(
+            Arg.Any<ulong>(),
+            Arg.Any<ulong>(),
+            Arg.Any<string>(),
+            Arg.Any<uint>(),
+            Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        // Act
+        var result = await _controller.AbortShardTransfer(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+    }
+
+    [Test]
+    public async Task AbortShardTransfer_WhenExceptionThrown_Returns500()
+    {
+        // Arrange
+        var request = new V1AbortShardTransferRequest
+        {
+            SourcePeerId = 1001,
+            TargetPeerId = 1002,
+            CollectionName = "test_collection",
+            ShardId = 0
+        };
+
+        _clusterManager.AbortShardTransferAsync(
+            Arg.Any<ulong>(),
+            Arg.Any<ulong>(),
+            Arg.Any<string>(),
+            Arg.Any<uint>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new Exception("Test error")));
+
+        // Act
+        var result = await _controller.AbortShardTransfer(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+    }
+
+    #endregion
+
     #region DropShardsFromPeer Tests
 
     [Test]

@@ -797,7 +797,18 @@ class VigilanteDashboard {
             if (!Array.isArray(value) || value.length === 0) return '';
             return value.map(transfer => {
                 const transferType = transfer.isSync ? 'Syncing' : 'Moving';
-                return `<div class="transfer-item">${transferType} shard ${transfer.shardId} → ${transfer.to}</div>`;
+                const transferId = `${nodeInfo.peerId}-${transfer.shardId}-${transfer.toPeerId}`;
+                return `
+                    <div class="transfer-item" data-transfer-id="${transferId}">
+                        <span class="transfer-info">${transferType} shard ${transfer.shardId} → ${transfer.to}</span>
+                        <button class="abort-transfer-button" 
+                                data-shard-id="${transfer.shardId}" 
+                                data-source-peer="${nodeInfo.peerId}" 
+                                data-target-peer="${transfer.toPeerId}"
+                                title="Abort this transfer">
+                            <i class="fas fa-stop-circle"></i> Abort
+                        </button>
+                    </div>`;
             }).join('');
         }
         // Hide shardStates and sizeBytes from metrics display
@@ -1259,7 +1270,12 @@ class VigilanteDashboard {
                             if (transfersValue) {
                                 transfersHtml = `
                                     <div class="transfers-section">
-                                        <dt>Transfers:</dt>
+                                        <dt>
+                                            Transfers:
+                                            <i class="fas fa-info-circle" 
+                                               style="color: #2196f3; font-size: 0.8em; margin-left: 4px; cursor: help;" 
+                                               title="Active shard transfers. Note: Transfers may complete quickly. If abort fails, the transfer has likely already finished."></i>
+                                        </dt>
                                         <dd>${transfersValue}</dd>
                                     </div>
                                 `;
@@ -1363,6 +1379,76 @@ class VigilanteDashboard {
                             // Initial state
                         updateSelectAllState();
                     }
+
+                    // Setup Abort Transfer buttons
+                    const abortButtons = nodeDetails.querySelectorAll('.abort-transfer-button');
+                    abortButtons.forEach(button => {
+                        button.addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            const shardId = parseInt(button.dataset.shardId);
+                            // Parse as number - peer IDs can be large numbers
+                            const sourcePeerId = Number(button.dataset.sourcePeer);
+                            const targetPeerId = Number(button.dataset.targetPeer);
+                            
+                            console.log('Abort transfer request:', {
+                                collectionName: collection.name,
+                                shardId,
+                                sourcePeerId,
+                                targetPeerId,
+                                sourcePeerType: typeof sourcePeerId,
+                                targetPeerType: typeof targetPeerId
+                            });
+                            
+                            if (!confirm(`Are you sure you want to abort the transfer of shard ${shardId}?\n\nFrom: peer ${sourcePeerId}\nTo: peer ${targetPeerId}\n\nNote: If the transfer has already completed, this operation will fail.`)) {
+                                return;
+                            }
+                            
+                            button.disabled = true;
+                            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Aborting...';
+                            
+                            try {
+                                const requestBody = {
+                                    collectionName: collection.name,
+                                    sourcePeerId: sourcePeerId,
+                                    targetPeerId: targetPeerId,
+                                    shardId: shardId
+                                };
+                                
+                                console.log('Sending abort transfer request:', requestBody);
+                                
+                                const response = await fetch('/api/v1/cluster/abort-shard-transfer', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify(requestBody)
+                                });
+                                
+                                const result = await response.json();
+                                
+                                if (response.ok) {
+                                    this.showToast(`Shard transfer aborted successfully`, 'success', 'Success', 3000);
+                                    // Refresh to update the UI
+                                    setTimeout(() => this.refresh(), 1000);
+                                } else {
+                                    const errorMsg = result.error || result.details || 'Failed to abort shard transfer';
+                                    // Check if error is about transfer not existing
+                                    if (errorMsg.includes('completed') || errorMsg.includes('cancelled') || 
+                                        (result.details && result.details.includes('completed'))) {
+                                        this.showToast('Transfer not found - it may have already completed or been cancelled. Refreshing...', 'info', 'Transfer Completed', 4000);
+                                        setTimeout(() => this.refresh(), 1500);
+                                        return; // Don't throw error, just refresh
+                                    }
+                                    throw new Error(errorMsg);
+                                }
+                            } catch (error) {
+                                console.error('Error aborting shard transfer:', error);
+                                this.showToast(`Failed to abort transfer: ${error.message}`, 'error', 'Error', 5000);
+                                button.disabled = false;
+                                button.innerHTML = '<i class="fas fa-stop-circle"></i> Abort';
+                            }
+                        });
+                    });
 
                     detailsContent.appendChild(nodeDetails);
                 });

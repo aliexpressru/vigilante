@@ -70,6 +70,40 @@ public class ClusterController(
         }
     }
 
+    [HttpPost("abort-shard-transfer")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AbortShardTransfer(
+        [FromBody] V1AbortShardTransferRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var success = await clusterManager.AbortShardTransferAsync(
+                request.SourcePeerId!.Value,
+                request.TargetPeerId!.Value,
+                request.CollectionName,
+                request.ShardId!.Value,
+                cancellationToken);
+
+            if (success)
+            {
+                return Ok(new { message = "Shard transfer aborted successfully" });
+            }
+
+            return StatusCode(500, new { 
+                error = "Failed to abort shard transfer", 
+                details = $"The transfer from peer {request.SourcePeerId} to peer {request.TargetPeerId} for shard {request.ShardId} could not be aborted. It may have already completed or been cancelled. Please refresh the page to see the current state."
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during abort shard transfer");
+            return StatusCode(500, new { error = "Internal server error during abort shard transfer", details = ex.Message });
+        }
+    }
+
     [HttpPost("drop-shards")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

@@ -100,6 +100,56 @@ public class CollectionService : ICollectionService
         }
     }
 
+    public async Task<bool> AbortShardTransferAsync(
+        string healthyNodeUrl,
+        ulong sourcePeerId,
+        ulong targetPeerId,
+        string collectionName,
+        uint shardId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodeUrl, _options.ApiKey);
+
+            _logger.LogInformation(
+                "Aborting shard transfer via Qdrant client: Collection={Collection}, Source={SourcePeerId}, Target={TargetPeerId}, " +
+                "ShardId={ShardId}",
+                collectionName, sourcePeerId, targetPeerId, shardId);
+
+            var request = UpdateCollectionClusteringSetupRequest.CreateAbortShardTransferRequest(
+                shardId,
+                sourcePeerId,
+                targetPeerId);
+
+            var result = await qdrantClient.UpdateCollectionClusteringSetup(
+                collectionName,
+                request,
+                cancellationToken);
+
+            if (result?.Status?.IsSuccess == true)
+            {
+                _logger.LogInformation(
+                    "Shard transfer aborted: {Collection} [Shard {ShardId}: {SourcePeer}→{TargetPeer}]",
+                    collectionName, shardId, sourcePeerId, targetPeerId);
+
+                return true;
+            }
+
+            var errorMessage = result?.Status?.Error ?? MetricConstants.UnknownErrorMessage;
+            _logger.LogError("Failed to abort shard transfer for {Collection}: {Error}",
+                collectionName, errorMessage);
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to abort shard transfer for collection {Collection}", collectionName);
+
+            return false;
+        }
+    }
+
     public async Task<IEnumerable<CollectionSize>> GetCollectionsSizesForPodAsync(
         string podName,
         string podNamespace,
