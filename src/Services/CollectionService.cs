@@ -602,15 +602,7 @@ public class CollectionService : ICollectionService
         // Group by collection name, sort nodes within each group, then flatten back
         collections = collections
             .GroupBy(c => c.CollectionName)
-            .SelectMany(group => group.OrderBy(c => 
-            {
-                // Use PodName if it's available and not 'unknown', otherwise use PeerId
-                if (!string.IsNullOrEmpty(c.PodName) && c.PodName != MetricConstants.UnknownPodName)
-                {
-                    return c.PodName;
-                }
-                return c.PeerId;
-            }))
+            .SelectMany(group => group.OrderBy(c => NodeSortingExtensions.GetNodeSortKey(c.PodName, c.PeerId)))
             .ToList();
 
         // Log summary with unique collection names

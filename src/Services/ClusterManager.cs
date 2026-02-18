@@ -46,9 +46,9 @@ public class ClusterManager(
             }
         }
 
-        // Sort nodes: by PodName if available, otherwise by PeerId
+        // Sort nodes: by PodName if available and not 'unknown', otherwise by PeerId
         var sortedNodes = nodeStatuses
-            .OrderBy(n => !string.IsNullOrEmpty(n.PodName) ? n.PodName : n.PeerId)
+            .OrderBy(n => NodeSortingExtensions.GetNodeSortKey(n.PodName, n.PeerId))
             .ToList();
 
         var state = new ClusterState

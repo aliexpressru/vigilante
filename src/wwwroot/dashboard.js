@@ -885,7 +885,7 @@ class VigilanteDashboard {
         // (instead of querying DOM which can have timing issues)
         console.log('Saving open collections state:', Array.from(this.openCollections));
         
-        // Group collections by name and sort them
+        // Group collections by name, preserving backend node order
         const collectionsByName = collections.reduce((acc, info) => {
             if (!info || !info.collectionName) {
                 console.warn('Invalid collection info:', info);
@@ -897,31 +897,41 @@ class VigilanteDashboard {
                     name: info.collectionName,
                     aliases: info.aliases || [],
                     status: info.status, // Save collection status (Green/Yellow/Red)
-                    nodes: {}
+                    nodes: [] // Use array to preserve backend order
                 };
             }
 
-            // Use peerId as unique key to avoid overwriting nodes with the same podName
-            const nodeKey = info.peerId || info.podName || info.nodeUrl;
-            acc[info.collectionName].nodes[nodeKey] = {
+            // Use podName if available and not 'unknown', otherwise use peerId (match backend logic)
+            const nodeKey = (info.podName && info.podName !== 'unknown') 
+                ? info.podName 
+                : (info.peerId || info.nodeUrl);
+            
+            acc[info.collectionName].nodes.push({
+                nodeKey: nodeKey,
                 size: info.metrics?.size || 0,
                 podName: info.podName,
                 peerId: info.peerId || '',
                 nodeUrl: info.nodeUrl || '',
                 podNamespace: info.podNamespace || '',
                 metrics: info.metrics || {}
-            };
+            });
             return acc;
         }, {});
         
         console.log('Collections grouped by name:', collectionsByName);
         console.log('Total unique collections:', Object.keys(collectionsByName).length);
         Object.entries(collectionsByName).forEach(([name, collection]) => {
-            console.log(`Collection ${name} has ${Object.keys(collection.nodes).length} nodes`);
+            console.log(`Collection ${name} has ${collection.nodes.length} nodes`);
         });
 
-        // Get unique node keys (peerIds or podNames) for display
-        const nodeKeys = [...new Set(collections.map(info => info.peerId || info.podName || info.nodeUrl).filter(Boolean))].sort();
+        // Get unique node keys in the order they appear in backend response (already sorted)
+        const nodeKeys = [...new Set(collections.map(info => {
+            // Match backend sorting logic: prefer podName over peerId
+            if (info.podName && info.podName !== 'unknown') {
+                return info.podName;
+            }
+            return info.peerId || info.nodeUrl;
+        }).filter(Boolean))]; // No .sort() - preserve backend order!
         const table = document.createElement('table');
         table.className = 'collections-table';
         const tbody = document.createElement('tbody');
@@ -935,7 +945,7 @@ class VigilanteDashboard {
                 // Calculate total size for this collection across all nodes
                 let collectionTotalSize = 0;
                 const uniqueShards = new Set();
-                Object.values(collection.nodes).forEach(nodeInfo => {
+                collection.nodes.forEach(nodeInfo => {
                     if (nodeInfo.metrics?.sizeBytes) {
                         collectionTotalSize += nodeInfo.metrics.sizeBytes;
                     }
@@ -1201,13 +1211,12 @@ class VigilanteDashboard {
                 const detailsContent = document.createElement('div');
                 detailsContent.className = 'collection-details-content';
 
-                nodeKeys.forEach(nodeKey => {
-                    const nodeInfo = collection.nodes[nodeKey];
-                    if (nodeInfo) {
-                        const nodeDetails = document.createElement('div');
-                        nodeDetails.className = 'collection-node-info';
-                        
-                        const peerIdDisplay = nodeInfo.peerId ? ` <span class="node-peer-id">(${nodeInfo.peerId})</span>` : '';
+                // Iterate over nodes in backend order (already preserved in array)
+                collection.nodes.forEach(nodeInfo => {
+                    const nodeDetails = document.createElement('div');
+                    nodeDetails.className = 'collection-node-info';
+                    
+                    const peerIdDisplay = nodeInfo.peerId ? ` <span class="node-peer-id">(${nodeInfo.peerId})</span>` : '';
                         const stateKey = `${collection.name}-${nodeInfo.peerId}`;
                         
                         // Get shards HTML (includes Target nodes, Shards, and action controls)
@@ -1323,11 +1332,10 @@ class VigilanteDashboard {
                             });
                             
                             // Initial state
-                            updateSelectAllState();
-                        }
-
-                        detailsContent.appendChild(nodeDetails);
+                        updateSelectAllState();
                     }
+
+                    detailsContent.appendChild(nodeDetails);
                 });
 
                 // Add collection-level action buttons at the bottom
@@ -1378,12 +1386,12 @@ class VigilanteDashboard {
                         const firstNodeElement = selectedShards[0].nodeElement;
                         const allNodesInDetails = detailsContent.querySelectorAll('.collection-node-info');
                         const nodeIndex = Array.from(allNodesInDetails).indexOf(firstNodeElement);
-                        if (nodeIndex !== -1 && nodeIndex < nodeKeys.length) {
-                            nodeInfo = collection.nodes[nodeKeys[nodeIndex]];
+                        if (nodeIndex !== -1 && nodeIndex < collection.nodes.length) {
+                            nodeInfo = collection.nodes[nodeIndex];
                         }
                         
-                        if (!nodeInfo) {
-                            nodeInfo = collection.nodes[nodeKeys[0]];
+                        if (!nodeInfo && collection.nodes.length > 0) {
+                            nodeInfo = collection.nodes[0];
                         }
                         
                         const shardIds = selectedShards.map(s => s.shardId);
@@ -2963,8 +2971,8 @@ class VigilanteDashboard {
         const nodesList = document.createElement('div');
         nodesList.style.cssText = 'margin: 16px 0; max-height: 400px; overflow-y: auto;';
 
-        // Get nodes from collection
-        const nodes = Object.values(collection.nodes || {});
+        // Get nodes from collection (already an array)
+        const nodes = collection.nodes || [];
         
         // For deleteDisk action, filter to only nodes with pod information
         let availableNodes = nodes;
@@ -3231,9 +3239,9 @@ class VigilanteDashboard {
         targetSelect.appendChild(emptyOption);
         
         // Add other nodes (except source)
-        Object.entries(collection.nodes || {})
-            .filter(([_, nodeInfo]) => nodeInfo.peerId && nodeInfo.peerId !== sourceNodeInfo.peerId)
-            .forEach(([_, nodeInfo]) => {
+        (collection.nodes || [])
+            .filter(nodeInfo => nodeInfo.peerId && nodeInfo.peerId !== sourceNodeInfo.peerId)
+            .forEach(nodeInfo => {
                 const option = document.createElement('option');
                 option.value = nodeInfo.peerId;
                 const displayName = nodeInfo.podName && nodeInfo.podName !== 'unknown' 
