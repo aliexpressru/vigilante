@@ -2,6 +2,7 @@ using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.DependencyInjection;
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.StaticFiles;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using Vigilante.Configuration;
@@ -138,7 +139,27 @@ public class Startup(IConfiguration configuration)
         
         // Static files for dashboard - order is important!
         app.UseDefaultFiles(); // This must come before UseStaticFiles
-        app.UseStaticFiles();
+        
+        // Configure static files with cache control
+        var staticFileOptions = new StaticFileOptions
+        {
+            OnPrepareResponse = ctx =>
+            {
+                // In development, disable caching
+                if (env.IsDevelopment())
+                {
+                    ctx.Context.Response.Headers.Append("Cache-Control", "no-cache, no-store, must-revalidate");
+                    ctx.Context.Response.Headers.Append("Pragma", "no-cache");
+                    ctx.Context.Response.Headers.Append("Expires", "0");
+                }
+                else
+                {
+                    // In production, cache for 1 hour but require revalidation
+                    ctx.Context.Response.Headers.Append("Cache-Control", "public, max-age=3600, must-revalidate");
+                }
+            }
+        };
+        app.UseStaticFiles(staticFileOptions);
         
         app.UseRouting();
         
