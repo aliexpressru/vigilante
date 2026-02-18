@@ -963,11 +963,34 @@ class VigilanteDashboard {
                 nameContainer.style.flexDirection = 'column';
                 nameContainer.style.gap = '4px';
                 
-                // Collection name
+                // Collection name with copy button
                 const nameDiv = document.createElement('div');
                 nameDiv.className = 'collection-name-line';
-                nameDiv.textContent = collection.name;
-                nameDiv.title = collection.name;
+                nameDiv.style.display = 'flex';
+                nameDiv.style.alignItems = 'center';
+                nameDiv.style.gap = '8px';
+                
+                const nameText = document.createElement('span');
+                nameText.textContent = collection.name;
+                nameText.title = collection.name;
+                nameDiv.appendChild(nameText);
+                
+                // Copy to clipboard button
+                const copyButton = document.createElement('button');
+                copyButton.className = 'collection-name-copy-btn';
+                copyButton.innerHTML = '<i class="fas fa-copy"></i>';
+                copyButton.title = 'Copy collection name to clipboard';
+                copyButton.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent row click
+                    navigator.clipboard.writeText(collection.name).then(() => {
+                        this.showToast(`Collection name "${collection.name}" copied to clipboard`, 'success', 'Copied', 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                    });
+                });
+                nameDiv.appendChild(copyButton);
+                
                 nameContainer.appendChild(nameDiv);
                 
                 // Aliases (if any)
@@ -1064,7 +1087,7 @@ class VigilanteDashboard {
                 
                 // Delete (API) action
                 const deleteApiAction = document.createElement('button');
-                deleteApiAction.className = 'collection-action-item';
+                deleteApiAction.className = 'collection-action-item collection-action-item-danger';
                 deleteApiAction.innerHTML = '<i class="fas fa-trash"></i> Delete (API)';
                 deleteApiAction.title = 'Delete collection via API on selected nodes';
                 deleteApiAction.addEventListener('click', async (e) => {
@@ -1572,8 +1595,30 @@ class VigilanteDashboard {
             
             const nameDiv = document.createElement('div');
             nameDiv.className = 'collection-name-line';
-            nameDiv.innerHTML = `<i class="fas fa-camera" style="color: #7b1fa2; margin-right: 8px;"></i>${collection.collectionName}`;
-            nameDiv.title = collection.collectionName;
+            nameDiv.style.display = 'flex';
+            nameDiv.style.alignItems = 'center';
+            nameDiv.style.gap = '8px';
+            
+            const nameContent = document.createElement('span');
+            nameContent.innerHTML = `<i class="fas fa-camera" style="color: #7b1fa2; margin-right: 8px;"></i>${collection.collectionName}`;
+            nameContent.title = collection.collectionName;
+            nameDiv.appendChild(nameContent);
+            
+            // Copy to clipboard button
+            const copyButton = document.createElement('button');
+            copyButton.className = 'collection-name-copy-btn';
+            copyButton.innerHTML = '<i class="fas fa-copy"></i>';
+            copyButton.title = 'Copy collection name to clipboard';
+            copyButton.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent row click
+                navigator.clipboard.writeText(collection.collectionName).then(() => {
+                    this.showToast(`Collection name "${collection.collectionName}" copied to clipboard`, 'success', 'Copied', 2000);
+                }).catch(err => {
+                    console.error('Failed to copy:', err);
+                    this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                });
+            });
+            nameDiv.appendChild(copyButton);
             
             const rightContainer = document.createElement('div');
             rightContainer.style.display = 'flex';

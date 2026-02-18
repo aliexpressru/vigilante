@@ -1128,6 +1128,32 @@ body {
     flex: 1;
 }
 
+/* Copy collection name button */
+.collection-name-copy-btn {
+    background: transparent;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.6;
+}
+
+.collection-name-copy-btn:hover {
+    background: rgba(33, 150, 243, 0.1);
+    color: #2196f3;
+    opacity: 1;
+}
+
+.collection-name-copy-btn:active {
+    transform: scale(0.95);
+}
+
 /* Collection aliases - smaller and grayed out */
 .collection-aliases {
     font-size: 0.8rem;
