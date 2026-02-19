@@ -639,14 +639,14 @@ public class CollectionService : ICollectionService
             return collections;
         }
 
-        // Enrich with storage info if nodes have pod names
+        // Enrich with clustering info first (creates ShardDetails with ID and State)
+        await EnrichCollectionsWithClusteringInfoAsync(healthyNodes, collections, peerToPodMap, cancellationToken);
+
+        // Then enrich with storage info (adds SizeBytes to existing ShardDetails)
         if (healthyNodes.Any(n => !string.IsNullOrEmpty(n.PodName)))
         {
             await EnrichCollectionsWithStorageInfoAsync(healthyNodes, collections, cancellationToken);
         }
-
-        // Enrich with clustering info
-        await EnrichCollectionsWithClusteringInfoAsync(healthyNodes, collections, peerToPodMap, cancellationToken);
 
         // Sort collection shards by node within each collection:
         // Group by collection name, sort nodes within each group, then flatten back
@@ -829,19 +829,24 @@ public class CollectionService : ICollectionService
         if (clusteringResult.LocalShards == null)
             return;
 
-        var shards = new List<ulong>();
+        var shardDetails = new List<ShardDetails>();
         var shardStates = new Dictionary<string, string>();
 
         foreach (var shard in clusteringResult.LocalShards)
         {
-            shards.Add(shard.ShardId);
+            shardDetails.Add(new ShardDetails
+            {
+                ShardId = (uint)shard.ShardId,
+                State = shard.State.ToString(),
+                SizeBytes = null // Will be populated later from storage info
+            });
             shardStates[shard.ShardId.ToString()] = shard.State.ToString();
         }
 
-        if (shards.Count != 0)
+        if (shardDetails.Count != 0)
         {
-            info.Metrics["shards"] = shards;
-            info.Metrics["shardStates"] = shardStates;
+            info.Metrics[MetricConstants.ShardsKey] = shardDetails;
+            info.Metrics[MetricConstants.ShardStatesKey] = shardStates;
         }
     }
 
@@ -861,13 +866,14 @@ public class CollectionService : ICollectionService
                 t.ShardId,
                 To = peerToPodMap.TryGetValue(t.To.ToString(), out var podName) ? podName : t.To.ToString(),
                 ToPeerId = t.To.ToString(),
-                IsSync = t.Sync
+                IsSync = t.Sync,
+                Method = t.Method.ToString()
             })
             .ToList();
 
         if (outgoingTransfers.Count != 0)
         {
-            info.Metrics["outgoingTransfers"] = outgoingTransfers;
+            info.Metrics[MetricConstants.OutgoingTransfersKey] = outgoingTransfers;
         }
     }
 
@@ -878,6 +884,7 @@ public class CollectionService : ICollectionService
         CancellationToken cancellationToken)
     {
         var storageCollections = new Dictionary<(string NodeUrl, string CollectionName), CollectionSize>();
+        var shardSizes = new Dictionary<(string NodeUrl, string CollectionName), List<ShardSize>>();
 
         foreach (var node in nodes)
         {
@@ -898,6 +905,20 @@ public class CollectionService : ICollectionService
                 foreach (var size in collectionSizes)
                 {
                     storageCollections[(size.NodeUrl, size.CollectionName)] = size;
+                }
+
+                // Get shard sizes for all collections on this node
+                var allShardSizes = (await GetAllShardsSizesForPodAsync(
+                    node.PodName,
+                    node.Namespace ?? string.Empty,
+                    node.Url,
+                    node.PeerId,
+                    cancellationToken)).ToList();
+
+                // Group shards by collection
+                foreach (var shardGroup in allShardSizes.GroupBy(s => (s.NodeUrl, s.CollectionName)))
+                {
+                    shardSizes[shardGroup.Key] = shardGroup.OrderBy(s => s.ShardId).ToList();
                 }
             }
             catch (Exception ex)
@@ -923,7 +944,172 @@ public class CollectionService : ICollectionService
                 _logger.LogWarning("Collection {CollectionName} on node {NodeUrl} exists in API but not in storage!",
                     collection.CollectionName, collection.NodeUrl);
             }
+
+            // Enrich existing shard details with size information from storage
+            if (shardSizes.TryGetValue(key, out var shardSizesList))
+            {
+                // Get existing shard details from Metrics if they exist (from clustering info)
+                if (collection.Metrics.TryGetValue(MetricConstants.ShardsKey, out var shardsObj) 
+                    && shardsObj is List<ShardDetails> existingShardDetails)
+                {
+                    // Create a dictionary for quick lookup of shard sizes
+                    var sizeByShardId = shardSizesList.ToDictionary(s => s.ShardId, s => s.SizeBytes);
+
+                    // Update existing shard details with size information
+                    foreach (var shardDetail in existingShardDetails)
+                    {
+                        if (sizeByShardId.TryGetValue(shardDetail.ShardId, out var sizeBytes))
+                        {
+                            shardDetail.SizeBytes = sizeBytes;
+                        }
+                    }
+
+                    _logger.LogDebug(
+                        "Updated {ShardCount} shard(s) with size info for collection {CollectionName} on node {NodeUrl}",
+                        existingShardDetails.Count, collection.CollectionName, collection.NodeUrl);
+                }
+                else
+                {
+                    // If shards key doesn't exist yet (no clustering info), create it from storage data
+                    var shardDetails = shardSizesList.Select(s => new ShardDetails
+                    {
+                        ShardId = s.ShardId,
+                        State = null,
+                        SizeBytes = s.SizeBytes
+                    }).ToList();
+
+                    collection.Metrics[MetricConstants.ShardsKey] = shardDetails;
+                    
+                    _logger.LogDebug(
+                        "Created {ShardCount} shard(s) info from storage for collection {CollectionName} on node {NodeUrl}",
+                        shardDetails.Count, collection.CollectionName, collection.NodeUrl);
+                }
+            }
         }
+    }
+    
+    internal async Task<IEnumerable<ShardSize>> GetCollectionShardsSizesForPodAsync(
+        string podName,
+        string podNamespace,
+        string nodeUrl,
+        string peerId,
+        string collectionName,
+        CancellationToken cancellationToken)
+    {
+        if (_commandExecutor == null)
+        {
+            return [];
+        }
+
+        var shardSizes = new List<ShardSize>();
+
+        try
+        {
+            var collectionPath = $"{QdrantConstants.StoragePath}/{collectionName}";
+            
+            var shardDirectories = await _commandExecutor.ListDirectoriesAsync(
+                podName,
+                podNamespace,
+                collectionPath,
+                cancellationToken);
+
+            foreach (var shardDir in shardDirectories)
+            {
+                if (uint.TryParse(shardDir, out var shardId))
+                {
+                    var sizeBytes = await _commandExecutor.GetSizeAsync(
+                        podName,
+                        podNamespace,
+                        collectionPath,
+                        shardDir,
+                        cancellationToken);
+
+                    if (sizeBytes.HasValue)
+                    {
+                        var shardSize = new ShardSize
+                        {
+                            PodName = podName,
+                            NodeUrl = nodeUrl,
+                            PeerId = peerId,
+                            CollectionName = collectionName,
+                            ShardId = shardId,
+                            SizeBytes = sizeBytes.Value
+                        };
+
+                        shardSizes.Add(shardSize);
+                        
+                        _logger.LogDebug(
+                            "Shard size calculated: Collection={Collection}, Shard={ShardId}, Pod={PodName}, Size={Size}",
+                            collectionName, shardId, podName, shardSize.PrettySize);
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Found non-numeric directory '{ShardDir}' in collection '{Collection}' on pod '{PodName}'",
+                        shardDir, collectionName, podName);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, 
+                "Failed to get shard sizes for collection {Collection} on pod {PodName}", 
+                collectionName, podName);
+        }
+
+        return shardSizes;
+    }
+
+    internal async Task<IEnumerable<ShardSize>> GetAllShardsSizesForPodAsync(
+        string podName,
+        string podNamespace,
+        string nodeUrl,
+        string peerId,
+        CancellationToken cancellationToken)
+    {
+        if (_commandExecutor == null)
+        {
+            return [];
+        }
+
+        var allShardSizes = new List<ShardSize>();
+
+        try
+        {
+            var collections = await _commandExecutor.ListDirectoriesAsync(
+                podName,
+                podNamespace,
+                QdrantConstants.StoragePath,
+                cancellationToken);
+
+            _logger.LogInformation(
+                "Found {CollectionCount} collections on pod {PodName}, getting shard sizes...",
+                collections.Count, podName);
+
+            foreach (var collection in collections)
+            {
+                var shardSizes = await GetCollectionShardsSizesForPodAsync(
+                    podName,
+                    podNamespace,
+                    nodeUrl,
+                    peerId,
+                    collection,
+                    cancellationToken);
+
+                allShardSizes.AddRange(shardSizes);
+            }
+
+            _logger.LogInformation(
+                "Retrieved {ShardCount} shard sizes across {CollectionCount} collections on pod {PodName}",
+                allShardSizes.Count, collections.Count, podName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get all shard sizes for pod {PodName}", podName);
+        }
+
+        return allShardSizes;
     }
 
     private async Task EnrichCollectionsWithClusteringInfoAsync(

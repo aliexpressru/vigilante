@@ -761,18 +761,36 @@ class VigilanteDashboard {
     formatMetricValue(key, value, nodeInfo) {
         if (key === 'shards') {
             if (!Array.isArray(value)) return value;
-            const shardsHtml = value.map(shardId => {
-                // Get the state for this shard from nodeInfo metrics
-                const shardStates = nodeInfo?.metrics?.shardStates || {};
-                const state = shardStates[shardId.toString()] || 'Unknown';
+            
+            // Handle both old format (array of numbers) and new format (array of objects)
+            const shardsHtml = value.map(shard => {
+                let shardId, state, prettySize;
+                
+                // Check if it's the new format (object with shardId, state, sizeBytes)
+                if (typeof shard === 'object' && shard !== null && 'shardId' in shard) {
+                    shardId = shard.shardId;
+                    state = shard.state || 'Unknown';
+                    prettySize = shard.prettySize || '0 B';
+                } else {
+                    // Old format: just a number
+                    shardId = shard;
+                    const shardStates = nodeInfo?.metrics?.shardStates || {};
+                    state = shardStates[shardId.toString()] || 'Unknown';
+                    prettySize = null; // Don't show size for old format
+                }
+                
                 const stateClass = state.toLowerCase().replace(/\s+/g, '-');
+                const sizeDisplay = prettySize !== null ? `<span class="shard-size">${prettySize}</span>` : '';
                 
                 return `
                     <div class="shard-item">
                         <input type="checkbox" class="shard-checkbox" data-shard-id="${shardId}" id="shard_${shardId}">
                         <label for="shard_${shardId}" class="shard-label">
-                            <span class="shard-id">Shard ${shardId}</span>
-                            <span class="shard-state ${stateClass}">${state}</span>
+                            <div class="shard-info">
+                                <span class="shard-id">Shard ${shardId}</span>
+                                <span class="shard-state ${stateClass}">${state}</span>
+                            </div>
+                            ${sizeDisplay}
                         </label>
                     </div>
                 `;
@@ -798,9 +816,14 @@ class VigilanteDashboard {
             return value.map(transfer => {
                 const transferType = transfer.isSync ? 'Syncing' : 'Moving';
                 const transferId = `${nodeInfo.peerId}-${transfer.shardId}-${transfer.toPeerId}`;
+                const method = transfer.method || 'Unknown';
+                const methodClass = method.toLowerCase().replace(/\s+/g, '-');
                 return `
                     <div class="transfer-item" data-transfer-id="${transferId}">
-                        <span class="transfer-info">${transferType} shard ${transfer.shardId} → ${transfer.to}</span>
+                        <div class="transfer-details">
+                            <span class="transfer-info">${transferType} shard ${transfer.shardId} → ${transfer.to}</span>
+                            <span class="transfer-method ${methodClass}">${method}</span>
+                        </div>
                         <button class="abort-transfer-button" 
                                 data-shard-id="${transfer.shardId}" 
                                 data-source-peer="${nodeInfo.peerId}" 
@@ -964,7 +987,11 @@ class VigilanteDashboard {
                     }
                     // Collect unique shard IDs from all nodes
                     if (nodeInfo.metrics?.shards && Array.isArray(nodeInfo.metrics.shards)) {
-                        nodeInfo.metrics.shards.forEach(shardId => uniqueShards.add(shardId));
+                        nodeInfo.metrics.shards.forEach(shard => {
+                            // Handle both old format (number) and new format (object with shardId)
+                            const shardId = typeof shard === 'object' ? shard.shardId : shard;
+                            uniqueShards.add(shardId);
+                        });
                     }
                 });
                 const collectionTotalShards = uniqueShards.size;
@@ -1045,14 +1072,82 @@ class VigilanteDashboard {
                 
                 // Aliases (if any)
                 if (collection.aliases && collection.aliases.length > 0) {
-                    const aliasesDiv = document.createElement('div');
-                    aliasesDiv.className = 'collection-aliases';
-                    aliasesDiv.style.fontSize = '0.85em';
-                    aliasesDiv.style.color = '#999';
-                    aliasesDiv.style.fontStyle = 'italic';
-                    aliasesDiv.textContent = `Aliases: ${collection.aliases.join(', ')}`;
-                    aliasesDiv.title = `Collection aliases: ${collection.aliases.join(', ')}`;
-                    nameContainer.appendChild(aliasesDiv);
+                    const aliasesContainer = document.createElement('div');
+                    aliasesContainer.className = 'collection-aliases-container';
+                    aliasesContainer.style.display = 'flex';
+                    aliasesContainer.style.alignItems = 'center';
+                    aliasesContainer.style.gap = '6px';
+                    aliasesContainer.style.flexWrap = 'wrap';
+                    
+                    const aliasesLabel = document.createElement('span');
+                    aliasesLabel.className = 'aliases-label';
+                    aliasesLabel.style.fontSize = '0.8em';
+                    aliasesLabel.style.color = '#999';
+                    aliasesLabel.textContent = 'Aliases:';
+                    aliasesContainer.appendChild(aliasesLabel);
+                    
+                    collection.aliases.forEach(alias => {
+                        const aliasBadge = document.createElement('div');
+                        aliasBadge.className = 'alias-badge';
+                        aliasBadge.style.display = 'inline-flex';
+                        aliasBadge.style.alignItems = 'center';
+                        aliasBadge.style.gap = '4px';
+                        aliasBadge.style.padding = '2px 6px';
+                        aliasBadge.style.background = '#e3f2fd';
+                        aliasBadge.style.borderRadius = '4px';
+                        aliasBadge.style.fontSize = '0.8em';
+                        
+                        const aliasText = document.createElement('span');
+                        aliasText.textContent = alias;
+                        aliasText.style.color = '#1976d2';
+                        aliasText.style.fontStyle = 'italic';
+                        
+                        const copyAliasButton = document.createElement('button');
+                        copyAliasButton.className = 'alias-copy-btn';
+                        copyAliasButton.innerHTML = '<i class="fas fa-copy"></i>';
+                        copyAliasButton.title = `Copy alias "${alias}" to clipboard`;
+                        copyAliasButton.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            
+                            if (navigator.clipboard && navigator.clipboard.writeText) {
+                                navigator.clipboard.writeText(alias).then(() => {
+                                    this.showToast(`Alias "${alias}" copied to clipboard`, 'success', 'Copied', 2000);
+                                }).catch(err => {
+                                    console.error('Failed to copy:', err);
+                                    this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                                });
+                            } else {
+                                // Fallback for HTTP contexts where Clipboard API is not available
+                                try {
+                                    const textArea = document.createElement('textarea');
+                                    textArea.value = alias;
+                                    textArea.style.position = 'fixed';
+                                    textArea.style.left = '-999999px';
+                                    textArea.style.top = '-999999px';
+                                    document.body.appendChild(textArea);
+                                    textArea.focus();
+                                    textArea.select();
+                                    const successful = document.execCommand('copy');
+                                    document.body.removeChild(textArea);
+                                    
+                                    if (successful) {
+                                        this.showToast(`Alias "${alias}" copied to clipboard`, 'success', 'Copied', 2000);
+                                    } else {
+                                        this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                                    }
+                                } catch (err) {
+                                    console.error('Fallback: Could not copy text', err);
+                                    this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                                }
+                            }
+                        });
+                        
+                        aliasBadge.appendChild(aliasText);
+                        aliasBadge.appendChild(copyAliasButton);
+                        aliasesContainer.appendChild(aliasBadge);
+                    });
+                    
+                    nameContainer.appendChild(aliasesContainer);
                 }
                 
                 // Right side: Status, Size and shards info

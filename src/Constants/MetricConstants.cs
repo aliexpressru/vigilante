@@ -16,7 +16,7 @@ public static class MetricConstants
     public const string SizeBytesKey = "sizeBytes";
     
     /// <summary>
-    /// Metric key for shards count (used in TestDataProvider)
+    /// Metric key for shards information including ID, state, and size
     /// </summary>
     public const string ShardsKey = "shards";
     
