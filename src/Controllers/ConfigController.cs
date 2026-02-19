@@ -10,15 +10,18 @@ public class ConfigController : ControllerBase
 {
     private readonly IDynamicConfigService _dynamicConfigService;
     private readonly IWebHostEnvironment _environment;
+    private readonly IKubernetesManager? _kubernetesManager;
     private readonly ILogger<ConfigController> _logger;
 
     public ConfigController(
         IDynamicConfigService dynamicConfigService,
         IWebHostEnvironment environment,
+        IKubernetesManager? kubernetesManager,
         ILogger<ConfigController> logger)
     {
         _dynamicConfigService = dynamicConfigService;
         _environment = environment;
+        _kubernetesManager = kubernetesManager;
         _logger = logger;
     }
 
@@ -42,13 +45,18 @@ public class ConfigController : ControllerBase
     }
 
     /// <summary>
-    /// Get current environment name
+    /// Get current environment name and namespace
     /// </summary>
     [HttpGet("environment")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     public IActionResult GetEnvironment()
     {
-        return Ok(new { environment = _environment.EnvironmentName });
+        var currentNamespace = _kubernetesManager?.GetCurrentNamespace() ?? "default";
+        return Ok(new 
+        { 
+            environment = _environment.EnvironmentName,
+            @namespace = currentNamespace
+        });
     }
 
     /// <summary>

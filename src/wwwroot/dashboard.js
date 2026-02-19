@@ -31,6 +31,7 @@ class VigilanteDashboard {
         this.collectionIssues = []; // Issues from collections-info
         this.clusterNodes = []; // Store cluster nodes for StatefulSet management
         this.environment = 'Loading...'; // Current environment name
+        this.namespace = 'Loading...'; // Current namespace
         // Logs state
         this.logsRefreshInterval = 0;
         this.logsRefreshTimer = null;
@@ -338,15 +339,18 @@ class VigilanteDashboard {
             if (response.ok) {
                 const data = await response.json();
                 this.environment = data.environment || 'Unknown';
+                this.namespace = data.namespace || 'Unknown';
                 this.updateEnvironmentDisplay();
             } else {
                 console.warn('Failed to load environment:', response.status);
                 this.environment = 'Unknown';
+                this.namespace = 'Unknown';
                 this.updateEnvironmentDisplay();
             }
         } catch (error) {
             console.error('Error loading environment:', error);
             this.environment = 'Unknown';
+            this.namespace = 'Unknown';
             this.updateEnvironmentDisplay();
         }
     }
@@ -364,6 +368,11 @@ class VigilanteDashboard {
             } else if (this.environment === 'Staging') {
                 envElement.classList.add('env-staging');
             }
+        }
+        
+        const namespaceElement = document.getElementById('namespaceBadge');
+        if (namespaceElement) {
+            namespaceElement.textContent = this.namespace;
         }
     }
 

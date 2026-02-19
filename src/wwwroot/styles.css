@@ -702,6 +702,19 @@ body {
     box-shadow: 0 2px 4px rgba(255, 152, 0, 0.3);
 }
 
+.namespace-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 12px;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+    transition: all 0.2s ease;
+}
+
 /* Sticky Actions Menu (Three Dots) */
 .sticky-actions-menu-container {
     position: relative;
@@ -831,7 +844,8 @@ body {
         padding: 4px 8px;
     }
     
-    .sticky-refresh-controls .environment-badge {
+    .sticky-refresh-controls .environment-badge,
+    .sticky-refresh-controls .namespace-badge {
         font-size: 0.65rem;
         padding: 3px 8px;
     }
