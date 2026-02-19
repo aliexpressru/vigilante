@@ -14,6 +14,7 @@ public class ConfigControllerTests
 {
     private IDynamicConfigService _dynamicConfigService = null!;
     private IWebHostEnvironment _environment = null!;
+    private IKubernetesManager _kubernetesManager = null!;
     private ILogger<ConfigController> _logger = null!;
     private ConfigController _controller = null!;
 
@@ -22,8 +23,9 @@ public class ConfigControllerTests
     {
         _dynamicConfigService = Substitute.For<IDynamicConfigService>();
         _environment = Substitute.For<IWebHostEnvironment>();
+        _kubernetesManager = Substitute.For<IKubernetesManager>();
         _logger = Substitute.For<ILogger<ConfigController>>();
-        _controller = new ConfigController(_dynamicConfigService, _environment, _logger);
+        _controller = new ConfigController(_dynamicConfigService, _environment, _kubernetesManager, _logger);
     }
 
     [Test]
@@ -155,5 +157,53 @@ public class ConfigControllerTests
         Assert.That(result, Is.InstanceOf<ObjectResult>());
         var objectResult = (ObjectResult)result;
         Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+    }
+
+    [Test]
+    public void GetEnvironment_ReturnsEnvironmentAndNamespace()
+    {
+        // Arrange
+        _environment.EnvironmentName.Returns("Development");
+        _kubernetesManager.GetCurrentNamespace().Returns("my-namespace");
+
+        // Act
+        var result = _controller.GetEnvironment();
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        var okResult = (OkObjectResult)result;
+        
+        dynamic? value = okResult.Value;
+        Assert.That(value, Is.Not.Null);
+        
+        var envName = value!.GetType().GetProperty("environment")?.GetValue(value)?.ToString();
+        var namespaceName = value.GetType().GetProperty("namespace")?.GetValue(value)?.ToString();
+        
+        Assert.That(envName, Is.EqualTo("Development"));
+        Assert.That(namespaceName, Is.EqualTo("my-namespace"));
+    }
+
+    [Test]
+    public void GetEnvironment_WhenKubernetesManagerIsNull_ReturnsDefaultNamespace()
+    {
+        // Arrange
+        _environment.EnvironmentName.Returns("Production");
+        var controller = new ConfigController(_dynamicConfigService, _environment, null, _logger);
+
+        // Act
+        var result = controller.GetEnvironment();
+
+        // Assert
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        var okResult = (OkObjectResult)result;
+        
+        dynamic? value = okResult.Value;
+        Assert.That(value, Is.Not.Null);
+        
+        var envName = value!.GetType().GetProperty("environment")?.GetValue(value)?.ToString();
+        var namespaceName = value.GetType().GetProperty("namespace")?.GetValue(value)?.ToString();
+        
+        Assert.That(envName, Is.EqualTo("Production"));
+        Assert.That(namespaceName, Is.EqualTo("default"));
     }
 }

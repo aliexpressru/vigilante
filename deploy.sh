@@ -92,6 +92,8 @@ TEMP_DEPLOYMENT="/tmp/vigilante-deployment-${ENV_NAME}.yaml"
 cp ../deployment.yaml "$TEMP_DEPLOYMENT"
 
 # Update deployment with environment-specific settings
+# Set image from IMAGE_NAME (so deploy uses desired tag, not hardcoded from deployment.yaml)
+sed -i '' "s|image: .*|image: $IMAGE_NAME|" "$TEMP_DEPLOYMENT"
 # Replace ASPNETCORE_ENVIRONMENT value regardless of current value
 sed -i '' "s/value: \"Production\"/value: \"$ENV\"/" "$TEMP_DEPLOYMENT"
 sed -i '' "s/value: \"Development\"/value: \"$ENV\"/" "$TEMP_DEPLOYMENT"
