@@ -793,13 +793,15 @@ class VigilanteDashboard {
                 
                 return `
                     <div class="shard-item">
-                        <input type="checkbox" class="shard-checkbox" data-shard-id="${shardId}" id="shard_${nodeInfo?.peerId}_${shardId}">
-                        <label for="shard_${nodeInfo?.peerId}_${shardId}" class="shard-label">
-                            <div class="shard-info">
-                                <span class="shard-id">Shard ${shardId}</span>
-                                <span class="shard-state ${stateClass}">${state}</span>
+                        <label class="shard-label">
+                            <input type="checkbox" class="shard-checkbox" data-shard-id="${shardId}">
+                            <div class="shard-label-content">
+                                <div class="shard-info">
+                                    <span class="shard-id">Shard ${shardId}</span>
+                                    <span class="shard-state ${stateClass}">${state}</span>
+                                </div>
+                                ${sizeDisplay}
                             </div>
-                            ${sizeDisplay}
                         </label>
                     </div>
                 `;

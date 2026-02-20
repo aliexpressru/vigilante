@@ -1682,21 +1682,21 @@ body {
 
 .shard-item {
     display: flex;
-    align-items: flex-start;
-    gap: 6px;
 }
 
 .shard-checkbox {
-    margin-top: 10px;
+    flex-shrink: 0;
     cursor: pointer;
     width: 16px;
     height: 16px;
+    margin-top: 2px;
 }
 
 .shard-label {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
     cursor: pointer;
     padding: 8px 10px;
     border-radius: 6px;
@@ -1708,6 +1708,7 @@ body {
     overflow: hidden;
 }
 
+
 .shard-label:hover {
     background: #f8f9fa;
     border-color: #2196f3;
@@ -1718,6 +1719,14 @@ body {
 .shard-item:has(.shard-checkbox:checked) .shard-label {
     background: #e3f2fd;
     border-color: #2196f3;
+}
+
+.shard-label-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
 }
 
 .shard-info {
