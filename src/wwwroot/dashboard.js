@@ -831,17 +831,17 @@ class VigilanteDashboard {
                 const methodClass = method.toLowerCase().replace(/\s+/g, '-');
                 return `
                     <div class="transfer-item" data-transfer-id="${transferId}">
-                        <div class="transfer-details">
-                            <span class="transfer-info">${transferType} shard ${transfer.shardId} → ${transfer.to}</span>
+                        <span class="transfer-info">${transferType} shard ${transfer.shardId} → ${transfer.to}</span>
+                        <div class="transfer-actions">
                             <span class="transfer-method ${methodClass}">${method}</span>
+                            <button class="abort-transfer-button" 
+                                    data-shard-id="${transfer.shardId}" 
+                                    data-source-peer="${nodeInfo.peerId}" 
+                                    data-target-peer="${transfer.toPeerId}"
+                                    title="Abort this transfer">
+                                <i class="fas fa-stop-circle"></i> Abort
+                            </button>
                         </div>
-                        <button class="abort-transfer-button" 
-                                data-shard-id="${transfer.shardId}" 
-                                data-source-peer="${nodeInfo.peerId}" 
-                                data-target-peer="${transfer.toPeerId}"
-                                title="Abort this transfer">
-                            <i class="fas fa-stop-circle"></i> Abort
-                        </button>
                     </div>`;
             }).join('');
         }

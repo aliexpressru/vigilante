@@ -1527,27 +1527,29 @@ body {
 /* Transfer item with abort button */
 .transfer-item {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 8px;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
     margin: 4px 0;
     background: #f8f9fa;
     border-radius: 4px;
     border-left: 3px solid #2196f3;
 }
 
-.transfer-details {
+.transfer-actions {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex: 1;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .transfer-info {
-    color: #666;
+    color: #555;
     font-size: 0.85rem;
     display: flex;
     align-items: center;
+    word-break: break-all;
+    overflow-wrap: anywhere;
 }
 
 .transfer-method {
@@ -1731,9 +1733,8 @@ body {
 
 .shard-info {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .shard-id {
