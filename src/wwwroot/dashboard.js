@@ -793,8 +793,8 @@ class VigilanteDashboard {
                 
                 return `
                     <div class="shard-item">
-                        <input type="checkbox" class="shard-checkbox" data-shard-id="${shardId}" id="shard_${shardId}">
-                        <label for="shard_${shardId}" class="shard-label">
+                        <input type="checkbox" class="shard-checkbox" data-shard-id="${shardId}" id="shard_${nodeInfo?.peerId}_${shardId}">
+                        <label for="shard_${nodeInfo?.peerId}_${shardId}" class="shard-label">
                             <div class="shard-info">
                                 <span class="shard-id">Shard ${shardId}</span>
                                 <span class="shard-state ${stateClass}">${state}</span>
@@ -3578,8 +3578,7 @@ class VigilanteDashboard {
         const transferMethods = [
             { value: 'Snapshot', label: 'Snapshot (Default)', description: 'Transfer using snapshot - includes index and quantized data' },
             { value: 'StreamRecords', label: 'Stream Records', description: 'Stream records in batches' },
-            { value: 'WalDelta', label: 'WAL Delta', description: 'Transfer only missed operations via WAL difference' },
-            { value: 'ReshardingStreamRecords', label: 'Resharding Stream', description: 'Stream for resharding operations' }
+            { value: 'WalDelta', label: 'WAL Delta', description: 'Transfer only missed operations via WAL difference' }
         ];
         
         transferMethods.forEach(method => {
@@ -5090,6 +5089,37 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing dashboard');
     dashboard = new VigilanteDashboard();
     window.dashboard = dashboard; // Store for debugging
+});
+
+// Close the topmost modal on Escape key press
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+
+    // Dynamic modals (created via JS, use .modal-overlay)
+    const overlays = document.querySelectorAll('.modal-overlay');
+    if (overlays.length > 0) {
+        overlays[overlays.length - 1].click();
+        return;
+    }
+
+    // Static modals (defined in HTML, use .modal with display:flex/block or .show class)
+    const staticModals = document.querySelectorAll('.modal');
+    for (let i = staticModals.length - 1; i >= 0; i--) {
+        const m = staticModals[i];
+        const isVisible = (m.style.display && m.style.display !== 'none') || m.classList.contains('show');
+        if (isVisible) {
+            m.click();
+            return;
+        }
+    }
+
+    // Logs side panel
+    if (dashboard) {
+        const logsPanel = document.getElementById('logsSidePanel');
+        if (logsPanel && logsPanel.classList.contains('open')) {
+            dashboard.closeLogsPanel();
+        }
+    }
 });
 
 // Handle page visibility changes to pause/resume auto-refresh
