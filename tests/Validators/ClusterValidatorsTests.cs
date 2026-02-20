@@ -559,3 +559,136 @@ public class V1StartReshardingRequestValidatorTests
     }
 }
 
+[TestFixture]
+public class V1AbortShardTransferRequestValidatorTests
+{
+    private V1AbortShardTransferRequestValidator _validator = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _validator = new V1AbortShardTransferRequestValidator();
+    }
+
+    [Test]
+    public void Validate_WithValidRequest_ShouldNotHaveErrors()
+    {
+        // Arrange
+        var request = new V1AbortShardTransferRequest
+        {
+            CollectionName = "test_collection",
+            SourcePeerId = 1001,
+            TargetPeerId = 1002,
+            ShardId = 0
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Test]
+    public void Validate_WithEmptyCollectionName_ShouldHaveError()
+    {
+        // Arrange
+        var request = new V1AbortShardTransferRequest
+        {
+            CollectionName = "",
+            SourcePeerId = 1001,
+            TargetPeerId = 1002,
+            ShardId = 0
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.CollectionName)
+            .WithErrorMessage("Collection name is required");
+    }
+
+    [Test]
+    public void Validate_WithNullSourcePeerId_ShouldHaveError()
+    {
+        // Arrange
+        var request = new V1AbortShardTransferRequest
+        {
+            CollectionName = "test_collection",
+            SourcePeerId = null,
+            TargetPeerId = 1002,
+            ShardId = 0
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.SourcePeerId)
+            .WithErrorMessage("Source peer ID is required");
+    }
+
+    [Test]
+    public void Validate_WithNullTargetPeerId_ShouldHaveError()
+    {
+        // Arrange
+        var request = new V1AbortShardTransferRequest
+        {
+            CollectionName = "test_collection",
+            SourcePeerId = 1001,
+            TargetPeerId = null,
+            ShardId = 0
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.TargetPeerId)
+            .WithErrorMessage("Target peer ID is required");
+    }
+
+    [Test]
+    public void Validate_WithNullShardId_ShouldHaveError()
+    {
+        // Arrange
+        var request = new V1AbortShardTransferRequest
+        {
+            CollectionName = "test_collection",
+            SourcePeerId = 1001,
+            TargetPeerId = 1002,
+            ShardId = null
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.ShardId)
+            .WithErrorMessage("Shard ID is required");
+    }
+
+    [Test]
+    public void Validate_WithMultipleErrors_ShouldHaveMultipleValidationErrors()
+    {
+        // Arrange
+        var request = new V1AbortShardTransferRequest
+        {
+            CollectionName = "",
+            SourcePeerId = null,
+            TargetPeerId = null,
+            ShardId = null
+        };
+
+        // Act
+        var result = _validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.CollectionName);
+        result.ShouldHaveValidationErrorFor(x => x.SourcePeerId);
+        result.ShouldHaveValidationErrorFor(x => x.TargetPeerId);
+        result.ShouldHaveValidationErrorFor(x => x.ShardId);
+    }
+}
+

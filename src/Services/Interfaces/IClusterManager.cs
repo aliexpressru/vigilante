@@ -32,6 +32,16 @@ public interface IClusterManager
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Aborts an ongoing shard transfer
+    /// </summary>
+    Task<bool> AbortShardTransferAsync(
+        ulong sourcePeerId,
+        ulong targetPeerId,
+        string collectionName,
+        uint shardId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes a collection via Qdrant API on specified nodes
     /// </summary>
     Task<Dictionary<string, bool>> DeleteCollectionViaApiAsync(

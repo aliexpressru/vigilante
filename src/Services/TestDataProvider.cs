@@ -82,15 +82,17 @@ public class TestDataProvider
             
             foreach (var (peerId, podName, _) in testPeers)
             {
-                var shards = new List<int>();
+                var shards = new List<ShardDetails>();
                 var transfers = new List<object>();
                 var shardStates = new Dictionary<string, string>();
 
                 // Distribute shards among peers with different states
                 if (peerId == "peer1")
                 {
-                    shards.AddRange(new[] { 0, 1, 2 });
-                    transfers.Add(new { isSync = true, shardId = 2, to = "pod-2", toPeerId = "peer2" });
+                    shards.Add(new ShardDetails { ShardId = 0, State = "Active", SizeBytes = 300000000 });
+                    shards.Add(new ShardDetails { ShardId = 1, State = "Initializing", SizeBytes = 350000000 });
+                    shards.Add(new ShardDetails { ShardId = 2, State = "PartialSnapshot", SizeBytes = 320000000 });
+                    transfers.Add(new { isSync = true, shardId = 2, to = "pod-2", toPeerId = "peer2", method = "Snapshot" });
                     
                     // States for the first peer
                     shardStates["0"] = "Active";          // Active shard
@@ -99,7 +101,9 @@ public class TestDataProvider
                 }
                 else if (peerId == "peer2")
                 {
-                    shards.AddRange(new[] { 3, 4, 5 });
+                    shards.Add(new ShardDetails { ShardId = 3, State = "Listener", SizeBytes = 280000000 });
+                    shards.Add(new ShardDetails { ShardId = 4, State = "Dead", SizeBytes = 290000000 });
+                    shards.Add(new ShardDetails { ShardId = 5, State = "Recovery", SizeBytes = 310000000 });
                     
                     // States for the second peer
                     shardStates["3"] = "Listener";        // In listener mode
@@ -108,8 +112,10 @@ public class TestDataProvider
                 }
                 else if (peerId == "peer3")
                 {
-                    shards.AddRange(new[] { 6, 7, 8 });
-                    transfers.Add(new { isSync = false, shardId = 8, to = "pod-1", toPeerId = "peer1" });
+                    shards.Add(new ShardDetails { ShardId = 6, State = "Resharding", SizeBytes = 330000000 });
+                    shards.Add(new ShardDetails { ShardId = 7, State = "ReshardingScaleDown", SizeBytes = 270000000 });
+                    shards.Add(new ShardDetails { ShardId = 8, State = "Partial", SizeBytes = 340000000 });
+                    transfers.Add(new { isSync = false, shardId = 8, to = "pod-1", toPeerId = "peer1", method = "StreamRecords" });
                     
                     // States for the third peer
                     shardStates["6"] = "Resharding";             // Being resharded

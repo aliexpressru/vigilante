@@ -30,6 +30,17 @@ public interface ICollectionService
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Internal method to abort shard transfer (called by ClusterManager)
+    /// </summary>
+    Task<bool> AbortShardTransferAsync(
+        string healthyNodeUrl,
+        ulong sourcePeerId,
+        ulong targetPeerId,
+        string collectionName,
+        uint shardId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Checks if collections can be successfully retrieved from the node
     /// </summary>
     /// <param name="client">Qdrant HTTP client</param>

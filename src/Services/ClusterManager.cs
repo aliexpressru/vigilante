@@ -140,6 +140,36 @@ public class ClusterManager(
             cancellationToken);
     }
 
+    public async Task<bool> AbortShardTransferAsync(
+        ulong sourcePeerId,
+        ulong targetPeerId,
+        string collectionName,
+        uint shardId,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "Aborting shard transfer. Source: {SourcePeerId}, Target: {TargetPeerId}, Collection: {Collection}, ShardId: {ShardId}",
+            sourcePeerId, targetPeerId, collectionName, shardId);
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
+
+        if (healthyNode == null)
+        {
+            logger.LogError("No healthy nodes found to abort shard transfer");
+
+            return false;
+        }
+
+        return await collectionService.AbortShardTransferAsync(
+            healthyNode.Url,
+            sourcePeerId,
+            targetPeerId,
+            collectionName,
+            shardId,
+            cancellationToken);
+    }
+
     public async Task<Dictionary<string, bool>> DeleteCollectionViaApiAsync(
         string collectionName,
         IEnumerable<string> nodeUrls,
