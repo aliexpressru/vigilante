@@ -575,7 +575,8 @@ public class CollectionService : ICollectionService
                             PodNamespace = node.Namespace ?? string.Empty,
                             Metrics = metrics,
                             Aliases = aliases,
-                            Status = collectionInfoResponse.Result?.Status
+                            Status = collectionInfoResponse.Result?.Status,
+                            HnswM = collectionInfoResponse.Result?.Config?.HnswConfig?.M
                         });
                     }
                     catch (Exception ex)
@@ -1135,4 +1136,5 @@ public class CollectionService : ICollectionService
             await EnrichWithClusteringInfoAsync(node.Url, collections, peerToPodMap, cancellationToken);
         }
     }
+
 }

@@ -265,33 +265,95 @@
                 <h2><i class="fas fa-cog"></i> Dynamic Configuration</h2>
                 <button class="modal-close" id="closeConfigModal">&times;</button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body config-modal-body">
                 <div class="config-info">
                     <i class="fas fa-info-circle"></i>
                     <span>Changes are applied immediately without pod restart</span>
                 </div>
-                
+
+                <!-- Monitoring -->
                 <div class="form-group">
                     <label for="monitoringInterval">
                         Monitoring Interval (seconds)
                         <span class="config-label-hint">How often to check cluster health</span>
                     </label>
-                    <input 
-                        type="number" 
-                        id="monitoringInterval" 
-                        class="form-input" 
-                        min="1" 
-                        max="3600" 
-                        placeholder="120">
-                    <small class="form-hint">Valid range: 1-3600 seconds (1 second to 1 hour)</small>
+                    <input type="number" id="monitoringInterval" class="form-input" min="1" max="3600" placeholder="120">
+                    <small class="form-hint">Valid range: 1–3600 seconds</small>
                 </div>
 
-                <div class="config-current">
-                    <h3>Current Configuration</h3>
-                    <div id="configDisplay" class="config-display">
-                        <div class="config-loading">
-                            <i class="fas fa-spinner fa-spin"></i> Loading...
+                <!-- Snapshot Automation -->
+                <div class="config-section">
+                    <div class="config-section-title"><i class="fas fa-camera"></i> Snapshot Automation</div>
+
+                    <div class="config-toggle-row">
+                        <input type="checkbox" id="snapshotDeleteWithCollection">
+                        <label for="snapshotDeleteWithCollection">Delete snapshots when collection is deleted via Vigilante</label>
+                    </div>
+
+                    <div class="config-toggle-row" style="margin-top:10px">
+                        <input type="checkbox" id="snapshotOrphanedEnabled">
+                        <label for="snapshotOrphanedEnabled">Delete orphaned snapshots (collection deleted outside Vigilante)</label>
+                    </div>
+                    <div id="snapshotOrphanedSection" class="config-sub-section" style="display:none">
+                        <div class="form-group">
+                            <label for="snapshotOrphanedAfterMinutes">
+                                Delete after (minutes)
+                                <span class="config-label-hint">How long to wait before cleanup</span>
+                            </label>
+                            <input type="number" id="snapshotOrphanedAfterMinutes" class="form-input" min="1" placeholder="60">
                         </div>
+                    </div>
+                </div>
+
+                <!-- Global Schedule -->
+                <div class="config-section">
+                    <div class="config-section-title"><i class="fas fa-clock"></i> Global Snapshot Schedule</div>
+
+                    <div class="config-toggle-row">
+                        <input type="checkbox" id="snapshotScheduleEnabled">
+                        <label for="snapshotScheduleEnabled">Enable automatic snapshots</label>
+                    </div>
+                    <div id="snapshotScheduleSection" class="config-sub-section" style="display:none">
+                        <div class="config-inline-fields">
+                            <div class="form-group">
+                                <label for="snapshotScheduleInterval">
+                                    Interval (minutes)
+                                    <span class="config-label-hint">Empty = one-time on first green + HNSW</span>
+                                </label>
+                                <input type="number" id="snapshotScheduleInterval" class="form-input" min="1" placeholder="— one time —">
+                            </div>
+                            <div class="form-group">
+                                <label for="snapshotScheduleRetain">
+                                    Retain last N snapshots
+                                    <span class="config-label-hint">Empty = keep all</span>
+                                </label>
+                                <input type="number" id="snapshotScheduleRetain" class="form-input" min="1" placeholder="— keep all —">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Per-Collection Overrides -->
+                <div class="config-section">
+                    <div class="config-section-title"><i class="fas fa-layer-group"></i> Per-Collection Overrides</div>
+
+                    <div class="config-toggle-row">
+                        <input type="checkbox" id="snapshotOverridesEnabled">
+                        <label for="snapshotOverridesEnabled">Enable per-collection schedule overrides</label>
+                    </div>
+                    <div id="snapshotOverridesSection" class="config-sub-section" style="display:none">
+                        <datalist id="collectionNamesList"></datalist>
+                        <div class="override-table-header">
+                            <span>Collection</span>
+                            <span>Enabled</span>
+                            <span>Interval (min)</span>
+                            <span>Retain last N</span>
+                            <span></span>
+                        </div>
+                        <div id="overrideRows"></div>
+                        <button type="button" id="addOverrideBtn" class="btn-add-override">
+                            <i class="fas fa-plus"></i> Add Override
+                        </button>
                     </div>
                 </div>
             </div>
@@ -304,6 +366,6 @@
         </div>
     </div>
 
-    <script src="dashboard.js?v=20260218001"></script>
+    <script src="dashboard.js?v=20260224003"></script>
 </body>
 </html>

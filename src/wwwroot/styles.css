@@ -4024,6 +4024,174 @@ body {
     font-weight: 500;
 }
 
+/* Config modal — wider and scrollable */
+#configModal .modal-content {
+    max-width: 660px;
+}
+
+.config-modal-body {
+    max-height: calc(85vh - 140px);
+    overflow-y: auto;
+}
+
+.config-section {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #e8e8e8;
+}
+
+.config-section-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #667eea;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.config-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.config-toggle-row input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #667eea;
+    flex-shrink: 0;
+}
+
+.config-toggle-row label {
+    font-weight: 500;
+    color: #333;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.9rem;
+}
+
+.config-sub-section {
+    margin-left: 26px;
+    margin-top: 10px;
+    padding: 12px 14px;
+    background: #f8f9ff;
+    border-left: 3px solid #667eea;
+    border-radius: 0 6px 6px 0;
+}
+
+.config-sub-section .form-group {
+    margin-bottom: 14px;
+}
+
+.config-sub-section .form-group:last-child {
+    margin-bottom: 0;
+}
+
+.config-inline-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+/* Override rows */
+.override-table-header {
+    display: grid;
+    grid-template-columns: 1fr 64px 110px 110px 32px;
+    gap: 8px;
+    padding: 4px 8px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 4px;
+}
+
+.override-row {
+    display: grid;
+    grid-template-columns: 1fr 64px 110px 110px 32px;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 8px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    margin-bottom: 6px;
+}
+
+.override-input {
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-family: inherit;
+    box-sizing: border-box;
+}
+
+.override-input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.override-cell-center {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.override-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #667eea;
+}
+
+.btn-add-override {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 6px 14px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-add-override:hover {
+    background: #5a6fd8;
+}
+
+.btn-remove-override {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: #ff5252;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.btn-remove-override:hover {
+    background: #e53935;
+}
+
 /* Node Actions Menu (Three Dots Dropdown in Header) */
 .node-actions-menu-container-header {
     position: absolute;

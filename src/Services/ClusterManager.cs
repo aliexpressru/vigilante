@@ -6,6 +6,7 @@ using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Aer.QdrantClient.Http.Models.Shared;
 using ClusterInfoResult = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.ClusterInfo;
@@ -17,6 +18,8 @@ public class ClusterManager(
     IQdrantNodesProvider nodesProvider,
     IQdrantClientFactory clientFactory,
     ICollectionService collectionService,
+    ISnapshotService snapshotService,
+    IDynamicConfigService dynamicConfigService,
     TestDataProvider testDataProvider,
     IOptions<QdrantOptions> options,
     ILogger<ClusterManager> logger,
@@ -25,6 +28,8 @@ public class ClusterManager(
 {
     private readonly QdrantOptions _options = options.Value;
     private readonly ClusterPeerState _clusterState = new();
+    private readonly ConcurrentDictionary<string, (DateTime Time, string Message)> _externalIssues = new();
+    private static readonly TimeSpan ExternalIssueTtl = TimeSpan.FromMinutes(30);
 
     public async Task<ClusterState> GetClusterStateAsync(CancellationToken cancellationToken = default)
     {
@@ -60,6 +65,15 @@ public class ClusterManager(
 
         meterService.UpdateAliveNodes(state.Nodes.Count(n => n.IsHealthy));
         await AddKubernetesWarningsIfNeededAsync(state, cancellationToken);
+
+        var now = DateTime.UtcNow;
+        foreach (var (key, (time, message)) in _externalIssues)
+        {
+            if (now - time <= ExternalIssueTtl)
+            {
+                state.Health.Issues.Add($"[{key}] {message}");
+            }
+        }
 
         return state;
     }
@@ -173,15 +187,14 @@ public class ClusterManager(
     public async Task<Dictionary<string, bool>> DeleteCollectionViaApiAsync(
         string collectionName,
         IEnumerable<string> nodeUrls,
-        CancellationToken cancellationToken)
+        bool? deleteSnapshots = null,
+        CancellationToken cancellationToken = default)
     {
         var nodeUrlsList = nodeUrls.ToList();
         logger.LogInformation(
-            "Deleting collection {CollectionName} via API on {NodeCount} specified nodes", 
-            collectionName, 
+            "Deleting collection {CollectionName} via API on {NodeCount} specified nodes",
+            collectionName,
             nodeUrlsList.Count);
-
-        var results = new Dictionary<string, bool>();
 
         var deleteTasks = nodeUrlsList.Select(async nodeUrl =>
         {
@@ -194,18 +207,17 @@ public class ClusterManager(
         });
 
         var deleteResults = await Task.WhenAll(deleteTasks);
-
-        foreach (var result in deleteResults)
-        {
-            results[result.NodeUrl] = result.Success;
-        }
+        var results = deleteResults.ToDictionary(r => r.NodeUrl, r => r.Success);
 
         var successCount = results.Values.Count(s => s);
         logger.LogInformation(
             "Collection {CollectionName} deleted via API: {SuccessCount}/{TotalCount} nodes",
-            collectionName, 
-            successCount, 
-            results.Count);
+            collectionName, successCount, results.Count);
+
+        if (successCount > 0)
+        {
+            await DeleteSnapshotsIfRequestedAsync(collectionName, deleteSnapshots, cancellationToken);
+        }
 
         return results;
     }
@@ -213,15 +225,14 @@ public class ClusterManager(
     public async Task<Dictionary<string, bool>> DeleteCollectionFromDiskAsync(
         string collectionName,
         IEnumerable<(string PodName, string PodNamespace)> pods,
-        CancellationToken cancellationToken)
+        bool? deleteSnapshots = null,
+        CancellationToken cancellationToken = default)
     {
         var podsList = pods.ToList();
         logger.LogInformation(
-            "Deleting collection {CollectionName} from disk on {PodCount} specified pods", 
-            collectionName, 
+            "Deleting collection {CollectionName} from disk on {PodCount} specified pods",
+            collectionName,
             podsList.Count);
-
-        var results = new Dictionary<string, bool>();
 
         var deleteTasks = podsList.Select(async pod =>
         {
@@ -235,18 +246,17 @@ public class ClusterManager(
         });
 
         var deleteResults = await Task.WhenAll(deleteTasks);
-
-        foreach (var result in deleteResults)
-        {
-            results[result.PodName] = result.Success;
-        }
+        var results = deleteResults.ToDictionary(r => r.PodName, r => r.Success);
 
         var successCount = results.Values.Count(s => s);
         logger.LogInformation(
             "Collection {CollectionName} deleted from disk: {SuccessCount}/{TotalCount} pods",
-            collectionName, 
-            successCount, 
-            results.Count);
+            collectionName, successCount, results.Count);
+
+        if (successCount > 0)
+        {
+            await DeleteSnapshotsIfRequestedAsync(collectionName, deleteSnapshots, cancellationToken);
+        }
 
         return results;
     }
@@ -761,6 +771,58 @@ public class ClusterManager(
     }
 
 
+    private async Task DeleteSnapshotsIfRequestedAsync(
+        string collectionName,
+        bool? deleteSnapshots,
+        CancellationToken cancellationToken)
+    {
+        var config = await dynamicConfigService.GetConfigAsync(cancellationToken);
+        if (!(deleteSnapshots ?? config.Snapshot.DeleteWithCollection))
+        {
+            return;
+        }
+
+        try
+        {
+            var allSnapshots = await snapshotService.GetSnapshotsInfoAsync(clearCache: true, cancellationToken);
+            var collectionSnapshots = allSnapshots.Where(s => s.CollectionName == collectionName).ToList();
+
+            if (collectionSnapshots.Count == 0)
+            {
+                logger.LogInformation("No snapshots found for collection {CollectionName}", collectionName);
+                return;
+            }
+
+            var deletedCount = 0;
+            foreach (var snapshot in collectionSnapshots)
+            {
+                var success = await snapshotService.DeleteSnapshotAsync(
+                    collectionName,
+                    snapshot.SnapshotName,
+                    snapshot.Source,
+                    nodeUrl: snapshot.NodeUrl,
+                    podName: snapshot.PodName,
+                    podNamespace: snapshot.PodNamespace,
+                    cancellationToken: cancellationToken);
+
+                if (success)
+                {
+                    deletedCount++;
+                }
+            }
+
+            logger.LogInformation(
+                "Deleted {DeletedCount}/{TotalCount} snapshots for collection {CollectionName} after collection deletion",
+                deletedCount, collectionSnapshots.Count, collectionName);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Failed to delete snapshots for collection {CollectionName} after collection deletion",
+                collectionName);
+        }
+    }
+
     private static string GetShortErrorMessage(NodeErrorType errorType) => errorType switch
     {
         NodeErrorType.Timeout => ClusterConstants.TimeoutError,
@@ -844,6 +906,16 @@ public class ClusterManager(
             // If parsing fails, return a simple message
             return ClusterConstants.CommunicationErrorMessage;
         }
+    }
+
+    public void ReportIssue(string key, string message)
+    {
+        _externalIssues[key] = (DateTime.UtcNow, message);
+    }
+
+    public void ClearIssue(string key)
+    {
+        _externalIssues.TryRemove(key, out _);
     }
 }
 

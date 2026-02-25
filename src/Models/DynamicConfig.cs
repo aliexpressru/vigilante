@@ -8,6 +8,11 @@ public class DynamicConfig : IEquatable<DynamicConfig>
 {
     public int MonitoringIntervalSeconds { get; set; } = 120;
 
+    /// <summary>
+    /// Snapshot automation and lifecycle settings
+    /// </summary>
+    public SnapshotConfiguration Snapshot { get; set; } = new();
+
     public bool Equals(DynamicConfig? other)
     {
         if (other is null) return false;

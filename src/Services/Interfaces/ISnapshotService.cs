@@ -14,7 +14,8 @@ public interface ISnapshotService
     Task<string?> CreateCollectionSnapshotAsync(
         string nodeUrl,
         string collectionName,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        bool waitForResult = false);
 
     /// <summary>
     /// Creates a snapshot for a collection on specified nodes
@@ -22,7 +23,8 @@ public interface ISnapshotService
     Task<Dictionary<string, string?>> CreateCollectionSnapshotAsync(
         string collectionName,
         IEnumerable<string> nodeUrls,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool waitForResult = false);
 
     /// <summary>
     /// Gets snapshot information with sizes for a collection on a specific node
@@ -103,10 +105,27 @@ public interface ISnapshotService
     /// Gets information about all snapshots in the cluster (from both Kubernetes storage and Qdrant API)
     /// Supports caching to improve performance
     /// </summary>
-    /// <param name="clearCache">Whether to clear the cache and fetch fresh data</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>List of all snapshots with their information</returns>
     Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(
         bool clearCache = false,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a snapshot from the appropriate storage backend based on source.
+    /// </summary>
+    Task<bool> DeleteSnapshotAsync(
+        string collectionName,
+        string snapshotName,
+        SnapshotSource source,
+        string? nodeUrl = null,
+        string? podName = null,
+        string? podNamespace = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Enforces retention policy: keeps last N snapshots per node for a collection, deletes older ones.
+    /// </summary>
+    Task EnforceRetentionAsync(
+        string collectionName,
+        int retainLastN,
         CancellationToken cancellationToken = default);
 }

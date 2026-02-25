@@ -4929,6 +4929,42 @@ class VigilanteDashboard {
         saveConfigBtn?.addEventListener('click', async () => {
             await this.saveConfiguration();
         });
+
+        // Orphaned snapshots toggle
+        document.getElementById('snapshotOrphanedEnabled')?.addEventListener('change', (e) => {
+            document.getElementById('snapshotOrphanedSection').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        // Schedule toggle
+        document.getElementById('snapshotScheduleEnabled')?.addEventListener('change', (e) => {
+            document.getElementById('snapshotScheduleSection').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        // Overrides toggle
+        document.getElementById('snapshotOverridesEnabled')?.addEventListener('change', (e) => {
+            document.getElementById('snapshotOverridesSection').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        // Add override row button
+        document.getElementById('addOverrideBtn')?.addEventListener('click', () => {
+            this.addOverrideRow();
+        });
+    }
+
+    addOverrideRow(name = '', schedule = { enabled: true, intervalMinutes: null, retainLastN: null }) {
+        const row = document.createElement('div');
+        row.className = 'override-row';
+        row.innerHTML = `
+            <input type="text" class="override-input override-collection-name" list="collectionNamesList" placeholder="collection name" value="${name}">
+            <div class="override-cell-center">
+                <input type="checkbox" class="override-checkbox override-enabled" ${schedule.enabled ? 'checked' : ''}>
+            </div>
+            <input type="number" class="override-input override-interval" placeholder="—" min="1" value="${schedule.intervalMinutes ?? ''}">
+            <input type="number" class="override-input override-retain" placeholder="—" min="1" value="${schedule.retainLastN ?? ''}">
+            <button type="button" class="btn-remove-override" title="Remove"><i class="fas fa-times"></i></button>
+        `;
+        row.querySelector('.btn-remove-override').addEventListener('click', () => row.remove());
+        document.getElementById('overrideRows').appendChild(row);
     }
 
     async openConfigModal() {
@@ -4940,66 +4976,136 @@ class VigilanteDashboard {
     }
 
     async loadConfiguration() {
-        const configDisplay = document.getElementById('configDisplay');
-        const monitoringIntervalInput = document.getElementById('monitoringInterval');
-
-        configDisplay.innerHTML = '<div class="config-loading"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
-
         try {
-            const response = await fetch('/api/v1/config');
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            const [configResponse, collectionsResponse] = await Promise.all([
+                fetch('/api/v1/config'),
+                fetch('/api/v1/collections/info?clearCache=false')
+            ]);
+
+            if (!configResponse.ok) {
+                throw new Error(`HTTP ${configResponse.status}: ${configResponse.statusText}`);
             }
 
-            const config = await response.json();
+            const config = await configResponse.json();
 
-            // Update input field
-            monitoringIntervalInput.value = config.monitoringIntervalSeconds || 120;
+            // Populate collection names datalist
+            const datalist = document.getElementById('collectionNamesList');
+            if (datalist && collectionsResponse.ok) {
+                const collectionsData = await collectionsResponse.json();
+                const names = [...new Set((collectionsData.collections || []).map(c => c.collectionName).filter(Boolean))];
+                datalist.innerHTML = names.map(n => `<option value="${n}">`).join('');
+            }
+            const snap = config.snapshot || {};
+            const schedule = snap.schedule || {};
+            const overrides = snap.collectionOverrides;
 
-            // Display current config
-            configDisplay.innerHTML = `
-                <div class="config-item">
-                    <span class="config-key">Monitoring Interval:</span>
-                    <span class="config-value">${config.monitoringIntervalSeconds} seconds</span>
-                </div>
-            `;
+            // Monitoring
+            document.getElementById('monitoringInterval').value = config.monitoringIntervalSeconds || 120;
+
+            // DeleteWithCollection (default true)
+            document.getElementById('snapshotDeleteWithCollection').checked = snap.deleteWithCollection !== false;
+
+            // Orphaned
+            const orphanEnabled = snap.deleteOrphanedAfterMinutes != null;
+            document.getElementById('snapshotOrphanedEnabled').checked = orphanEnabled;
+            document.getElementById('snapshotOrphanedSection').style.display = orphanEnabled ? 'block' : 'none';
+            document.getElementById('snapshotOrphanedAfterMinutes').value = orphanEnabled ? (snap.deleteOrphanedAfterMinutes ?? '') : '';
+
+            // Schedule
+            document.getElementById('snapshotScheduleEnabled').checked = !!schedule.enabled;
+            document.getElementById('snapshotScheduleSection').style.display = schedule.enabled ? 'block' : 'none';
+            document.getElementById('snapshotScheduleInterval').value = schedule.intervalMinutes ?? '';
+            document.getElementById('snapshotScheduleRetain').value = schedule.retainLastN ?? '';
+
+            // Collection overrides
+            const overridesEnabled = overrides != null;
+            document.getElementById('snapshotOverridesEnabled').checked = overridesEnabled;
+            document.getElementById('snapshotOverridesSection').style.display = overridesEnabled ? 'block' : 'none';
+            const overrideRowsEl = document.getElementById('overrideRows');
+            overrideRowsEl.innerHTML = '';
+            if (overridesEnabled && overrides) {
+                for (const [name, sched] of Object.entries(overrides)) {
+                    this.addOverrideRow(name, sched);
+                }
+            }
 
         } catch (error) {
             console.error('Failed to load configuration:', error);
-            configDisplay.innerHTML = `
-                <div class="error-message">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    Failed to load configuration: ${error.message}
-                </div>
-            `;
             this.showToast(`Failed to load configuration: ${error.message}`, 'error');
         }
     }
 
     async saveConfiguration() {
-        const monitoringIntervalInput = document.getElementById('monitoringInterval');
         const saveConfigBtn = document.getElementById('saveConfig');
 
-        const monitoringInterval = parseInt(monitoringIntervalInput.value);
-
-        // Validation
+        // Monitoring interval
+        const monitoringInterval = parseInt(document.getElementById('monitoringInterval').value);
         if (isNaN(monitoringInterval) || monitoringInterval < 1 || monitoringInterval > 3600) {
             this.showToast('Monitoring interval must be between 1 and 3600 seconds', 'error');
             return;
         }
 
-        // Disable button during save
+        // Orphaned cleanup
+        const orphanEnabled = document.getElementById('snapshotOrphanedEnabled').checked;
+        const orphanMinutesRaw = document.getElementById('snapshotOrphanedAfterMinutes').value;
+        const orphanMinutes = orphanEnabled && orphanMinutesRaw ? parseInt(orphanMinutesRaw) : null;
+        if (orphanEnabled && (isNaN(orphanMinutes) || orphanMinutes < 1)) {
+            this.showToast('Orphaned cleanup delay must be at least 1 minute', 'error');
+            return;
+        }
+
+        // Global schedule
+        const scheduleEnabled = document.getElementById('snapshotScheduleEnabled').checked;
+        const intervalRaw = document.getElementById('snapshotScheduleInterval').value;
+        const retainRaw = document.getElementById('snapshotScheduleRetain').value;
+        const intervalMinutes = intervalRaw ? parseInt(intervalRaw) : null;
+        const retainLastN = retainRaw ? parseInt(retainRaw) : null;
+
+        // Collection overrides
+        const overridesEnabled = document.getElementById('snapshotOverridesEnabled').checked;
+        let collectionOverrides = null;
+        if (overridesEnabled) {
+            collectionOverrides = {};
+            let overrideError = null;
+            document.querySelectorAll('#overrideRows .override-row').forEach(row => {
+                const name = row.querySelector('.override-collection-name').value.trim();
+                if (!name) {
+                    overrideError = 'All override rows must have a collection name';
+                    return;
+                }
+                const iRaw = row.querySelector('.override-interval').value;
+                const rRaw = row.querySelector('.override-retain').value;
+                collectionOverrides[name] = {
+                    enabled: row.querySelector('.override-enabled').checked,
+                    intervalMinutes: iRaw ? parseInt(iRaw) : null,
+                    retainLastN: rRaw ? parseInt(rRaw) : null,
+                };
+            });
+            if (overrideError) {
+                this.showToast(overrideError, 'error');
+                return;
+            }
+        }
+
         saveConfigBtn.disabled = true;
         saveConfigBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
 
         try {
             const response = await fetch('/api/v1/config', {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    monitoringIntervalSeconds: monitoringInterval
+                    monitoringIntervalSeconds: monitoringInterval,
+                    snapshot: {
+                        deleteWithCollection: document.getElementById('snapshotDeleteWithCollection').checked,
+                        deleteOrphanedAfterMinutes: orphanMinutes,
+                        schedule: {
+                            enabled: scheduleEnabled,
+                            intervalMinutes: intervalMinutes,
+                            retainLastN: retainLastN
+                        },
+                        collectionOverrides: collectionOverrides
+                    }
                 })
             });
 
@@ -5008,18 +5114,14 @@ class VigilanteDashboard {
                 throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
             }
 
-            await response.json(); // Consume response
-
+            await response.json();
             this.showToast('Configuration updated successfully!', 'success');
-
-            // Reload to show updated values
             await this.loadConfiguration();
 
         } catch (error) {
             console.error('Failed to save configuration:', error);
             this.showToast(`Failed to save configuration: ${error.message}`, 'error');
         } finally {
-            // Re-enable button
             saveConfigBtn.disabled = false;
             saveConfigBtn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
         }

@@ -376,6 +376,7 @@ public class CollectionsControllerTests
         _clusterManager.DeleteCollectionViaApiAsync(
             request.CollectionName,
             Arg.Is<IEnumerable<string>>(urls => urls.Count() == 1),
+            Arg.Any<bool?>(),
             Arg.Any<CancellationToken>())
             .Returns(results);
 
@@ -411,6 +412,7 @@ public class CollectionsControllerTests
         _clusterManager.DeleteCollectionFromDiskAsync(
             request.CollectionName,
             Arg.Is<IEnumerable<(string, string)>>(pods => pods.Count() == 1),
+            Arg.Any<bool?>(),
             Arg.Any<CancellationToken>())
             .Returns(results);
 
@@ -449,6 +451,7 @@ public class CollectionsControllerTests
         _clusterManager.DeleteCollectionViaApiAsync(
             request.CollectionName,
             Arg.Is<IEnumerable<string>>(urls => urls.Count() == 2),
+            Arg.Any<bool?>(),
             Arg.Any<CancellationToken>())
             .Returns(results);
 
@@ -487,6 +490,7 @@ public class CollectionsControllerTests
         _clusterManager.DeleteCollectionFromDiskAsync(
             request.CollectionName,
             Arg.Is<IEnumerable<(string, string)>>(pods => pods.Count() == 2),
+            Arg.Any<bool?>(),
             Arg.Any<CancellationToken>())
             .Returns(results);
 
@@ -525,6 +529,7 @@ public class CollectionsControllerTests
         _clusterManager.DeleteCollectionViaApiAsync(
             request.CollectionName,
             Arg.Is<IEnumerable<string>>(urls => urls.Count() == 2),
+            Arg.Any<bool?>(),
             Arg.Any<CancellationToken>())
             .Returns(results);
 

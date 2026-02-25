@@ -85,7 +85,8 @@ public class ConfigController : ControllerBase
         {
             var config = new DynamicConfig
             {
-                MonitoringIntervalSeconds = request.MonitoringIntervalSeconds
+                MonitoringIntervalSeconds = request.MonitoringIntervalSeconds,
+                Snapshot = request.Snapshot ?? new SnapshotConfiguration()
             };
 
             await _dynamicConfigService.UpdateConfigAsync(config, cancellationToken);
@@ -107,4 +108,5 @@ public class ConfigController : ControllerBase
 public record UpdateConfigRequest
 {
     public int MonitoringIntervalSeconds { get; init; } = 120;
+    public SnapshotConfiguration? Snapshot { get; init; }
 }

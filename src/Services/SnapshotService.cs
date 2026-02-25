@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Aer.QdrantClient.Http.Abstractions;
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
@@ -30,7 +31,8 @@ public class SnapshotService(
     public async Task<string?> CreateCollectionSnapshotAsync(
         string nodeUrl,
         string collectionName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool waitForResult = false)
     {
         try
         {
@@ -41,7 +43,7 @@ public class SnapshotService(
             var result = await qdrantClient.CreateCollectionSnapshot(
                 collectionName, 
                 cancellationToken,
-                isWaitForResult: false);
+                isWaitForResult: waitForResult);
             
             if (result.IsAcceptedOrSuccess())
             {
@@ -52,9 +54,9 @@ public class SnapshotService(
                     statusText, collectionName, nodeUrl);
                 return snapshotName;
             }
-            
-            logger.LogError("Failed to create snapshot for collection {CollectionName}: {Error}",
-                collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+
+            logger.LogError("Failed to create snapshot for collection {CollectionName} on node {NodeUrl}: {Error}",
+                collectionName, nodeUrl, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
             return null;
         }
         catch (Exception ex)
@@ -68,7 +70,8 @@ public class SnapshotService(
     public async Task<Dictionary<string, string?>> CreateCollectionSnapshotAsync(
         string collectionName,
         IEnumerable<string> nodeUrls,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool waitForResult = false)
     {
         var nodeUrlsList = nodeUrls.ToList();
         logger.LogInformation(
@@ -83,7 +86,8 @@ public class SnapshotService(
             var snapshotName = await CreateCollectionSnapshotAsync(
                 nodeUrl,
                 collectionName,
-                cancellationToken);
+                cancellationToken,
+                waitForResult);
 
             return (NodeUrl: nodeUrl, SnapshotName: snapshotName);
         });
@@ -727,7 +731,8 @@ public class SnapshotService(
                                 CollectionName = collectionName,
                                 SnapshotName = snapshotFile,
                                 SizeBytes = sizeBytes.Value,
-                                PodNamespace = podNamespace
+                                PodNamespace = podNamespace,
+                                CreatedAt = ParseSnapshotName(snapshotFile, collectionName).CreatedAt
                             };
 
                             snapshots.Add(snapshotInfo);
@@ -868,10 +873,64 @@ public class SnapshotService(
                 SnapshotName = snapshotName,
                 SizeBytes = sizeBytes,
                 PodNamespace = firstNode.Namespace ?? KubernetesConstants.DefaultNamespace,
-                Source = SnapshotSource.S3Storage
+                Source = SnapshotSource.S3Storage,
+                CreatedAt = ParseSnapshotName(snapshotName, collectionName).CreatedAt
             };
 
             result.Add(snapshotInfo);
+        }
+    }
+
+    public async Task EnforceRetentionAsync(
+        string collectionName,
+        int retainLastN,
+        CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation(
+            "Enforcing retention of last {RetainLastN} snapshots per node for collection {CollectionName}",
+            retainLastN, collectionName);
+
+        var allSnapshots = await GetSnapshotsInfoAsync(clearCache: true, cancellationToken);
+        var collectionSnapshots = allSnapshots.Where(s => s.CollectionName == collectionName).ToList();
+
+        if (collectionSnapshots.Count == 0)
+            return;
+
+        // Group per-node: for Qdrant API / K8s — by NodeUrl; for S3 — by peerId extracted from the snapshot name
+        // (S3 snapshots have PeerId = "S3", but the actual peer ID is always embedded in the snapshot name)
+        var groups = collectionSnapshots.GroupBy(s =>
+            s.Source == SnapshotSource.S3Storage
+                ? ParseSnapshotName(s.SnapshotName, collectionName).PeerId
+                : s.NodeUrl);
+
+        foreach (var group in groups)
+        {
+            // Sort by parsed creation date; fall back to lexicographic order if date is unavailable
+            var sorted = group
+                .Select(s => (Snapshot: s, Info: ParseSnapshotName(s.SnapshotName, collectionName)))
+                .OrderBy(x => x.Info.CreatedAt ?? DateTime.MinValue)
+                .ThenBy(x => x.Snapshot.SnapshotName)
+                .ToList();
+
+            if (sorted.Count <= retainLastN)
+                continue;
+
+            var toDelete = sorted.Take(sorted.Count - retainLastN).Select(x => x.Snapshot).ToList();
+            logger.LogInformation(
+                "Deleting {DeleteCount} old snapshots for collection {CollectionName} on {NodeKey} (keeping last {RetainLastN})",
+                toDelete.Count, collectionName, group.Key, retainLastN);
+
+            foreach (var snapshot in toDelete)
+            {
+                await DeleteSnapshotAsync(
+                    collectionName,
+                    snapshot.SnapshotName,
+                    snapshot.Source,
+                    nodeUrl: snapshot.NodeUrl == S3Constants.StorageIdentifier ? null : snapshot.NodeUrl,
+                    podName: snapshot.PodName == S3Constants.StorageIdentifier ? null : snapshot.PodName,
+                    podNamespace: snapshot.PodNamespace,
+                    cancellationToken: cancellationToken);
+            }
         }
     }
 
@@ -956,7 +1015,8 @@ public class SnapshotService(
                                 SnapshotName = name,
                                 SizeBytes = size,
                                 PodNamespace = node.Namespace ?? "",
-                                Source = SnapshotSource.QdrantApi
+                                Source = SnapshotSource.QdrantApi,
+                                CreatedAt = ParseSnapshotName(name, collectionName).CreatedAt
                             };
                             
                             result.Add(snapshotInfo);
@@ -992,5 +1052,45 @@ public class SnapshotService(
         {
             throw new AggregateException("Failed to get snapshots from all nodes via Qdrant API", errors);
         }
+    }
+
+    private sealed record SnapshotParsedInfo(string CollectionName, string PeerId, DateTime? CreatedAt);
+
+    /// <summary>
+    /// Parses snapshot name into its constituent parts.
+    /// Expected format: {collectionName}-{peerId}-{YYYY}-{MM}-{DD}-{HH}-{mm}-{ss}[.snapshot]
+    /// </summary>
+    private static SnapshotParsedInfo ParseSnapshotName(string snapshotName, string collectionName)
+    {
+        var prefix = collectionName + "-";
+        if (!snapshotName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return new SnapshotParsedInfo(collectionName, snapshotName, null);
+        }
+
+        var remainder = snapshotName[prefix.Length..];
+
+        // Timestamp format: -YYYY-MM-DD-HH-mm-ss (followed by optional .snapshot extension)
+        var match = Regex.Match(remainder, @"-(20\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})");
+        if (!match.Success)
+        {
+            return new SnapshotParsedInfo(collectionName, remainder, null);
+        }
+
+        var peerId = remainder[..match.Index];
+
+        DateTime? createdAt = null;
+        if (int.TryParse(match.Groups[1].Value, out var year)
+            && int.TryParse(match.Groups[2].Value, out var month)
+            && int.TryParse(match.Groups[3].Value, out var day)
+            && int.TryParse(match.Groups[4].Value, out var hour)
+            && int.TryParse(match.Groups[5].Value, out var minute)
+            && int.TryParse(match.Groups[6].Value, out var second))
+        {
+            try { createdAt = new DateTime(year, month, day, hour, minute, second, DateTimeKind.Utc); }
+            catch { /* ignore invalid dates */ }
+        }
+
+        return new SnapshotParsedInfo(collectionName, peerId, createdAt);
     }
 }
