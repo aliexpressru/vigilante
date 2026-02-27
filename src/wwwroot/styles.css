@@ -4032,18 +4032,21 @@ body {
 .config-modal-body {
     max-height: calc(85vh - 140px);
     overflow-y: auto;
+}
+
+.modal-content {
     position: relative;
 }
 
 .config-loading-overlay {
     position: absolute;
     inset: 0;
-    background: rgba(255, 255, 255, 0.75);
+    background: rgba(255, 255, 255, 0.8);
     z-index: 10;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
+    border-radius: inherit;
 }
 
 .config-loading-spinner {
@@ -4051,7 +4054,7 @@ body {
     color: #667eea;
 }
 
-.config-modal-body.config-loading > *:not(.config-loading-overlay) {
+.modal-content.config-loading > *:not(.config-loading-overlay) {
     pointer-events: none;
     user-select: none;
 }

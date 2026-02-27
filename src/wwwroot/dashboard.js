@@ -5048,29 +5048,26 @@ class VigilanteDashboard {
     }
 
     _setConfigModalLoading(loading) {
-        const body = document.querySelector('#configModal .config-modal-body');
-        if (!body) return;
+        const modalContent = document.querySelector('#configModal .modal-content');
+        if (!modalContent) return;
         if (loading) {
-            body.classList.add('config-loading');
-            if (!body.querySelector('.config-loading-overlay')) {
+            modalContent.classList.add('config-loading');
+            if (!modalContent.querySelector('.config-loading-overlay')) {
                 const overlay = document.createElement('div');
                 overlay.className = 'config-loading-overlay';
                 overlay.innerHTML = '<div class="config-loading-spinner"><i class="fas fa-spinner fa-spin"></i></div>';
-                body.appendChild(overlay);
+                modalContent.appendChild(overlay);
             }
         } else {
-            body.classList.remove('config-loading');
-            body.querySelector('.config-loading-overlay')?.remove();
+            modalContent.classList.remove('config-loading');
+            modalContent.querySelector('.config-loading-overlay')?.remove();
         }
     }
 
     async loadConfiguration() {
         this._setConfigModalLoading(true);
         try {
-            const [configResponse, collectionsResponse] = await Promise.all([
-                fetch('/api/v1/config'),
-                fetch('/api/v1/collections/info?clearCache=false')
-            ]);
+            const configResponse = await fetch('/api/v1/config');
 
             if (!configResponse.ok) {
                 throw new Error(`HTTP ${configResponse.status}: ${configResponse.statusText}`);
@@ -5078,13 +5075,18 @@ class VigilanteDashboard {
 
             const config = await configResponse.json();
 
-            // Populate collection names datalist
-            const datalist = document.getElementById('collectionNamesList');
-            if (datalist && collectionsResponse.ok) {
-                const collectionsData = await collectionsResponse.json();
-                const names = [...new Set((collectionsData.collections || []).map(c => c.collectionName).filter(Boolean))];
-                datalist.innerHTML = names.map(n => `<option value="${n}">`).join('');
-            }
+            // Load collections for datalist in background — doesn't block config display
+            fetch('/api/v1/collections/info?clearCache=false')
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                    if (!data) return;
+                    const datalist = document.getElementById('collectionNamesList');
+                    if (!datalist) return;
+                    const names = [...new Set((data.collections || []).map(c => c.collectionName).filter(Boolean))];
+                    datalist.innerHTML = names.map(n => `<option value="${n}">`).join('');
+                })
+                .catch(() => {});
+
             const snap = config.snapshot || {};
             const schedule = snap.schedule || {};
             const overrides = snap.collectionOverrides;
