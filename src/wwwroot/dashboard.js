@@ -423,136 +423,198 @@ class VigilanteDashboard {
         console.log('Recovery modal setup complete');
     }
 
-    openRecoveryModal(sourceSnapshot, originalCollectionName, snapshotName) {
-        console.log('openRecoveryModal called with:', { sourceSnapshot, originalCollectionName, snapshotName });
-        
-        const modal = document.getElementById('recoveryModal');
-        const targetNodeSelect = document.getElementById('recoverTargetNode');
-        const targetNodeFormGroup = targetNodeSelect.closest('.form-group');
-        const collectionNameInput = document.getElementById('recoverCollectionName');
-        const sourceSnapshotInput = document.getElementById('recoverSourceSnapshot');
+    async openRecoveryModal(snapshot, collectionName, snapshotName) {
+        const isS3 = snapshot.source === 'S3Storage';
 
-        console.log('Modal form elements:', { modal, targetNodeSelect, collectionNameInput, sourceSnapshotInput });
-
-        // Set source snapshot display
-        sourceSnapshotInput.value = snapshotName;
-
-        // Check if snapshot has a specific node URL (Kubernetes storage)
-        const snapshotNodeUrl = sourceSnapshot.nodeUrl;
-        const hasFixedNode = snapshotNodeUrl && snapshotNodeUrl !== 'unknown';
-        
-        if (hasFixedNode) {
-            // For Kubernetes storage - use the node where snapshot was created
-            // Hide node selector and auto-populate
-            targetNodeFormGroup.style.display = 'none';
-            targetNodeSelect.innerHTML = `<option value="${snapshotNodeUrl}" selected>Auto-selected: ${sourceSnapshot.podName || snapshotNodeUrl}</option>`;
-            console.log('Auto-selected target node (Kubernetes storage):', snapshotNodeUrl);
-        } else {
-            // For S3/other sources - show node selector
-            targetNodeFormGroup.style.display = 'block';
-            targetNodeSelect.innerHTML = '<option value="">Select target node...</option>';
-            if (this.clusterNodes && this.clusterNodes.length > 0) {
-                this.clusterNodes.forEach(node => {
-                    const option = document.createElement('option');
-                    option.value = node.nodeUrl || node.url;
-                    
-                    // Build display text: prefer podName, fallback to URL and peer ID
-                    let displayText = '';
-                    if (node.podName && node.podName !== 'unknown') {
-                        displayText = node.podName;
-                        if (node.peerId) {
-                            displayText += ` (${node.peerId.substring(0, 12)}...)`;
-                        }
-                    } else {
-                        // Use URL and peer ID
-                        const url = node.nodeUrl || node.url || '';
-                        const peerId = node.peerId ? node.peerId.substring(0, 12) + '...' : '';
-                        displayText = peerId ? `${url} (${peerId})` : url;
-                    }
-                    
-                    option.textContent = displayText;
-                    targetNodeSelect.appendChild(option);
+        // For S3 snapshots — fetch presigned URL first
+        let snapshotUrl = null;
+        if (isS3) {
+            const toastId = this.showToast(`Generating URL for '${snapshotName}'...`, 'info', null, 0, true);
+            try {
+                const response = await fetch('/api/v1/snapshots/get-download-url', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ collectionName, snapshotName, expirationHours: 1 })
                 });
+                const result = await response.json();
+                this.removeToast(toastId);
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || 'Failed to generate download URL');
+                }
+                snapshotUrl = result.url;
+            } catch (error) {
+                this.removeToast(toastId);
+                this.showToast(`Failed to get S3 URL: ${this.getErrorMessage(error)}`, 'error', null, 15000);
+                return;
             }
         }
 
-        // Set default collection name (editable)
-        collectionNameInput.value = originalCollectionName;
-
-        // Store recovery context
-        this.recoveryContext = {
-            sourceSnapshot,
-            originalCollectionName,
-            snapshotName,
-            source: sourceSnapshot.source || 'QdrantApi' // Default to QdrantApi if not specified
+        // Build node selector options
+        const buildNodeOptions = () => {
+            let html = '<option value="">Select target node...</option>';
+            (this.clusterNodes || []).forEach(node => {
+                const url = node.nodeUrl || node.url;
+                let label = '';
+                if (node.podName && node.podName !== 'unknown') {
+                    label = node.podName;
+                    if (node.peerId) {
+                        label += ` (${node.peerId.substring(0, 12)}...)`;
+                    }
+                } else {
+                    const peerId = node.peerId ? node.peerId.substring(0, 12) + '...' : '';
+                    label = peerId ? `${url} (${peerId})` : url;
+                }
+                html += `<option value="${url}">${label}</option>`;
+            });
+            return html;
         };
 
-        console.log('Recovery context stored:', this.recoveryContext);
-        console.log('Cluster nodes available:', this.clusterNodes);
+        // For K8s snapshots — node is fixed (same pod where snapshot lives)
+        const snapshotNodeUrl = snapshot.nodeUrl;
+        const hasFixedNode = !isS3
+            && snapshotNodeUrl
+            && snapshotNodeUrl !== 'unknown'
+            && snapshotNodeUrl !== 'S3';
 
-        // Show modal
-        modal.classList.add('show');
-        console.log('Modal shown, classList:', modal.classList);
+        const nodeFieldHtml = hasFixedNode
+            ? `<div class="form-group">
+                <label>Target Node:</label>
+                <input type="text" value="${snapshot.podName && snapshot.podName !== 'unknown' ? snapshot.podName : snapshotNodeUrl}" class="form-input" readonly />
+               </div>`
+            : `<div class="form-group">
+                <label for="recoverModalTargetNode">Target Node:</label>
+                <select id="recoverModalTargetNode" class="form-select">${buildNodeOptions()}</select>
+               </div>`;
+
+        const urlFieldHtml = isS3
+            ? `<div class="form-group">
+                <label>Snapshot URL:</label>
+                <input type="text" id="recoverModalSnapshotUrl" value="${snapshotUrl}" class="form-input" readonly />
+               </div>`
+            : '';
+
+        const prioritySelectHtml = `
+            <div class="form-group">
+                <label for="recoverModalPriority">Snapshot Priority:</label>
+                <select id="recoverModalPriority" class="form-select">
+                    <option value="Snapshot" selected>Snapshot (prefer snapshot data)</option>
+                    <option value="Replica">Replica (prefer existing data)</option>
+                    <option value="NoSync">NoSync (restore without sync)</option>
+                </select>
+                <small class="form-hint">Source of truth for snapshot recovery</small>
+            </div>`;
+
+        const checksumFieldHtml = isS3
+            ? `<div class="form-group">
+                <label for="recoverModalChecksum">Checksum (optional):</label>
+                <input type="text" id="recoverModalChecksum" placeholder="Enter snapshot checksum" class="form-input" />
+               </div>`
+            : '';
+
+        const s3ExtraFieldsHtml = `
+            ${checksumFieldHtml}
+            ${prioritySelectHtml}
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="recoverModalWaitForResult" checked />
+                    Wait for result
+                </label>
+            </div>`;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-dialog';
+        modal.innerHTML = `
+            <div class="modal-header">
+                <h3><i class="fas fa-undo"></i> Recover Collection from Snapshot</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Snapshot:</label>
+                    <input type="text" value="${snapshotName}" class="form-input" readonly />
+                </div>
+                ${urlFieldHtml}
+                <div class="form-group">
+                    <label for="recoverModalCollectionName">Collection Name:</label>
+                    <input type="text" id="recoverModalCollectionName" value="${collectionName}" class="form-input" required />
+                </div>
+                ${nodeFieldHtml}
+                ${s3ExtraFieldsHtml}
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary modal-cancel">Cancel</button>
+                <button class="btn-primary modal-submit"><i class="fas fa-undo"></i> Recover</button>
+            </div>
+        `;
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        setTimeout(() => overlay.querySelector('#recoverModalCollectionName')?.focus(), 100);
+
+        const closeModal = () => {
+            overlay.classList.add('closing');
+            setTimeout(() => overlay.remove(), 300);
+        };
+
+        overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+        overlay.querySelector('.modal-cancel').addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+        let isSubmitting = false;
+        const submitButton = overlay.querySelector('.modal-submit');
+
+        submitButton.addEventListener('click', async () => {
+            if (isSubmitting) return;
+            isSubmitting = true;
+            submitButton.disabled = true;
+
+            // Read all values before closing
+            const collectionNameVal = overlay.querySelector('#recoverModalCollectionName')?.value.trim();
+            const targetNodeUrl = hasFixedNode
+                ? snapshotNodeUrl
+                : overlay.querySelector('#recoverModalTargetNode')?.value;
+
+            if (!collectionNameVal) {
+                this.showToast('Please enter a collection name', 'error', null, 15000);
+                overlay.querySelector('#recoverModalCollectionName')?.focus();
+                isSubmitting = false;
+                submitButton.disabled = false;
+                return;
+            }
+
+            if (!targetNodeUrl) {
+                this.showToast('Please select a target node', 'error', null, 15000);
+                isSubmitting = false;
+                submitButton.disabled = false;
+                return;
+            }
+
+            const priority = overlay.querySelector('#recoverModalPriority')?.value || 'Snapshot';
+            const waitForResult = overlay.querySelector('#recoverModalWaitForResult')?.checked ?? true;
+            const checksum = isS3 ? (overlay.querySelector('#recoverModalChecksum')?.value.trim() || null) : null;
+
+            closeModal();
+
+            if (isS3) {
+                await this.recoverCollectionFromUrl(targetNodeUrl, collectionNameVal, snapshotUrl, checksum, priority, waitForResult);
+            } else {
+                const targetNode = this.clusterNodes?.find(n => (n.nodeUrl || n.url) === targetNodeUrl);
+                const podName = targetNode ? targetNode.podName : snapshot.podName;
+                await this.recoverSnapshotFromNode(targetNodeUrl, collectionNameVal, snapshotName, podName, snapshot.source, collectionName, priority, waitForResult);
+            }
+        });
+
+        overlay.querySelector('#recoverModalCollectionName')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') submitButton.click();
+        });
     }
 
     closeRecoveryModal() {
-        const modal = document.getElementById('recoveryModal');
-        modal.classList.remove('show');
-        this.recoveryContext = null;
-    }
-
-    async confirmRecovery() {
-        console.log('confirmRecovery called');
-        
-        const targetNodeSelect = document.getElementById('recoverTargetNode');
-        const collectionNameInput = document.getElementById('recoverCollectionName');
-
-        const targetNodeUrl = targetNodeSelect.value;
-        const collectionName = collectionNameInput.value.trim();
-
-        console.log('Recovery params:', { targetNodeUrl, collectionName, recoveryContext: this.recoveryContext });
-
-        // Validation
-        if (!targetNodeUrl) {
-            this.showToast('Please select a target node', 'error', null, 15000);
-            return;
-        }
-
-        if (!collectionName) {
-            this.showToast('Please enter a collection name', 'error', null, 15000);
-            return;
-        }
-
-        if (!this.recoveryContext) {
-            this.showToast('Recovery context lost', 'error', null, 15000);
-            return;
-        }
-
-        // Get data from recovery context BEFORE closing modal
-        const { snapshotName, source, originalCollectionName } = this.recoveryContext;
-        const targetNode = this.clusterNodes.find(n => (n.nodeUrl || n.url) === targetNodeUrl);
-        const podName = targetNode ? targetNode.podName : null;
-
-        console.log('Calling recoverSnapshotFromNode with:', { 
-            targetNodeUrl, 
-            collectionName, 
-            snapshotName, 
-            podName, 
-            source,
-            originalCollectionName 
-        });
-
-        // Close modal AFTER getting all data
-        this.closeRecoveryModal();
-        
-        await this.recoverSnapshotFromNode(
-            targetNodeUrl, 
-            collectionName, 
-            snapshotName, 
-            podName, 
-            source,
-            originalCollectionName  // Pass original collection name for S3 lookups
-        );
+        // Legacy stub — kept for compatibility; recovery now uses a dynamic modal
     }
 
     // Toast notification methods
@@ -2185,7 +2247,7 @@ class VigilanteDashboard {
         container.appendChild(table);
     }
 
-    async recoverSnapshotFromNode(nodeUrl, collectionName, snapshotName, podName = null, source = 'QdrantApi', sourceCollectionName = null) {
+    async recoverSnapshotFromNode(nodeUrl, collectionName, snapshotName, podName = null, source = 'QdrantApi', sourceCollectionName = null, snapshotPriority = null, waitForResult = true) {
         // Show podName if available and not 'unknown', otherwise show nodeUrl
         const nodeIdentifier = podName && podName !== 'unknown' ? podName : nodeUrl;
         const toastId = this.showToast(`Recovering ${collectionName} from ${snapshotName} on ${nodeIdentifier}...`, 'info', null, 0);
@@ -2194,8 +2256,13 @@ class VigilanteDashboard {
             TargetNodeUrl: nodeUrl,
             CollectionName: collectionName,
             SnapshotName: snapshotName,
-            Source: source
+            Source: source,
+            WaitForResult: waitForResult
         };
+
+        if (snapshotPriority) {
+            requestBody.SnapshotPriority = snapshotPriority;
+        }
         
         // Add SourceCollectionName to help locate the file in the correct directory
         // This is important when recovering to a different collection name

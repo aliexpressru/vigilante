@@ -338,7 +338,9 @@ public class CollectionService : ICollectionService
         string nodeUrl,
         string collectionName,
         string snapshotName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SnapshotPriority snapshotPriority = SnapshotPriority.Snapshot,
+        bool waitForResult = true)
     {
         try
         {
@@ -351,8 +353,8 @@ public class CollectionService : ICollectionService
                 collectionName,
                 snapshotName,
                 cancellationToken,
-                isWaitForResult: true,
-                snapshotPriority: SnapshotPriority.Snapshot);
+                isWaitForResult: waitForResult,
+                snapshotPriority: snapshotPriority);
 
             if (result.IsAcceptedOrSuccess())
             {
@@ -1136,5 +1138,4 @@ public class CollectionService : ICollectionService
             await EnrichWithClusteringInfoAsync(node.Url, collections, peerToPodMap, cancellationToken);
         }
     }
-
 }
