@@ -516,6 +516,11 @@ public class SnapshotService(
         return null;
     }
 
+    public void InvalidateCache()
+    {
+        _snapshotsCache = null;
+    }
+
     public async Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(
         bool clearCache = false,
         CancellationToken cancellationToken = default)

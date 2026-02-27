@@ -128,4 +128,9 @@ public interface ISnapshotService
         string collectionName,
         int retainLastN,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Clears the in-memory snapshot cache.
+    /// </summary>
+    void InvalidateCache();
 }

@@ -356,6 +356,30 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- S3 Storage -->
+                <div class="config-section">
+                    <div class="config-section-title"><i class="fas fa-cloud"></i> S3 Storage</div>
+
+                    <div class="config-toggle-row">
+                        <input type="checkbox" id="s3Enabled">
+                        <label for="s3Enabled">Enable S3 snapshot storage</label>
+                    </div>
+                    <div id="s3Section" class="config-sub-section" style="display:none">
+                        <div class="config-inline-fields">
+                            <div class="form-group">
+                                <label for="s3BucketName">
+                                    Bucket name
+                                </label>
+                                <input type="text" id="s3BucketName" class="form-input" placeholder="snapshots">
+                            </div>
+                            <div class="form-group">
+                                <label for="s3Region">Region</label>
+                                <input type="text" id="s3Region" class="form-input" placeholder="default">
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button id="cancelConfig" class="modal-button modal-button-secondary">Cancel</button>
@@ -366,6 +390,6 @@
         </div>
     </div>
 
-    <script src="dashboard.js?v=20260224006"></script>
+    <script src="dashboard.js?v=20260224008"></script>
 </body>
 </html>

@@ -4032,6 +4032,28 @@ body {
 .config-modal-body {
     max-height: calc(85vh - 140px);
     overflow-y: auto;
+    position: relative;
+}
+
+.config-loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.75);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.config-loading-spinner {
+    font-size: 2rem;
+    color: #667eea;
+}
+
+.config-modal-body.config-loading > *:not(.config-loading-overlay) {
+    pointer-events: none;
+    user-select: none;
 }
 
 .config-section {

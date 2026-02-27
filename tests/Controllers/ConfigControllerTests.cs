@@ -15,6 +15,7 @@ public class ConfigControllerTests
     private IDynamicConfigService _dynamicConfigService = null!;
     private IWebHostEnvironment _environment = null!;
     private IKubernetesManager _kubernetesManager = null!;
+    private ISnapshotService _snapshotService = null!;
     private ILogger<ConfigController> _logger = null!;
     private ConfigController _controller = null!;
 
@@ -24,8 +25,13 @@ public class ConfigControllerTests
         _dynamicConfigService = Substitute.For<IDynamicConfigService>();
         _environment = Substitute.For<IWebHostEnvironment>();
         _kubernetesManager = Substitute.For<IKubernetesManager>();
+        _snapshotService = Substitute.For<ISnapshotService>();
         _logger = Substitute.For<ILogger<ConfigController>>();
-        _controller = new ConfigController(_dynamicConfigService, _environment, _kubernetesManager, _logger);
+
+        _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new DynamicConfig());
+
+        _controller = new ConfigController(_dynamicConfigService, _environment, _kubernetesManager, _snapshotService, _logger);
     }
 
     [Test]
@@ -188,7 +194,7 @@ public class ConfigControllerTests
     {
         // Arrange
         _environment.EnvironmentName.Returns("Production");
-        var controller = new ConfigController(_dynamicConfigService, _environment, null, _logger);
+        var controller = new ConfigController(_dynamicConfigService, _environment, null, _snapshotService, _logger);
 
         // Act
         var result = controller.GetEnvironment();

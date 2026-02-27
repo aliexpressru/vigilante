@@ -9,12 +9,7 @@ data:
     {
       "Qdrant": {
         "HttpTimeoutSeconds": 3,
-        "ApiKey": "test",
-        "S3": {
-          "Enabled": false,
-          "BucketName": "snapshots",
-          "Region": "default"
-        }
+        "ApiKey": "test"
       }
     }
 

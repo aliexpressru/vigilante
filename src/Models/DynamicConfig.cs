@@ -13,6 +13,11 @@ public class DynamicConfig : IEquatable<DynamicConfig>
     /// </summary>
     public SnapshotConfiguration Snapshot { get; set; } = new();
 
+    /// <summary>
+    /// S3 storage settings (non-secret fields only; secrets come from environment variables)
+    /// </summary>
+    public S3DynamicConfig S3 { get; set; } = new();
+
     public bool Equals(DynamicConfig? other)
     {
         if (other is null) return false;

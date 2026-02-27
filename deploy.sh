@@ -82,7 +82,8 @@ if [ ! -f "../service-monitor.yaml" ]; then
     exit 1
 fi
 
-IMAGE_NAME="aercis/vigilante:latest"
+# Use IMAGE_NAME from environment or default
+IMAGE_NAME="${IMAGE_NAME:-aercis/vigilante:latest}"
 echo "📝 Using image: $IMAGE_NAME"
 echo "💡 Make sure the image is already built and pushed via GitHub Actions"
 echo ""

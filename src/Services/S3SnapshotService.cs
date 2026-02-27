@@ -450,8 +450,19 @@ public class S3SnapshotService(
         string? namespaceParameter,
         CancellationToken cancellationToken)
     {
+        var s3Options = await configProvider.GetS3ConfigurationAsync(namespaceParameter, cancellationToken);
+
+        if (s3Options == null || !s3Options.IsConfigured())
+        {
+            logger.LogInformation("S3 not configured or incomplete configuration");
+            return null;
+        }
+
         // Return existing client if config hasn't changed
-        if (_s3Client != null && _currentConfig != null)
+        if (_s3Client != null && _currentConfig != null &&
+            _currentConfig.BucketName == s3Options.BucketName &&
+            _currentConfig.EndpointUrl == s3Options.EndpointUrl &&
+            _currentConfig.Region == s3Options.Region)
         {
             return _s3Client;
         }
@@ -459,17 +470,30 @@ public class S3SnapshotService(
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            // Double-check after acquiring lock
-            if (_s3Client != null && _currentConfig != null)
+            // Recheck after acquiring lock
+            var currentOptions = await configProvider.GetS3ConfigurationAsync(namespaceParameter, cancellationToken);
+            if (currentOptions == null || !currentOptions.IsConfigured())
+            {
+                logger.LogInformation("S3 not configured or incomplete configuration");
+                return null;
+            }
+
+            s3Options = currentOptions;
+
+            if (_s3Client != null && _currentConfig != null &&
+                _currentConfig.BucketName == s3Options.BucketName &&
+                _currentConfig.EndpointUrl == s3Options.EndpointUrl &&
+                _currentConfig.Region == s3Options.Region)
             {
                 return _s3Client;
             }
 
-            var s3Options = await configProvider.GetS3ConfigurationAsync(namespaceParameter, cancellationToken);
-            if (s3Options == null || !s3Options.IsConfigured())
+            if (_s3Client != null)
             {
-                logger.LogInformation("S3 not configured or incomplete configuration");
-                return null;
+                logger.LogInformation("S3 config changed (bucket: {Old} → {New}), recreating S3 client",
+                    _currentConfig?.BucketName, s3Options.BucketName);
+                _s3Client.Dispose();
+                _s3Client = null;
             }
 
             _currentConfig = s3Options;

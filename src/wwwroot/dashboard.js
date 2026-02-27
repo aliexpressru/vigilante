@@ -5016,6 +5016,11 @@ class VigilanteDashboard {
         document.getElementById('addOverrideBtn')?.addEventListener('click', () => {
             this.addOverrideRow();
         });
+
+        // S3 enabled toggle
+        document.getElementById('s3Enabled')?.addEventListener('change', (e) => {
+            document.getElementById('s3Section').style.display = e.target.checked ? 'block' : 'none';
+        });
     }
 
     addOverrideRow(name = '', schedule = { enabled: true, intervalMinutes: null, retainLastN: null }) {
@@ -5042,7 +5047,25 @@ class VigilanteDashboard {
         }
     }
 
+    _setConfigModalLoading(loading) {
+        const body = document.querySelector('#configModal .config-modal-body');
+        if (!body) return;
+        if (loading) {
+            body.classList.add('config-loading');
+            if (!body.querySelector('.config-loading-overlay')) {
+                const overlay = document.createElement('div');
+                overlay.className = 'config-loading-overlay';
+                overlay.innerHTML = '<div class="config-loading-spinner"><i class="fas fa-spinner fa-spin"></i></div>';
+                body.appendChild(overlay);
+            }
+        } else {
+            body.classList.remove('config-loading');
+            body.querySelector('.config-loading-overlay')?.remove();
+        }
+    }
+
     async loadConfiguration() {
+        this._setConfigModalLoading(true);
         try {
             const [configResponse, collectionsResponse] = await Promise.all([
                 fetch('/api/v1/config'),
@@ -5096,9 +5119,19 @@ class VigilanteDashboard {
                 }
             }
 
+            // S3 Storage
+            const s3 = config.s3 || {};
+            const s3Enabled = s3.enabled !== false; // default true
+            document.getElementById('s3Enabled').checked = s3Enabled;
+            document.getElementById('s3Section').style.display = s3Enabled ? 'block' : 'none';
+            document.getElementById('s3BucketName').value = s3.bucketName || '';
+            document.getElementById('s3Region').value = s3.region || 'default';
+
         } catch (error) {
             console.error('Failed to load configuration:', error);
             this.showToast(`Failed to load configuration: ${error.message}`, 'error');
+        } finally {
+            this._setConfigModalLoading(false);
         }
     }
 
@@ -5154,6 +5187,17 @@ class VigilanteDashboard {
             }
         }
 
+        // S3 Storage
+        const s3Enabled = document.getElementById('s3Enabled').checked;
+        const s3BucketName = document.getElementById('s3BucketName').value.trim() || null;
+        const s3Region = document.getElementById('s3Region').value.trim() || 'default';
+
+        if (s3Enabled && !s3BucketName) {
+            this.showToast('S3 bucket name is required when S3 is enabled', 'error');
+            document.getElementById('s3BucketName').focus();
+            return;
+        }
+
         saveConfigBtn.disabled = true;
         saveConfigBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
 
@@ -5172,6 +5216,11 @@ class VigilanteDashboard {
                             retainLastN: retainLastN
                         },
                         collectionOverrides: collectionOverrides
+                    },
+                    s3: {
+                        enabled: s3Enabled,
+                        bucketName: s3BucketName,
+                        region: s3Region
                     }
                 })
             });
