@@ -6,11 +6,11 @@
 set -e
 
 # Set custom label for resource ownership/team tracking
-export OWNER_LABEL_NAME="ae-rus.net/owner"  # Label name (e.g., "owner", "team", "managed-by")
-export OWNER_LABEL_VALUE="monetization"  # Replace with actual owner/team name
+export OWNER_LABEL_NAME="owner"  # Label name (e.g., "owner", "team", "managed-by")
+export OWNER_LABEL_VALUE="YOUR_NAME_HERE"  # Replace with actual owner/team name
 
 # Set cluster domain for ingress access
-export CLUSTER_DOMAIN="k8s.ae-rus.net"  # Replace with actual cluster domain
+export CLUSTER_DOMAIN="your-cluster-domain.com"  # Replace with actual cluster domain
 # =======================================================
 
 echo "🚀 Starting Vigilante deployment..."
