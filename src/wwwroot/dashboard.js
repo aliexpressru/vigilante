@@ -631,7 +631,7 @@ class VigilanteDashboard {
         modal.className = 'modal-dialog';
         modal.innerHTML = `
             <div class="modal-header">
-                <h3><i class="fas fa-tags"></i> Manage Aliases — ${this.escapeHtml(collectionName)}</h3>
+                <h3><i class="fas fa-tags"></i><span class="modal-header-title">Manage Aliases — ${this.escapeHtml(collectionName)}</span></h3>
                 <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
