@@ -2629,9 +2629,11 @@ body {
 .modal-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     padding: 20px 24px;
     border-bottom: 1px solid #e0e0e0;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .modal-header h3 {
@@ -2639,12 +2641,26 @@ body {
     color: #333;
     font-size: 1.25rem;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+}
+
+.modal-header-title {
+    min-width: 0;
+    flex: 1;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .modal-header h3 i {
     color: #667eea;
+}
+
+.modal-header .modal-close {
+    flex-shrink: 0;
 }
 
 .modal-close {
