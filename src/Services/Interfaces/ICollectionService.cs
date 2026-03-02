@@ -135,5 +135,33 @@ public interface ICollectionService
         ulong? peerId,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Sets (adds) an alias for a collection on the given node.
+    /// If the alias already exists for this collection, no-op. If it exists for another collection, reassigns it.
+    /// </summary>
+    Task<bool> SetCollectionAliasAsync(
+        string nodeUrl,
+        string collectionName,
+        string aliasName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Renames an alias on the given node.
+    /// If old and new names are the same, no-op.
+    /// </summary>
+    Task<bool> RenameCollectionAliasAsync(
+        string nodeUrl,
+        string oldAliasName,
+        string newAliasName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Deletes an alias on the given node.
+    /// </summary>
+    Task<bool> DeleteCollectionAliasAsync(
+        string nodeUrl,
+        string aliasName,
+        CancellationToken cancellationToken);
+
 }
 

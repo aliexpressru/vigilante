@@ -81,6 +81,21 @@ public interface IClusterManager
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets (adds) an alias for a collection. Uses one healthy node; in cluster mode alias change is replicated.
+    /// </summary>
+    Task<bool> SetCollectionAliasAsync(string collectionName, string aliasName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Renames a collection alias. Uses one healthy node; in cluster mode change is replicated.
+    /// </summary>
+    Task<bool> RenameCollectionAliasAsync(string oldAliasName, string newAliasName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a collection alias. Uses one healthy node; in cluster mode change is replicated.
+    /// </summary>
+    Task<bool> DeleteCollectionAliasAsync(string aliasName, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reports an external issue to surface in cluster health, identified by key.
     /// The issue expires after a TTL if not explicitly cleared.
     /// </summary>

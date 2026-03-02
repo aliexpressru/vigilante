@@ -648,5 +648,135 @@ public class CollectionsControllerTests
     }
 
     #endregion
+
+    #region SetCollectionAlias Tests
+
+    [Test]
+    public async Task SetCollectionAlias_WhenSuccessful_ReturnsOk()
+    {
+        var request = new V1SetCollectionAliasRequest
+        {
+            CollectionName = "my_collection",
+            AliasName = "my_alias"
+        };
+        _clusterManager.SetCollectionAliasAsync(request.CollectionName, request.AliasName, Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _controller.SetCollectionAlias(request, CancellationToken.None);
+
+        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        var okResult = (OkObjectResult)result.Result!;
+        var response = okResult.Value as V1SetCollectionAliasResponse;
+        Assert.That(response!.Success, Is.True);
+        Assert.That(response.Message, Does.Contain("my_alias").And.Contain("my_collection"));
+    }
+
+    [Test]
+    public async Task SetCollectionAlias_WhenFails_Returns500()
+    {
+        var request = new V1SetCollectionAliasRequest
+        {
+            CollectionName = "my_collection",
+            AliasName = "my_alias"
+        };
+        _clusterManager.SetCollectionAliasAsync(request.CollectionName, request.AliasName, Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var result = await _controller.SetCollectionAlias(request, CancellationToken.None);
+
+        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result.Result!;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        var response = objectResult.Value as V1SetCollectionAliasResponse;
+        Assert.That(response!.Success, Is.False);
+    }
+
+    #endregion
+
+    #region RenameCollectionAlias Tests
+
+    [Test]
+    public async Task RenameCollectionAlias_WhenSuccessful_ReturnsOk()
+    {
+        var request = new V1RenameCollectionAliasRequest
+        {
+            OldAliasName = "old_alias",
+            NewAliasName = "new_alias"
+        };
+        _clusterManager.RenameCollectionAliasAsync(request.OldAliasName, request.NewAliasName, Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _controller.RenameCollectionAlias(request, CancellationToken.None);
+
+        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        var okResult = (OkObjectResult)result.Result!;
+        var response = okResult.Value as V1RenameCollectionAliasResponse;
+        Assert.That(response!.Success, Is.True);
+        Assert.That(response.Message, Does.Contain("old_alias").And.Contain("new_alias"));
+    }
+
+    [Test]
+    public async Task RenameCollectionAlias_WhenFails_Returns500()
+    {
+        var request = new V1RenameCollectionAliasRequest
+        {
+            OldAliasName = "old_alias",
+            NewAliasName = "new_alias"
+        };
+        _clusterManager.RenameCollectionAliasAsync(request.OldAliasName, request.NewAliasName, Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var result = await _controller.RenameCollectionAlias(request, CancellationToken.None);
+
+        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result.Result!;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        var response = objectResult.Value as V1RenameCollectionAliasResponse;
+        Assert.That(response!.Success, Is.False);
+    }
+
+    #endregion
+
+    #region DeleteCollectionAlias Tests
+
+    [Test]
+    public async Task DeleteCollectionAlias_WhenSuccessful_ReturnsOk()
+    {
+        var request = new V1DeleteCollectionAliasRequest
+        {
+            AliasName = "my_alias"
+        };
+        _clusterManager.DeleteCollectionAliasAsync(request.AliasName, Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _controller.DeleteCollectionAlias(request, CancellationToken.None);
+
+        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        var okResult = (OkObjectResult)result.Result!;
+        var response = okResult.Value as V1DeleteCollectionAliasResponse;
+        Assert.That(response!.Success, Is.True);
+        Assert.That(response.Message, Does.Contain("my_alias"));
+    }
+
+    [Test]
+    public async Task DeleteCollectionAlias_WhenFails_Returns500()
+    {
+        var request = new V1DeleteCollectionAliasRequest
+        {
+            AliasName = "my_alias"
+        };
+        _clusterManager.DeleteCollectionAliasAsync(request.AliasName, Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var result = await _controller.DeleteCollectionAlias(request, CancellationToken.None);
+
+        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result.Result!;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        var response = objectResult.Value as V1DeleteCollectionAliasResponse;
+        Assert.That(response!.Success, Is.False);
+    }
+
+    #endregion
 }
 

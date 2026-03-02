@@ -2674,6 +2674,92 @@ body {
     flex: 1;
 }
 
+/* Manage Aliases modal */
+.manage-aliases-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.manage-aliases-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid #eee;
+    gap: 8px;
+}
+
+.manage-aliases-item:last-child {
+    border-bottom: none;
+}
+
+.manage-aliases-item.editing {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.manage-aliases-name {
+    flex: 1;
+    min-width: 0;
+    word-break: break-all;
+}
+
+.manage-aliases-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.manage-aliases-btn {
+    background: none;
+    border: none;
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #666;
+    transition: background 0.2s, color 0.2s;
+}
+
+.manage-aliases-btn:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
+.manage-aliases-btn.rename:hover { color: #1976d2; }
+.manage-aliases-btn.delete:hover { color: #c62828; }
+
+.manage-aliases-rename-input {
+    flex: 1;
+    min-width: 120px;
+}
+
+.manage-aliases-rename-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.manage-aliases-add-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.manage-aliases-add-row .form-input {
+    flex: 1;
+}
+
+.manage-aliases-empty {
+    margin: 0;
+    padding: 10px 0;
+    color: #999;
+    font-size: 0.9rem;
+}
+
 .form-group {
     margin-bottom: 16px;
 }

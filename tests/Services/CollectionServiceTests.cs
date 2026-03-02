@@ -1,5 +1,6 @@
 using System.Reflection;
 using Aer.QdrantClient.Http.Abstractions;
+using Aer.QdrantClient.Http.Models.Requests.Public;
 using Aer.QdrantClient.Http.Models.Responses;
 using Aer.QdrantClient.Http.Models.Shared;
 using Microsoft.Extensions.Logging;
@@ -1969,6 +1970,236 @@ public class CollectionServiceTests
 
     #endregion
 
+    #region SetCollectionAliasAsync Tests
+
+    [Test]
+    public async Task SetCollectionAliasAsync_WhenAliasDoesNotExist_CallsUpdateCollectionsAliasesAndReturnsTrue()
+    {
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
+
+        var aliasesResponse = new ListCollectionAliasesResponse
+        {
+            Result = new ListCollectionAliasesResponse.CollectionAliasesResult
+            {
+                Aliases = new[]
+                {
+                    new ListCollectionAliasesResponse.CollectionAlias
+                    {
+                        AliasName = "existing",
+                        CollectionName = "my_collection"
+                    }
+                }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+        mockClient.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+
+        var updateResponse = new DefaultOperationResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+        mockClient.UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>())
+            .Returns(updateResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+
+        var result = await service.SetCollectionAliasAsync("http://node1:6333", "my_collection", "new_alias", CancellationToken.None);
+
+        Assert.That(result, Is.True);
+        await mockClient.Received(1).ListAllAliases(Arg.Any<CancellationToken>());
+        await mockClient.Received(1).UpdateCollectionsAliases(Arg.Is<UpdateCollectionAliasesRequest>(r => r.OperationsCount == 1), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task SetCollectionAliasAsync_WhenAliasAlreadyExistsForCollection_ReturnsTrueWithoutCallingUpdate()
+    {
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
+
+        var aliasesResponse = new ListCollectionAliasesResponse
+        {
+            Result = new ListCollectionAliasesResponse.CollectionAliasesResult
+            {
+                Aliases = new[]
+                {
+                    new ListCollectionAliasesResponse.CollectionAlias
+                    {
+                        AliasName = "my_alias",
+                        CollectionName = "my_collection"
+                    }
+                }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+        mockClient.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+
+        var result = await service.SetCollectionAliasAsync("http://node1:6333", "my_collection", "my_alias", CancellationToken.None);
+
+        Assert.That(result, Is.True);
+        await mockClient.Received(1).ListAllAliases(Arg.Any<CancellationToken>());
+        await mockClient.DidNotReceive().UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task SetCollectionAliasAsync_WhenAliasUsedByOtherCollection_ReturnsFalse()
+    {
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
+
+        var aliasesResponse = new ListCollectionAliasesResponse
+        {
+            Result = new ListCollectionAliasesResponse.CollectionAliasesResult
+            {
+                Aliases = new[]
+                {
+                    new ListCollectionAliasesResponse.CollectionAlias
+                    {
+                        AliasName = "taken_alias",
+                        CollectionName = "other_collection"
+                    }
+                }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+        mockClient.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+
+        var result = await service.SetCollectionAliasAsync("http://node1:6333", "my_collection", "taken_alias", CancellationToken.None);
+
+        Assert.That(result, Is.False);
+        await mockClient.Received(1).ListAllAliases(Arg.Any<CancellationToken>());
+        await mockClient.DidNotReceive().UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task SetCollectionAliasAsync_WhenListAllAliasesFails_ReturnsFalse()
+    {
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
+
+        var aliasesResponse = new ListCollectionAliasesResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "API error" }
+        };
+        mockClient.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+
+        var result = await service.SetCollectionAliasAsync("http://node1:6333", "my_collection", "new_alias", CancellationToken.None);
+
+        Assert.That(result, Is.False);
+        await mockClient.DidNotReceive().UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
+    }
+
+    #endregion
+
+    #region RenameCollectionAliasAsync Tests
+
+    [Test]
+    public async Task RenameCollectionAliasAsync_WhenOldAndNewDiffer_CallsUpdateCollectionsAliasesAndReturnsTrue()
+    {
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
+
+        var updateResponse = new DefaultOperationResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+        mockClient.UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>())
+            .Returns(updateResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+
+        var result = await service.RenameCollectionAliasAsync("http://node1:6333", "old_alias", "new_alias", CancellationToken.None);
+
+        Assert.That(result, Is.True);
+        await mockClient.Received(1).UpdateCollectionsAliases(Arg.Is<UpdateCollectionAliasesRequest>(r => r.OperationsCount == 1), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task RenameCollectionAliasAsync_WhenOldEqualsNew_ReturnsTrueWithoutCallingApi()
+    {
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+
+        var result = await service.RenameCollectionAliasAsync("http://node1:6333", "same_alias", "same_alias", CancellationToken.None);
+
+        Assert.That(result, Is.True);
+        await mockClient.DidNotReceive().UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task RenameCollectionAliasAsync_WhenUpdateFails_ReturnsFalse()
+    {
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
+
+        var updateResponse = new DefaultOperationResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "Alias not found" }
+        };
+        mockClient.UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>())
+            .Returns(updateResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+
+        var result = await service.RenameCollectionAliasAsync("http://node1:6333", "old_alias", "new_alias", CancellationToken.None);
+
+        Assert.That(result, Is.False);
+    }
+
+    #endregion
+
+    #region DeleteCollectionAliasAsync Tests
+
+    [Test]
+    public async Task DeleteCollectionAliasAsync_WhenSuccess_CallsUpdateCollectionsAliasesAndReturnsTrue()
+    {
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
+
+        var updateResponse = new DefaultOperationResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+        mockClient.UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>())
+            .Returns(updateResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+
+        var result = await service.DeleteCollectionAliasAsync("http://node1:6333", "my_alias", CancellationToken.None);
+
+        Assert.That(result, Is.True);
+        await mockClient.Received(1).UpdateCollectionsAliases(Arg.Is<UpdateCollectionAliasesRequest>(r => r.OperationsCount == 1), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task DeleteCollectionAliasAsync_WhenUpdateFails_ReturnsFalse()
+    {
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
+
+        var updateResponse = new DefaultOperationResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "Alias not found" }
+        };
+        mockClient.UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>())
+            .Returns(updateResponse);
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+
+        var result = await service.DeleteCollectionAliasAsync("http://node1:6333", "my_alias", CancellationToken.None);
+
+        Assert.That(result, Is.False);
+    }
+
+    #endregion
 
     /// <summary>
     /// Helper method to create CollectionService with mocked IPodCommandExecutor using reflection
