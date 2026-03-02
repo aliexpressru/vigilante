@@ -7,6 +7,9 @@ class VigilanteDashboard {
         this.dropShardsEndpoint = '/api/v1/cluster/drop-shards';
         this.startReshardingEndpoint = '/api/v1/cluster/start-resharding';
         this.deleteCollectionEndpoint = '/api/v1/collections';
+        this.setAliasEndpoint = '/api/v1/collections/alias';
+        this.renameAliasEndpoint = '/api/v1/collections/alias/rename';
+        this.deleteAliasEndpoint = '/api/v1/collections/alias/delete';
         this.createSnapshotEndpoint = '/api/v1/snapshots';
         this.deleteSnapshotEndpoint = '/api/v1/snapshots';
         this.downloadSnapshotEndpoint = '/api/v1/snapshots/download';
@@ -615,6 +618,196 @@ class VigilanteDashboard {
 
     closeRecoveryModal() {
         // Legacy stub — kept for compatibility; recovery now uses a dynamic modal
+    }
+
+    showManageAliasesModal(collection) {
+        const collectionName = collection.name;
+        let aliases = [...(collection.aliases || [])];
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-dialog';
+        modal.innerHTML = `
+            <div class="modal-header">
+                <h3><i class="fas fa-tags"></i> Manage Aliases — ${this.escapeHtml(collectionName)}</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Current aliases</label>
+                    <ul id="manageAliasesList" class="manage-aliases-list"></ul>
+                    <p id="manageAliasesEmpty" class="manage-aliases-empty" style="display:none;">No aliases. Add one below.</p>
+                </div>
+                <div class="form-group">
+                    <label for="manageAliasesNewName">Add new alias</label>
+                    <div class="manage-aliases-add-row">
+                        <input type="text" id="manageAliasesNewName" class="form-input" placeholder="Alias name" />
+                        <button type="button" class="btn-primary manage-aliases-add-btn"><i class="fas fa-plus"></i> Add</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary modal-close-btn">Close</button>
+            </div>
+        `;
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        const listEl = overlay.querySelector('#manageAliasesList');
+        const emptyEl = overlay.querySelector('#manageAliasesEmpty');
+
+        const renderList = () => {
+            listEl.innerHTML = '';
+            aliases.forEach(alias => {
+                const li = document.createElement('li');
+                li.className = 'manage-aliases-item';
+                li.dataset.alias = alias;
+                const isEditing = li.classList.contains('editing');
+                li.innerHTML = `
+                    <span class="manage-aliases-name">${this.escapeHtml(alias)}</span>
+                    <div class="manage-aliases-actions">
+                        <button type="button" class="manage-aliases-btn rename" title="Rename"><i class="fas fa-pen"></i></button>
+                        <button type="button" class="manage-aliases-btn delete" title="Delete"><i class="fas fa-trash-alt"></i></button>
+                    </div>
+                `;
+                li.querySelector('.rename').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    startRename(li, alias);
+                });
+                li.querySelector('.delete').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteAlias(alias);
+                });
+                listEl.appendChild(li);
+            });
+            emptyEl.style.display = aliases.length === 0 ? 'block' : 'none';
+        };
+
+        const startRename = (li, oldName) => {
+            if (li.classList.contains('editing')) return;
+            li.classList.add('editing');
+            const nameSpan = li.querySelector('.manage-aliases-name');
+            const actionsDiv = li.querySelector('.manage-aliases-actions');
+            const oldContent = nameSpan.outerHTML + actionsDiv.outerHTML;
+            li.innerHTML = `
+                <input type="text" class="form-input manage-aliases-rename-input" value="${this.escapeHtml(oldName)}" />
+                <div class="manage-aliases-rename-actions">
+                    <button type="button" class="btn-secondary manage-aliases-save-rename">Save</button>
+                    <button type="button" class="btn-secondary manage-aliases-cancel-rename">Cancel</button>
+                </div>
+            `;
+            const input = li.querySelector('.manage-aliases-rename-input');
+            input.focus();
+            input.select();
+            li.querySelector('.manage-aliases-save-rename').addEventListener('click', () => {
+                const newName = input.value.trim();
+                if (!newName) {
+                    this.showToast('Alias name cannot be empty', 'error', null, 5000);
+                    return;
+                }
+                if (newName === oldName) {
+                    li.classList.remove('editing');
+                    renderList();
+                    return;
+                }
+                renameAlias(oldName, newName, li);
+            });
+            li.querySelector('.manage-aliases-cancel-rename').addEventListener('click', () => {
+                li.classList.remove('editing');
+                renderList();
+            });
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') li.querySelector('.manage-aliases-save-rename').click();
+                if (e.key === 'Escape') li.querySelector('.manage-aliases-cancel-rename').click();
+            });
+        };
+
+        const closeModal = () => {
+            overlay.classList.add('closing');
+            setTimeout(() => overlay.remove(), 300);
+            if (typeof this.loadCollectionSizes === 'function') this.loadCollectionSizes(true);
+        };
+
+        overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+        overlay.querySelector('.modal-close-btn').addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+        const apiPost = async (url, body) => {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.error || data.message || res.statusText || 'Request failed');
+            }
+            return data;
+        };
+
+        const addAlias = async () => {
+            const input = overlay.querySelector('#manageAliasesNewName');
+            const aliasName = input?.value?.trim();
+            if (!aliasName) {
+                this.showToast('Enter an alias name', 'error', null, 5000);
+                input?.focus();
+                return;
+            }
+            if (aliases.includes(aliasName)) {
+                this.showToast(`Alias "${aliasName}" already exists`, 'error', null, 5000);
+                return;
+            }
+            try {
+                await apiPost(this.setAliasEndpoint, { collectionName, aliasName });
+                aliases = [...aliases, aliasName].sort();
+                renderList();
+                input.value = '';
+                this.showToast(`Alias "${aliasName}" added`, 'success', null, 3000);
+                if (typeof this.loadCollectionSizes === 'function') this.loadCollectionSizes(true);
+            } catch (err) {
+                this.showToast(err.message || 'Failed to add alias', 'error', null, 10000);
+            }
+        };
+
+        const renameAlias = async (oldName, newName, liEl) => {
+            if (aliases.includes(newName) && newName !== oldName) {
+                this.showToast(`Alias "${newName}" already exists`, 'error', null, 5000);
+                return;
+            }
+            try {
+                await apiPost(this.renameAliasEndpoint, { oldAliasName: oldName, newAliasName: newName });
+                aliases = aliases.map(a => a === oldName ? newName : a).sort();
+                liEl.classList.remove('editing');
+                renderList();
+                this.showToast(`Alias renamed to "${newName}"`, 'success', null, 3000);
+                if (typeof this.loadCollectionSizes === 'function') this.loadCollectionSizes(true);
+            } catch (err) {
+                this.showToast(err.message || 'Failed to rename alias', 'error', null, 10000);
+            }
+        };
+
+        const deleteAlias = async (aliasName) => {
+            try {
+                await apiPost(this.deleteAliasEndpoint, { aliasName });
+                aliases = aliases.filter(a => a !== aliasName);
+                renderList();
+                this.showToast(`Alias "${aliasName}" deleted`, 'success', null, 3000);
+                if (typeof this.loadCollectionSizes === 'function') this.loadCollectionSizes(true);
+            } catch (err) {
+                this.showToast(err.message || 'Failed to delete alias', 'error', null, 10000);
+            }
+        };
+
+        overlay.querySelector('.manage-aliases-add-btn').addEventListener('click', addAlias);
+        overlay.querySelector('#manageAliasesNewName').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') addAlias();
+        });
+
+        renderList();
+        setTimeout(() => overlay.querySelector('#manageAliasesNewName')?.focus(), 100);
     }
 
     // Toast notification methods
@@ -1344,6 +1537,20 @@ class VigilanteDashboard {
                     await this.showNodeSelectionDialog(collection, 'createSnapshot');
                 });
                 collectionActionsDropdown.appendChild(createSnapshotAction);
+
+                // Manage Aliases action
+                const manageAliasesAction = document.createElement('button');
+                manageAliasesAction.className = 'collection-action-item';
+                manageAliasesAction.innerHTML = '<i class="fas fa-tags"></i> Manage Aliases';
+                manageAliasesAction.title = 'Add, rename or delete collection aliases';
+                manageAliasesAction.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    collectionActionsDropdown.classList.remove('show');
+                    collectionActionsMenuButton.classList.remove('active');
+                    this.openCollectionMenus.delete(collection.name);
+                    this.showManageAliasesModal(collection);
+                });
+                collectionActionsDropdown.appendChild(manageAliasesAction);
                 
                 collectionActionsMenuContainer.appendChild(collectionActionsMenuButton);
                 collectionActionsMenuContainer.appendChild(collectionActionsDropdown);

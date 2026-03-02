@@ -261,6 +261,45 @@ public class ClusterManager(
         return results;
     }
 
+    public async Task<bool> SetCollectionAliasAsync(string collectionName, string aliasName, CancellationToken cancellationToken = default)
+    {
+        var state = await GetClusterStateAsync(cancellationToken);
+        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
+        if (healthyNode == null)
+        {
+            logger.LogWarning("No healthy node available to set alias {AliasName} for collection {CollectionName}", aliasName, collectionName);
+            return false;
+        }
+
+        return await collectionService.SetCollectionAliasAsync(healthyNode.Url, collectionName, aliasName, cancellationToken);
+    }
+
+    public async Task<bool> RenameCollectionAliasAsync(string oldAliasName, string newAliasName, CancellationToken cancellationToken = default)
+    {
+        var state = await GetClusterStateAsync(cancellationToken);
+        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
+        if (healthyNode == null)
+        {
+            logger.LogWarning("No healthy node available to rename alias {OldAliasName} to {NewAliasName}", oldAliasName, newAliasName);
+            return false;
+        }
+
+        return await collectionService.RenameCollectionAliasAsync(healthyNode.Url, oldAliasName, newAliasName, cancellationToken);
+    }
+
+    public async Task<bool> DeleteCollectionAliasAsync(string aliasName, CancellationToken cancellationToken = default)
+    {
+        var state = await GetClusterStateAsync(cancellationToken);
+        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
+        if (healthyNode == null)
+        {
+            logger.LogWarning("No healthy node available to delete alias {AliasName}", aliasName);
+            return false;
+        }
+
+        return await collectionService.DeleteCollectionAliasAsync(healthyNode.Url, aliasName, cancellationToken);
+    }
+
     public async Task<bool> DropShardsFromPeerAsync(
         string collectionName,
         ulong peerId,

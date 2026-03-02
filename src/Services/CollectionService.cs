@@ -1,5 +1,6 @@
 using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Requests;
+using Aer.QdrantClient.Http.Models.Requests.Public;
 using Aer.QdrantClient.Http.Models.Shared;
 using k8s;
 using Microsoft.Extensions.Options;
@@ -759,7 +760,132 @@ public class CollectionService : ICollectionService
             return false;
         }
     }
-    
+
+    public async Task<bool> SetCollectionAliasAsync(
+        string nodeUrl,
+        string collectionName,
+        string aliasName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
+
+            var allAliasesResponse = await qdrantClient.ListAllAliases(cancellationToken);
+            if (allAliasesResponse?.Status?.IsSuccess != true || allAliasesResponse.Result?.Aliases == null)
+            {
+                _logger.LogWarning("Failed to get aliases from node {NodeUrl}: {Error}",
+                    nodeUrl, allAliasesResponse?.Status?.Error ?? "Unknown");
+                return false;
+            }
+
+            var currentForCollection = allAliasesResponse.Result.Aliases
+                .Where(a => string.Equals(a.CollectionName, collectionName, StringComparison.Ordinal))
+                .Select(a => a.AliasName)
+                .ToList();
+            if (currentForCollection.Contains(aliasName, StringComparer.Ordinal))
+            {
+                _logger.LogInformation("Alias {AliasName} already exists for collection {CollectionName} on node {NodeUrl}",
+                    aliasName, collectionName, nodeUrl);
+                return true;
+            }
+
+            var aliasUsedByOther = allAliasesResponse.Result.Aliases
+                .FirstOrDefault(a => string.Equals(a.AliasName, aliasName, StringComparison.Ordinal) && !string.Equals(a.CollectionName, collectionName, StringComparison.Ordinal));
+            if (aliasUsedByOther != null)
+            {
+                _logger.LogWarning("Alias {AliasName} is already used by collection {OtherCollection}, cannot add to {CollectionName}",
+                    aliasName, aliasUsedByOther.CollectionName, collectionName);
+                return false;
+            }
+
+            var request = UpdateCollectionAliasesRequest.Create().CreateAlias(collectionName, aliasName);
+            var result = await qdrantClient.UpdateCollectionsAliases(request, cancellationToken);
+
+            if (result?.Status?.IsSuccess == true)
+            {
+                _logger.LogInformation("Alias {AliasName} set for collection {CollectionName} on node {NodeUrl}",
+                    aliasName, collectionName, nodeUrl);
+                return true;
+            }
+
+            _logger.LogError("Failed to set alias {AliasName} for collection {CollectionName}: {Error}",
+                aliasName, collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to set alias {AliasName} for collection {CollectionName} on node {NodeUrl}",
+                aliasName, collectionName, nodeUrl);
+            return false;
+        }
+    }
+
+    public async Task<bool> RenameCollectionAliasAsync(
+        string nodeUrl,
+        string oldAliasName,
+        string newAliasName,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(oldAliasName, newAliasName, StringComparison.Ordinal))
+        {
+            _logger.LogInformation("Old and new alias names are the same, no-op");
+            return true;
+        }
+
+        try
+        {
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
+            var request = UpdateCollectionAliasesRequest.Create().RenameAlias(oldAliasName, newAliasName);
+            var result = await qdrantClient.UpdateCollectionsAliases(request, cancellationToken);
+
+            if (result?.Status?.IsSuccess == true)
+            {
+                _logger.LogInformation("Alias renamed from {OldAliasName} to {NewAliasName} on node {NodeUrl}",
+                    oldAliasName, newAliasName, nodeUrl);
+                return true;
+            }
+
+            _logger.LogError("Failed to rename alias {OldAliasName} to {NewAliasName}: {Error}",
+                oldAliasName, newAliasName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to rename alias {OldAliasName} to {NewAliasName} on node {NodeUrl}",
+                oldAliasName, newAliasName, nodeUrl);
+            return false;
+        }
+    }
+
+    public async Task<bool> DeleteCollectionAliasAsync(
+        string nodeUrl,
+        string aliasName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
+            var request = UpdateCollectionAliasesRequest.Create().DeleteAlias(aliasName);
+            var result = await qdrantClient.UpdateCollectionsAliases(request, cancellationToken);
+
+            if (result?.Status?.IsSuccess == true)
+            {
+                _logger.LogInformation("Alias {AliasName} deleted on node {NodeUrl}", aliasName, nodeUrl);
+                return true;
+            }
+
+            _logger.LogError("Failed to delete alias {AliasName}: {Error}",
+                aliasName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete alias {AliasName} on node {NodeUrl}", aliasName, nodeUrl);
+            return false;
+        }
+    }
+
     /// <summary>
     /// Gets the number of unique collections from a list of CollectionInfo instances
     /// </summary>

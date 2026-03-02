@@ -213,5 +213,129 @@ public class CollectionsController(
         }
     }
 
+    [HttpPost("alias")]
+    [ProducesResponseType(typeof(V1SetCollectionAliasResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1SetCollectionAliasResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1SetCollectionAliasResponse>> SetCollectionAlias(
+        [FromBody] V1SetCollectionAliasRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var success = await clusterManager.SetCollectionAliasAsync(
+                request.CollectionName,
+                request.AliasName,
+                cancellationToken);
+
+            if (success)
+            {
+                return Ok(new V1SetCollectionAliasResponse
+                {
+                    Success = true,
+                    Message = $"Alias '{request.AliasName}' set for collection '{request.CollectionName}'"
+                });
+            }
+
+            return StatusCode(500, new V1SetCollectionAliasResponse
+            {
+                Success = false,
+                Message = "Failed to set alias (no healthy node or Qdrant API error)"
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error setting alias {AliasName} for collection {CollectionName}", request.AliasName, request.CollectionName);
+            return StatusCode(500, new V1SetCollectionAliasResponse
+            {
+                Success = false,
+                Message = "Internal server error during set alias",
+                Error = ex.Message
+            });
+        }
+    }
+
+    [HttpPost("alias/rename")]
+    [ProducesResponseType(typeof(V1RenameCollectionAliasResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1RenameCollectionAliasResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1RenameCollectionAliasResponse>> RenameCollectionAlias(
+        [FromBody] V1RenameCollectionAliasRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var success = await clusterManager.RenameCollectionAliasAsync(
+                request.OldAliasName,
+                request.NewAliasName,
+                cancellationToken);
+
+            if (success)
+            {
+                return Ok(new V1RenameCollectionAliasResponse
+                {
+                    Success = true,
+                    Message = $"Alias renamed from '{request.OldAliasName}' to '{request.NewAliasName}'"
+                });
+            }
+
+            return StatusCode(500, new V1RenameCollectionAliasResponse
+            {
+                Success = false,
+                Message = "Failed to rename alias (no healthy node or Qdrant API error)"
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error renaming alias {OldAliasName} to {NewAliasName}", request.OldAliasName, request.NewAliasName);
+            return StatusCode(500, new V1RenameCollectionAliasResponse
+            {
+                Success = false,
+                Message = "Internal server error during rename alias",
+                Error = ex.Message
+            });
+        }
+    }
+
+    [HttpPost("alias/delete")]
+    [ProducesResponseType(typeof(V1DeleteCollectionAliasResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1DeleteCollectionAliasResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1DeleteCollectionAliasResponse>> DeleteCollectionAlias(
+        [FromBody] V1DeleteCollectionAliasRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var success = await clusterManager.DeleteCollectionAliasAsync(
+                request.AliasName,
+                cancellationToken);
+
+            if (success)
+            {
+                return Ok(new V1DeleteCollectionAliasResponse
+                {
+                    Success = true,
+                    Message = $"Alias '{request.AliasName}' deleted"
+                });
+            }
+
+            return StatusCode(500, new V1DeleteCollectionAliasResponse
+            {
+                Success = false,
+                Message = "Failed to delete alias (no healthy node or Qdrant API error)"
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error deleting alias {AliasName}", request.AliasName);
+            return StatusCode(500, new V1DeleteCollectionAliasResponse
+            {
+                Success = false,
+                Message = "Internal server error during delete alias",
+                Error = ex.Message
+            });
+        }
+    }
 }
 
