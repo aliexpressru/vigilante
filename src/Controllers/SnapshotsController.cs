@@ -329,6 +329,10 @@ public class SnapshotsController(
                 });
             }
 
+            var snapshotPriority = Enum.TryParse<SnapshotPriority>(request.SnapshotPriority, out var parsedPriority)
+                ? parsedPriority
+                : SnapshotPriority.Snapshot;
+
             if (source == SnapshotSource.S3Storage)
             {
                 // For S3 snapshots, use SourceCollectionName to locate the file (if provided)
@@ -362,7 +366,7 @@ public class SnapshotsController(
                     presignedUrl,
                     snapshotChecksum: null,
                     waitForResult: true,
-                    SnapshotPriority.Snapshot,
+                    snapshotPriority,
                     cancellationToken);
             }
             else if (source == SnapshotSource.KubernetesStorage)
@@ -389,7 +393,7 @@ public class SnapshotsController(
                         snapshotPath,
                         snapshotChecksum: null,
                         waitForResult: true,
-                        SnapshotPriority.Snapshot,
+                        snapshotPriority,
                         cancellationToken);
                 }
                 else
@@ -399,7 +403,9 @@ public class SnapshotsController(
                         request.TargetNodeUrl,
                         request.CollectionName,
                         request.SnapshotName,
-                        cancellationToken);
+                        cancellationToken,
+                        snapshotPriority,
+                        request.WaitForResult);
                 }
             }
             else
@@ -409,7 +415,9 @@ public class SnapshotsController(
                     request.TargetNodeUrl,
                     request.CollectionName,
                     request.SnapshotName,
-                    cancellationToken);
+                    cancellationToken,
+                    snapshotPriority,
+                    request.WaitForResult);
             }
 
             var response = new V1RecoverFromSnapshotResponse

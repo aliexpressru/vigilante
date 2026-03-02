@@ -338,7 +338,9 @@ public class CollectionService : ICollectionService
         string nodeUrl,
         string collectionName,
         string snapshotName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SnapshotPriority snapshotPriority = SnapshotPriority.Snapshot,
+        bool waitForResult = true)
     {
         try
         {
@@ -351,8 +353,8 @@ public class CollectionService : ICollectionService
                 collectionName,
                 snapshotName,
                 cancellationToken,
-                isWaitForResult: true,
-                snapshotPriority: SnapshotPriority.Snapshot);
+                isWaitForResult: waitForResult,
+                snapshotPriority: snapshotPriority);
 
             if (result.IsAcceptedOrSuccess())
             {
@@ -575,7 +577,8 @@ public class CollectionService : ICollectionService
                             PodNamespace = node.Namespace ?? string.Empty,
                             Metrics = metrics,
                             Aliases = aliases,
-                            Status = collectionInfoResponse.Result?.Status
+                            Status = collectionInfoResponse.Result?.Status,
+                            HnswM = collectionInfoResponse.Result?.Config?.HnswConfig?.M
                         });
                     }
                     catch (Exception ex)

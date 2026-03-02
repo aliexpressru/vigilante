@@ -21,6 +21,7 @@ public class ClusterState
     /// </summary>
     public string? StatefulSetName { get; set; }
 
+
     /// <summary>
     /// Invalidates cached health and status to force recalculation.
     /// Call this after modifying node warnings or errors.
@@ -78,7 +79,7 @@ public class ClusterState
         {
             issues.Add("No leader elected");
         }
-        
+
         health.Issues = issues;
         
         // Collect warnings separately from all nodes (both healthy and unhealthy)

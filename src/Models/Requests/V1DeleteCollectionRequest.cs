@@ -30,6 +30,12 @@ public class V1DeleteCollectionRequest
     public List<PodSpecification>? Pods { get; set; }
 
     /// <summary>
+    /// Delete all snapshots for this collection after successful deletion.
+    /// null = use global Snapshot.DeleteWithCollection config value (default: true).
+    /// </summary>
+    public bool? DeleteSnapshots { get; set; }
+
+    /// <summary>
     /// Specification of a pod for disk deletion
     /// </summary>
     public class PodSpecification

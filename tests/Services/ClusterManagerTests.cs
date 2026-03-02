@@ -26,6 +26,8 @@ public class ClusterManagerTests
     private IMeterService _meterService = null!;
     private IQdrantClientFactory _clientFactory = null!;
     private ICollectionService _collectionService = null!;
+    private ISnapshotService _snapshotService = null!;
+    private IDynamicConfigService _dynamicConfigService = null!;
     private IHostEnvironment _environment = null!;
     private IKubernetesManager _kubernetesManager = null!;
     private TestDataProvider _testDataProvider = null!;
@@ -41,6 +43,10 @@ public class ClusterManagerTests
         _meterService = Substitute.For<IMeterService>();
         _clientFactory = Substitute.For<IQdrantClientFactory>();
         _collectionService = Substitute.For<ICollectionService>();
+        _snapshotService = Substitute.For<ISnapshotService>();
+        _dynamicConfigService = Substitute.For<IDynamicConfigService>();
+        _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new DynamicConfig()));
         _mockClients = new ConcurrentDictionary<string, IQdrantHttpClient>();
         
         _options.Value.Returns(new QdrantOptions { HttpTimeoutSeconds = 5 });
@@ -105,6 +111,8 @@ public class ClusterManagerTests
             _nodesProvider,
             _clientFactory,
             _collectionService,
+            _snapshotService,
+            _dynamicConfigService,
             _testDataProvider,
             _options,
             _logger,
@@ -1867,9 +1875,9 @@ public class ClusterManagerTests
 
         // Act
         var result = await _clusterManager.DeleteCollectionViaApiAsync(
-            collectionName, 
-            nodeUrls, 
-            CancellationToken.None);
+            collectionName,
+            nodeUrls,
+            cancellationToken: CancellationToken.None);
 
         // Assert
         Assert.That(result, Has.Count.EqualTo(2));
@@ -2325,6 +2333,8 @@ public class ClusterManagerTests
             _nodesProvider,
             _clientFactory,
             _collectionService,
+            _snapshotService,
+            _dynamicConfigService,
             _testDataProvider,
             _options,
             _logger,
@@ -2415,6 +2425,8 @@ public class ClusterManagerTests
             _nodesProvider,
             _clientFactory,
             _collectionService,
+            _snapshotService,
+            _dynamicConfigService,
             _testDataProvider,
             _options,
             _logger,
@@ -2486,6 +2498,8 @@ public class ClusterManagerTests
             _nodesProvider,
             _clientFactory,
             _collectionService,
+            _snapshotService,
+            _dynamicConfigService,
             _testDataProvider,
             _options,
             _logger,
@@ -2544,6 +2558,8 @@ public class ClusterManagerTests
             _nodesProvider,
             _clientFactory,
             _collectionService,
+            _snapshotService,
+            _dynamicConfigService,
             _testDataProvider,
             _options,
             _logger,
@@ -3126,6 +3142,91 @@ public class ClusterManagerTests
         Assert.That(result.Nodes[1].PodName, Is.EqualTo("qdrant-0"));
         // Then qdrant-1
         Assert.That(result.Nodes[2].PodName, Is.EqualTo("qdrant-1"));
+    }
+
+    #endregion
+
+    #region ReportIssue / ClearIssue Tests
+
+    [Test]
+    public async Task ReportIssue_WhenCalled_IssueAppearsInHealthIssues()
+    {
+        // Arrange
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(Array.Empty<QdrantNodeConfig>()));
+
+        _clusterManager.ReportIssue("snapshot:my-collection", "snapshot failed");
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync();
+
+        // Assert
+        Assert.That(state.Health.Issues, Has.Some.Contains("[snapshot:my-collection] snapshot failed"));
+    }
+
+    [Test]
+    public async Task ReportIssue_MultipleTimes_SameKey_OverwritesPreviousMessage()
+    {
+        // Arrange
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(Array.Empty<QdrantNodeConfig>()));
+
+        _clusterManager.ReportIssue("snapshot:col", "first error");
+        _clusterManager.ReportIssue("snapshot:col", "second error");
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync();
+
+        // Assert
+        var snapshotIssues = state.Health.Issues.Where(i => i.Contains("[snapshot:col]")).ToList();
+        Assert.That(snapshotIssues, Has.Count.EqualTo(1));
+        Assert.That(snapshotIssues[0], Does.Contain("second error"));
+    }
+
+    [Test]
+    public async Task ClearIssue_AfterReport_IssueNotPresentInHealthIssues()
+    {
+        // Arrange
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(Array.Empty<QdrantNodeConfig>()));
+
+        _clusterManager.ReportIssue("snapshot:my-collection", "snapshot failed");
+        _clusterManager.ClearIssue("snapshot:my-collection");
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync();
+
+        // Assert
+        Assert.That(state.Health.Issues, Has.None.Contains("[snapshot:my-collection]"));
+    }
+
+    [Test]
+    public async Task ClearIssue_NonExistentKey_DoesNotThrow()
+    {
+        // Arrange
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(Array.Empty<QdrantNodeConfig>()));
+
+        // Act & Assert — no exception
+        Assert.DoesNotThrow(() => _clusterManager.ClearIssue("snapshot:does-not-exist"));
+    }
+
+    [Test]
+    public async Task ReportIssue_MultipleKeys_AllAppearsInHealthIssues()
+    {
+        // Arrange
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(Array.Empty<QdrantNodeConfig>()));
+
+        _clusterManager.ReportIssue("snapshot:col1", "error on col1");
+        _clusterManager.ReportIssue("snapshot:col2", "error on col2");
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync();
+
+        // Assert
+        Assert.That(state.Health.Issues, Has.Some.Contains("[snapshot:col1] error on col1"));
+        Assert.That(state.Health.Issues, Has.Some.Contains("[snapshot:col2] error on col2"));
     }
 
     #endregion

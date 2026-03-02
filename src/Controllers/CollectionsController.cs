@@ -130,6 +130,7 @@ public class CollectionsController(
                 results = await clusterManager.DeleteCollectionViaApiAsync(
                     request.CollectionName,
                     request.NodeUrls,
+                    request.DeleteSnapshots,
                     cancellationToken);
 
                 var successCount = results.Values.Count(s => s);
@@ -169,6 +170,7 @@ public class CollectionsController(
                 results = await clusterManager.DeleteCollectionFromDiskAsync(
                     request.CollectionName,
                     pods,
+                    request.DeleteSnapshots,
                     cancellationToken);
 
                 var successCount = results.Values.Count(s => s);
@@ -210,5 +212,6 @@ public class CollectionsController(
             });
         }
     }
+
 }
 

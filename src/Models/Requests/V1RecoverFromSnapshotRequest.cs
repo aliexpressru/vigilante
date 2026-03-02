@@ -30,4 +30,14 @@ public class V1RecoverFromSnapshotRequest
     /// Source of the snapshot: "KubernetesStorage", "QdrantApi", or "S3Storage"
     /// </summary>
     public string Source { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Snapshot priority for recovery. Defaults to "Snapshot".
+    /// </summary>
+    public string? SnapshotPriority { get; set; }
+
+    /// <summary>
+    /// Whether to wait for the recovery to complete before returning. Defaults to true.
+    /// </summary>
+    public bool WaitForResult { get; set; } = true;
 }

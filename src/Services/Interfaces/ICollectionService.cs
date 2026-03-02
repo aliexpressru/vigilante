@@ -78,7 +78,9 @@ public interface ICollectionService
         string nodeUrl,
         string collectionName,
         string snapshotName,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        SnapshotPriority snapshotPriority = SnapshotPriority.Snapshot,
+        bool waitForResult = true);
 
     /// <summary>
     /// Recovers a collection from a snapshot URL (e.g., S3 URL) on a specific node
@@ -132,5 +134,6 @@ public interface ICollectionService
         ReshardingOperationDirection direction,
         ulong? peerId,
         CancellationToken cancellationToken);
+
 }
 

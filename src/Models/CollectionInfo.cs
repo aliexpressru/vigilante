@@ -25,4 +25,9 @@ public class CollectionInfo
     /// Green - all good, Yellow - optimization is running, Red - some operations failed.
     /// </summary>
     public QdrantCollectionStatus? Status { get; set; }
+
+    /// <summary>
+    /// HNSW index m parameter (edges per node). 0 or null = global index disabled (multi-tenant mode).
+    /// </summary>
+    public ulong? HnswM { get; set; }
 }

@@ -423,136 +423,198 @@ class VigilanteDashboard {
         console.log('Recovery modal setup complete');
     }
 
-    openRecoveryModal(sourceSnapshot, originalCollectionName, snapshotName) {
-        console.log('openRecoveryModal called with:', { sourceSnapshot, originalCollectionName, snapshotName });
-        
-        const modal = document.getElementById('recoveryModal');
-        const targetNodeSelect = document.getElementById('recoverTargetNode');
-        const targetNodeFormGroup = targetNodeSelect.closest('.form-group');
-        const collectionNameInput = document.getElementById('recoverCollectionName');
-        const sourceSnapshotInput = document.getElementById('recoverSourceSnapshot');
+    async openRecoveryModal(snapshot, collectionName, snapshotName) {
+        const isS3 = snapshot.source === 'S3Storage';
 
-        console.log('Modal form elements:', { modal, targetNodeSelect, collectionNameInput, sourceSnapshotInput });
-
-        // Set source snapshot display
-        sourceSnapshotInput.value = snapshotName;
-
-        // Check if snapshot has a specific node URL (Kubernetes storage)
-        const snapshotNodeUrl = sourceSnapshot.nodeUrl;
-        const hasFixedNode = snapshotNodeUrl && snapshotNodeUrl !== 'unknown';
-        
-        if (hasFixedNode) {
-            // For Kubernetes storage - use the node where snapshot was created
-            // Hide node selector and auto-populate
-            targetNodeFormGroup.style.display = 'none';
-            targetNodeSelect.innerHTML = `<option value="${snapshotNodeUrl}" selected>Auto-selected: ${sourceSnapshot.podName || snapshotNodeUrl}</option>`;
-            console.log('Auto-selected target node (Kubernetes storage):', snapshotNodeUrl);
-        } else {
-            // For S3/other sources - show node selector
-            targetNodeFormGroup.style.display = 'block';
-            targetNodeSelect.innerHTML = '<option value="">Select target node...</option>';
-            if (this.clusterNodes && this.clusterNodes.length > 0) {
-                this.clusterNodes.forEach(node => {
-                    const option = document.createElement('option');
-                    option.value = node.nodeUrl || node.url;
-                    
-                    // Build display text: prefer podName, fallback to URL and peer ID
-                    let displayText = '';
-                    if (node.podName && node.podName !== 'unknown') {
-                        displayText = node.podName;
-                        if (node.peerId) {
-                            displayText += ` (${node.peerId.substring(0, 12)}...)`;
-                        }
-                    } else {
-                        // Use URL and peer ID
-                        const url = node.nodeUrl || node.url || '';
-                        const peerId = node.peerId ? node.peerId.substring(0, 12) + '...' : '';
-                        displayText = peerId ? `${url} (${peerId})` : url;
-                    }
-                    
-                    option.textContent = displayText;
-                    targetNodeSelect.appendChild(option);
+        // For S3 snapshots — fetch presigned URL first
+        let snapshotUrl = null;
+        if (isS3) {
+            const toastId = this.showToast(`Generating URL for '${snapshotName}'...`, 'info', null, 0, true);
+            try {
+                const response = await fetch('/api/v1/snapshots/get-download-url', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ collectionName, snapshotName, expirationHours: 1 })
                 });
+                const result = await response.json();
+                this.removeToast(toastId);
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || 'Failed to generate download URL');
+                }
+                snapshotUrl = result.url;
+            } catch (error) {
+                this.removeToast(toastId);
+                this.showToast(`Failed to get S3 URL: ${this.getErrorMessage(error)}`, 'error', null, 15000);
+                return;
             }
         }
 
-        // Set default collection name (editable)
-        collectionNameInput.value = originalCollectionName;
-
-        // Store recovery context
-        this.recoveryContext = {
-            sourceSnapshot,
-            originalCollectionName,
-            snapshotName,
-            source: sourceSnapshot.source || 'QdrantApi' // Default to QdrantApi if not specified
+        // Build node selector options
+        const buildNodeOptions = () => {
+            let html = '<option value="">Select target node...</option>';
+            (this.clusterNodes || []).forEach(node => {
+                const url = node.nodeUrl || node.url;
+                let label = '';
+                if (node.podName && node.podName !== 'unknown') {
+                    label = node.podName;
+                    if (node.peerId) {
+                        label += ` (${node.peerId.substring(0, 12)}...)`;
+                    }
+                } else {
+                    const peerId = node.peerId ? node.peerId.substring(0, 12) + '...' : '';
+                    label = peerId ? `${url} (${peerId})` : url;
+                }
+                html += `<option value="${url}">${label}</option>`;
+            });
+            return html;
         };
 
-        console.log('Recovery context stored:', this.recoveryContext);
-        console.log('Cluster nodes available:', this.clusterNodes);
+        // For K8s snapshots — node is fixed (same pod where snapshot lives)
+        const snapshotNodeUrl = snapshot.nodeUrl;
+        const hasFixedNode = !isS3
+            && snapshotNodeUrl
+            && snapshotNodeUrl !== 'unknown'
+            && snapshotNodeUrl !== 'S3';
 
-        // Show modal
-        modal.classList.add('show');
-        console.log('Modal shown, classList:', modal.classList);
+        const nodeFieldHtml = hasFixedNode
+            ? `<div class="form-group">
+                <label>Target Node:</label>
+                <input type="text" value="${snapshot.podName && snapshot.podName !== 'unknown' ? snapshot.podName : snapshotNodeUrl}" class="form-input" readonly />
+               </div>`
+            : `<div class="form-group">
+                <label for="recoverModalTargetNode">Target Node:</label>
+                <select id="recoverModalTargetNode" class="form-select">${buildNodeOptions()}</select>
+               </div>`;
+
+        const urlFieldHtml = isS3
+            ? `<div class="form-group">
+                <label>Snapshot URL:</label>
+                <input type="text" id="recoverModalSnapshotUrl" value="${snapshotUrl}" class="form-input" readonly />
+               </div>`
+            : '';
+
+        const prioritySelectHtml = `
+            <div class="form-group">
+                <label for="recoverModalPriority">Snapshot Priority:</label>
+                <select id="recoverModalPriority" class="form-select">
+                    <option value="Snapshot" selected>Snapshot (prefer snapshot data)</option>
+                    <option value="Replica">Replica (prefer existing data)</option>
+                    <option value="NoSync">NoSync (restore without sync)</option>
+                </select>
+                <small class="form-hint">Source of truth for snapshot recovery</small>
+            </div>`;
+
+        const checksumFieldHtml = isS3
+            ? `<div class="form-group">
+                <label for="recoverModalChecksum">Checksum (optional):</label>
+                <input type="text" id="recoverModalChecksum" placeholder="Enter snapshot checksum" class="form-input" />
+               </div>`
+            : '';
+
+        const s3ExtraFieldsHtml = `
+            ${checksumFieldHtml}
+            ${prioritySelectHtml}
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="recoverModalWaitForResult" checked />
+                    Wait for result
+                </label>
+            </div>`;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-dialog';
+        modal.innerHTML = `
+            <div class="modal-header">
+                <h3><i class="fas fa-undo"></i> Recover Collection from Snapshot</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Snapshot:</label>
+                    <input type="text" value="${snapshotName}" class="form-input" readonly />
+                </div>
+                ${urlFieldHtml}
+                <div class="form-group">
+                    <label for="recoverModalCollectionName">Collection Name:</label>
+                    <input type="text" id="recoverModalCollectionName" value="${collectionName}" class="form-input" required />
+                </div>
+                ${nodeFieldHtml}
+                ${s3ExtraFieldsHtml}
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary modal-cancel">Cancel</button>
+                <button class="btn-primary modal-submit"><i class="fas fa-undo"></i> Recover</button>
+            </div>
+        `;
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        setTimeout(() => overlay.querySelector('#recoverModalCollectionName')?.focus(), 100);
+
+        const closeModal = () => {
+            overlay.classList.add('closing');
+            setTimeout(() => overlay.remove(), 300);
+        };
+
+        overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+        overlay.querySelector('.modal-cancel').addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+        let isSubmitting = false;
+        const submitButton = overlay.querySelector('.modal-submit');
+
+        submitButton.addEventListener('click', async () => {
+            if (isSubmitting) return;
+            isSubmitting = true;
+            submitButton.disabled = true;
+
+            // Read all values before closing
+            const collectionNameVal = overlay.querySelector('#recoverModalCollectionName')?.value.trim();
+            const targetNodeUrl = hasFixedNode
+                ? snapshotNodeUrl
+                : overlay.querySelector('#recoverModalTargetNode')?.value;
+
+            if (!collectionNameVal) {
+                this.showToast('Please enter a collection name', 'error', null, 15000);
+                overlay.querySelector('#recoverModalCollectionName')?.focus();
+                isSubmitting = false;
+                submitButton.disabled = false;
+                return;
+            }
+
+            if (!targetNodeUrl) {
+                this.showToast('Please select a target node', 'error', null, 15000);
+                isSubmitting = false;
+                submitButton.disabled = false;
+                return;
+            }
+
+            const priority = overlay.querySelector('#recoverModalPriority')?.value || 'Snapshot';
+            const waitForResult = overlay.querySelector('#recoverModalWaitForResult')?.checked ?? true;
+            const checksum = isS3 ? (overlay.querySelector('#recoverModalChecksum')?.value.trim() || null) : null;
+
+            closeModal();
+
+            if (isS3) {
+                await this.recoverCollectionFromUrl(targetNodeUrl, collectionNameVal, snapshotUrl, checksum, priority, waitForResult);
+            } else {
+                const targetNode = this.clusterNodes?.find(n => (n.nodeUrl || n.url) === targetNodeUrl);
+                const podName = targetNode ? targetNode.podName : snapshot.podName;
+                await this.recoverSnapshotFromNode(targetNodeUrl, collectionNameVal, snapshotName, podName, snapshot.source, collectionName, priority, waitForResult);
+            }
+        });
+
+        overlay.querySelector('#recoverModalCollectionName')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') submitButton.click();
+        });
     }
 
     closeRecoveryModal() {
-        const modal = document.getElementById('recoveryModal');
-        modal.classList.remove('show');
-        this.recoveryContext = null;
-    }
-
-    async confirmRecovery() {
-        console.log('confirmRecovery called');
-        
-        const targetNodeSelect = document.getElementById('recoverTargetNode');
-        const collectionNameInput = document.getElementById('recoverCollectionName');
-
-        const targetNodeUrl = targetNodeSelect.value;
-        const collectionName = collectionNameInput.value.trim();
-
-        console.log('Recovery params:', { targetNodeUrl, collectionName, recoveryContext: this.recoveryContext });
-
-        // Validation
-        if (!targetNodeUrl) {
-            this.showToast('Please select a target node', 'error', null, 15000);
-            return;
-        }
-
-        if (!collectionName) {
-            this.showToast('Please enter a collection name', 'error', null, 15000);
-            return;
-        }
-
-        if (!this.recoveryContext) {
-            this.showToast('Recovery context lost', 'error', null, 15000);
-            return;
-        }
-
-        // Get data from recovery context BEFORE closing modal
-        const { snapshotName, source, originalCollectionName } = this.recoveryContext;
-        const targetNode = this.clusterNodes.find(n => (n.nodeUrl || n.url) === targetNodeUrl);
-        const podName = targetNode ? targetNode.podName : null;
-
-        console.log('Calling recoverSnapshotFromNode with:', { 
-            targetNodeUrl, 
-            collectionName, 
-            snapshotName, 
-            podName, 
-            source,
-            originalCollectionName 
-        });
-
-        // Close modal AFTER getting all data
-        this.closeRecoveryModal();
-        
-        await this.recoverSnapshotFromNode(
-            targetNodeUrl, 
-            collectionName, 
-            snapshotName, 
-            podName, 
-            source,
-            originalCollectionName  // Pass original collection name for S3 lookups
-        );
+        // Legacy stub — kept for compatibility; recovery now uses a dynamic modal
     }
 
     // Toast notification methods
@@ -2185,7 +2247,7 @@ class VigilanteDashboard {
         container.appendChild(table);
     }
 
-    async recoverSnapshotFromNode(nodeUrl, collectionName, snapshotName, podName = null, source = 'QdrantApi', sourceCollectionName = null) {
+    async recoverSnapshotFromNode(nodeUrl, collectionName, snapshotName, podName = null, source = 'QdrantApi', sourceCollectionName = null, snapshotPriority = null, waitForResult = true) {
         // Show podName if available and not 'unknown', otherwise show nodeUrl
         const nodeIdentifier = podName && podName !== 'unknown' ? podName : nodeUrl;
         const toastId = this.showToast(`Recovering ${collectionName} from ${snapshotName} on ${nodeIdentifier}...`, 'info', null, 0);
@@ -2194,8 +2256,13 @@ class VigilanteDashboard {
             TargetNodeUrl: nodeUrl,
             CollectionName: collectionName,
             SnapshotName: snapshotName,
-            Source: source
+            Source: source,
+            WaitForResult: waitForResult
         };
+
+        if (snapshotPriority) {
+            requestBody.SnapshotPriority = snapshotPriority;
+        }
         
         // Add SourceCollectionName to help locate the file in the correct directory
         // This is important when recovering to a different collection name
@@ -4929,6 +4996,47 @@ class VigilanteDashboard {
         saveConfigBtn?.addEventListener('click', async () => {
             await this.saveConfiguration();
         });
+
+        // Orphaned snapshots toggle
+        document.getElementById('snapshotOrphanedEnabled')?.addEventListener('change', (e) => {
+            document.getElementById('snapshotOrphanedSection').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        // Schedule toggle
+        document.getElementById('snapshotScheduleEnabled')?.addEventListener('change', (e) => {
+            document.getElementById('snapshotScheduleSection').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        // Overrides toggle
+        document.getElementById('snapshotOverridesEnabled')?.addEventListener('change', (e) => {
+            document.getElementById('snapshotOverridesSection').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        // Add override row button
+        document.getElementById('addOverrideBtn')?.addEventListener('click', () => {
+            this.addOverrideRow();
+        });
+
+        // S3 enabled toggle
+        document.getElementById('s3Enabled')?.addEventListener('change', (e) => {
+            document.getElementById('s3Section').style.display = e.target.checked ? 'block' : 'none';
+        });
+    }
+
+    addOverrideRow(name = '', schedule = { enabled: true, intervalMinutes: null, retainLastN: null }) {
+        const row = document.createElement('div');
+        row.className = 'override-row';
+        row.innerHTML = `
+            <input type="text" class="override-input override-collection-name" list="collectionNamesList" placeholder="collection name" value="${name}">
+            <div class="override-cell-center">
+                <input type="checkbox" class="override-checkbox override-enabled" ${schedule.enabled ? 'checked' : ''}>
+            </div>
+            <input type="number" class="override-input override-interval" placeholder="—" min="1" value="${schedule.intervalMinutes ?? ''}">
+            <input type="number" class="override-input override-retain" placeholder="—" min="1" value="${schedule.retainLastN ?? ''}">
+            <button type="button" class="btn-remove-override" title="Remove"><i class="fas fa-times"></i></button>
+        `;
+        row.querySelector('.btn-remove-override').addEventListener('click', () => row.remove());
+        document.getElementById('overrideRows').appendChild(row);
     }
 
     async openConfigModal() {
@@ -4939,67 +5047,183 @@ class VigilanteDashboard {
         }
     }
 
+    _setConfigModalLoading(loading) {
+        const modalContent = document.querySelector('#configModal .modal-content');
+        if (!modalContent) return;
+        if (loading) {
+            modalContent.classList.add('config-loading');
+            if (!modalContent.querySelector('.config-loading-overlay')) {
+                const overlay = document.createElement('div');
+                overlay.className = 'config-loading-overlay';
+                overlay.innerHTML = '<div class="config-loading-spinner"><i class="fas fa-spinner fa-spin"></i></div>';
+                modalContent.appendChild(overlay);
+            }
+        } else {
+            modalContent.classList.remove('config-loading');
+            modalContent.querySelector('.config-loading-overlay')?.remove();
+        }
+    }
+
     async loadConfiguration() {
-        const configDisplay = document.getElementById('configDisplay');
-        const monitoringIntervalInput = document.getElementById('monitoringInterval');
-
-        configDisplay.innerHTML = '<div class="config-loading"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
-
+        this._setConfigModalLoading(true);
         try {
-            const response = await fetch('/api/v1/config');
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            const configResponse = await fetch('/api/v1/config');
+
+            if (!configResponse.ok) {
+                throw new Error(`HTTP ${configResponse.status}: ${configResponse.statusText}`);
             }
 
-            const config = await response.json();
+            const config = await configResponse.json();
 
-            // Update input field
-            monitoringIntervalInput.value = config.monitoringIntervalSeconds || 120;
+            // Load collections for datalist in background — doesn't block config display
+            fetch('/api/v1/collections/info?clearCache=false')
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                    if (!data) return;
+                    const datalist = document.getElementById('collectionNamesList');
+                    if (!datalist) return;
+                    const names = [...new Set((data.collections || []).map(c => c.collectionName).filter(Boolean))];
+                    datalist.innerHTML = names.map(n => `<option value="${n}">`).join('');
+                })
+                .catch(() => {});
 
-            // Display current config
-            configDisplay.innerHTML = `
-                <div class="config-item">
-                    <span class="config-key">Monitoring Interval:</span>
-                    <span class="config-value">${config.monitoringIntervalSeconds} seconds</span>
-                </div>
-            `;
+            const snap = config.snapshot || {};
+            const schedule = snap.schedule || {};
+            const overrides = snap.collectionOverrides;
+
+            // Monitoring
+            document.getElementById('monitoringInterval').value = config.monitoringIntervalSeconds || 120;
+
+            // DeleteWithCollection (default true)
+            document.getElementById('snapshotDeleteWithCollection').checked = snap.deleteWithCollection !== false;
+
+            // Orphaned
+            const orphanEnabled = snap.deleteOrphanedAfterMinutes != null;
+            document.getElementById('snapshotOrphanedEnabled').checked = orphanEnabled;
+            document.getElementById('snapshotOrphanedSection').style.display = orphanEnabled ? 'block' : 'none';
+            document.getElementById('snapshotOrphanedAfterMinutes').value = orphanEnabled ? (snap.deleteOrphanedAfterMinutes ?? '') : '';
+
+            // Schedule
+            document.getElementById('snapshotScheduleEnabled').checked = !!schedule.enabled;
+            document.getElementById('snapshotScheduleSection').style.display = schedule.enabled ? 'block' : 'none';
+            document.getElementById('snapshotScheduleInterval').value = schedule.intervalMinutes ?? '';
+            document.getElementById('snapshotScheduleRetain').value = schedule.retainLastN ?? '';
+
+            // Collection overrides
+            const overridesEnabled = overrides != null;
+            document.getElementById('snapshotOverridesEnabled').checked = overridesEnabled;
+            document.getElementById('snapshotOverridesSection').style.display = overridesEnabled ? 'block' : 'none';
+            const overrideRowsEl = document.getElementById('overrideRows');
+            overrideRowsEl.innerHTML = '';
+            if (overridesEnabled && overrides) {
+                for (const [name, sched] of Object.entries(overrides)) {
+                    this.addOverrideRow(name, sched);
+                }
+            }
+
+            // S3 Storage
+            const s3 = config.s3 || {};
+            const s3Enabled = s3.enabled !== false; // default true
+            document.getElementById('s3Enabled').checked = s3Enabled;
+            document.getElementById('s3Section').style.display = s3Enabled ? 'block' : 'none';
+            document.getElementById('s3BucketName').value = s3.bucketName || '';
+            document.getElementById('s3Region').value = s3.region || 'default';
 
         } catch (error) {
             console.error('Failed to load configuration:', error);
-            configDisplay.innerHTML = `
-                <div class="error-message">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    Failed to load configuration: ${error.message}
-                </div>
-            `;
             this.showToast(`Failed to load configuration: ${error.message}`, 'error');
+        } finally {
+            this._setConfigModalLoading(false);
         }
     }
 
     async saveConfiguration() {
-        const monitoringIntervalInput = document.getElementById('monitoringInterval');
         const saveConfigBtn = document.getElementById('saveConfig');
 
-        const monitoringInterval = parseInt(monitoringIntervalInput.value);
-
-        // Validation
+        // Monitoring interval
+        const monitoringInterval = parseInt(document.getElementById('monitoringInterval').value);
         if (isNaN(monitoringInterval) || monitoringInterval < 1 || monitoringInterval > 3600) {
             this.showToast('Monitoring interval must be between 1 and 3600 seconds', 'error');
             return;
         }
 
-        // Disable button during save
+        // Orphaned cleanup
+        const orphanEnabled = document.getElementById('snapshotOrphanedEnabled').checked;
+        const orphanMinutesRaw = document.getElementById('snapshotOrphanedAfterMinutes').value;
+        const orphanMinutes = orphanEnabled && orphanMinutesRaw ? parseInt(orphanMinutesRaw) : null;
+        if (orphanEnabled && (isNaN(orphanMinutes) || orphanMinutes < 1)) {
+            this.showToast('Orphaned cleanup delay must be at least 1 minute', 'error');
+            return;
+        }
+
+        // Global schedule
+        const scheduleEnabled = document.getElementById('snapshotScheduleEnabled').checked;
+        const intervalRaw = document.getElementById('snapshotScheduleInterval').value;
+        const retainRaw = document.getElementById('snapshotScheduleRetain').value;
+        const intervalMinutes = intervalRaw ? parseInt(intervalRaw) : null;
+        const retainLastN = retainRaw ? parseInt(retainRaw) : null;
+
+        // Collection overrides
+        const overridesEnabled = document.getElementById('snapshotOverridesEnabled').checked;
+        let collectionOverrides = null;
+        if (overridesEnabled) {
+            collectionOverrides = {};
+            let overrideError = null;
+            document.querySelectorAll('#overrideRows .override-row').forEach(row => {
+                const name = row.querySelector('.override-collection-name').value.trim();
+                if (!name) {
+                    overrideError = 'All override rows must have a collection name';
+                    return;
+                }
+                const iRaw = row.querySelector('.override-interval').value;
+                const rRaw = row.querySelector('.override-retain').value;
+                collectionOverrides[name] = {
+                    enabled: row.querySelector('.override-enabled').checked,
+                    intervalMinutes: iRaw ? parseInt(iRaw) : null,
+                    retainLastN: rRaw ? parseInt(rRaw) : null,
+                };
+            });
+            if (overrideError) {
+                this.showToast(overrideError, 'error');
+                return;
+            }
+        }
+
+        // S3 Storage
+        const s3Enabled = document.getElementById('s3Enabled').checked;
+        const s3BucketName = document.getElementById('s3BucketName').value.trim() || null;
+        const s3Region = document.getElementById('s3Region').value.trim() || 'default';
+
+        if (s3Enabled && !s3BucketName) {
+            this.showToast('S3 bucket name is required when S3 is enabled', 'error');
+            document.getElementById('s3BucketName').focus();
+            return;
+        }
+
         saveConfigBtn.disabled = true;
         saveConfigBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
 
         try {
             const response = await fetch('/api/v1/config', {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    monitoringIntervalSeconds: monitoringInterval
+                    monitoringIntervalSeconds: monitoringInterval,
+                    snapshot: {
+                        deleteWithCollection: document.getElementById('snapshotDeleteWithCollection').checked,
+                        deleteOrphanedAfterMinutes: orphanMinutes,
+                        schedule: {
+                            enabled: scheduleEnabled,
+                            intervalMinutes: intervalMinutes,
+                            retainLastN: retainLastN
+                        },
+                        collectionOverrides: collectionOverrides
+                    },
+                    s3: {
+                        enabled: s3Enabled,
+                        bucketName: s3BucketName,
+                        region: s3Region
+                    }
                 })
             });
 
@@ -5008,18 +5232,14 @@ class VigilanteDashboard {
                 throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
             }
 
-            await response.json(); // Consume response
-
+            await response.json();
             this.showToast('Configuration updated successfully!', 'success');
-
-            // Reload to show updated values
             await this.loadConfiguration();
 
         } catch (error) {
             console.error('Failed to save configuration:', error);
             this.showToast(`Failed to save configuration: ${error.message}`, 'error');
         } finally {
-            // Re-enable button
             saveConfigBtn.disabled = false;
             saveConfigBtn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
         }

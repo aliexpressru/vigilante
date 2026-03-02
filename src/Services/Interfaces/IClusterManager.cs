@@ -42,19 +42,23 @@ public interface IClusterManager
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes a collection via Qdrant API on specified nodes
+    /// Deletes a collection via Qdrant API on specified nodes.
+    /// deleteSnapshots=null → use Snapshot.DeleteWithCollection from dynamic config.
     /// </summary>
     Task<Dictionary<string, bool>> DeleteCollectionViaApiAsync(
         string collectionName,
         IEnumerable<string> nodeUrls,
+        bool? deleteSnapshots = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes a collection from disk on specified pods
+    /// Deletes a collection from disk on specified pods.
+    /// deleteSnapshots=null → use Snapshot.DeleteWithCollection from dynamic config.
     /// </summary>
     Task<Dictionary<string, bool>> DeleteCollectionFromDiskAsync(
         string collectionName,
         IEnumerable<(string PodName, string PodNamespace)> pods,
+        bool? deleteSnapshots = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -75,4 +79,15 @@ public interface IClusterManager
         ReshardingOperationDirection direction,
         ulong? peerId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reports an external issue to surface in cluster health, identified by key.
+    /// The issue expires after a TTL if not explicitly cleared.
+    /// </summary>
+    void ReportIssue(string key, string message);
+
+    /// <summary>
+    /// Clears a previously reported issue by key
+    /// </summary>
+    void ClearIssue(string key);
 }

@@ -25,5 +25,10 @@ public class SnapshotInfo
     /// Source where this snapshot information was retrieved from
     /// </summary>
     public SnapshotSource Source { get; set; }
+
+    /// <summary>
+    /// Snapshot creation date parsed from the snapshot name. Null if the name does not match the expected format.
+    /// </summary>
+    public DateTime? CreatedAt { get; set; }
 }
 
