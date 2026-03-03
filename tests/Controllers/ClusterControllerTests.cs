@@ -941,4 +941,125 @@ public class ClusterControllerTests
     }
 
     #endregion
+
+    #region RemovePeer Tests
+
+    [Test]
+    public async Task RemovePeer_WithValidRequest_ReturnsOk()
+    {
+        var request = new V1RemovePeerRequest
+        {
+            PeerId = 1001UL,
+            IsForceDropOperation = false,
+            TimeoutSeconds = null
+        };
+
+        _clusterManager.RemovePeerAsync(
+            Arg.Any<ulong>(),
+            Arg.Any<bool>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _controller.RemovePeer(request, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        await _clusterManager.Received(1).RemovePeerAsync(
+            request.PeerId,
+            false,
+            null,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RemovePeer_WithForceDrop_CallsManagerWithForceTrue()
+    {
+        var request = new V1RemovePeerRequest
+        {
+            PeerId = 2002UL,
+            IsForceDropOperation = true,
+            TimeoutSeconds = null
+        };
+
+        _clusterManager.RemovePeerAsync(
+            Arg.Any<ulong>(),
+            Arg.Any<bool>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _controller.RemovePeer(request, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        await _clusterManager.Received(1).RemovePeerAsync(
+            request.PeerId,
+            true,
+            null,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RemovePeer_WithTimeoutSeconds_CallsManagerWithTimeout()
+    {
+        var request = new V1RemovePeerRequest
+        {
+            PeerId = 3003UL,
+            IsForceDropOperation = false,
+            TimeoutSeconds = 60
+        };
+
+        _clusterManager.RemovePeerAsync(
+            Arg.Any<ulong>(),
+            Arg.Any<bool>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _controller.RemovePeer(request, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        await _clusterManager.Received(1).RemovePeerAsync(
+            request.PeerId,
+            false,
+            TimeSpan.FromSeconds(60),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RemovePeer_WhenFailed_Returns500()
+    {
+        var request = new V1RemovePeerRequest { PeerId = 1001UL };
+
+        _clusterManager.RemovePeerAsync(
+            Arg.Any<ulong>(),
+            Arg.Any<bool>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var result = await _controller.RemovePeer(request, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        Assert.That(((ObjectResult)result).StatusCode, Is.EqualTo(500));
+    }
+
+    [Test]
+    public async Task RemovePeer_WhenExceptionThrown_Returns500WithErrorDetails()
+    {
+        var request = new V1RemovePeerRequest { PeerId = 1001UL };
+
+        _clusterManager.RemovePeerAsync(
+            Arg.Any<ulong>(),
+            Arg.Any<bool>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new Exception("Test error")));
+
+        var result = await _controller.RemovePeer(request, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        Assert.That(((ObjectResult)result).StatusCode, Is.EqualTo(500));
+    }
+
+    #endregion
 }

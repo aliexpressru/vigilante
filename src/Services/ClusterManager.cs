@@ -358,6 +358,52 @@ public class ClusterManager(
             cancellationToken);
     }
 
+    public async Task<bool> RemovePeerAsync(
+        ulong peerId,
+        bool isForceDropOperation = false,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation(
+            "Removing peer {PeerId} from cluster. ForceDrop: {IsForceDrop}, Timeout: {Timeout}",
+            peerId, isForceDropOperation, timeout?.ToString() ?? "default");
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
+
+        if (healthyNode == null)
+        {
+            logger.LogError("No healthy nodes found to perform remove peer operation");
+            return false;
+        }
+
+        try
+        {
+            var client = clientFactory.CreateClientFromUrl(healthyNode.Url, _options.ApiKey);
+            var response = await client.RemovePeer(
+                peerId,
+                cancellationToken,
+                isForceDropOperation,
+                timeout,
+                clusterName: null);
+
+            if (response?.Status?.IsSuccess == true)
+            {
+                logger.LogInformation("Peer {PeerId} removed from cluster successfully", peerId);
+                return true;
+            }
+
+            logger.LogError("Failed to remove peer {PeerId}: {Error}",
+                peerId, response?.Status?.Error ?? "Unknown error");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to remove peer {PeerId} from cluster", peerId);
+            return false;
+        }
+    }
+
     private async Task<NodeInfo> GetNodeInfoAsync(QdrantNodeConfig node, CancellationToken cancellationToken)
     {
         // Get basic node info (URL, peer ID, pod name, etc.) from the nodes provider

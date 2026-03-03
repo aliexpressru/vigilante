@@ -2029,6 +2029,206 @@ public class ClusterManagerTests
 
     #endregion
 
+    #region RemovePeerAsync Tests
+
+    [Test]
+    public async Task RemovePeerAsync_WhenHealthyNodeExists_ReturnsTrue()
+    {
+        var peerId = 1001UL;
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = 1001UL,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = 1001UL, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+        mockClient.RemovePeer(
+                Arg.Any<ulong>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<string?>())
+            .Returns(Task.FromResult(new DefaultOperationResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var result = await _clusterManager.RemovePeerAsync(peerId, false, null, CancellationToken.None);
+
+        Assert.That(result, Is.True);
+        await mockClient.Received(1).RemovePeer(
+            peerId,
+            Arg.Any<CancellationToken>(),
+            false,
+            null,
+            Arg.Any<string?>());
+    }
+
+    [Test]
+    public async Task RemovePeerAsync_WithForceDropAndTimeout_CallsClientWithCorrectParams()
+    {
+        var peerId = 2002UL;
+        var timeout = TimeSpan.FromSeconds(60);
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = 1001UL,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = 1001UL, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+        mockClient.RemovePeer(
+                Arg.Any<ulong>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<string?>())
+            .Returns(Task.FromResult(new DefaultOperationResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var result = await _clusterManager.RemovePeerAsync(peerId, true, timeout, CancellationToken.None);
+
+        Assert.That(result, Is.True);
+        await mockClient.Received(1).RemovePeer(
+            peerId,
+            Arg.Any<CancellationToken>(),
+            true,
+            timeout,
+            Arg.Any<string?>());
+    }
+
+    [Test]
+    public async Task RemovePeerAsync_WhenNoHealthyNode_ReturnsFalse()
+    {
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns<GetClusterInfoResponse>(_ => throw new HttpRequestException("Connection refused"));
+
+        var result = await _clusterManager.RemovePeerAsync(1001UL, false, null, CancellationToken.None);
+
+        Assert.That(result, Is.False);
+        await mockClient.DidNotReceive().RemovePeer(
+            Arg.Any<ulong>(),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<bool>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<string?>());
+    }
+
+    [Test]
+    public async Task RemovePeerAsync_WhenClientReturnsError_ReturnsFalse()
+    {
+        var peerId = 1001UL;
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = 1001UL,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = 1001UL, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+        mockClient.RemovePeer(
+                Arg.Any<ulong>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<string?>())
+            .Returns(Task.FromResult(new DefaultOperationResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "Peer has shards" }
+            }));
+
+        var result = await _clusterManager.RemovePeerAsync(peerId, false, null, CancellationToken.None);
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public async Task RemovePeerAsync_WhenClientThrows_ReturnsFalse()
+    {
+        var peerId = 1001UL;
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = 1001UL,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = 1001UL, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+        mockClient.RemovePeer(
+                Arg.Any<ulong>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<string?>())
+            .Returns(Task.FromException<DefaultOperationResponse>(new HttpRequestException("Timeout")));
+
+        var result = await _clusterManager.RemovePeerAsync(peerId, false, null, CancellationToken.None);
+
+        Assert.That(result, Is.False);
+    }
+
+    #endregion
+
     #region MessageSendFailures with Timestamp Tests
 
     [Test]

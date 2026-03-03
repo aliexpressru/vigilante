@@ -81,6 +81,19 @@ public interface IClusterManager
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Removes the specified peer from the cluster.
+    /// </summary>
+    /// <param name="peerId">The identifier of the peer to remove.</param>
+    /// <param name="isForceDropOperation">If true, removes peer even if it has shards/replicas on it.</param>
+    /// <param name="timeout">Optional operation timeout. If not set, default of 30 seconds is used.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    Task<bool> RemovePeerAsync(
+        ulong peerId,
+        bool isForceDropOperation = false,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Sets (adds) an alias for a collection. Uses one healthy node; in cluster mode alias change is replicated.
     /// </summary>
     Task<bool> SetCollectionAliasAsync(string collectionName, string aliasName, CancellationToken cancellationToken = default);

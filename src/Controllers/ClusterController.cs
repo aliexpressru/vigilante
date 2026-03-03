@@ -172,4 +172,38 @@ public class ClusterController(
             return StatusCode(500, new { error = "Internal server error during resharding", details = ex.Message });
         }
     }
+
+    [HttpPost("remove-peer")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> RemovePeer(
+        [FromBody] V1RemovePeerRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var timeout = request.TimeoutSeconds.HasValue
+                ? TimeSpan.FromSeconds(request.TimeoutSeconds.Value)
+                : (TimeSpan?)null;
+
+            var success = await clusterManager.RemovePeerAsync(
+                request.PeerId,
+                request.IsForceDropOperation,
+                timeout,
+                cancellationToken);
+
+            if (success)
+            {
+                return Ok(new { message = "Peer removed from cluster successfully" });
+            }
+
+            return StatusCode(500, new { error = "Failed to remove peer from cluster" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during remove peer operation");
+            return StatusCode(500, new { error = "Internal server error during remove peer", details = ex.Message });
+        }
+    }
 }
