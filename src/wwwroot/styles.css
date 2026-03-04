@@ -2866,6 +2866,15 @@ body {
     transform: translateY(0);
 }
 
+.modal-submit.modal-submit-danger {
+    background: #d32f2f;
+}
+
+.modal-submit.modal-submit-danger:hover {
+    background: #b71c1c;
+    box-shadow: 0 2px 8px rgba(211, 47, 47, 0.3);
+}
+
 .modal-cancel {
     background: #6c757d;
     color: white;

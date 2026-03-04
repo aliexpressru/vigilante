@@ -102,12 +102,16 @@ public interface ISnapshotService
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Gets information about all snapshots in the cluster (from both Kubernetes storage and Qdrant API)
-    /// Supports caching to improve performance
+    /// Gets information about all snapshots in the cluster (from both Kubernetes storage and Qdrant API).
+    /// Supports caching to improve performance.
     /// </summary>
+    /// <param name="clearCache">Whether to clear cache before fetching.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="nodesToUse">When provided, only these nodes are queried (e.g. current cluster nodes). When null, all nodes from provider are used.</param>
     Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(
         bool clearCache = false,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<NodeInfo>? nodesToUse = null);
 
     /// <summary>
     /// Deletes a snapshot from the appropriate storage backend based on source.

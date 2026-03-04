@@ -15,6 +15,7 @@ public class SnapshotsController(
     ISnapshotService snapshotService,
     IS3SnapshotService s3SnapshotService,
     ICollectionService collectionService,
+    IClusterManager clusterManager,
     ILogger<SnapshotsController> logger)
     : ControllerBase
 {
@@ -28,7 +29,8 @@ public class SnapshotsController(
     {
         try
         {
-            var result = await snapshotService.GetSnapshotsInfoAsync(request.ClearCache, cancellationToken);
+            var state = await clusterManager.GetClusterStateAsync(cancellationToken);
+            var result = await snapshotService.GetSnapshotsInfoAsync(request.ClearCache, cancellationToken, state.Nodes);
 
             var snapshotDtos = result
                 .Select(snapshot => new V1GetSnapshotsInfoPaginatedResponse.SnapshotInfoDto
@@ -271,7 +273,7 @@ public class SnapshotsController(
     {
         try
         {
-            Stream snapshotStream;
+            Stream? snapshotStream;
 
             if (request.Source == SnapshotSource.S3Storage)
             {

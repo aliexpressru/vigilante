@@ -473,7 +473,7 @@ public class QdrantMonitorServiceTests
         await _monitorService.ProcessSnapshotAutomationAsync(collections, HealthyNodes(), CancellationToken.None);
 
         // Assert
-        await _snapshotService.DidNotReceive().GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        await _snapshotService.DidNotReceive().GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     [Test]
@@ -482,7 +482,7 @@ public class QdrantMonitorServiceTests
         // Arrange
         _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: null);
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(new List<SnapshotInfo>());
 
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -504,7 +504,7 @@ public class QdrantMonitorServiceTests
         // Arrange
         _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: null);
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(new List<SnapshotInfo>
             {
                 // Snapshot name contains "peer1" — the peerId of the healthy node
@@ -526,7 +526,7 @@ public class QdrantMonitorServiceTests
         // Arrange — node1 already has a snapshot, node2 does not
         _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: null);
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(new List<SnapshotInfo>
             {
                 // Snapshot name contains "peer1" — node1 is covered, node2 (peer2) is not
@@ -561,7 +561,7 @@ public class QdrantMonitorServiceTests
         // Arrange
         _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: null);
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(Task.FromResult<IReadOnlyList<SnapshotInfo>>(new List<SnapshotInfo>()));
 
         var yellowCollection = new List<CollectionInfo>
@@ -588,7 +588,7 @@ public class QdrantMonitorServiceTests
         // Arrange
         _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: 60);
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(new List<SnapshotInfo>());
 
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -622,7 +622,7 @@ public class QdrantMonitorServiceTests
             Source = SnapshotSource.KubernetesStorage
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(new List<SnapshotInfo> { recentSnapshot });
 
         // Act
@@ -659,7 +659,7 @@ public class QdrantMonitorServiceTests
             Source = SnapshotSource.KubernetesStorage
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(new List<SnapshotInfo> { node1Snapshot });
 
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -684,7 +684,7 @@ public class QdrantMonitorServiceTests
         // Arrange
         _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: null);
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(new List<SnapshotInfo>());
 
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -707,7 +707,7 @@ public class QdrantMonitorServiceTests
         // Arrange
         _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: 60);
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(new List<SnapshotInfo>());
 
         _snapshotService.CreateCollectionSnapshotAsync(

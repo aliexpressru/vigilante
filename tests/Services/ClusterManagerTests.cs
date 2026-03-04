@@ -505,7 +505,7 @@ public class ClusterManagerTests
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
             }));
 
-        // Node 2 times out
+        // Node 2 times out (never responds in time, gets fallback PeerId "node2:6333")
         var mockClient2 = _mockClients.GetOrAdd("node2:6333", _ => Substitute.For<IQdrantHttpClient>());
         mockClient2.GetClusterInfo(Arg.Any<CancellationToken>())
             .Returns(Task.Run(async () =>
@@ -521,12 +521,10 @@ public class ClusterManagerTests
         // Act
         var result = await _clusterManager.GetClusterStateAsync();
 
-        // Assert
-        Assert.That(result.Nodes, Has.Count.EqualTo(2));
-        Assert.That(result.Nodes.Count(n => n.IsHealthy), Is.EqualTo(1));
-        var unhealthyNode = result.Nodes.Single(n => !n.IsHealthy);
-        Assert.That(unhealthyNode.PodName, Is.EqualTo("pod2"));
-        Assert.That(unhealthyNode.ErrorType, Is.EqualTo(NodeErrorType.Timeout));
+        // Assert: timing-out node is excluded from cluster state (not in majority), only the responding node is shown
+        Assert.That(result.Nodes, Has.Count.EqualTo(1));
+        Assert.That(result.Nodes[0].IsHealthy, Is.True);
+        Assert.That(result.Nodes[0].PodName, Is.EqualTo("pod1"));
     }
 
     [Test]
@@ -2227,6 +2225,237 @@ public class ClusterManagerTests
         Assert.That(result, Is.False);
     }
 
+    [Test]
+    public async Task RemovePeerAsync_WhenSuccess_ExcludedPeerNotShownInNextGetClusterState()
+    {
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" },
+            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" },
+            new QdrantNodeConfig { Host = "node3", Port = 6333, Namespace = "ns1", PodName = "pod3" }
+        };
+        var pod1Id = 1001UL;
+        var pod2Id = 1002UL;
+        var pod3Id = 1003UL;
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var clusterInfoThreePeers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+        {
+            { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() },
+            { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() },
+            { pod3Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+        };
+
+        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(clusterInfoThreePeers),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+        mockClient1.RemovePeer(Arg.Any<ulong>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<TimeSpan?>(), Arg.Any<string?>())
+            .Returns(Task.FromResult(new DefaultOperationResponse { Status = new QdrantStatus(QdrantOperationStatusType.Ok) }));
+
+        var mockClient2 = _mockClients.GetOrAdd("node2:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient2.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod2Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(clusterInfoThreePeers),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var mockClient3 = _mockClients.GetOrAdd("node3:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient3.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod3Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(clusterInfoThreePeers),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var removeResult = await _clusterManager.RemovePeerAsync(pod3Id, false, null, CancellationToken.None);
+        Assert.That(removeResult, Is.True);
+
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        Assert.That(state.Nodes, Has.Count.EqualTo(2));
+        Assert.That(state.Nodes.Select(n => n.PeerId), Does.Not.Contain(pod3Id.ToString()));
+        Assert.That(state.Nodes.Select(n => n.PeerId), Does.Contain(pod1Id.ToString()));
+        Assert.That(state.Nodes.Select(n => n.PeerId), Does.Contain(pod2Id.ToString()));
+    }
+
+    [Test]
+    public async Task RemovePeerAsync_WhenFails_ExcludedPeerStillShownInGetClusterState()
+    {
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" },
+            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" },
+            new QdrantNodeConfig { Host = "node3", Port = 6333, Namespace = "ns1", PodName = "pod3" }
+        };
+        var pod1Id = 1001UL;
+        var pod2Id = 1002UL;
+        var pod3Id = 1003UL;
+        var clusterInfoThreePeers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+        {
+            { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() },
+            { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() },
+            { pod3Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(clusterInfoThreePeers),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+        mockClient1.RemovePeer(Arg.Any<ulong>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<TimeSpan?>(), Arg.Any<string?>())
+            .Returns(Task.FromResult(new DefaultOperationResponse { Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "Peer has shards" } }));
+
+        var mockClient2 = _mockClients.GetOrAdd("node2:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient2.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod2Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(clusterInfoThreePeers),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var mockClient3 = _mockClients.GetOrAdd("node3:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient3.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod3Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(clusterInfoThreePeers),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var removeResult = await _clusterManager.RemovePeerAsync(pod3Id, false, null, CancellationToken.None);
+        Assert.That(removeResult, Is.False);
+
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        Assert.That(state.Nodes, Has.Count.EqualTo(3));
+        Assert.That(state.Nodes.Select(n => n.PeerId), Does.Contain(pod3Id.ToString()));
+    }
+
+    #endregion
+
+    #region GetClusterStateAsync Excluded and out-of-cluster filtering
+
+    [Test]
+    public async Task GetClusterStateAsync_WhenNodeNotInMajority_FiltersOutNonRespondingNode()
+    {
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" },
+            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" },
+            new QdrantNodeConfig { Host = "node3", Port = 6333, Namespace = "ns1", PodName = "pod3" }
+        };
+        var pod1Id = 1001UL;
+        var pod2Id = 1002UL;
+        var peersTwo = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+        {
+            { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() },
+            { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = peersTwo,
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var mockClient2 = _mockClients.GetOrAdd("node2:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient2.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod2Id,
+                    Peers = peersTwo,
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var mockClient3 = _mockClients.GetOrAdd("node3:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient3.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns<GetClusterInfoResponse>(_ => throw new HttpRequestException("Connection refused"));
+
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        Assert.That(state.Nodes, Has.Count.EqualTo(2));
+        Assert.That(state.Nodes.Select(n => n.PeerId), Does.Contain(pod1Id.ToString()));
+        Assert.That(state.Nodes.Select(n => n.PeerId), Does.Contain(pod2Id.ToString()));
+        Assert.That(state.Nodes.Any(n => n.PeerId == "node3:6333"), Is.False);
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WhenNoMajority_DoesNotFilterByMajority()
+    {
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns<GetClusterInfoResponse>(_ => throw new HttpRequestException("Connection refused"));
+
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        Assert.That(state.Nodes[0].PeerId, Is.EqualTo("node1:6333"));
+        Assert.That(state.Nodes[0].IsHealthy, Is.False);
+    }
+
     #endregion
 
     #region MessageSendFailures with Timestamp Tests
@@ -2553,7 +2782,7 @@ public class ClusterManagerTests
         var pod1Id = 1001UL;
         var pod2Id = 1002UL;
 
-        // Setup node1 as healthy
+        // Setup node1 as healthy (sees full cluster)
         var node1Key = nodes[0].Host + ":" + nodes[0].Port;
         var node1Client = _mockClients.GetOrAdd(node1Key, _ => Substitute.For<IQdrantHttpClient>());
         node1Client.GetClusterInfo(Arg.Any<CancellationToken>())
@@ -2571,18 +2800,19 @@ public class ClusterManagerTests
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
             }));
 
-        // Setup node2 as unhealthy (timeout)
+        // Setup node2 as unhealthy: responds but with different cluster view (split) so it gets marked inconsistent
         var node2Key = nodes[1].Host + ":" + nodes[1].Port;
         var node2Client = _mockClients.GetOrAdd(node2Key, _ => Substitute.For<IQdrantHttpClient>());
         node2Client.GetClusterInfo(Arg.Any<CancellationToken>())
-            .Returns(Task.Run(async () =>
+            .Returns(Task.FromResult(new GetClusterInfoResponse
             {
-                await Task.Delay(TimeSpan.FromSeconds(10));
-                return new GetClusterInfoResponse
+                Result = new GetClusterInfoResponse.ClusterInfo
                 {
-                    Result = new GetClusterInfoResponse.ClusterInfo(),
-                    Status = new QdrantStatus(QdrantOperationStatusType.Ok)
-                };
+                    PeerId = pod2Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(), // only self, so CurrentPeerIds = {1002}
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod2Id, Term = 2, Commit = 5 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
             }));
 
         // Setup Kubernetes warnings
@@ -2718,7 +2948,7 @@ public class ClusterManagerTests
         var pod1Id = 1001UL;
         var pod2Id = 1002UL;
 
-        // Setup node1 as healthy
+        // Setup node1 as healthy (sees full cluster)
         var node1Key = nodes[0].Host + ":" + nodes[0].Port;
         var node1Client = _mockClients.GetOrAdd(node1Key, _ => Substitute.For<IQdrantHttpClient>());
         node1Client.GetClusterInfo(Arg.Any<CancellationToken>())
@@ -2736,11 +2966,20 @@ public class ClusterManagerTests
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
             }));
 
-        // Setup node2 as unhealthy
+        // Setup node2 as unhealthy: responds but with different cluster view (split) so it gets marked inconsistent
         var node2Key = nodes[1].Host + ":" + nodes[1].Port;
         var node2Client = _mockClients.GetOrAdd(node2Key, _ => Substitute.For<IQdrantHttpClient>());
         node2Client.GetClusterInfo(Arg.Any<CancellationToken>())
-            .Returns<GetClusterInfoResponse>(_ => throw new OperationCanceledException());
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod2Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod2Id, Term = 2, Commit = 5 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
 
         // Act & Assert - should not throw
         var state = await clusterManager.GetClusterStateAsync(CancellationToken.None);
@@ -2769,7 +3008,8 @@ public class ClusterManagerTests
         var nodes = new[]
         {
             new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "qdrant", PodName = "pod1" },
-            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "qdrant", PodName = "pod2" }
+            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "qdrant", PodName = "pod2" },
+            new QdrantNodeConfig { Host = "node3", Port = 6333, Namespace = "qdrant", PodName = "pod3" }
         };
 
         _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
@@ -2777,30 +3017,56 @@ public class ClusterManagerTests
 
         var pod1Id = 1001UL;
         var pod2Id = 1002UL;
+        var pod3Id = 1003UL;
+        var majorityPeers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+        {
+            { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() },
+            { pod3Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+        };
 
-        // Setup node1 as healthy
-        var node1Key = nodes[0].Host + ":" + nodes[0].Port;
-        var node1Client = _mockClients.GetOrAdd(node1Key, _ => Substitute.For<IQdrantHttpClient>());
+        // Setup node1 and node2 as healthy (same view = majority)
+        var node1Client = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
         node1Client.GetClusterInfo(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new GetClusterInfoResponse
             {
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(majorityPeers),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+        var node2Client = _mockClients.GetOrAdd("node2:6333", _ => Substitute.For<IQdrantHttpClient>());
+        node2Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod2Id,
                     Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
                     {
-                        { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
+                        { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() },
+                        { pod3Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
                     },
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
             }));
 
-        // Setup node2 as unhealthy
-        var node2Key = nodes[1].Host + ":" + nodes[1].Port;
-        var node2Client = _mockClients.GetOrAdd(node2Key, _ => Substitute.For<IQdrantHttpClient>());
-        node2Client.GetClusterInfo(Arg.Any<CancellationToken>())
-            .Returns<GetClusterInfoResponse>(_ => throw new OperationCanceledException());
+        // Setup node3 as unhealthy: different view (split) so it gets marked inconsistent
+        var node3Client = _mockClients.GetOrAdd("node3:6333", _ => Substitute.For<IQdrantHttpClient>());
+        node3Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod3Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod3Id, Term = 2, Commit = 5 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
 
         // Setup Kubernetes manager to throw exception
         kubernetesManager.GetWarningEventsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -2811,7 +3077,7 @@ public class ClusterManagerTests
         
         Assert.That(state.Status, Is.EqualTo(ClusterStatus.Degraded), "Cluster should be degraded");
         // Should still return valid state even if K8s warnings fetch failed
-        Assert.That(state.Nodes, Has.Count.EqualTo(2));
+        Assert.That(state.Nodes, Has.Count.EqualTo(3));
     }
 
     #endregion

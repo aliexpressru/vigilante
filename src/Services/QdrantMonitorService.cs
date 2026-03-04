@@ -161,7 +161,7 @@ public class QdrantMonitorService(
             .Select(n => n.Url)
             .ToList();
 
-        var existingSnapshots = await snapshotService.GetSnapshotsInfoAsync(cancellationToken: token);
+        var existingSnapshots = await snapshotService.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: token, nodesToUse: nodes);
         var snapshotsByCollection = existingSnapshots
             .GroupBy(s => s.CollectionName)
             .ToDictionary(g => g.Key, g => g.ToList());

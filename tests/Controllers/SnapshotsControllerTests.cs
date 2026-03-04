@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Vigilante.Controllers;
+using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
@@ -18,6 +19,7 @@ public class SnapshotsControllerTests
     private ISnapshotService _snapshotService = null!;
     private IS3SnapshotService _s3SnapshotService = null!;
     private ICollectionService _collectionService = null!;
+    private IClusterManager _clusterManager = null!;
     private ILogger<SnapshotsController> _logger = null!;
     private SnapshotsController _controller = null!;
 
@@ -27,8 +29,11 @@ public class SnapshotsControllerTests
         _snapshotService = Substitute.For<ISnapshotService>();
         _s3SnapshotService = Substitute.For<IS3SnapshotService>();
         _collectionService = Substitute.For<ICollectionService>();
+        _clusterManager = Substitute.For<IClusterManager>();
+        _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())
+            .Returns(new ClusterState { Nodes = new List<NodeInfo>() });
         _logger = Substitute.For<ILogger<SnapshotsController>>();
-        _controller = new SnapshotsController(_snapshotService, _s3SnapshotService, _collectionService, _logger);
+        _controller = new SnapshotsController(_snapshotService, _s3SnapshotService, _collectionService, _clusterManager, _logger);
     }
 
     #region GetSnapshotsInfo Tests
@@ -63,7 +68,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -116,7 +121,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -155,7 +160,7 @@ public class SnapshotsControllerTests
             Source = SnapshotSource.KubernetesStorage
         }).ToList();
 
-        _snapshotService.GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -185,7 +190,7 @@ public class SnapshotsControllerTests
     {
         // Arrange
         var snapshots = new List<SnapshotInfo>();
-        _snapshotService.GetSnapshotsInfoAsync(true, Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -199,14 +204,14 @@ public class SnapshotsControllerTests
         await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        await _snapshotService.Received(1).GetSnapshotsInfoAsync(true, Arg.Any<CancellationToken>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(true, Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     [Test]
     public async Task GetSnapshotsInfo_WhenExceptionThrown_Returns500()
     {
         // Arrange
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(Task.FromException<IReadOnlyList<SnapshotInfo>>(new Exception("Test error")));
 
         var request = new V1GetSnapshotsInfoRequest
@@ -683,7 +688,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -696,7 +701,7 @@ public class SnapshotsControllerTests
         await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        await _snapshotService.Received(1).GetSnapshotsInfoAsync(true, Arg.Any<CancellationToken>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(true, Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     [Test]
@@ -718,7 +723,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -731,7 +736,7 @@ public class SnapshotsControllerTests
         await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        await _snapshotService.Received(1).GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     [Test]
@@ -753,7 +758,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -765,7 +770,7 @@ public class SnapshotsControllerTests
         await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        await _snapshotService.Received(1).GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     #endregion
