@@ -15,6 +15,7 @@ class VigilanteDashboard {
         this.downloadSnapshotEndpoint = '/api/v1/snapshots/download';
         this.recoverFromSnapshotEndpoint = '/api/v1/snapshots/recover';
         this.deletePodEndpoint = '/api/v1/kubernetes/delete-pod';
+        this.removePeerEndpoint = '/api/v1/cluster/remove-peer';
         this.manageStatefulSetEndpoint = '/api/v1/kubernetes/manage-statefulset';
         this.qdrantLogsEndpoint = '/api/v1/logs/qdrant';
         this.vigilanteLogsEndpoint = '/api/v1/logs/vigilante';
@@ -3038,6 +3039,8 @@ class VigilanteDashboard {
         });
 
         console.log('Nodes UI updated');
+        // Restore sticky actions panel open state after DOM update (so it stays open on auto-refresh)
+        this.restoreStickyActionsMenuState();
         // Note: loadCollectionSizes is called separately in refresh() to avoid duplicate calls
     }
 
@@ -3201,6 +3204,19 @@ class VigilanteDashboard {
             this.openNodeMenus.delete(node.peerId);
         });
         actionsDropdown.appendChild(recoverFromUrlAction);
+
+        // Remove Peer action (before Delete Pod)
+        const removePeerAction = document.createElement('button');
+        removePeerAction.className = 'node-action-item node-action-item-danger';
+        removePeerAction.innerHTML = '<i class="fas fa-user-minus"></i> Remove Peer';
+        removePeerAction.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.showRemovePeerModal(node);
+            actionsDropdown.classList.remove('show');
+            actionsMenuButton.classList.remove('active');
+            this.openNodeMenus.delete(node.peerId);
+        });
+        actionsDropdown.appendChild(removePeerAction);
         
         // Delete Pod action
         const deletePodAction = document.createElement('button');
@@ -4751,6 +4767,81 @@ class VigilanteDashboard {
             this.removeToast(toastId);
             this.showToast(`Error deleting pod: ${error.message}`, 'error', 'Error', 15000);
         }
+    }
+
+    showRemovePeerModal(node) {
+        const peerIdNum = parseInt(node.peerId, 10);
+        if (isNaN(peerIdNum) || node.peerId !== String(peerIdNum)) {
+            this.showToast('Remove Peer is only available for nodes with a numeric Peer ID (node must have responded to cluster).', 'error', 'Cannot remove', 8000);
+            return;
+        }
+        const nodeDisplay = node.podName ? `${node.podName} (Peer ${node.peerId})` : `Peer ${node.peerId}`;
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'modal-dialog';
+        modal.innerHTML = `
+            <div class="modal-header">
+                <h3><i class="fas fa-user-minus"></i> Remove Peer from Cluster</h3>
+                <button class="modal-close" type="button" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>You are about to remove the following node from the Qdrant cluster:</p>
+                <p class="remove-peer-node-name"><strong>${this.escapeHtml(nodeDisplay)}</strong></p>
+                <p>The node will no longer participate in the cluster. Ensure shards are migrated or use <strong>Force</strong> to remove even if the peer has shards/replicas.</p>
+                <label class="modal-checkbox-label">
+                    <input type="checkbox" id="removePeerForce" class="modal-checkbox">
+                    <span><strong>Force</strong> — remove peer even if it has shards/replicas on it (may cause data unavailability)</span>
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary modal-cancel">Cancel</button>
+                <button type="button" class="btn-primary modal-submit modal-submit-danger"><i class="fas fa-user-minus"></i> Remove Peer</button>
+            </div>
+        `;
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        const closeModal = () => {
+            overlay.removeEventListener('keydown', escHandler);
+            overlay.classList.add('closing');
+            setTimeout(() => overlay.remove(), 300);
+        };
+        const escHandler = (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeModal();
+            }
+        };
+        overlay.addEventListener('keydown', escHandler);
+        overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+        overlay.querySelector('.modal-cancel').addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+        const submitButton = overlay.querySelector('.modal-submit');
+        submitButton.addEventListener('click', async () => {
+            const force = overlay.querySelector('#removePeerForce').checked;
+            closeModal();
+            const toastId = this.showToast(`Removing peer ${node.peerId} from cluster...`, 'info', 'Remove Peer', 0, true);
+            try {
+                const response = await fetch(this.removePeerEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ peerId: peerIdNum, isForceDropOperation: force })
+                });
+                const data = await response.json().catch(() => ({}));
+                this.removeToast(toastId);
+                if (response.ok) {
+                    this.showToast(data.message || 'Peer removed from cluster.', 'success', 'Success', 5000);
+                    setTimeout(() => this.refresh(), 1500);
+                } else {
+                    this.showToast(data.error || data.details || 'Failed to remove peer', 'error', 'Error', 15000);
+                }
+            } catch (err) {
+                this.removeToast(toastId);
+                this.showToast(`Error: ${err.message}`, 'error', 'Error', 15000);
+            }
+        });
     }
 
     showStatefulSetDialog() {

@@ -523,9 +523,10 @@ public class SnapshotService(
 
     public async Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(
         bool clearCache = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<NodeInfo>? nodesToUse = null)
     {
-        logger.LogInformation("Starting GetSnapshotsInfoAsync (ClearCache: {ClearCache})", clearCache);
+        logger.LogInformation("Starting GetSnapshotsInfoAsync (ClearCache: {ClearCache}, NodesFromCaller: {NodesFromCaller})", clearCache, nodesToUse != null);
 
         await _cacheLock.WaitAsync(cancellationToken);
         try
@@ -537,16 +538,25 @@ public class SnapshotService(
                 _snapshotsCache = null;
             }
 
-            // Return cached data if available
-            if (_snapshotsCache != null)
+            // Return cached data if available (only when using default nodes - cache key is implicit)
+            if (_snapshotsCache != null && nodesToUse == null)
             {
                 logger.LogInformation("Returning {Count} snapshots from cache", _snapshotsCache.Count);
                 return _snapshotsCache;
             }
 
-            // Fetch fresh data
-            var nodes = await nodesProvider.BuildNodeInfoListAsync(cancellationToken);
-            logger.LogInformation("Found {NodesCount} nodes to process", nodes.Count);
+            // Use provided nodes (e.g. current cluster only) or fetch all from provider
+            List<NodeInfo> nodes;
+            if (nodesToUse != null)
+            {
+                nodes = nodesToUse.ToList();
+                logger.LogInformation("Using {NodesCount} nodes from caller (current cluster)", nodes.Count);
+            }
+            else
+            {
+                nodes = await nodesProvider.BuildNodeInfoListAsync(cancellationToken);
+                logger.LogInformation("Found {NodesCount} nodes to process", nodes.Count);
+            }
             
             var result = new List<SnapshotInfo>();
             bool hasErrors = false;
@@ -602,14 +612,13 @@ public class SnapshotService(
                 }
             }
 
-            // Cache the result only if we successfully fetched data (even if empty but without errors)
-            // If there were errors, don't cache so next request will try again
-            if (!hasErrors)
+            // Cache the result only when using provider nodes and no errors (so we don't mix filtered vs full node lists)
+            if (!hasErrors && nodesToUse == null)
             {
                 _snapshotsCache = result;
                 logger.LogInformation("Cached {Count} snapshots", result.Count);
             }
-            else
+            else if (hasErrors)
             {
                 logger.LogWarning("Not caching snapshots due to errors during fetch");
             }

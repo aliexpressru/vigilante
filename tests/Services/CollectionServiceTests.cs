@@ -2,6 +2,7 @@ using System.Reflection;
 using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Requests.Public;
 using Aer.QdrantClient.Http.Models.Responses;
+using Aer.QdrantClient.Http.Models.Responses.Shared;
 using Aer.QdrantClient.Http.Models.Shared;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -692,7 +693,7 @@ public class CollectionServiceTests
                         State = ShardState.Active
                     }
                 },
-                ShardTransfers = Array.Empty<GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+                ShardTransfers = Array.Empty<ShardTransferInfo>()
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -712,7 +713,7 @@ public class CollectionServiceTests
                         State = ShardState.Active
                     }
                 },
-                ShardTransfers = Array.Empty<GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+                ShardTransfers = Array.Empty<ShardTransferInfo>()
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -732,7 +733,7 @@ public class CollectionServiceTests
                         State = ShardState.Active
                     }
                 },
-                ShardTransfers = Array.Empty<GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+                ShardTransfers = Array.Empty<ShardTransferInfo>()
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -842,7 +843,7 @@ public class CollectionServiceTests
                         State = ShardState.Active
                     }
                 },
-                ShardTransfers = Array.Empty<GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+                ShardTransfers = Array.Empty<ShardTransferInfo>()
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -862,7 +863,7 @@ public class CollectionServiceTests
                         State = ShardState.Active
                     }
                 },
-                ShardTransfers = Array.Empty<GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+                ShardTransfers = Array.Empty<ShardTransferInfo>()
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -962,7 +963,7 @@ public class CollectionServiceTests
                         State = ShardState.Initializing
                     }
                 },
-                ShardTransfers = Array.Empty<GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+                ShardTransfers = Array.Empty<ShardTransferInfo>()
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -1799,7 +1800,7 @@ public class CollectionServiceTests
                     new GetCollectionClusteringInfoResponse.LocalShardInfo { ShardId = 1, State = ShardState.Partial },
                     new GetCollectionClusteringInfoResponse.LocalShardInfo { ShardId = 2, State = ShardState.Initializing }
                 },
-                ShardTransfers = Array.Empty<GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+                ShardTransfers = Array.Empty<ShardTransferInfo>()
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1915,7 +1916,7 @@ public class CollectionServiceTests
                 Result = new GetCollectionClusteringInfoResponse.CollectionClusteringInfo
                 {
                     LocalShards = Array.Empty<GetCollectionClusteringInfoResponse.LocalShardInfo>(),
-                    ShardTransfers = Array.Empty<GetCollectionClusteringInfoResponse.ShardTransferInfo>()
+                    ShardTransfers = Array.Empty<ShardTransferInfo>()
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
             });

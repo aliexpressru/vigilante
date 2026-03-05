@@ -29,6 +29,7 @@ public class ClusterManager(
     private readonly QdrantOptions _options = options.Value;
     private readonly ClusterPeerState _clusterState = new();
     private readonly ConcurrentDictionary<string, (DateTime Time, string Message)> _externalIssues = new();
+    private readonly ConcurrentDictionary<ulong, byte> _excludedPeerIds = new();
     private static readonly TimeSpan ExternalIssueTtl = TimeSpan.FromMinutes(30);
 
     public async Task<ClusterState> GetClusterStateAsync(CancellationToken cancellationToken = default)
@@ -39,8 +40,13 @@ public class ClusterManager(
 
         DetectClusterSplits(nodeStatuses);
 
+        // Exclude peers we explicitly removed via RemovePeer (they no longer respond; don't show as unhealthy).
+        // Also exclude nodes not in current cluster (e.g. after restart, or removed peer) so we don't show
+        // non-responding nodes that are simply not in the cluster anymore.
+        var visibleNodes = FilterNodesToCurrentCluster(nodeStatuses);
+
         // Mark nodes with MessageSendFailures as unhealthy if they weren't identified as part of a cluster split
-        foreach (var node in nodeStatuses)
+        foreach (var node in visibleNodes)
         {
             if (node.IsHealthy && 
                 node.ErrorType == NodeErrorType.MessageSendFailures)
@@ -52,7 +58,7 @@ public class ClusterManager(
         }
 
         // Sort nodes: by PodName if available and not 'unknown', otherwise by PeerId
-        var sortedNodes = nodeStatuses
+        var sortedNodes = visibleNodes
             .OrderBy(n => NodeSortingExtensions.GetNodeSortKey(n.PodName, n.PeerId))
             .ToList();
 
@@ -356,6 +362,53 @@ public class ClusterManager(
             direction,
             peerId,
             cancellationToken);
+    }
+
+    public async Task<bool> RemovePeerAsync(
+        ulong peerId,
+        bool isForceDropOperation = false,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation(
+            "Removing peer {PeerId} from cluster. ForceDrop: {IsForceDrop}, Timeout: {Timeout}",
+            peerId, isForceDropOperation, timeout?.ToString() ?? "default");
+
+        var state = await GetClusterStateAsync(cancellationToken);
+        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
+
+        if (healthyNode == null)
+        {
+            logger.LogError("No healthy nodes found to perform remove peer operation");
+            return false;
+        }
+
+        try
+        {
+            var client = clientFactory.CreateClientFromUrl(healthyNode.Url, _options.ApiKey);
+            var response = await client.RemovePeer(
+                peerId,
+                cancellationToken,
+                isForceDropOperation,
+                timeout,
+                clusterName: null);
+
+            if (response?.Status?.IsSuccess == true)
+            {
+                _excludedPeerIds.TryAdd(peerId, 0);
+                logger.LogInformation("Peer {PeerId} removed from cluster successfully; excluded from cluster state", peerId);
+                return true;
+            }
+
+            logger.LogError("Failed to remove peer {PeerId}: {Error}",
+                peerId, response?.Status?.Error ?? "Unknown error");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to remove peer {PeerId} from cluster", peerId);
+            return false;
+        }
     }
 
     private async Task<NodeInfo> GetNodeInfoAsync(QdrantNodeConfig node, CancellationToken cancellationToken)
@@ -746,6 +799,48 @@ public class ClusterManager(
         }
     }
 
+    /// <summary>
+    /// Filters out nodes that should not be shown: peers explicitly removed via RemovePeer,
+    /// and nodes not in the current cluster (e.g. non-responding after restart or removal).
+    /// </summary>
+    private NodeInfo[] FilterNodesToCurrentCluster(NodeInfo[] nodeStatuses)
+    {
+        var majorityPeerIds = _clusterState.MajorityPeerIds;
+
+        var filtered = nodeStatuses.Where(n =>
+        {
+            if (string.IsNullOrEmpty(n.PeerId))
+                return true;
+
+            if (ulong.TryParse(n.PeerId, out var peerIdNum) && _excludedPeerIds.ContainsKey(peerIdNum))
+            {
+                logger.LogDebug("Excluding peer {PeerId} from cluster state (explicitly removed)", n.PeerId);
+                return false;
+            }
+
+            // Only filter by majority when PeerId is host:port (node never responded). Nodes with numeric PeerId
+            // (responded at least once) stay visible so we can show them as unhealthy (e.g. cluster split minority).
+            if (majorityPeerIds.Count > 0 &&
+                !ulong.TryParse(n.PeerId, out _) &&
+                !majorityPeerIds.Contains(n.PeerId))
+            {
+                logger.LogDebug("Excluding node {PeerId} from cluster state (not in current cluster)", n.PeerId);
+                return false;
+            }
+
+            return true;
+        }).ToArray();
+
+        if (filtered.Length < nodeStatuses.Length)
+        {
+            logger.LogInformation(
+                "Filtered cluster state: {Visible} of {Total} nodes (excluded removed/out-of-cluster peers)",
+                filtered.Length, nodeStatuses.Length);
+        }
+
+        return filtered;
+    }
+
     private void DetectClusterSplits(NodeInfo[] nodes)
     {
         var healthyNodes = nodes.Where(n => n.IsHealthy && n.CurrentPeerIds.Count > 0).ToList();
@@ -823,7 +918,8 @@ public class ClusterManager(
 
         try
         {
-            var allSnapshots = await snapshotService.GetSnapshotsInfoAsync(clearCache: true, cancellationToken);
+            var state = await GetClusterStateAsync(cancellationToken);
+            var allSnapshots = await snapshotService.GetSnapshotsInfoAsync(clearCache: true, cancellationToken, state.Nodes);
             var collectionSnapshots = allSnapshots.Where(s => s.CollectionName == collectionName).ToList();
 
             if (collectionSnapshots.Count == 0)

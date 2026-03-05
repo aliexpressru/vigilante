@@ -692,3 +692,90 @@ public class V1AbortShardTransferRequestValidatorTests
     }
 }
 
+[TestFixture]
+public class V1RemovePeerRequestValidatorTests
+{
+    private V1RemovePeerRequestValidator _validator = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _validator = new V1RemovePeerRequestValidator();
+    }
+
+    [Test]
+    public void Validate_WithValidRequest_ShouldNotHaveErrors()
+    {
+        var request = new V1RemovePeerRequest
+        {
+            PeerId = 1001UL,
+            IsForceDropOperation = false,
+            TimeoutSeconds = null
+        };
+
+        var result = _validator.TestValidate(request);
+
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Test]
+    public void Validate_WithForceDrop_ShouldNotHaveErrors()
+    {
+        var request = new V1RemovePeerRequest
+        {
+            PeerId = 2002UL,
+            IsForceDropOperation = true,
+            TimeoutSeconds = null
+        };
+
+        var result = _validator.TestValidate(request);
+
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Test]
+    public void Validate_WithPositiveTimeoutSeconds_ShouldNotHaveErrors()
+    {
+        var request = new V1RemovePeerRequest
+        {
+            PeerId = 3003UL,
+            IsForceDropOperation = false,
+            TimeoutSeconds = 60
+        };
+
+        var result = _validator.TestValidate(request);
+
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Test]
+    public void Validate_WithTimeoutSecondsZero_ShouldHaveError()
+    {
+        var request = new V1RemovePeerRequest
+        {
+            PeerId = 1001UL,
+            TimeoutSeconds = 0
+        };
+
+        var result = _validator.TestValidate(request);
+
+        result.ShouldHaveValidationErrorFor(x => x.TimeoutSeconds)
+            .WithErrorMessage("Timeout must be positive when specified");
+    }
+
+    [Test]
+    public void Validate_WithTimeoutSecondsNegative_ShouldHaveError()
+    {
+        var request = new V1RemovePeerRequest
+        {
+            PeerId = 1001UL,
+            TimeoutSeconds = -10
+        };
+
+        var result = _validator.TestValidate(request);
+
+        result.ShouldHaveValidationErrorFor(x => x.TimeoutSeconds)
+            .WithErrorMessage("Timeout must be positive when specified");
+    }
+}
+
