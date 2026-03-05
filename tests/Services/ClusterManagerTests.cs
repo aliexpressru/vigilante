@@ -6,6 +6,7 @@ using NUnit.Framework;
 using System.Collections.Concurrent;
 using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Responses;
+using Aer.QdrantClient.Http.Models.Responses.Shared;
 using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Configuration;
 using Vigilante.Constants;
@@ -2484,9 +2485,9 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = peerId,
-                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    ConsensusThreadStatus = new ConsensusThreadState
                     {
-                        ConsensusThreadStatus = "working",
+                        ConsensusThreadStatus = ConsensusThreadStatus.Working,
                         LastUpdate = consensusUpdateTime,
                         Err = null
                     },
@@ -2541,9 +2542,9 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = peerId,
-                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    ConsensusThreadStatus = new ConsensusThreadState
                     {
-                        ConsensusThreadStatus = "working",
+                        ConsensusThreadStatus = ConsensusThreadStatus.Working,
                         LastUpdate = consensusUpdateTime,
                         Err = null
                     },
@@ -2600,9 +2601,9 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = peerId,
-                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    ConsensusThreadStatus = new ConsensusThreadState
                     {
-                        ConsensusThreadStatus = "working",
+                        ConsensusThreadStatus = ConsensusThreadStatus.Working,
                         LastUpdate = consensusUpdateTime,
                         Err = null
                     },
@@ -2719,9 +2720,9 @@ public class ClusterManagerTests
                 {
                     PeerId = peerId,
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = peerId },
-                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    ConsensusThreadStatus = new ConsensusThreadState
                     {
-                        ConsensusThreadStatus = "working",
+                        ConsensusThreadStatus = ConsensusThreadStatus.Working,
                         LastUpdate = consensusUpdateTime,
                         Err = null
                     },
@@ -3107,9 +3108,9 @@ public class ClusterManagerTests
                 {
                     PeerId = peerId,
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = peerId },
-                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    ConsensusThreadStatus = new ConsensusThreadState
                     {
-                        ConsensusThreadStatus = "working",
+                        ConsensusThreadStatus = ConsensusThreadStatus.Working,
                         LastUpdate = DateTime.UtcNow,
                         Err = null
                     },
@@ -3185,9 +3186,9 @@ public class ClusterManagerTests
                 {
                     PeerId = peerId,
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = peerId },
-                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    ConsensusThreadStatus = new ConsensusThreadState
                     {
-                        ConsensusThreadStatus = "working",
+                        ConsensusThreadStatus = ConsensusThreadStatus.Working,
                         LastUpdate = DateTime.UtcNow,
                         Err = null
                     },
@@ -3279,9 +3280,9 @@ public class ClusterManagerTests
                 {
                     PeerId = peerId,
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = peerId },
-                    ConsensusThreadStatus = new GetClusterInfoResponse.ConsensusThreadStatusUnit
+                    ConsensusThreadStatus = new ConsensusThreadState
                     {
-                        ConsensusThreadStatus = "working",
+                        ConsensusThreadStatus = ConsensusThreadStatus.Working,
                         LastUpdate = DateTime.UtcNow,
                         Err = null
                     },
