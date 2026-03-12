@@ -1103,5 +1103,135 @@ public class SnapshotServiceTests
     }
 
     #endregion
+
+    #region EnforceRetentionAsync Tests
+
+    [Test]
+    public async Task EnforceRetentionAsync_WhenCurrentClusterPeerIdsProvided_DeletesOrphanedPeerSnapshots()
+    {
+        // Arrange: S3 returns snapshots for collection "col1" from 3 peers: 111, 222 (current) and 999 (orphan)
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+        _nodesProvider.BuildNodeInfoListAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new List<NodeInfo>
+            {
+                new() { Url = "http://node1:6333", PeerId = "111", Namespace = "ns1", PodName = "pod1", LastSeen = DateTime.UtcNow }
+            }));
+
+        _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        var s3Snapshots = new List<(string CollectionName, string SnapshotName, long SizeBytes)>
+        {
+            ("col1", "col1-111-2026-03-01-12-00-00.snapshot", 1000),
+            ("col1", "col1-222-2026-03-01-12-00-00.snapshot", 1000),
+            ("col1", "col1-999-2026-03-01-11-00-00.snapshot", 500) // orphan peer
+        };
+        _s3SnapshotService.ListAllSnapshotsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(s3Snapshots));
+
+        _s3SnapshotService.DeleteSnapshotAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        var currentClusterPeerIds = new HashSet<string> { "111", "222" };
+
+        // Act
+        await _snapshotManager.EnforceRetentionAsync("col1", retainLastN: 1, currentClusterPeerIds, CancellationToken.None);
+
+        // Assert: orphan peer 999 snapshot must be deleted
+        await _s3SnapshotService.Received(1).DeleteSnapshotAsync(
+            "col1",
+            "col1-999-2026-03-01-11-00-00.snapshot",
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task EnforceRetentionAsync_WhenCurrentClusterPeerIdsProvided_AppliesRetainLastN_ToCurrentPeersOnly()
+    {
+        // Arrange: two snapshots for peer 111 (keep last 1), one for orphan 999 (delete all)
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+        _nodesProvider.BuildNodeInfoListAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new List<NodeInfo>
+            {
+                new() { Url = "http://node1:6333", PeerId = "111", Namespace = "ns1", PodName = "pod1", LastSeen = DateTime.UtcNow }
+            }));
+
+        _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        var s3Snapshots = new List<(string CollectionName, string SnapshotName, long SizeBytes)>
+        {
+            ("col1", "col1-111-2026-03-01-10-00-00.snapshot", 1000),
+            ("col1", "col1-111-2026-03-01-12-00-00.snapshot", 1000),
+            ("col1", "col1-999-2026-03-01-11-00-00.snapshot", 500)
+        };
+        _s3SnapshotService.ListAllSnapshotsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(s3Snapshots));
+
+        _s3SnapshotService.DeleteSnapshotAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        var currentClusterPeerIds = new HashSet<string> { "111" };
+
+        // Act
+        await _snapshotManager.EnforceRetentionAsync("col1", retainLastN: 1, currentClusterPeerIds, CancellationToken.None);
+
+        // Assert: delete older 111 snapshot (10:00) and all 999 snapshots
+        await _s3SnapshotService.Received(1).DeleteSnapshotAsync(
+            "col1",
+            "col1-111-2026-03-01-10-00-00.snapshot",
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+        await _s3SnapshotService.Received(1).DeleteSnapshotAsync(
+            "col1",
+            "col1-999-2026-03-01-11-00-00.snapshot",
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task EnforceRetentionAsync_WhenCurrentClusterPeerIdsNull_DoesNotDeleteByOrphanRule()
+    {
+        // Arrange: one snapshot per peer (111, 222, 999). With null currentClusterPeerIds we only apply retain-last-N;
+        // each group has 1 snapshot, retain 1 -> no deletion from retention. So no delete calls.
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+        _nodesProvider.BuildNodeInfoListAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new List<NodeInfo>
+            {
+                new() { Url = "http://node1:6333", PeerId = "111", Namespace = "ns1", PodName = "pod1", LastSeen = DateTime.UtcNow }
+            }));
+
+        _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        var s3Snapshots = new List<(string CollectionName, string SnapshotName, long SizeBytes)>
+        {
+            ("col1", "col1-111-2026-03-01-12-00-00.snapshot", 1000),
+            ("col1", "col1-999-2026-03-01-11-00-00.snapshot", 500)
+        };
+        _s3SnapshotService.ListAllSnapshotsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(s3Snapshots));
+
+        _s3SnapshotService.DeleteSnapshotAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        // Act: null currentClusterPeerIds -> no orphan rule, retain 1 per group; each has 1 so nothing to delete
+        await _snapshotManager.EnforceRetentionAsync("col1", retainLastN: 1, currentClusterPeerIds: null, CancellationToken.None);
+
+        // Assert: no deletions (each group has 1 snapshot, we keep 1)
+        await _s3SnapshotService.DidNotReceive().DeleteSnapshotAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    #endregion
 }
 

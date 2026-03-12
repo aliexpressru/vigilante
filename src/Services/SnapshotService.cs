@@ -898,6 +898,7 @@ public class SnapshotService(
     public async Task EnforceRetentionAsync(
         string collectionName,
         int retainLastN,
+        IReadOnlySet<string>? currentClusterPeerIds = null,
         CancellationToken cancellationToken = default)
     {
         logger.LogInformation(
@@ -919,6 +920,29 @@ public class SnapshotService(
 
         foreach (var group in groups)
         {
+            // Delete all snapshots for orphaned peers (peer ID not in current cluster)
+            if (currentClusterPeerIds != null
+                && group.Key.Length > 0
+                && group.Key.All(char.IsDigit)
+                && !currentClusterPeerIds.Contains(group.Key))
+            {
+                logger.LogInformation(
+                    "Deleting {Count} orphaned peer snapshots for collection {CollectionName} (peer {PeerId} not in current cluster)",
+                    group.Count(), collectionName, group.Key);
+                foreach (var snapshot in group)
+                {
+                    await DeleteSnapshotAsync(
+                        collectionName,
+                        snapshot.SnapshotName,
+                        snapshot.Source,
+                        nodeUrl: snapshot.NodeUrl == S3Constants.StorageIdentifier ? null : snapshot.NodeUrl,
+                        podName: snapshot.PodName == S3Constants.StorageIdentifier ? null : snapshot.PodName,
+                        podNamespace: snapshot.PodNamespace,
+                        cancellationToken: cancellationToken);
+                }
+                continue;
+            }
+
             // Sort by parsed creation date; fall back to lexicographic order if date is unavailable
             var sorted = group
                 .Select(s => (Snapshot: s, Info: ParseSnapshotName(s.SnapshotName, collectionName)))

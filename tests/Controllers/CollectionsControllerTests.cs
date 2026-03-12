@@ -15,6 +15,7 @@ namespace Aer.Vigilante.Tests.Controllers;
 public class CollectionsControllerTests
 {
     private IClusterManager _clusterManager = null!;
+    private IRestoreReplicationFactorJobService _restoreReplicationFactorJobService = null!;
     private ILogger<CollectionsController> _logger = null!;
     private CollectionsController _controller = null!;
 
@@ -22,9 +23,10 @@ public class CollectionsControllerTests
     public void Setup()
     {
         _clusterManager = Substitute.For<IClusterManager>();
+        _restoreReplicationFactorJobService = Substitute.For<IRestoreReplicationFactorJobService>();
         _logger = Substitute.For<ILogger<CollectionsController>>();
-        
-        _controller = new CollectionsController(_clusterManager, _logger);
+
+        _controller = new CollectionsController(_clusterManager, _restoreReplicationFactorJobService, _logger);
     }
 
     #region GetCollectionsInfo (Paginated) Tests
@@ -775,6 +777,99 @@ public class CollectionsControllerTests
         Assert.That(objectResult.StatusCode, Is.EqualTo(500));
         var response = objectResult.Value as V1DeleteCollectionAliasResponse;
         Assert.That(response!.Success, Is.False);
+    }
+
+    #endregion
+
+    #region RestoreReplicationFactor Tests
+
+    [Test]
+    public async Task RestoreReplicationFactor_WhenStarted_Returns202Accepted()
+    {
+        _restoreReplicationFactorJobService
+            .RequestRestoreReplicationFactorAsync(Arg.Any<string>(), Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(new RestoreReplicationFactorStartResult(
+                ApiError: false,
+                AlreadyInProgress: false,
+                Message: "Restore replication factor process started for collection col1"));
+
+        var request = new V1RestoreReplicationFactorRequest { CollectionName = "col1" };
+
+        var result = await _controller.RestoreReplicationFactor(request, CancellationToken.None);
+
+        Assert.That(result.Result, Is.InstanceOf<AcceptedResult>());
+        var accepted = (AcceptedResult)result.Result!;
+        var response = accepted.Value as V1RestoreReplicationFactorResponse;
+        Assert.That(response, Is.Not.Null);
+        Assert.That(response!.Status, Is.EqualTo("Started"));
+        Assert.That(response.Message, Does.Contain("col1"));
+    }
+
+    [Test]
+    public async Task RestoreReplicationFactor_WhenAlreadyInProgress_Returns409Conflict()
+    {
+        _restoreReplicationFactorJobService
+            .RequestRestoreReplicationFactorAsync(Arg.Any<string>(), Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(new RestoreReplicationFactorStartResult(
+                ApiError: false,
+                AlreadyInProgress: true,
+                Message: "Restore replication factor already in progress for this collection"));
+
+        var request = new V1RestoreReplicationFactorRequest { CollectionName = "col1" };
+
+        var result = await _controller.RestoreReplicationFactor(request, CancellationToken.None);
+
+        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        var conflict = (ObjectResult)result.Result!;
+        Assert.That(conflict.StatusCode, Is.EqualTo(409));
+        var response = conflict.Value as V1RestoreReplicationFactorResponse;
+        Assert.That(response, Is.Not.Null);
+        Assert.That(response!.Status, Is.EqualTo("AlreadyInProgress"));
+    }
+
+    [Test]
+    public async Task RestoreReplicationFactor_WhenApiError_Returns500()
+    {
+        _restoreReplicationFactorJobService
+            .RequestRestoreReplicationFactorAsync(Arg.Any<string>(), Arg.Any<Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(new RestoreReplicationFactorStartResult(
+                ApiError: true,
+                AlreadyInProgress: false,
+                Message: "No healthy node available"));
+
+        var request = new V1RestoreReplicationFactorRequest { CollectionName = "col1" };
+
+        var result = await _controller.RestoreReplicationFactor(request, CancellationToken.None);
+
+        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result.Result!;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+    }
+
+    [Test]
+    public async Task CancelRestoreReplicationFactor_WhenCancelled_Returns200WithMessage()
+    {
+        _restoreReplicationFactorJobService.CancelJobAsync("col1", Arg.Any<CancellationToken>()).Returns(true);
+
+        var request = new V1RestoreReplicationFactorCancelRequest { CollectionName = "col1" };
+
+        var result = await _controller.CancelRestoreReplicationFactor(request, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        var ok = (OkObjectResult)result!;
+        Assert.That(ok.Value, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task CancelRestoreReplicationFactor_WhenNoJob_Returns200WithNoRunningMessage()
+    {
+        _restoreReplicationFactorJobService.CancelJobAsync("col1", Arg.Any<CancellationToken>()).Returns(false);
+
+        var request = new V1RestoreReplicationFactorCancelRequest { CollectionName = "col1" };
+
+        var result = await _controller.CancelRestoreReplicationFactor(request, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
     }
 
     #endregion

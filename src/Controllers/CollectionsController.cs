@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
+using Vigilante.Extensions;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
 using Vigilante.Services.Interfaces;
+using Aer.QdrantClient.Http.Models.Shared;
 
 namespace Vigilante.Controllers;
 
@@ -9,6 +11,7 @@ namespace Vigilante.Controllers;
 [Route("api/v1/collections")]
 public class CollectionsController(
     IClusterManager clusterManager,
+    IRestoreReplicationFactorJobService restoreReplicationFactorJobService,
     ILogger<CollectionsController> logger)
     : ControllerBase
 {
@@ -335,6 +338,79 @@ public class CollectionsController(
                 Message = "Internal server error during delete alias",
                 Error = ex.Message
             });
+        }
+    }
+
+    [HttpPost("restore-replication-factor")]
+    [ProducesResponseType(typeof(V1RestoreReplicationFactorResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(V1RestoreReplicationFactorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(V1RestoreReplicationFactorResponse), StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<V1RestoreReplicationFactorResponse>> RestoreReplicationFactor(
+        [FromBody] V1RestoreReplicationFactorRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var transferMethod = request.ShardTransferMethod.TryParseEnum<ShardTransferMethod>();
+            var result = await restoreReplicationFactorJobService.RequestRestoreReplicationFactorAsync(
+                request.CollectionName,
+                transferMethod,
+                timeout: null,
+                cancellationToken);
+
+            if (result.AlreadyInProgress)
+            {
+                return Conflict(new V1RestoreReplicationFactorResponse
+                {
+                    Status = "AlreadyInProgress",
+                    Message = result.Message
+                });
+            }
+
+            if (result.ApiError)
+            {
+                return StatusCode(500, new V1RestoreReplicationFactorResponse
+                {
+                    Status = "Error",
+                    Message = result.Message
+                });
+            }
+
+            return Accepted(new V1RestoreReplicationFactorResponse
+            {
+                Status = "Started",
+                Message = result.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error starting restore replication factor for collection {CollectionName}", request.CollectionName);
+            return StatusCode(500, new V1RestoreReplicationFactorResponse
+            {
+                Status = "Error",
+                Message = "Internal server error",
+                RemainingSteps = null
+            });
+        }
+    }
+
+    [HttpPost("restore-replication-factor/cancel")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CancelRestoreReplicationFactor(
+        [FromBody] V1RestoreReplicationFactorCancelRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var cancelled = await restoreReplicationFactorJobService.CancelJobAsync(request.CollectionName, cancellationToken);
+            return Ok(new { message = cancelled ? "Cancellation requested for " + request.CollectionName : "No running operation found for " + request.CollectionName });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error cancelling restore replication factor for collection {CollectionName}", request.CollectionName);
+            return StatusCode(500, new { error = ex.Message });
         }
     }
 }

@@ -127,10 +127,12 @@ public interface ISnapshotService
 
     /// <summary>
     /// Enforces retention policy: keeps last N snapshots per node for a collection, deletes older ones.
+    /// When <paramref name="currentClusterPeerIds"/> is provided, snapshots belonging to peers not in the set (orphaned peers) are deleted entirely.
     /// </summary>
     Task EnforceRetentionAsync(
         string collectionName,
         int retainLastN,
+        IReadOnlySet<string>? currentClusterPeerIds = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
