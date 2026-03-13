@@ -11,9 +11,7 @@ public class QdrantMonitorService(
     IJobRegistry jobRegistry,
     IMeterService meterService,
     IDynamicConfigService dynamicConfigService,
-    ISnapshotService snapshotService,
-    SnapshotOrphanedState snapshotOrphanedState,
-    ILogger<SnapshotAutomationJob> snapshotJobLogger,
+    IServiceProvider serviceProvider,
     ILogger<QdrantMonitorService> logger)
     : BackgroundService
 {
@@ -63,10 +61,10 @@ public class QdrantMonitorService(
 
                     if (state.Health.IsHealthy)
                     {
-                        var snapshotJob = new SnapshotAutomationJob(snapshotService, clusterManager, snapshotOrphanedState, state.Nodes, DynamicConfig, snapshotJobLogger);
+                        var snapshotJob = new SnapshotAutomationJob(serviceProvider, state.Nodes, DynamicConfig);
                         var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
                         jobRegistry.TryAddJob(snapshotJob, cts);
-                        await ProcessPendingJobsAsync(stoppingToken);
+                        await jobRegistry.ProcessPendingJobsAsync(stoppingToken);
                     }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -134,68 +132,6 @@ public class QdrantMonitorService(
         catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
         {
             logger.LogDebug("Delay interrupted due to configuration change");
-        }
-    }
-
-    private async Task ProcessPendingJobsAsync(CancellationToken stoppingToken)
-    {
-        var jobs = jobRegistry.GetPendingJobs();
-        if (jobs.Count == 0)
-            return;
-
-        var tasks = jobs.Select(pending => ProcessOneJobAsync(pending, stoppingToken));
-        await Task.WhenAll(tasks);
-    }
-
-    private async Task ProcessOneJobAsync(PendingJob pending, CancellationToken stoppingToken)
-    {
-        var job = pending.Job;
-        var key = job.Key;
-        var cts = pending.CancellationTokenSource;
-
-        try
-        {
-            if (stoppingToken.IsCancellationRequested)
-                return;
-
-            if (cts.Token.IsCancellationRequested)
-            {
-                await jobRegistry.RemoveJobAsync(key);
-                return;
-            }
-
-            if (job.IsWaitingForReady)
-            {
-                var ready = await job.CheckReadyAsync(cts.Token);
-                if (ready == true)
-                    job.OnReady();
-            }
-            else
-            {
-                var (hasMore, success, error) = await job.AdvanceAsync(cts.Token);
-                if (!hasMore)
-                {
-                    await jobRegistry.RemoveJobAsync(key);
-                    if (success)
-                        logger.LogInformation("Job completed for key {Key}", key);
-                }
-                else if (!success)
-                {
-                    jobRegistry.RecordJobFailure(key, error ?? "Unknown");
-                    await jobRegistry.RemoveJobAsync(key);
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogInformation("Job cancelled for key {Key}", key);
-            await jobRegistry.RemoveJobAsync(key);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Job failed for key {Key}", key);
-            jobRegistry.RecordJobFailure(key, ex.Message);
-            await jobRegistry.RemoveJobAsync(key);
         }
     }
 

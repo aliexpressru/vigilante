@@ -17,6 +17,7 @@ public sealed class RestoreReplicationFactorJobService(
     IJobRegistry jobRegistry,
     IQdrantClientFactory clientFactory,
     IOptions<QdrantOptions> options,
+    IServiceProvider serviceProvider,
     ILogger<RestoreReplicationFactorJobService> logger) : IRestoreReplicationFactorJobService
 {
     private readonly QdrantOptions _options = options.Value;
@@ -40,7 +41,7 @@ public sealed class RestoreReplicationFactorJobService(
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var client = clientFactory.CreateClientFromUrl(healthyNode.Url, _options.ApiKey);
         var transferMethod = shardTransferMethod ?? ShardTransferMethod.Snapshot;
-        var (job, initialFailureMessage) = await RestoreReplicationFactorJob.CreateAsync(client, collectionName, transferMethod, timeout, cts.Token, logger);
+        var (job, initialFailureMessage) = await RestoreReplicationFactorJob.CreateAsync(serviceProvider, client, collectionName, transferMethod, timeout, cts.Token);
 
         if (initialFailureMessage != null)
         {

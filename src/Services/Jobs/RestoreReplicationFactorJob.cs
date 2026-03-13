@@ -2,6 +2,7 @@ using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Infrastructure.Replication;
 using Aer.QdrantClient.Http.Models.Responses;
 using Aer.QdrantClient.Http.Models.Shared;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Vigilante.Services.Interfaces;
 
@@ -18,7 +19,6 @@ internal sealed class RestoreReplicationFactorJob : IJob
     private readonly ShardReplicator? _replicator;
     private bool _waitingForReady;
     private bool _disposed;
-    private readonly ILogger _logger;
 
     public string Key => _collectionName;
     public bool IsWaitingForReady => _waitingForReady;
@@ -28,28 +28,28 @@ internal sealed class RestoreReplicationFactorJob : IJob
         string collectionName,
         IAsyncEnumerator<ReplicateShardsToPeerResponse> enumerator,
         ShardReplicator? replicator,
-        bool waitingForReady,
-        ILogger logger)
+        bool waitingForReady)
     {
         _client = client;
         _collectionName = collectionName;
         _enumerator = enumerator;
         _replicator = replicator;
         _waitingForReady = waitingForReady;
-        _logger = logger;
     }
 
     /// <summary>
     /// Creates job: gets replicator, creates enumerator, calls MoveNextAsync() once (starts first replication).
+    /// Resolves ILogger from the service provider for the API call.
     /// </summary>
     public static async Task<(IJob? Job, string? InitialFailureMessage)> CreateAsync(
+        IServiceProvider serviceProvider,
         IQdrantHttpClient client,
         string collectionName,
         ShardTransferMethod transferMethod,
         TimeSpan? timeout,
-        CancellationToken cancellationToken,
-        ILogger logger)
+        CancellationToken cancellationToken)
     {
+        var logger = serviceProvider.GetRequiredService<ILogger<RestoreReplicationFactorJob>>();
         var response = await client.RestoreShardReplicationFactor(
             collectionName,
             cancellationToken,
@@ -85,7 +85,7 @@ internal sealed class RestoreReplicationFactorJob : IJob
             }
         }
 
-        var job = new RestoreReplicationFactorJob(client, collectionName, enumerator, replicator, waitingForReady: true, logger);
+        var job = new RestoreReplicationFactorJob(client, collectionName, enumerator, replicator, waitingForReady: true);
         return (job, null);
     }
 

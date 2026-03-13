@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -23,6 +24,7 @@ public class SnapshotServiceTests
     private ILogger<SnapshotService> _logger = null!;
     private IS3SnapshotService _s3SnapshotService = null!;
     private IPodCommandExecutor _commandExecutor = null!;
+    private IJobRegistry _jobRegistry = null!;
     private SnapshotService _snapshotManager = null!;
 
     [SetUp]
@@ -33,22 +35,26 @@ public class SnapshotServiceTests
         _options = Substitute.For<IOptions<QdrantOptions>>();
         _logger = Substitute.For<ILogger<SnapshotService>>();
         _commandExecutor = Substitute.For<IPodCommandExecutor>();
-        
+        _jobRegistry = Substitute.For<IJobRegistry>();
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+
         _options.Value.Returns(new QdrantOptions { HttpTimeoutSeconds = 5 });
-        
+
         // Mock S3SnapshotService to avoid real S3 dependencies in tests
         _s3SnapshotService = Substitute.For<IS3SnapshotService>();
-        
+
         // Default: S3 is not available (tests can override this)
         _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(false));
-        
+
         _snapshotManager = new SnapshotService(
             _nodesProvider,
             _clientFactory,
             _s3SnapshotService,
             _commandExecutor,
             _options,
+            _jobRegistry,
+            serviceProvider,
             _logger);
     }
 

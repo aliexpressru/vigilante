@@ -26,20 +26,23 @@ public class JobsControllerTests
     [Test]
     public async Task GetJobsStatus_WhenNoJobs_Returns200EmptyList()
     {
+        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         _jobRegistry.GetJobInfos().Returns(Array.Empty<JobInfoDto>());
 
-        var result = await Task.FromResult(_controller.GetJobsStatus());
+        var result = await _controller.GetJobsStatus(CancellationToken.None);
 
         Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
         var ok = (OkObjectResult)result.Result!;
         var list = ok.Value as IReadOnlyList<JobInfoDto>;
         Assert.That(list, Is.Not.Null);
         Assert.That(list!, Is.Empty);
+        await _jobRegistry.Received(1).ProcessPendingJobsAsync(Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task GetJobsStatus_WhenJobsExist_Returns200WithList()
     {
+        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         var infos = new List<JobInfoDto>
         {
             new("job1", null, null, null),
@@ -47,7 +50,7 @@ public class JobsControllerTests
         };
         _jobRegistry.GetJobInfos().Returns(infos);
 
-        var result = await Task.FromResult(_controller.GetJobsStatus());
+        var result = await _controller.GetJobsStatus(CancellationToken.None);
 
         Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
         var ok = (OkObjectResult)result.Result!;
@@ -57,14 +60,16 @@ public class JobsControllerTests
         Assert.That(list[0].Key, Is.EqualTo("job1"));
         Assert.That(list[1].Key, Is.EqualTo("job2"));
         Assert.That(list[1].ErrorMessage, Is.EqualTo("error"));
+        await _jobRegistry.Received(1).ProcessPendingJobsAsync(Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public void GetJobsStatus_WhenRegistryThrows_Returns500()
+    public async Task GetJobsStatus_WhenRegistryThrows_Returns500()
     {
+        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         _jobRegistry.GetJobInfos().Returns(_ => throw new InvalidOperationException("registry broken"));
 
-        var result = _controller.GetJobsStatus();
+        var result = await _controller.GetJobsStatus(CancellationToken.None);
 
         Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
         var objectResult = (ObjectResult)result.Result!;

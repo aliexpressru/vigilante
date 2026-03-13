@@ -41,4 +41,10 @@ public interface IJobRegistry
     /// Returns current job infos for API: key, optional error, metadata (e.g. ReplicationPlan).
     /// </summary>
     IReadOnlyList<JobInfoDto> GetJobInfos();
+
+    /// <summary>
+    /// Advances all pending jobs (AdvanceAsync / CheckReadyAsync). Removes completed or failed jobs.
+    /// Call from monitor tick and on frontend refresh so jobs like PendingSnapshotCreationJob progress without waiting for the full monitor interval.
+    /// </summary>
+    Task ProcessPendingJobsAsync(CancellationToken cancellationToken = default);
 }
