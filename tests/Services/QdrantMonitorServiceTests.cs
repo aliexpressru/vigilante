@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -18,9 +19,7 @@ public class QdrantMonitorServiceTests
     private IMeterService _meterService = null!;
     private ILogger<QdrantMonitorService> _logger = null!;
     private IDynamicConfigService _dynamicConfigService = null!;
-    private ISnapshotService _snapshotService = null!;
-    private SnapshotOrphanedState _snapshotOrphanedState = null!;
-    private ILogger<SnapshotAutomationJob> _snapshotJobLogger = null!;
+    private IServiceProvider _serviceProvider = null!;
     private QdrantMonitorService _monitorService = null!;
 
     [SetUp]
@@ -31,21 +30,27 @@ public class QdrantMonitorServiceTests
         _meterService = Substitute.For<IMeterService>();
         _logger = Substitute.For<ILogger<QdrantMonitorService>>();
         _dynamicConfigService = Substitute.For<IDynamicConfigService>();
-        _snapshotService = Substitute.For<ISnapshotService>();
-        _snapshotOrphanedState = new SnapshotOrphanedState();
-        _snapshotJobLogger = Substitute.For<ILogger<SnapshotAutomationJob>>();
+        var snapshotService = Substitute.For<ISnapshotService>();
+        var snapshotOrphanedState = new SnapshotOrphanedState();
+        var snapshotJobLogger = Substitute.For<ILogger<SnapshotAutomationJob>>();
+        _serviceProvider = new ServiceCollection()
+            .AddSingleton(_clusterManager)
+            .AddSingleton(snapshotService)
+            .AddSingleton(snapshotOrphanedState)
+            .AddSingleton(snapshotJobLogger)
+            .BuildServiceProvider();
 
         _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new DynamicConfig { MonitoringIntervalSeconds = 5 }));
+
+        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
 
         _monitorService = new QdrantMonitorService(
             _clusterManager,
             _jobRegistry,
             _meterService,
             _dynamicConfigService,
-            _snapshotService,
-            _snapshotOrphanedState,
-            _snapshotJobLogger,
+            _serviceProvider,
             _logger);
     }
 
@@ -53,6 +58,7 @@ public class QdrantMonitorServiceTests
     public void TearDown()
     {
         _monitorService?.Dispose();
+        (_serviceProvider as IDisposable)?.Dispose();
     }
 
     #region Helper Methods
@@ -478,15 +484,14 @@ public class QdrantMonitorServiceTests
                 Snapshot = new SnapshotConfiguration { Schedule = new Schedule { Enabled = true } }
             }));
 
-        var realJobRegistry = new JobRegistry();
+        var jobRegistryLogger = Substitute.For<ILogger<JobRegistry>>();
+        var realJobRegistry = new JobRegistry(jobRegistryLogger);
         var monitor = new QdrantMonitorService(
             _clusterManager,
             realJobRegistry,
             _meterService,
             _dynamicConfigService,
-            _snapshotService,
-            _snapshotOrphanedState,
-            _snapshotJobLogger,
+            _serviceProvider,
             _logger);
 
         using var cts = new CancellationTokenSource();

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -6,6 +7,7 @@ using Vigilante.Configuration;
 using Vigilante.Models;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
+using Vigilante.Services.Jobs;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -15,6 +17,7 @@ public class RestoreReplicationFactorJobServiceTests
     private IClusterManager _clusterManager = null!;
     private IJobRegistry _jobRegistry = null!;
     private ILogger<RestoreReplicationFactorJobService> _logger = null!;
+    private IServiceProvider _serviceProvider = null!;
 
     [SetUp]
     public void SetUp()
@@ -22,6 +25,15 @@ public class RestoreReplicationFactorJobServiceTests
         _clusterManager = Substitute.For<IClusterManager>();
         _jobRegistry = Substitute.For<IJobRegistry>();
         _logger = Substitute.For<ILogger<RestoreReplicationFactorJobService>>();
+        _serviceProvider = new ServiceCollection()
+            .AddLogging()
+            .BuildServiceProvider();
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        (_serviceProvider as IDisposable)?.Dispose();
     }
 
     [Test]
@@ -42,6 +54,7 @@ public class RestoreReplicationFactorJobServiceTests
             _jobRegistry,
             clientFactory,
             options,
+            _serviceProvider,
             _logger);
 
         var result = await service.RequestRestoreReplicationFactorAsync("col1", null, null, CancellationToken.None);
@@ -65,6 +78,7 @@ public class RestoreReplicationFactorJobServiceTests
             _jobRegistry,
             clientFactory,
             options,
+            _serviceProvider,
             _logger);
 
         var cancelled = await service.CancelJobAsync("col1", CancellationToken.None);
@@ -87,6 +101,7 @@ public class RestoreReplicationFactorJobServiceTests
             _jobRegistry,
             clientFactory,
             options,
+            _serviceProvider,
             _logger);
 
         var cancelled = await service.CancelJobAsync("col1", CancellationToken.None);

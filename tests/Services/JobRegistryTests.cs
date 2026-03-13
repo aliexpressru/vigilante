@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Vigilante.Models;
@@ -14,7 +15,8 @@ public class JobRegistryTests
     [SetUp]
     public void SetUp()
     {
-        _registry = new JobRegistry();
+        var logger = Substitute.For<ILogger<JobRegistry>>();
+        _registry = new JobRegistry(logger);
     }
 
     [Test]
@@ -137,10 +139,14 @@ public class JobRegistryTests
 
         var infos = _registry.GetJobInfos();
 
-        Assert.That(infos, Has.Count.EqualTo(1)); // only job1 is in registry; job2 error is stored but no job
-        Assert.That(infos[0].Key, Is.EqualTo("job1"));
-        Assert.That(infos[0].ErrorMessage, Is.Null);
-        Assert.That(infos[0].Metadata, Is.Not.Null);
+        // job1 is active; job2 is recently failed (no job in registry) — both are returned so frontend can show them
+        Assert.That(infos, Has.Count.EqualTo(2));
+        var job1Info = infos.Single(i => i.Key == "job1");
+        Assert.That(job1Info.ErrorMessage, Is.Null);
+        Assert.That(job1Info.Metadata, Is.Not.Null);
+        var job2Info = infos.Single(i => i.Key == "job2");
+        Assert.That(job2Info.ErrorMessage, Is.EqualTo("job2 failed"));
+        Assert.That(job2Info.Metadata, Is.Null);
     }
 
     [Test]
@@ -155,6 +161,19 @@ public class JobRegistryTests
 
         Assert.That(infos, Has.Count.EqualTo(1));
         Assert.That(infos[0].ErrorMessage, Is.EqualTo("failed"));
+    }
+
+    [Test]
+    public async Task ProcessPendingJobsAsync_WhenJobCompletes_RemovesJob()
+    {
+        var job = CreateFakeJob("job1");
+        var cts = new CancellationTokenSource();
+        _registry.TryAddJob(job, cts);
+
+        await _registry.ProcessPendingJobsAsync(CancellationToken.None);
+
+        Assert.That(_registry.GetPendingJobs(), Has.Count.EqualTo(0));
+        await job.Received(1).AdvanceAsync(Arg.Any<CancellationToken>());
     }
 
     private static IJob CreateFakeJob(string key)

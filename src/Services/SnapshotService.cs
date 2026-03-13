@@ -7,6 +7,7 @@ using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
+using Vigilante.Services.Jobs;
 
 namespace Vigilante.Services;
 
@@ -19,6 +20,8 @@ public class SnapshotService(
     IS3SnapshotService s3SnapshotService,
     IPodCommandExecutor? commandExecutor,
     IOptions<QdrantOptions> options,
+    IJobRegistry jobRegistry,
+    IServiceProvider serviceProvider,
     ILogger<SnapshotService> logger) : ISnapshotService
 {
     private readonly QdrantOptions _options = options.Value;
@@ -73,10 +76,11 @@ public class SnapshotService(
         CancellationToken cancellationToken = default,
         bool waitForResult = false)
     {
+        var requestedAt = DateTime.UtcNow;
         var nodeUrlsList = nodeUrls.ToList();
         logger.LogInformation(
-            "Creating snapshot for collection {CollectionName} on {NodeCount} specified nodes", 
-            collectionName, 
+            "Creating snapshot for collection {CollectionName} on {NodeCount} specified nodes",
+            collectionName,
             nodeUrlsList.Count);
 
         var results = new Dictionary<string, string?>();
@@ -101,10 +105,25 @@ public class SnapshotService(
 
         var successCount = results.Values.Count(s => s != null);
         logger.LogInformation(
-            "Snapshot created for collection {CollectionName}: {SuccessCount}/{TotalCount} nodes", 
-            collectionName, 
-            successCount, 
+            "Snapshot created for collection {CollectionName}: {SuccessCount}/{TotalCount} nodes",
+            collectionName,
+            successCount,
             results.Count);
+
+        if (!waitForResult && successCount > 0)
+        {
+            var succeededNodeUrls = results.Where(kv => kv.Value != null).Select(kv => kv.Key).ToList();
+            var requestedNodes = succeededNodeUrls
+                .Select(url => new NodeInfo { Url = url })
+                .ToList();
+            var job = new PendingSnapshotCreationJob(
+                serviceProvider,
+                collectionName,
+                requestedNodes,
+                requestedAt);
+            var cts = new CancellationTokenSource();
+            jobRegistry.TryAddJob(job, cts);
+        }
 
         return results;
     }

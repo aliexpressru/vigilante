@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -20,6 +21,7 @@ public class SnapshotAutomationJobTests
     private IClusterManager _clusterManager = null!;
     private SnapshotOrphanedState _orphanedState = null!;
     private ILogger<SnapshotAutomationJob> _logger = null!;
+    private IServiceProvider _serviceProvider = null!;
 
     [SetUp]
     public void SetUp()
@@ -28,7 +30,22 @@ public class SnapshotAutomationJobTests
         _clusterManager = Substitute.For<IClusterManager>();
         _orphanedState = new SnapshotOrphanedState();
         _logger = Substitute.For<ILogger<SnapshotAutomationJob>>();
+        _serviceProvider = new ServiceCollection()
+            .AddSingleton(_snapshotService)
+            .AddSingleton(_clusterManager)
+            .AddSingleton(_orphanedState)
+            .AddSingleton(_logger)
+            .BuildServiceProvider();
     }
+
+    [TearDown]
+    public void TearDown()
+    {
+        (_serviceProvider as IDisposable)?.Dispose();
+    }
+
+    private SnapshotAutomationJob CreateJob(IReadOnlyList<NodeInfo>? nodes = null, DynamicConfig? config = null) =>
+        new(_serviceProvider, nodes ?? HealthyNodes(), config ?? new DynamicConfig());
 
     private static IReadOnlyList<CollectionInfo> GreenHnswCollection(string name, string nodeUrl = "http://node1:6333") =>
         new List<CollectionInfo>
@@ -66,7 +83,7 @@ public class SnapshotAutomationJobTests
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(GreenHnswCollection("col1"));
 
-        var job = new SnapshotAutomationJob(_snapshotService, _clusterManager, _orphanedState, HealthyNodes(), config, _logger);
+        var job = CreateJob(config: config);
 
         await job.AdvanceAsync(CancellationToken.None);
 
@@ -85,7 +102,7 @@ public class SnapshotAutomationJobTests
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
             .Returns(new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" });
 
-        var job = new SnapshotAutomationJob(_snapshotService, _clusterManager, _orphanedState, HealthyNodes(), config, _logger);
+        var job = CreateJob(config: config);
 
         var (hasMore, success, _) = await job.AdvanceAsync(CancellationToken.None);
 
@@ -107,7 +124,7 @@ public class SnapshotAutomationJobTests
                 new() { CollectionName = "col1", SnapshotName = "col1-20240101-peer1", PodName = "", NodeUrl = "http://node1:6333", PeerId = "peer1", PodNamespace = "", Source = SnapshotSource.KubernetesStorage }
             });
 
-        var job = new SnapshotAutomationJob(_snapshotService, _clusterManager, _orphanedState, HealthyNodes(), config, _logger);
+        var job = CreateJob(config: config);
 
         await job.AdvanceAsync(CancellationToken.None);
 
@@ -124,12 +141,12 @@ public class SnapshotAutomationJobTests
 
         var yellowCollection = new List<CollectionInfo> { new() { CollectionName = "col1", Status = QdrantCollectionStatus.Yellow, HnswM = 16 } };
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(yellowCollection);
-        var job1 = new SnapshotAutomationJob(_snapshotService, _clusterManager, _orphanedState, HealthyNodes(), config, _logger);
+        var job1 = CreateJob(config: config);
         await job1.AdvanceAsync(CancellationToken.None);
 
         var noHnswCollection = new List<CollectionInfo> { new() { CollectionName = "col1", Status = QdrantCollectionStatus.Green, HnswM = 0 } };
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(noHnswCollection);
-        var job2 = new SnapshotAutomationJob(_snapshotService, _clusterManager, _orphanedState, HealthyNodes(), config, _logger);
+        var job2 = CreateJob(config: config);
         await job2.AdvanceAsync(CancellationToken.None);
 
         await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
@@ -148,7 +165,7 @@ public class SnapshotAutomationJobTests
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
             .Returns(new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" });
 
-        var job = new SnapshotAutomationJob(_snapshotService, _clusterManager, _orphanedState, HealthyNodes(), config, _logger);
+        var job = CreateJob(config: config);
 
         await job.AdvanceAsync(CancellationToken.None);
 
@@ -168,7 +185,7 @@ public class SnapshotAutomationJobTests
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
             .ThrowsAsync(new Exception("connection refused"));
 
-        var job = new SnapshotAutomationJob(_snapshotService, _clusterManager, _orphanedState, HealthyNodes(), config, _logger);
+        var job = CreateJob(config: config);
 
         var (hasMore, success, error) = await job.AdvanceAsync(CancellationToken.None);
 
@@ -189,7 +206,7 @@ public class SnapshotAutomationJobTests
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
             .Returns(new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" });
 
-        var job = new SnapshotAutomationJob(_snapshotService, _clusterManager, _orphanedState, HealthyNodes(), config, _logger);
+        var job = CreateJob(config: config);
 
         await job.AdvanceAsync(CancellationToken.None);
 
@@ -199,14 +216,14 @@ public class SnapshotAutomationJobTests
     [Test]
     public void Key_ReturnsSnapshotAutomationJobKey()
     {
-        var job = new SnapshotAutomationJob(_snapshotService, _clusterManager, _orphanedState, HealthyNodes(), new DynamicConfig(), _logger);
+        var job = CreateJob();
         Assert.That(job.Key, Is.EqualTo(SnapshotAutomationJob.JobKey));
     }
 
     [Test]
     public void IsWaitingForReady_IsFalse()
     {
-        var job = new SnapshotAutomationJob(_snapshotService, _clusterManager, _orphanedState, HealthyNodes(), new DynamicConfig(), _logger);
+        var job = CreateJob();
         Assert.That(job.IsWaitingForReady, Is.False);
     }
 
@@ -223,7 +240,7 @@ public class SnapshotAutomationJobTests
             .Returns(new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" });
 
         var nodes = HealthyNodes("http://node1:6333", "111");
-        var job = new SnapshotAutomationJob(_snapshotService, _clusterManager, _orphanedState, nodes, config, _logger);
+        var job = CreateJob(nodes, config);
 
         await job.AdvanceAsync(CancellationToken.None);
 
