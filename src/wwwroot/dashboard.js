@@ -17,6 +17,9 @@ class VigilanteDashboard {
         this.deletePodEndpoint = '/api/v1/kubernetes/delete-pod';
         this.removePeerEndpoint = '/api/v1/cluster/remove-peer';
         this.manageStatefulSetEndpoint = '/api/v1/kubernetes/manage-statefulset';
+        this.restoreReplicationFactorEndpoint = '/api/v1/collections/restore-replication-factor';
+        this.restoreReplicationFactorCancelEndpoint = '/api/v1/collections/restore-replication-factor/cancel';
+        this.jobsStatusEndpoint = '/api/v1/jobs/status';
         this.qdrantLogsEndpoint = '/api/v1/logs/qdrant';
         this.vigilanteLogsEndpoint = '/api/v1/logs/vigilante';
         this.environmentEndpoint = '/api/v1/config/environment';
@@ -50,6 +53,7 @@ class VigilanteDashboard {
         this.snapshotPageSize = 10;
         this.snapshotTotalPages = 1;
         this.snapshotNameFilter = '';
+        this.jobs = []; // Background jobs from GET /api/v1/jobs/status
         this.init();
         this.setupRefreshControls();
         this.setupCollectionControls();
@@ -93,6 +97,7 @@ class VigilanteDashboard {
         this.loadClusterStatus();
         this.loadCollectionSizes();
         this.loadSnapshots();
+        this.loadJobs();
         this.loadEnvironment();
         
         // Setup StatefulSet management button
@@ -295,7 +300,8 @@ class VigilanteDashboard {
         this.loadClusterStatus();
         this.loadCollectionSizes(true); // Clear cache on manual/auto refresh
         this.loadSnapshots(true); // Clear cache on manual/auto refresh
-        
+        this.loadJobs();
+
         // Restore sticky actions menu state after refresh
         this.restoreStickyActionsMenuState();
     }
@@ -950,6 +956,69 @@ class VigilanteDashboard {
         }
     }
 
+    async loadJobs() {
+        try {
+            const response = await fetch(this.jobsStatusEndpoint);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            this.jobs = Array.isArray(data) ? data : [];
+            this.updateJobs();
+        } catch (error) {
+            console.error('Error loading jobs:', error);
+            this.jobs = [];
+            this.updateJobs();
+        }
+    }
+
+    updateJobs() {
+        const container = document.getElementById('jobsList');
+        if (!container) return;
+
+        if (this.jobs.length === 0) {
+            container.innerHTML = '<p class="jobs-empty">No background jobs</p>';
+            return;
+        }
+
+        container.innerHTML = this.jobs.map(job => {
+            const key = job.key || 'unknown';
+            const error = job.errorMessage || null;
+            const errorAt = job.errorRecordedAt ? new Date(job.errorRecordedAt).toLocaleString() : '';
+            const meta = job.metadata || {};
+            const currentAction = meta.currentAction != null
+                ? (Array.isArray(meta.currentAction) ? meta.currentAction.join(' · ') : String(meta.currentAction))
+                : (meta.CurrentAction != null ? (Array.isArray(meta.CurrentAction) ? meta.CurrentAction.join(' · ') : String(meta.CurrentAction)) : null);
+            const metaRest = Object.entries(meta).filter(([k]) => k !== 'CurrentAction' && k !== 'currentAction');
+            const metaStr = metaRest.length
+                ? metaRest.map(([k, v]) => {
+                    const val = Array.isArray(v) ? v.join(', ') : (typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v));
+                    return `${k}: ${val}`;
+                }).join(' · ')
+                : '';
+
+            const statusClass = error ? 'job-status-error' : 'job-status-running';
+            const statusText = error ? 'Error' : 'Running';
+            const errorBlock = error
+                ? `<div class="job-error">${this.escapeHtml(error)}${errorAt ? ` <span class="job-error-at">${errorAt}</span>` : ''}</div>`
+                : '';
+            const currentActionBlock = currentAction ? `<div class="job-current-action">${this.escapeHtml(currentAction)}</div>` : '';
+            const metaBlock = metaStr ? `<div class="job-meta">${this.escapeHtml(metaStr)}</div>` : '';
+
+            return `
+                <div class="job-item">
+                    <div class="job-header">
+                        <span class="job-key">${this.escapeHtml(key)}</span>
+                        <span class="job-status ${statusClass}">${statusText}</span>
+                    </div>
+                    ${currentActionBlock}
+                    ${errorBlock}
+                    ${metaBlock}
+                </div>
+            `;
+        }).join('');
+    }
+
     async loadCollectionSizes(clearCache = false) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
@@ -1430,6 +1499,44 @@ class VigilanteDashboard {
                 topRow.style.flexDirection = 'row';
                 topRow.style.alignItems = 'center';
                 topRow.style.gap = '8px';
+
+                // Check if collection has non-Active shards or active transfers (show warning icon)
+                let hasNonActiveShards = false;
+                let hasActiveTransfers = false;
+                for (const nodeInfo of collection.nodes) {
+                    const m = nodeInfo.metrics || {};
+                    if (m.outgoingTransfers && Array.isArray(m.outgoingTransfers) && m.outgoingTransfers.length > 0) {
+                        hasActiveTransfers = true;
+                    }
+                    if (m.shards && Array.isArray(m.shards)) {
+                        for (const shard of m.shards) {
+                            let state = '';
+                            if (typeof shard === 'object' && shard !== null && shard.state != null) {
+                                state = String(shard.state);
+                            } else if (m.shardStates && typeof shard !== 'object') {
+                                state = m.shardStates[String(shard)] || '';
+                            }
+                            if (state && state.toLowerCase() !== 'active') {
+                                hasNonActiveShards = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hasNonActiveShards && hasActiveTransfers) break;
+                }
+                const showWarningIcon = hasNonActiveShards || hasActiveTransfers;
+                if (showWarningIcon) {
+                    const reasons = [];
+                    if (hasNonActiveShards) reasons.push('Shards not in Active state');
+                    if (hasActiveTransfers) reasons.push('Active shard transfers in progress');
+                    const tooltipText = reasons.join('; ');
+                    const warningIcon = document.createElement('span');
+                    warningIcon.className = 'collection-status-warning-icon';
+                    warningIcon.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                    warningIcon.setAttribute('data-tooltip', tooltipText);
+                    warningIcon.setAttribute('aria-label', `Warning: ${tooltipText}`);
+                    topRow.appendChild(warningIcon);
+                }
                 
                 // Collection Status (if available)
                 if (collection.status) {
@@ -1552,6 +1659,34 @@ class VigilanteDashboard {
                     this.showManageAliasesModal(collection);
                 });
                 collectionActionsDropdown.appendChild(manageAliasesAction);
+
+                // Restore replication factor action
+                const restoreRfAction = document.createElement('button');
+                restoreRfAction.className = 'collection-action-item';
+                restoreRfAction.innerHTML = '<i class="fas fa-sync-alt"></i> Restore replication factor';
+                restoreRfAction.title = 'Start background job to restore replication factor for this collection';
+                restoreRfAction.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    collectionActionsDropdown.classList.remove('show');
+                    collectionActionsMenuButton.classList.remove('active');
+                    this.openCollectionMenus.delete(collection.name);
+                    await this.startRestoreReplicationFactor(collection.name);
+                });
+                collectionActionsDropdown.appendChild(restoreRfAction);
+
+                // Cancel restore replication factor action
+                const cancelRrfAction = document.createElement('button');
+                cancelRrfAction.className = 'collection-action-item';
+                cancelRrfAction.innerHTML = '<i class="fas fa-stop-circle"></i> Cancel RRF';
+                cancelRrfAction.title = 'Cancel running restore replication factor job for this collection';
+                cancelRrfAction.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    collectionActionsDropdown.classList.remove('show');
+                    collectionActionsMenuButton.classList.remove('active');
+                    this.openCollectionMenus.delete(collection.name);
+                    await this.cancelRestoreReplicationFactor(collection.name);
+                });
+                collectionActionsDropdown.appendChild(cancelRrfAction);
                 
                 collectionActionsMenuContainer.appendChild(collectionActionsMenuButton);
                 collectionActionsMenuContainer.appendChild(collectionActionsDropdown);
@@ -4500,6 +4635,63 @@ class VigilanteDashboard {
                 'error',
                 'Error Creating Snapshot'
             );
+        }
+    }
+
+    async startRestoreReplicationFactor(collectionName) {
+        const toastId = this.showToast(
+            `Starting restore replication factor for '${collectionName}'...`,
+            'info',
+            'Restore Replication Factor',
+            0,
+            true
+        );
+        try {
+            const response = await fetch(this.restoreReplicationFactorEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ collectionName })
+            });
+            const result = await response.json();
+            if (response.ok && (response.status === 202 || response.status === 200)) {
+                this.updateToast(toastId, result.message || 'Restore replication factor started.', 'success', 'Restore Replication Factor');
+                this.loadJobs();
+            } else if (response.status === 409) {
+                this.updateToast(toastId, result.message || 'Already in progress.', 'warning', 'Restore Replication Factor');
+                this.loadJobs();
+            } else {
+                this.updateToast(toastId, result.message || `HTTP ${response.status}`, 'error', 'Restore Replication Factor');
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`Error: ${this.getErrorMessage(error)}`, 'error', 'Restore Replication Factor', 10000);
+        }
+    }
+
+    async cancelRestoreReplicationFactor(collectionName) {
+        const toastId = this.showToast(
+            `Cancelling restore replication factor for '${collectionName}'...`,
+            'info',
+            'Cancel RRF',
+            0,
+            true
+        );
+        try {
+            const response = await fetch(this.restoreReplicationFactorCancelEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ collectionName })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                this.updateToast(toastId, data.message || 'Cancellation requested.', 'success', 'Cancel RRF');
+                this.loadJobs();
+            } else {
+                this.updateToast(toastId, data.error || data.message || `HTTP ${response.status}`, 'error', 'Cancel RRF');
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`Error: ${this.getErrorMessage(error)}`, 'error', 'Cancel RRF', 10000);
         }
     }
 

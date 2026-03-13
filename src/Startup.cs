@@ -48,8 +48,11 @@ public class Startup(IConfiguration configuration)
         services.AddQdrantClientFactory();
         
         // Core services
+        services.AddSingleton<IJobRegistry, JobRegistry>();
+        services.AddSingleton<IRestoreReplicationFactorJobService, RestoreReplicationFactorJobService>();
         services.AddSingleton<ICollectionService, CollectionService>();
         services.AddSingleton<ISnapshotService, SnapshotService>();
+        services.AddSingleton<SnapshotOrphanedState>();
         services.AddSingleton<IClusterManager, ClusterManager>();
         services.AddSingleton<ILogReader, LogReader>();
         

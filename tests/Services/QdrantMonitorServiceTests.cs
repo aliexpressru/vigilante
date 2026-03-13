@@ -1,14 +1,12 @@
-using Aer.QdrantClient.Http.Models.Shared;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
-using Vigilante.Constants;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
-using SnapshotInfo = Vigilante.Models.SnapshotInfo;
+using Vigilante.Services.Jobs;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -16,30 +14,38 @@ namespace Aer.Vigilante.Tests.Services;
 public class QdrantMonitorServiceTests
 {
     private IClusterManager _clusterManager = null!;
+    private IJobRegistry _jobRegistry = null!;
     private IMeterService _meterService = null!;
     private ILogger<QdrantMonitorService> _logger = null!;
     private IDynamicConfigService _dynamicConfigService = null!;
     private ISnapshotService _snapshotService = null!;
+    private SnapshotOrphanedState _snapshotOrphanedState = null!;
+    private ILogger<SnapshotAutomationJob> _snapshotJobLogger = null!;
     private QdrantMonitorService _monitorService = null!;
 
     [SetUp]
     public void SetUp()
     {
         _clusterManager = Substitute.For<IClusterManager>();
+        _jobRegistry = Substitute.For<IJobRegistry>();
         _meterService = Substitute.For<IMeterService>();
         _logger = Substitute.For<ILogger<QdrantMonitorService>>();
         _dynamicConfigService = Substitute.For<IDynamicConfigService>();
         _snapshotService = Substitute.For<ISnapshotService>();
+        _snapshotOrphanedState = new SnapshotOrphanedState();
+        _snapshotJobLogger = Substitute.For<ILogger<SnapshotAutomationJob>>();
 
-        // Setup dynamic config service to return default config
         _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new DynamicConfig { MonitoringIntervalSeconds = 5 }));
 
         _monitorService = new QdrantMonitorService(
             _clusterManager,
+            _jobRegistry,
             _meterService,
             _dynamicConfigService,
             _snapshotService,
+            _snapshotOrphanedState,
+            _snapshotJobLogger,
             _logger);
     }
 
@@ -431,295 +437,69 @@ public class QdrantMonitorServiceTests
 
     #endregion
 
-    #region ProcessSnapshotAutomationAsync Tests
+    #region Job execution (healthy cluster)
 
-    private static IReadOnlyList<CollectionInfo> GreenHnswCollection(string name, string nodeUrl = "http://node1:6333") =>
-        new List<CollectionInfo>
-        {
-            new()
+    [Test]
+    public async Task ExecuteAsync_WhenClusterHealthy_AddsSnapshotJobAndProcesses()
+    {
+        var healthyState = CreateHealthyState();
+        healthyState.Nodes[0].Url = "http://node1:6333";
+        _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())
+            .Returns(healthyState);
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<CollectionInfo>());
+        _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new DynamicConfig { MonitoringIntervalSeconds = 60 }));
+
+        using var cts = new CancellationTokenSource();
+        _ = _monitorService.StartAsync(cts.Token);
+
+        await Task.Delay(2500, CancellationToken.None);
+        cts.Cancel();
+        await Task.Delay(500, CancellationToken.None);
+
+        _jobRegistry.Received(1).TryAddJob(Arg.Is<SnapshotAutomationJob>(j => j.Key == SnapshotAutomationJob.JobKey), Arg.Any<CancellationTokenSource>());
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WhenSnapshotJobFails_RecordsJobFailure()
+    {
+        var healthyState = CreateHealthyState();
+        healthyState.Nodes[0].Url = "http://node1:6333";
+        _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())
+            .Returns(healthyState);
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("collections failed"));
+
+        _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new DynamicConfig
             {
-                CollectionName = name,
-                NodeUrl = nodeUrl,
-                Status = QdrantCollectionStatus.Green,
-                HnswM = 16
-            }
-        };
+                MonitoringIntervalSeconds = 60,
+                Snapshot = new SnapshotConfiguration { Schedule = new Schedule { Enabled = true } }
+            }));
 
-    private static IReadOnlyList<NodeInfo> HealthyNodes(string url = "http://node1:6333", string peerId = "peer1") =>
-        new List<NodeInfo> { new() { Url = url, IsHealthy = true, PeerId = peerId } };
+        var realJobRegistry = new JobRegistry();
+        var monitor = new QdrantMonitorService(
+            _clusterManager,
+            realJobRegistry,
+            _meterService,
+            _dynamicConfigService,
+            _snapshotService,
+            _snapshotOrphanedState,
+            _snapshotJobLogger,
+            _logger);
 
-    private static DynamicConfig ScheduleEnabled(int? intervalMinutes = null, int? retainLastN = null) =>
-        new()
-        {
-            Snapshot = new SnapshotConfiguration
-            {
-                Schedule = new Schedule
-                {
-                    Enabled = true,
-                    IntervalMinutes = intervalMinutes,
-                    RetainLastN = retainLastN
-                }
-            }
-        };
+        using var cts = new CancellationTokenSource();
+        _ = monitor.StartAsync(cts.Token);
 
-    [Test]
-    public async Task ProcessSnapshotAutomation_ScheduleDisabled_DoesNotFetchSnapshots()
-    {
-        // Arrange — _dynamicConfig stays default (schedule disabled)
+        await Task.Delay(3000, CancellationToken.None);
+        cts.Cancel();
+        await Task.Delay(500, CancellationToken.None);
 
-        var collections = GreenHnswCollection("col1");
-
-        // Act
-        await _monitorService.ProcessSnapshotAutomationAsync(collections, HealthyNodes(), CancellationToken.None);
-
-        // Assert
-        await _snapshotService.DidNotReceive().GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
-    }
-
-    [Test]
-    public async Task ProcessSnapshotAutomation_OnGreenOnce_NoExistingSnapshots_CreatesSnapshot()
-    {
-        // Arrange
-        _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: null);
-
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(new List<SnapshotInfo>());
-
-        _snapshotService.CreateCollectionSnapshotAsync(
-                Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
-            .Returns(new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" });
-
-        // Act
-        await _monitorService.ProcessSnapshotAutomationAsync(
-            GreenHnswCollection("col1"), HealthyNodes(), CancellationToken.None);
-
-        // Assert
-        await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
-            "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>());
-    }
-
-    [Test]
-    public async Task ProcessSnapshotAutomation_OnGreenOnce_ExistingSnapshotsPresent_SkipsSnapshot()
-    {
-        // Arrange
-        _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: null);
-
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(new List<SnapshotInfo>
-            {
-                // Snapshot name contains "peer1" — the peerId of the healthy node
-                new() { CollectionName = "col1", SnapshotName = "col1-20240101-peer1", PodName = "", NodeUrl = "http://node1:6333", PeerId = "peer1", PodNamespace = "" }
-            });
-
-        // Act
-        await _monitorService.ProcessSnapshotAutomationAsync(
-            GreenHnswCollection("col1"), HealthyNodes(), CancellationToken.None);
-
-        // Assert
-        await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
-            Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>());
-    }
-
-    [Test]
-    public async Task ProcessSnapshotAutomation_OnGreenOnce_SnapshotExistsOnSomeNodes_SnapshotsOnlyMissingNodes()
-    {
-        // Arrange — node1 already has a snapshot, node2 does not
-        _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: null);
-
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(new List<SnapshotInfo>
-            {
-                // Snapshot name contains "peer1" — node1 is covered, node2 (peer2) is not
-                new() { CollectionName = "col1", SnapshotName = "col1-20240101-peer1", PodName = "", NodeUrl = "http://node1:6333", PeerId = "peer1", PodNamespace = "" }
-            });
-
-        _snapshotService.CreateCollectionSnapshotAsync(
-                Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
-            .Returns(new Dictionary<string, string?> { ["http://node2:6333"] = "col1-20240101-peer2" });
-
-        var twoNodes = new List<NodeInfo>
-        {
-            new() { Url = "http://node1:6333", IsHealthy = true, PeerId = "peer1" },
-            new() { Url = "http://node2:6333", IsHealthy = true, PeerId = "peer2" }
-        };
-
-        // Act
-        await _monitorService.ProcessSnapshotAutomationAsync(
-            GreenHnswCollection("col1"), twoNodes, CancellationToken.None);
-
-        // Assert — snapshot created only on node2
-        await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
-            "col1",
-            Arg.Is<IEnumerable<string>>(urls => urls.SequenceEqual(new[] { "http://node2:6333" })),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<bool>());
-    }
-
-    [Test]
-    public async Task ProcessSnapshotAutomation_CollectionNotGreenOrNoHnsw_SkipsSnapshot()
-    {
-        // Arrange
-        _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: null);
-
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(Task.FromResult<IReadOnlyList<SnapshotInfo>>(new List<SnapshotInfo>()));
-
-        var yellowCollection = new List<CollectionInfo>
-        {
-            new() { CollectionName = "col1", Status = QdrantCollectionStatus.Yellow, HnswM = 16 }
-        };
-        var noHnswCollection = new List<CollectionInfo>
-        {
-            new() { CollectionName = "col1", Status = QdrantCollectionStatus.Green, HnswM = 0 }
-        };
-
-        // Act
-        await _monitorService.ProcessSnapshotAutomationAsync(yellowCollection, HealthyNodes(), CancellationToken.None);
-        await _monitorService.ProcessSnapshotAutomationAsync(noHnswCollection, HealthyNodes(), CancellationToken.None);
-
-        // Assert
-        await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
-            Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>());
-    }
-
-    [Test]
-    public async Task ProcessSnapshotAutomation_IntervalBased_WhenDue_CreatesSnapshot()
-    {
-        // Arrange
-        _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: 60);
-
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(new List<SnapshotInfo>());
-
-        _snapshotService.CreateCollectionSnapshotAsync(
-                Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
-            .Returns(new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" });
-
-        // Act — first call, no last snapshot time recorded => due immediately
-        await _monitorService.ProcessSnapshotAutomationAsync(
-            GreenHnswCollection("col1"), HealthyNodes(), CancellationToken.None);
-
-        // Assert
-        await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
-            "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>());
-    }
-
-    [Test]
-    public async Task ProcessSnapshotAutomation_IntervalBased_NotDueYet_SkipsSnapshot()
-    {
-        // Arrange — a recent snapshot exists for node1/peer1, so the node is not due
-        _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: 60);
-
-        var recentSnapshot = new SnapshotInfo
-        {
-            CollectionName = "col1",
-            SnapshotName = "col1-peer1-2026-02-24-10-00-00",
-            CreatedAt = DateTime.UtcNow.AddMinutes(-5), // 5 min ago — well within the 60-min interval
-            NodeUrl = "http://node1:6333",
-            PeerId = "peer1",
-            PodName = "pod1",
-            PodNamespace = "default",
-            Source = SnapshotSource.KubernetesStorage
-        };
-
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(new List<SnapshotInfo> { recentSnapshot });
-
-        // Act
-        await _monitorService.ProcessSnapshotAutomationAsync(
-            GreenHnswCollection("col1"), HealthyNodes(), CancellationToken.None);
-
-        // Assert — no new snapshot created
-        await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
-            "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>());
-    }
-
-    [Test]
-    public async Task ProcessSnapshotAutomation_IntervalBased_FailedNode_RetriedInNextCycle()
-    {
-        // Arrange — two nodes; node1 has a recent snapshot, node2 has none → only node2 should be targeted
-        _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: 60);
-
-        var twoNodes = new List<NodeInfo>
-        {
-            new() { Url = "http://node1:6333", IsHealthy = true, PeerId = "peer1" },
-            new() { Url = "http://node2:6333", IsHealthy = true, PeerId = "peer2" }
-        };
-
-        // node1 has a recent snapshot (5 min ago); node2 has no snapshot
-        var node1Snapshot = new SnapshotInfo
-        {
-            CollectionName = "col1",
-            SnapshotName = "col1-peer1-2026-02-24-10-00-00",
-            CreatedAt = DateTime.UtcNow.AddMinutes(-5),
-            NodeUrl = "http://node1:6333",
-            PeerId = "peer1",
-            PodName = "pod1",
-            PodNamespace = "default",
-            Source = SnapshotSource.KubernetesStorage
-        };
-
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(new List<SnapshotInfo> { node1Snapshot });
-
-        _snapshotService.CreateCollectionSnapshotAsync(
-                Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
-            .Returns(new Dictionary<string, string?> { ["http://node2:6333"] = "col1-peer2-2026-02-24-10-05-00" });
-
-        // Act
-        await _monitorService.ProcessSnapshotAutomationAsync(
-            GreenHnswCollection("col1"), twoNodes, CancellationToken.None);
-
-        // Assert — only node2 was targeted
-        await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
-            "col1",
-            Arg.Is<IEnumerable<string>>(urls => urls.SequenceEqual(new[] { "http://node2:6333" })),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<bool>());
-    }
-
-    [Test]
-    public async Task ProcessSnapshotAutomation_SnapshotFails_ReportsIssueToClusterManager()
-    {
-        // Arrange
-        _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: null);
-
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(new List<SnapshotInfo>());
-
-        _snapshotService.CreateCollectionSnapshotAsync(
-                Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
-            .ThrowsAsync(new Exception("connection refused"));
-
-        // Act
-        await _monitorService.ProcessSnapshotAutomationAsync(
-            GreenHnswCollection("col1"), HealthyNodes(), CancellationToken.None);
-
-        // Assert
-        _clusterManager.Received(1).ReportIssue(
-            IssueKeyConstants.Snapshot("col1"),
-            Arg.Any<string>());
-    }
-
-    [Test]
-    public async Task ProcessSnapshotAutomation_SnapshotSucceeds_ClearsIssue()
-    {
-        // Arrange
-        _monitorService._dynamicConfig = ScheduleEnabled(intervalMinutes: 60);
-
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(new List<SnapshotInfo>());
-
-        _snapshotService.CreateCollectionSnapshotAsync(
-                Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
-            .Returns(new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" });
-
-        // Act
-        await _monitorService.ProcessSnapshotAutomationAsync(
-            GreenHnswCollection("col1"), HealthyNodes(), CancellationToken.None);
-
-        // Assert
-        _clusterManager.Received(1).ClearIssue(IssueKeyConstants.Snapshot("col1"));
+        var errors = realJobRegistry.GetActiveErrorsAndPruneExpired(DateTime.UtcNow, TimeSpan.FromMinutes(5));
+        Assert.That(errors, Has.Count.EqualTo(1));
+        Assert.That(errors[0].Key, Is.EqualTo("snapshot-automation"));
+        Assert.That(errors[0].Message, Is.EqualTo("collections failed"));
     }
 
     #endregion

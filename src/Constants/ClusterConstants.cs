@@ -38,4 +38,9 @@ public static class ClusterConstants
     
     // Log messages
     public const string MarkingNodeUnhealthyMessage = "Marking node {NodeUrl} as unhealthy due to message send failures (not part of cluster split)";
+
+    /// <summary>
+    /// Prefix for Restore replication factor failure warnings in cluster state.
+    /// </summary>
+    public const string RestoreReplicationFactorFailedPrefix = "Restore replication factor failed: ";
 }

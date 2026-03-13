@@ -31,6 +31,7 @@ public class ClusterManagerTests
     private IDynamicConfigService _dynamicConfigService = null!;
     private IHostEnvironment _environment = null!;
     private IKubernetesManager _kubernetesManager = null!;
+    private IJobRegistry _jobRegistry = null!;
     private TestDataProvider _testDataProvider = null!;
     private ClusterManager _clusterManager = null!;
     private ConcurrentDictionary<string, IQdrantHttpClient> _mockClients = null!;
@@ -61,6 +62,7 @@ public class ClusterManagerTests
         
         // Setup kubernetes manager
         _kubernetesManager = Substitute.For<IKubernetesManager>();
+        _jobRegistry = Substitute.For<IJobRegistry>();
         
         // Setup collection service to always return healthy
         _collectionService
@@ -116,6 +118,7 @@ public class ClusterManagerTests
             _dynamicConfigService,
             _testDataProvider,
             _options,
+            _jobRegistry,
             _logger,
             _meterService,
             _kubernetesManager);
@@ -2767,6 +2770,7 @@ public class ClusterManagerTests
             _dynamicConfigService,
             _testDataProvider,
             _options,
+            _jobRegistry,
             _logger,
             _meterService,
             kubernetesManager);
@@ -2860,6 +2864,7 @@ public class ClusterManagerTests
             _dynamicConfigService,
             _testDataProvider,
             _options,
+            _jobRegistry,
             _logger,
             _meterService,
             kubernetesManager);
@@ -2933,6 +2938,7 @@ public class ClusterManagerTests
             _dynamicConfigService,
             _testDataProvider,
             _options,
+            _jobRegistry,
             _logger,
             _meterService,
             null); // No Kubernetes manager
@@ -3002,6 +3008,7 @@ public class ClusterManagerTests
             _dynamicConfigService,
             _testDataProvider,
             _options,
+            _jobRegistry,
             _logger,
             _meterService,
             kubernetesManager);

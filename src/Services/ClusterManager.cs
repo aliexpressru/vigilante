@@ -22,6 +22,7 @@ public class ClusterManager(
     IDynamicConfigService dynamicConfigService,
     TestDataProvider testDataProvider,
     IOptions<QdrantOptions> options,
+    IJobRegistry jobRegistry,
     ILogger<ClusterManager> logger,
     IMeterService meterService,
     IKubernetesManager? kubernetesManager) : IClusterManager
@@ -31,6 +32,7 @@ public class ClusterManager(
     private readonly ConcurrentDictionary<string, (DateTime Time, string Message)> _externalIssues = new();
     private readonly ConcurrentDictionary<ulong, byte> _excludedPeerIds = new();
     private static readonly TimeSpan ExternalIssueTtl = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan JobErrorTtl = TimeSpan.FromMinutes(30);
 
     public async Task<ClusterState> GetClusterStateAsync(CancellationToken cancellationToken = default)
     {
@@ -79,6 +81,13 @@ public class ClusterManager(
             {
                 state.Health.Issues.Add($"[{key}] {message}");
             }
+        }
+
+        // Job failures from JobRegistry (TTL); surface via ReportIssue for cluster state
+        var jobErrors = jobRegistry.GetActiveErrorsAndPruneExpired(now, JobErrorTtl);
+        foreach (var (key, message) in jobErrors)
+        {
+            state.Health.Issues.Add($"[{IssueKeyConstants.JobFailure(key)}] {ClusterConstants.RestoreReplicationFactorFailedPrefix}{message}");
         }
 
         return state;
