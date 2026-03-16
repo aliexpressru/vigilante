@@ -1,7 +1,6 @@
 using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Requests;
 using Aer.QdrantClient.Http.Models.Requests.Public;
-using Aer.QdrantClient.Http.Models.Responses;
 using Aer.QdrantClient.Http.Models.Shared;
 using k8s;
 using Microsoft.Extensions.Options;
@@ -1121,6 +1120,11 @@ public class CollectionService : ICollectionService
         }
     }
 
+    /// <summary>
+    /// Enriches shard metrics with logical vectors/payload sizes from Qdrant cluster telemetry.
+    /// Uses a single GET /cluster/telemetry call from one healthy node, which already returns
+    /// a cluster-wide aggregated view (no need to query every peer separately).
+    /// </summary>
     private async Task EnrichCollectionsWithTelemetryAsync(
         IReadOnlyList<NodeInfo> nodes,
         List<CollectionInfo> collections,
@@ -1137,7 +1141,7 @@ public class CollectionService : ICollectionService
 
             if (response?.Status?.IsSuccess != true || response.Result?.Collections == null)
                 return;
-
+            
             foreach (var (collectionName, collTel) in response.Result.Collections)
             {
                 if (collTel?.Shards == null)
