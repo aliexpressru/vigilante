@@ -1098,23 +1098,46 @@ class VigilanteDashboard {
             
             // Handle both old format (array of numbers) and new format (array of objects)
             const shardsHtml = value.map(shard => {
-                let shardId, state, prettySize;
+                let shardId, state, prettySize, prettyVectorsSize, prettyPayloadsSize, vectorsSizeBytes, payloadsSizeBytes;
                 
                 // Check if it's the new format (object with shardId, state, sizeBytes)
                 if (typeof shard === 'object' && shard !== null && 'shardId' in shard) {
                     shardId = shard.shardId;
                     state = shard.state || 'Unknown';
-                    prettySize = shard.prettySize || '0 B';
+                    prettySize = shard.prettySize ?? null;
+                    prettyVectorsSize = shard.prettyVectorsSize ?? null;
+                    prettyPayloadsSize = shard.prettyPayloadsSize ?? null;
+                    vectorsSizeBytes = shard.vectorsSizeBytes ?? 0;
+                    payloadsSizeBytes = shard.payloadsSizeBytes ?? 0;
                 } else {
                     // Old format: just a number
                     shardId = shard;
                     const shardStates = nodeInfo?.metrics?.shardStates || {};
                     state = shardStates[shardId.toString()] || 'Unknown';
-                    prettySize = null; // Don't show size for old format
+                    prettySize = null;
+                    prettyVectorsSize = null;
+                    prettyPayloadsSize = null;
+                    vectorsSizeBytes = 0;
+                    payloadsSizeBytes = 0;
                 }
                 
                 const stateClass = state.toLowerCase().replace(/\s+/g, '-');
-                const sizeDisplay = prettySize !== null ? `<span class="shard-size">${prettySize}</span>` : '';
+                const hasTelemetry = prettyVectorsSize != null && prettyPayloadsSize != null;
+                const totalData = vectorsSizeBytes + payloadsSizeBytes;
+                const vectorsPct = totalData > 0 ? Math.round((vectorsSizeBytes / totalData) * 100) : 50;
+                const payloadPct = totalData > 0 ? 100 - vectorsPct : 50;
+                const sizeDisplay = (() => {
+                    if (hasTelemetry) {
+                        const barHtml = `<span class="shard-size-bar" title="Vectors vs Payload"><span class="shard-size-bar-vectors" style="width:${vectorsPct}%"></span><span class="shard-size-bar-payload" style="width:${payloadPct}%"></span></span>`;
+                        const legend = `${prettyVectorsSize} vectors  ${prettyPayloadsSize} payload`;
+                        const diskPart = prettySize != null ? ` <span class="shard-size-disk">${prettySize} on disk</span>` : '';
+                        return `<span class="shard-size shard-size-with-breakdown">${barHtml}<span class="shard-size-legend">${legend}</span>${diskPart}</span>`;
+                    }
+                    if (prettySize != null) {
+                        return `<span class="shard-size">${prettySize}</span>`;
+                    }
+                    return '';
+                })();
                 
                 return `
                     <div class="shard-item">

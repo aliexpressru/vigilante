@@ -1971,6 +1971,305 @@ public class CollectionServiceTests
 
     #endregion
 
+    #region EnrichCollectionsWithTelemetryAsync - Vectors/Payload sizes from cluster telemetry
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_ShouldEnrichShardsWithTelemetry_WhenGetClusterTelemetryReturnsData()
+    {
+        // Arrange: one node with numeric PeerId to match telemetry replica
+        const string nodeUrl = "http://node1:6333";
+        const ulong peerIdUlong = 100;
+        var peerIdStr = peerIdUlong.ToString();
+
+        var nodes = new List<NodeInfo>
+        {
+            new()
+            {
+                Url = nodeUrl,
+                PeerId = peerIdStr,
+                IsHealthy = true,
+                PodName = "qdrant-0",
+                Namespace = "default"
+            }
+        };
+
+        var peerToPodMap = new Dictionary<string, string> { { peerIdStr, "qdrant-0" } };
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClientFromUrl(nodeUrl, Arg.Any<string?>()).Returns(mockClient);
+
+        var collectionsResponse = new ListCollectionsResponse
+        {
+            Result = new ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
+                }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        var aliasesResponse = new ListCollectionAliasesResponse
+        {
+            Result = new ListCollectionAliasesResponse.CollectionAliasesResult
+            {
+                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
+        SetupGetCollectionInfoMock(mockClient);
+
+        var clusteringResponse = new GetCollectionClusteringInfoResponse
+        {
+            Result = new GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+            {
+                LocalShards = new[]
+                {
+                    new GetCollectionClusteringInfoResponse.LocalShardInfo { ShardId = 0, State = ShardState.Active }
+                },
+                ShardTransfers = Array.Empty<ShardTransferInfo>()
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>())
+            .Returns(clusteringResponse);
+
+        const long vectorsSize = 10_000_000L;
+        const long payloadsSize = 5_000_000L;
+
+        var telemetryResponse = new GetClusterTelemetryResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+            Result = new GetClusterTelemetryResponse.ClusterTelemetryInfo
+            {
+                Collections = new Dictionary<string, GetClusterTelemetryResponse.CollectionTelemetry>
+                {
+                    ["test_collection"] = new GetClusterTelemetryResponse.CollectionTelemetry
+                    {
+                        Id = "test_collection",
+                        Shards =
+                        [
+                            new GetClusterTelemetryResponse.CollectionTelemetry.ShardInfo
+                            {
+                                Id = 0,
+                                Replicas =
+                                [
+                                    new GetClusterTelemetryResponse.CollectionTelemetry.ShardInfo.ReplicaInfo
+                                    {
+                                        PeerId = peerIdUlong,
+                                        VectorsSizeBytes = vectorsSize,
+                                        PayloadsSizeBytes = payloadsSize
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            }
+        };
+
+        mockClient.GetClusterTelemetry(Arg.Any<CancellationToken>()).Returns(telemetryResponse);
+
+        // Storage: collection and one shard so enrichment runs
+        _mockCommandExecutor.ListDirectoriesAsync("qdrant-0", "default", "/qdrant/storage/collections",
+                Arg.Any<CancellationToken>())
+            .Returns(new List<string> { "test_collection" });
+
+        _mockCommandExecutor.GetSizeAsync("qdrant-0", "default", "/qdrant/storage/collections",
+                "test_collection", Arg.Any<CancellationToken>())
+            .Returns(1000L);
+
+        _mockCommandExecutor.ListDirectoriesAsync("qdrant-0", "default",
+                "/qdrant/storage/collections/test_collection", Arg.Any<CancellationToken>())
+            .Returns(new List<string> { "0" });
+
+        _mockCommandExecutor.GetSizeAsync("qdrant-0", "default",
+                "/qdrant/storage/collections/test_collection", "0", Arg.Any<CancellationToken>())
+            .Returns(500_000L);
+
+        var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        var collection = result[0];
+        Assert.That(collection.Metrics.ContainsKey("shards"), Is.True);
+
+        var shards = (List<ShardDetails>)collection.Metrics["shards"];
+        Assert.That(shards, Has.Count.EqualTo(1));
+        Assert.That(shards[0].ShardId, Is.EqualTo(0));
+        Assert.That(shards[0].SizeBytes, Is.EqualTo(500_000));
+        Assert.That(shards[0].VectorsSizeBytes, Is.EqualTo(vectorsSize));
+        Assert.That(shards[0].PayloadsSizeBytes, Is.EqualTo(payloadsSize));
+        Assert.That(shards[0].PrettyVectorsSize, Is.Not.Null.And.Contains("MB"));
+        Assert.That(shards[0].PrettyPayloadsSize, Is.Not.Null.And.Contains("MB"));
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_ShouldNotFail_WhenGetClusterTelemetryReturnsNull()
+    {
+        // Arrange: same as a minimal enrichment flow, but GetClusterTelemetry returns null
+        var nodes = new List<NodeInfo>
+        {
+            new()
+            {
+                Url = "http://node1:6333",
+                PeerId = "1",
+                IsHealthy = true,
+                PodName = "qdrant-0",
+                Namespace = "default"
+            }
+        };
+
+        var peerToPodMap = new Dictionary<string, string> { { "1", "qdrant-0" } };
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
+
+        var collectionsResponse = new ListCollectionsResponse
+        {
+            Result = new ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("c1")
+                }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient.ListAllAliases(Arg.Any<CancellationToken>()).Returns(new ListCollectionAliasesResponse
+        {
+            Result = new ListCollectionAliasesResponse.CollectionAliasesResult { Aliases = [] },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        });
+        SetupGetCollectionInfoMock(mockClient);
+
+        var clusteringResponse = new GetCollectionClusteringInfoResponse
+        {
+            Result = new GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+            {
+                LocalShards = new[]
+                {
+                    new GetCollectionClusteringInfoResponse.LocalShardInfo { ShardId = 0, State = ShardState.Active }
+                },
+                ShardTransfers = Array.Empty<ShardTransferInfo>()
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.GetCollectionClusteringInfo("c1", Arg.Any<CancellationToken>()).Returns(clusteringResponse);
+        mockClient.GetClusterTelemetry(Arg.Any<CancellationToken>()).Returns((GetClusterTelemetryResponse?)null);
+
+        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), "/qdrant/storage/collections",
+                Arg.Any<CancellationToken>())
+            .Returns(new List<string> { "c1" });
+        _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(), "/qdrant/storage/collections", "c1",
+                Arg.Any<CancellationToken>()).Returns(100L);
+        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(),
+                "/qdrant/storage/collections/c1", Arg.Any<CancellationToken>()).Returns(new List<string> { "0" });
+        _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(),
+                "/qdrant/storage/collections/c1", "0", Arg.Any<CancellationToken>()).Returns(200L);
+
+        var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert: flow completes, shards exist but telemetry fields are null
+        Assert.That(result, Has.Count.EqualTo(1));
+        var shards = (List<ShardDetails>)result[0].Metrics["shards"];
+        Assert.That(shards, Has.Count.EqualTo(1));
+        Assert.That(shards[0].SizeBytes, Is.EqualTo(200));
+        Assert.That(shards[0].VectorsSizeBytes, Is.Null);
+        Assert.That(shards[0].PayloadsSizeBytes, Is.Null);
+    }
+
+    [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_ShouldNotFail_WhenGetClusterTelemetryThrows()
+    {
+        var nodes = new List<NodeInfo>
+        {
+            new()
+            {
+                Url = "http://node1:6333",
+                PeerId = "1",
+                IsHealthy = true,
+                PodName = "qdrant-0",
+                Namespace = "default"
+            }
+        };
+
+        var peerToPodMap = new Dictionary<string, string> { { "1", "qdrant-0" } };
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
+
+        var collectionsResponse = new ListCollectionsResponse
+        {
+            Result = new ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[] { new ListCollectionsResponse.CollectionNamesUnit.CollectionName("c1") }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
+        mockClient.ListAllAliases(Arg.Any<CancellationToken>()).Returns(new ListCollectionAliasesResponse
+        {
+            Result = new ListCollectionAliasesResponse.CollectionAliasesResult { Aliases = [] },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        });
+        SetupGetCollectionInfoMock(mockClient);
+
+        mockClient.GetCollectionClusteringInfo("c1", Arg.Any<CancellationToken>()).Returns(
+            new GetCollectionClusteringInfoResponse
+            {
+                Result = new GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+                {
+                    LocalShards = new[]
+                    {
+                        new GetCollectionClusteringInfoResponse.LocalShardInfo { ShardId = 0, State = ShardState.Active }
+                    },
+                    ShardTransfers = Array.Empty<ShardTransferInfo>()
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            });
+        mockClient.GetClusterTelemetry(Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<GetClusterTelemetryResponse?>(new InvalidOperationException("Telemetry unavailable")));
+
+        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), "/qdrant/storage/collections",
+                Arg.Any<CancellationToken>())
+            .Returns(new List<string> { "c1" });
+        _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(), "/qdrant/storage/collections", "c1",
+                Arg.Any<CancellationToken>()).Returns(100L);
+        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(),
+                "/qdrant/storage/collections/c1", Arg.Any<CancellationToken>()).Returns(new List<string> { "0" });
+        _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(),
+                "/qdrant/storage/collections/c1", "0", Arg.Any<CancellationToken>()).Returns(200L);
+
+        var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert: flow completes, shards have no telemetry
+        Assert.That(result, Has.Count.EqualTo(1));
+        var shards = (List<ShardDetails>)result[0].Metrics["shards"];
+        Assert.That(shards[0].VectorsSizeBytes, Is.Null);
+        Assert.That(shards[0].PayloadsSizeBytes, Is.Null);
+    }
+
+    #endregion
+
     #region SetCollectionAliasAsync Tests
 
     [Test]

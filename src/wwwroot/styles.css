@@ -1853,7 +1853,7 @@ body {
     border: 2px solid #e9ecef;
     transition: all 0.2s ease;
     min-width: 0;
-    overflow: hidden;
+    overflow: visible;
 }
 
 
@@ -1875,6 +1875,7 @@ body {
     gap: 4px;
     flex: 1;
     min-width: 0;
+    overflow: visible;
 }
 
 .shard-info {
@@ -1912,6 +1913,44 @@ body {
     background: #f0f0f0;
     border-radius: 3px;
     display: inline-block;
+}
+
+/* Shard size breakdown: vectors vs payload */
+.shard-size-with-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px 6px;
+    min-width: 0;
+}
+
+.shard-size-bar {
+    display: flex;
+    height: 4px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: #e0e0e0;
+    min-width: 48px;
+}
+
+.shard-size-bar-vectors {
+    background: #2196f3;
+}
+
+.shard-size-bar-payload {
+    background: #4caf50;
+}
+
+.shard-size-legend {
+    font-size: 0.95em;
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.3;
+}
+
+.shard-size-disk {
+    font-size: 0.9em;
+    color: #888;
 }
 
 /* Shard states colors */
