@@ -652,6 +652,9 @@ public class CollectionService : ICollectionService
             await EnrichCollectionsWithStorageInfoAsync(healthyNodes, collections, cancellationToken);
         }
 
+        // Enrich shards with vectors/payload sizes from cluster telemetry
+        await EnrichCollectionsWithTelemetryAsync(healthyNodes, collections, cancellationToken);
+
         // Sort collection shards by node within each collection:
         // Group by collection name, sort nodes within each group, then flatten back
         collections = collections
@@ -1074,11 +1077,11 @@ public class CollectionService : ICollectionService
                     collection.CollectionName, collection.NodeUrl);
             }
 
-            // Enrich existing shard details with size information from storage
+            // Enrich existing shard details with size information from storage (physical disk)
             if (shardSizes.TryGetValue(key, out var shardSizesList))
             {
                 // Get existing shard details from Metrics if they exist (from clustering info)
-                if (collection.Metrics.TryGetValue(MetricConstants.ShardsKey, out var shardsObj) 
+                if (collection.Metrics.TryGetValue(MetricConstants.ShardsKey, out var shardsObj)
                     && shardsObj is List<ShardDetails> existingShardDetails)
                 {
                     // Create a dictionary for quick lookup of shard sizes
@@ -1116,7 +1119,67 @@ public class CollectionService : ICollectionService
             }
         }
     }
-    
+
+    /// <summary>
+    /// Enriches shard metrics with logical vectors/payload sizes from Qdrant cluster telemetry.
+    /// Uses a single GET /cluster/telemetry call from one healthy node, which already returns
+    /// a cluster-wide aggregated view (no need to query every peer separately).
+    /// </summary>
+    private async Task EnrichCollectionsWithTelemetryAsync(
+        IReadOnlyList<NodeInfo> nodes,
+        List<CollectionInfo> collections,
+        CancellationToken cancellationToken)
+    {
+        var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
+        if (healthyNodes.Count == 0)
+            return;
+
+        try
+        {
+            var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodes[0].Url, _options.ApiKey);
+            var response = await qdrantClient.GetClusterTelemetry(cancellationToken);
+
+            if (response?.Status?.IsSuccess != true || response.Result?.Collections == null)
+                return;
+            
+            foreach (var (collectionName, collTel) in response.Result.Collections)
+            {
+                if (collTel?.Shards == null)
+                    continue;
+
+                foreach (var shard in collTel.Shards)
+                {
+                    if (shard.Replicas == null)
+                        continue;
+
+                    foreach (var replica in shard.Replicas)
+                    {
+                        var peerIdStr = replica.PeerId.ToString();
+                        var info = collections.FirstOrDefault(c =>
+                            c.CollectionName == collectionName && c.PeerId == peerIdStr);
+                        if (info == null)
+                            continue;
+
+                        if (!info.Metrics.TryGetValue(MetricConstants.ShardsKey, out var shardsObj)
+                            || shardsObj is not List<ShardDetails> shardDetails)
+                            continue;
+
+                        var detail = shardDetails.FirstOrDefault(s => s.ShardId == shard.Id);
+                        if (detail == null)
+                            continue;
+
+                        detail.VectorsSizeBytes = replica.VectorsSizeBytes;
+                        detail.PayloadsSizeBytes = replica.PayloadsSizeBytes;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get cluster telemetry for vectors/payload sizes");
+        }
+    }
+
     internal async Task<IEnumerable<ShardSize>> GetCollectionShardsSizesForPodAsync(
         string podName,
         string podNamespace,

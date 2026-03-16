@@ -32,13 +32,16 @@ CURRENT_DIR=$(basename "$PWD")
 if [ "$CURRENT_DIR" = "dev" ]; then
     ENV="Development"
     ENV_NAME="dev"
+elif [ "$CURRENT_DIR" = "stg" ]; then
+    ENV="Staging"
+    ENV_NAME="stg"
 elif [ "$CURRENT_DIR" = "prod" ]; then
-    ENV="Production" 
+    ENV="Production"
     ENV_NAME="prod"
 else
-    echo "❌ Please run this script from k8s/dev or k8s/prod directory"
+    echo "❌ Please run this script from k8s/dev, k8s/stg or k8s/prod directory"
     echo "💡 Current directory: $PWD"
-    echo "💡 Expected to be in: .../k8s/dev or .../k8s/prod"
+    echo "💡 Expected to be in: .../k8s/dev, .../k8s/stg or .../k8s/prod"
     exit 1
 fi
 
