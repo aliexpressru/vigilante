@@ -488,116 +488,18 @@ public class CollectionService : ICollectionService
         }
 
 
+        var nodeResults = await Task.WhenAll(
+            nodesList.Select(node => GetCollectionsFromSingleNodeAsync(node, cancellationToken)));
+
         var result = new List<CollectionInfo>();
         var overallHealthy = true;
         string? overallErrorMessage = null;
 
-        foreach (var node in nodesList)
+        foreach (var (collections, isHealthy) in nodeResults)
         {
-            try
-            {
-                var qdrantClient = _clientFactory.CreateClientFromUrl(node.Url, _options.ApiKey);
-
-                // Get list of collections
-                var collectionsResponse = await qdrantClient.ListCollections(cancellationToken);
-                if (!collectionsResponse.Status.IsSuccess || collectionsResponse.Result?.Collections == null)
-                {
-                    var errorDetails = collectionsResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage;
-                    _logger.LogWarning("Failed to get collections from node {NodeUrl}: {Error}",
-                        node.Url, errorDetails);
-
-                    overallHealthy = false;
-                    overallErrorMessage = $"Failed to list collections from node {node.Url}: {errorDetails}";
-                    continue;
-                }
-
-                if (collectionsResponse.Result.Collections.Length == 0)
-                {
-                    continue;
-                }
-
-                // Get all aliases for this node
-                Dictionary<string, List<string>> collectionAliases = new();
-                try
-                {
-                    var aliasesResponse = await qdrantClient.ListAllAliases(cancellationToken);
-                    if (aliasesResponse?.Status?.IsSuccess == true && aliasesResponse.Result?.Aliases != null)
-                    {
-                        // Group aliases by collection name
-                        collectionAliases = aliasesResponse.Result.Aliases
-                            .GroupBy(a => a.CollectionName)
-                            .ToDictionary(
-                                g => g.Key,
-                                g => g.Select(a => a.AliasName).ToList()
-                            );
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to get aliases from node {NodeUrl}", node.Url);
-                }
-
-                // For each collection, get its detailed info including status
-                foreach (var collection in collectionsResponse.Result.Collections)
-                {
-                    try
-                    {
-                        var collectionName = collection.Name;
-
-                        // Get detailed collection info to retrieve status
-                        var collectionInfoResponse = await qdrantClient.GetCollectionInfo(collectionName, cancellationToken);
-                        
-                        if (!collectionInfoResponse.Status.IsSuccess)
-                        {
-                            var errorDetails = collectionInfoResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage;
-                            _logger.LogWarning("Failed to get info for collection {CollectionName} from node {NodeUrl}: {Error}",
-                                collectionName, node.Url, errorDetails);
-                            
-                            overallHealthy = false;
-                            overallErrorMessage = $"Failed to get info for collection '{collectionName}': {errorDetails}";
-                            continue;
-                        }
-
-                        var metrics = new Dictionary<string, object>
-                        {
-                            { MetricConstants.PrettySizeKey, MetricConstants.NotAvailableValue },
-                            { MetricConstants.SizeBytesKey, 0L }
-                        };
-
-                        // Get aliases for this collection
-                        var aliases = collectionAliases.TryGetValue(collectionName, out var aliasList)
-                            ? aliasList
-                            : new List<string>();
-
-                        result.Add(new CollectionInfo
-                        {
-                            CollectionName = collectionName,
-                            NodeUrl = node.Url,
-                            PodName = node.PodName ?? MetricConstants.UnknownPodName,
-                            PeerId = node.PeerId,
-                            PodNamespace = node.Namespace ?? string.Empty,
-                            Metrics = metrics,
-                            Aliases = aliases,
-                            Status = collectionInfoResponse.Result?.Status,
-                            HnswM = collectionInfoResponse.Result?.Config?.HnswConfig?.M
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to get info for collection {CollectionName} from node {NodeUrl}",
-                            collection.Name, node.Url);
-                        
-                        overallHealthy = false;
-                        overallErrorMessage = $"Exception while getting collection '{collection.Name}' info: {ex.Message}";
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to get collections from node {NodeUrl}", node.Url);
+            result.AddRange(collections);
+            if (!isHealthy)
                 overallHealthy = false;
-                overallErrorMessage = $"Exception during collections check from node {node.Url}: {ex.Message}";
-            }
         }
 
         // Cache the result if successful
@@ -614,6 +516,93 @@ public class CollectionService : ICollectionService
         return (result, overallHealthy, overallErrorMessage);
     }
 
+    private async Task<(List<CollectionInfo> Collections, bool IsHealthy)> GetCollectionsFromSingleNodeAsync(
+        (string Url, string PeerId, string? Namespace, string? PodName) node,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var qdrantClient = _clientFactory.CreateClientFromUrl(node.Url, _options.ApiKey);
+
+            var collectionsResponse = await qdrantClient.ListCollections(cancellationToken);
+            if (!collectionsResponse.Status.IsSuccess || collectionsResponse.Result?.Collections == null)
+            {
+                var errorDetails = collectionsResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage;
+                _logger.LogWarning("Failed to get collections from node {NodeUrl}: {Error}", node.Url, errorDetails);
+                return ([], false);
+            }
+
+            var collections = collectionsResponse.Result.Collections;
+            if (collections.Length == 0)
+                return ([], true);
+
+            Dictionary<string, List<string>> collectionAliases = new();
+            try
+            {
+                var aliasesResponse = await qdrantClient.ListAllAliases(cancellationToken);
+                if (aliasesResponse?.Status?.IsSuccess == true && aliasesResponse.Result?.Aliases != null)
+                {
+                    collectionAliases = aliasesResponse.Result.Aliases
+                        .GroupBy(a => a.CollectionName)
+                        .ToDictionary(g => g.Key, g => g.Select(a => a.AliasName).ToList());
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get aliases from node {NodeUrl}", node.Url);
+            }
+
+            var infoTasks = collections.Select(async collection =>
+            {
+                try
+                {
+                    var collectionInfoResponse = await qdrantClient.GetCollectionInfo(collection.Name, cancellationToken);
+                    if (!collectionInfoResponse.Status.IsSuccess)
+                    {
+                        _logger.LogWarning("Failed to get info for collection {CollectionName} from node {NodeUrl}: {Error}",
+                            collection.Name, node.Url, collectionInfoResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+                        return null;
+                    }
+
+                    var aliases = collectionAliases.TryGetValue(collection.Name, out var aliasList)
+                        ? aliasList
+                        : new List<string>();
+
+                    return new CollectionInfo
+                    {
+                        CollectionName = collection.Name,
+                        NodeUrl = node.Url,
+                        PodName = node.PodName ?? MetricConstants.UnknownPodName,
+                        PeerId = node.PeerId,
+                        PodNamespace = node.Namespace ?? string.Empty,
+                        Metrics = new Dictionary<string, object>
+                        {
+                            { MetricConstants.PrettySizeKey, MetricConstants.NotAvailableValue },
+                            { MetricConstants.SizeBytesKey, 0L }
+                        },
+                        Aliases = aliases,
+                        Status = collectionInfoResponse.Result?.Status,
+                        HnswM = collectionInfoResponse.Result?.Config?.HnswConfig?.M
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to get info for collection {CollectionName} from node {NodeUrl}",
+                        collection.Name, node.Url);
+                    return null;
+                }
+            });
+
+            var infos = (await Task.WhenAll(infoTasks)).OfType<CollectionInfo>().ToList();
+            var isHealthy = infos.Count == collections.Length;
+            return (infos, isHealthy);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get collections from node {NodeUrl}", node.Url);
+            return ([], false);
+        }
+    }
 
     public async Task<IReadOnlyList<CollectionInfo>> GetEnrichedCollectionsInfoAsync(
         IReadOnlyList<NodeInfo> nodes,
@@ -922,30 +911,36 @@ public class CollectionService : ICollectionService
                 .Select(c => c.CollectionName)
                 .Distinct();
 
-            foreach (var collectionName in collectionNames)
+            var clusteringTasks = collectionNames.Select(async collectionName =>
             {
                 try
                 {
                     var clusteringInfo =
                         await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
-
-                    if (clusteringInfo?.Status?.IsSuccess != true || clusteringInfo.Result == null)
-                        continue;
-
-                    var info = collectionInfos.FirstOrDefault(c =>
-                        c.CollectionName == collectionName && c.NodeUrl == healthyNodeUrl);
-
-                    if (info == null)
-                        continue;
-
-                    UpdateShardMetrics(info, clusteringInfo.Result);
-                    UpdateTransferMetrics(info, clusteringInfo.Result, peerToPodMap);
+                    return (collectionName, clusteringInfo);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to get clustering info for collection {Collection} on node {NodeUrl}",
                         collectionName, healthyNodeUrl);
+                    return (collectionName, (Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse?)null);
                 }
+            });
+
+            var clusteringResults = await Task.WhenAll(clusteringTasks);
+            foreach (var (collectionName, clusteringInfo) in clusteringResults)
+            {
+                if (clusteringInfo?.Status?.IsSuccess != true || clusteringInfo.Result == null)
+                    continue;
+
+                var info = collectionInfos.FirstOrDefault(c =>
+                    c.CollectionName == collectionName && c.NodeUrl == healthyNodeUrl);
+
+                if (info == null)
+                    continue;
+
+                UpdateShardMetrics(info, clusteringInfo.Result);
+                UpdateTransferMetrics(info, clusteringInfo.Result, peerToPodMap);
             }
         }
         catch (Exception ex)
@@ -1018,45 +1013,42 @@ public class CollectionService : ICollectionService
         var storageCollections = new Dictionary<(string NodeUrl, string CollectionName), CollectionSize>();
         var shardSizes = new Dictionary<(string NodeUrl, string CollectionName), List<ShardSize>>();
 
-        foreach (var node in nodes)
+        var nodesWithPod = nodes.Where(n => !string.IsNullOrEmpty(n.PodName));
+        var nodeDataTasks = nodesWithPod.Select(async node =>
         {
             try
             {
-                if (string.IsNullOrEmpty(node.PodName))
-                {
-                    continue;
-                }
-
                 var collectionSizes = (await GetCollectionsSizesForPodAsync(
-                    node.PodName,
+                    node.PodName!,
                     node.Namespace ?? string.Empty,
                     node.Url,
                     node.PeerId,
                     cancellationToken)).ToList();
 
-                foreach (var size in collectionSizes)
-                {
-                    storageCollections[(size.NodeUrl, size.CollectionName)] = size;
-                }
-
-                // Get shard sizes for all collections on this node
                 var allShardSizes = (await GetAllShardsSizesForPodAsync(
-                    node.PodName,
+                    node.PodName!,
                     node.Namespace ?? string.Empty,
                     node.Url,
                     node.PeerId,
                     cancellationToken)).ToList();
 
-                // Group shards by collection
-                foreach (var shardGroup in allShardSizes.GroupBy(s => (s.NodeUrl, s.CollectionName)))
-                {
-                    shardSizes[shardGroup.Key] = shardGroup.OrderBy(s => s.ShardId).ToList();
-                }
+                return (NodeUrl: node.Url, CollectionSizes: collectionSizes, AllShardSizes: allShardSizes);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to get collection sizes for node {NodeUrl}", node.Url);
+                return (node.Url, new List<CollectionSize>(), new List<ShardSize>());
             }
+        });
+
+        var nodeDataList = await Task.WhenAll(nodeDataTasks);
+        foreach (var (_, collectionSizes, allShardSizes) in nodeDataList)
+        {
+            foreach (var size in collectionSizes)
+                storageCollections[(size.NodeUrl, size.CollectionName)] = size;
+
+            foreach (var shardGroup in allShardSizes.GroupBy(s => (s.NodeUrl, s.CollectionName)))
+                shardSizes[shardGroup.Key] = shardGroup.OrderBy(s => s.ShardId).ToList();
         }
 
         // Enrich collections with storage data
@@ -1321,10 +1313,7 @@ public class CollectionService : ICollectionService
         }
 
 
-        // Query each healthy node to get its local shards
-        foreach (var node in healthyNodes)
-        {
-            await EnrichWithClusteringInfoAsync(node.Url, collections, peerToPodMap, cancellationToken);
-        }
+        await Task.WhenAll(
+            healthyNodes.Select(node => EnrichWithClusteringInfoAsync(node.Url, collections, peerToPodMap, cancellationToken)));
     }
 }
