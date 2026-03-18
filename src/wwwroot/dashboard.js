@@ -54,6 +54,7 @@ class VigilanteDashboard {
         this.snapshotTotalPages = 1;
         this.snapshotNameFilter = '';
         this.jobs = []; // Background jobs from GET /api/v1/jobs/status
+        this._configCollectionNames = []; // For config modal override row pickers
         this.init();
         this.setupRefreshControls();
         this.setupCollectionControls();
@@ -5536,11 +5537,44 @@ class VigilanteDashboard {
         });
     }
 
+    _escCollectionOpt(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    /** Full <select> inner HTML; selectedValue kept selected after refresh (orphan option if not in API list). */
+    _buildCollectionSelectInnerHtml(selectedValue) {
+        const esc = (x) => this._escCollectionOpt(x);
+        const api = this._configCollectionNames || [];
+        const inApi = selectedValue && api.includes(selectedValue);
+        let html = '<option value="">— select collection —</option>';
+        if (selectedValue && !inApi) {
+            const e = esc(selectedValue);
+            html += `<option value="${e}" selected>${e}</option>`;
+        }
+        for (const n of api) {
+            const sel = n === selectedValue ? ' selected' : '';
+            const e = esc(n);
+            html += `<option value="${e}"${sel}>${e}</option>`;
+        }
+        return html;
+    }
+
+    _refreshOverrideCollectionPicks() {
+        document.querySelectorAll('.override-row .override-collection-name').forEach((sel) => {
+            const v = sel.value;
+            sel.innerHTML = this._buildCollectionSelectInnerHtml(v);
+        });
+    }
+
     addOverrideRow(name = '', schedule = { enabled: true, intervalMinutes: null, retainLastN: null }) {
         const row = document.createElement('div');
         row.className = 'override-row';
         row.innerHTML = `
-            <input type="text" class="override-input override-collection-name" list="collectionNamesList" placeholder="collection name" value="${name}">
+            <select class="override-input override-collection-name override-collection-pick" aria-label="Collection">${this._buildCollectionSelectInnerHtml(name)}</select>
             <div class="override-cell-center">
                 <input type="checkbox" class="override-checkbox override-enabled" ${schedule.enabled ? 'checked' : ''}>
             </div>
@@ -5588,15 +5622,14 @@ class VigilanteDashboard {
 
             const config = await configResponse.json();
 
-            // Load collections for datalist in background — doesn't block config display
+            // Load collections for override row selects in background
             fetch('/api/v1/collections/info?clearCache=false')
                 .then(r => r.ok ? r.json() : null)
                 .then(data => {
                     if (!data) return;
-                    const datalist = document.getElementById('collectionNamesList');
-                    if (!datalist) return;
                     const names = [...new Set((data.collections || []).map(c => c.collectionName).filter(Boolean))];
-                    datalist.innerHTML = names.map(n => `<option value="${n}">`).join('');
+                    this._configCollectionNames = names;
+                    this._refreshOverrideCollectionPicks();
                 })
                 .catch(() => {});
 

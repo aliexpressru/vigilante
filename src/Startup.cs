@@ -2,6 +2,7 @@ using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.DependencyInjection;
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.StaticFiles;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -12,7 +13,7 @@ using Vigilante.Validators;
 
 namespace Vigilante;
 
-public class Startup(IConfiguration configuration)
+public partial class Startup(IConfiguration configuration)
 {
     public void ConfigureServices(IServiceCollection services)
     {
@@ -139,6 +140,52 @@ public class Startup(IConfiguration configuration)
         });
 
         app.UseHttpsRedirection();
+
+        var webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+        var dashboardAssetVersion = ComputeDashboardAssetVersion(webRoot);
+
+        // Serve index.html with cache-busting query params on CSS/JS (avoids stale assets after deploy)
+        app.Use(async (context, next) =>
+        {
+            if (!HttpMethods.IsGet(context.Request.Method))
+            {
+                await next();
+                return;
+            }
+
+            var path = context.Request.Path.Value;
+            if (path is not ("/" or "/index.html"))
+            {
+                await next();
+                return;
+            }
+
+            var indexPath = Path.Combine(webRoot, "index.html");
+            if (!File.Exists(indexPath))
+            {
+                await next();
+                return;
+            }
+
+            try
+            {
+                var v = env.IsDevelopment()
+                    ? ComputeDashboardAssetVersion(webRoot)
+                    : dashboardAssetVersion;
+                var ve = Uri.EscapeDataString(v);
+                var html = await File.ReadAllTextAsync(indexPath);
+                html = StylesCssHrefRegex().Replace(html, $"href=\"styles.css?v={ve}\"");
+                html = DashboardJsSrcRegex().Replace(html, $"src=\"dashboard.js?v={ve}\"");
+                context.Response.ContentType = "text/html; charset=utf-8";
+                context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+                context.Response.Headers.Pragma = "no-cache";
+                await context.Response.WriteAsync(html);
+            }
+            catch
+            {
+                await next();
+            }
+        });
         
         // Static files for dashboard - order is important!
         app.UseDefaultFiles(); // This must come before UseStaticFiles
@@ -187,4 +234,23 @@ public class Startup(IConfiguration configuration)
         lifetime.ApplicationStopped.Register(() => 
             app.Logger.LogInformation("Vigilante has stopped. Cluster is no longer monitored."));
     }
+
+    private static string ComputeDashboardAssetVersion(string webRoot)
+    {
+        long xor = 0;
+        foreach (var name in new[] { "styles.css", "dashboard.js" })
+        {
+            var p = Path.Combine(webRoot, name);
+            if (File.Exists(p))
+                xor ^= File.GetLastWriteTimeUtc(p).Ticks;
+        }
+
+        return xor == 0 ? "0" : (xor & 0xFFFFFFFFFFFFL).ToString("x", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    [GeneratedRegex(@"href\s*=\s*[""']styles\.css(\?[^""']*)?[""']", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex StylesCssHrefRegex();
+
+    [GeneratedRegex(@"src\s*=\s*[""']dashboard\.js(\?[^""']*)?[""']", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex DashboardJsSrcRegex();
 }
