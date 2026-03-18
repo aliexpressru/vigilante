@@ -215,6 +215,116 @@ public class SnapshotAutomationJobTests
     }
 
     [Test]
+    public async Task AdvanceAsync_RemovesSnapshotOverridesForCollectionsNotInCluster()
+    {
+        var cfg = new DynamicConfig
+        {
+            Snapshot = new SnapshotConfiguration
+            {
+                Schedule = new Schedule { Enabled = false },
+                CollectionOverrides = new Dictionary<string, Schedule>(StringComparer.Ordinal)
+                {
+                    ["deleted_col"] = new Schedule { Enabled = true },
+                    ["live_col"] = new Schedule { Enabled = true }
+                }
+            }
+        };
+
+        var dynamicConfig = Substitute.For<IDynamicConfigService>();
+        dynamicConfig.GetConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(cfg));
+        dynamicConfig.UpdateConfigAsync(Arg.Any<DynamicConfig>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var collectionService = Substitute.For<ICollectionService>();
+        collectionService
+            .GetCollectionsFromQdrantAsync(
+                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
+            .Returns(Task.FromResult((
+                new List<CollectionInfo>
+                {
+                    new() { CollectionName = "live_col", NodeUrl = "http://node1:6333", PeerId = "p1" }
+                },
+                true,
+                (string?)null)));
+
+        await using var sp = new ServiceCollection()
+            .AddSingleton(_snapshotService)
+            .AddSingleton(_clusterManager)
+            .AddSingleton(_orphanedState)
+            .AddSingleton(_logger)
+            .AddSingleton<ISnapshotAutomationStatus, SnapshotAutomationStatus>()
+            .AddSingleton(collectionService)
+            .AddSingleton(dynamicConfig)
+            .BuildServiceProvider();
+
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(GreenHnswCollection("live_col"));
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns(new List<SnapshotInfo>());
+
+        var job = new SnapshotAutomationJob(sp, HealthyNodes(), cfg);
+
+        await job.AdvanceAsync(CancellationToken.None);
+
+        Assert.That(cfg.Snapshot.CollectionOverrides, Is.Not.Null);
+        Assert.That(cfg.Snapshot.CollectionOverrides.ContainsKey("live_col"), Is.True);
+        Assert.That(cfg.Snapshot.CollectionOverrides.ContainsKey("deleted_col"), Is.False);
+        await dynamicConfig.Received(1).UpdateConfigAsync(cfg, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AdvanceAsync_DoesNotPruneOverridesWhenQdrantListingUnhealthy()
+    {
+        var cfg = new DynamicConfig
+        {
+            Snapshot = new SnapshotConfiguration
+            {
+                Schedule = new Schedule { Enabled = false },
+                CollectionOverrides = new Dictionary<string, Schedule>(StringComparer.Ordinal)
+                {
+                    ["deleted_col"] = new Schedule { Enabled = true }
+                }
+            }
+        };
+
+        var dynamicConfig = Substitute.For<IDynamicConfigService>();
+        dynamicConfig.GetConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(cfg));
+
+        var collectionService = Substitute.For<ICollectionService>();
+        collectionService
+            .GetCollectionsFromQdrantAsync(
+                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
+            .Returns(Task.FromResult((new List<CollectionInfo>(), false, (string?)null)));
+
+        await using var sp = new ServiceCollection()
+            .AddSingleton(_snapshotService)
+            .AddSingleton(_clusterManager)
+            .AddSingleton(_orphanedState)
+            .AddSingleton(_logger)
+            .AddSingleton<ISnapshotAutomationStatus, SnapshotAutomationStatus>()
+            .AddSingleton(collectionService)
+            .AddSingleton(dynamicConfig)
+            .BuildServiceProvider();
+
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<CollectionInfo>());
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns(new List<SnapshotInfo>());
+
+        var job = new SnapshotAutomationJob(sp, HealthyNodes(), cfg);
+
+        await job.AdvanceAsync(CancellationToken.None);
+
+        Assert.That(cfg.Snapshot.CollectionOverrides!.ContainsKey("deleted_col"), Is.True);
+        await dynamicConfig.DidNotReceive()
+            .UpdateConfigAsync(Arg.Any<DynamicConfig>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public void Key_ReturnsSnapshotAutomationJobKey()
     {
         var job = CreateJob();

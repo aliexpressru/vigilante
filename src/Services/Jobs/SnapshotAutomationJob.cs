@@ -75,6 +75,9 @@ public sealed class SnapshotAutomationJob : IJob
             var collections = await clusterManager.GetCollectionsInfoAsync(clearCache: true, cancellationToken)
                 .ConfigureAwait(false);
 
+            await PruneStaleCollectionOverridesIfNeededAsync(automationStatus, logger, cancellationToken)
+                .ConfigureAwait(false);
+
             SetCurrentAction(Actions.LoadingSnapshots);
 
         var byCollection = collections
@@ -313,6 +316,61 @@ public sealed class SnapshotAutomationJob : IJob
             clusterManager.ReportIssue(IssueKeyConstants.Snapshot(collectionName), ex.Message);
             automationStatus.AppendRunNote($"Snapshot «{collectionName}»: error — {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Drops per-collection snapshot overrides when those collections no longer exist in Qdrant.
+    /// Uses a raw multi-node listing; skips if any node fails so we do not wipe config on API errors.
+    /// </summary>
+    private async Task PruneStaleCollectionOverridesIfNeededAsync(
+        ISnapshotAutomationStatus automationStatus,
+        ILogger<SnapshotAutomationJob> logger,
+        CancellationToken cancellationToken)
+    {
+        var overrides = _config.Snapshot.CollectionOverrides;
+        if (overrides is not { Count: > 0 })
+            return;
+
+        var nodesTuple = _nodes
+            .Where(n => n.IsHealthy)
+            .Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName))
+            .ToList();
+        if (nodesTuple.Count == 0)
+            return;
+
+        var collectionService = _serviceProvider.GetRequiredService<ICollectionService>();
+        var (rawList, listingHealthy, _) = await collectionService
+            .GetCollectionsFromQdrantAsync(nodesTuple, cancellationToken, clearCache: false)
+            .ConfigureAwait(false);
+
+        if (!listingHealthy)
+        {
+            logger.LogDebug("Skipping collection override prune: Qdrant listing not fully healthy");
+            return;
+        }
+
+        var live = rawList.Select(c => c.CollectionName).ToHashSet(StringComparer.Ordinal);
+        var stale = overrides.Keys.Where(k => !live.Contains(k)).ToList();
+        if (stale.Count == 0)
+            return;
+
+        var dynamicConfigService = _serviceProvider.GetRequiredService<IDynamicConfigService>();
+        var fullConfig = await dynamicConfigService.GetConfigAsync(cancellationToken).ConfigureAwait(false);
+        var snap = fullConfig.Snapshot;
+        if (snap.CollectionOverrides is null)
+            return;
+
+        foreach (var k in stale)
+            snap.CollectionOverrides.Remove(k);
+
+        if (snap.CollectionOverrides.Count == 0)
+            snap.CollectionOverrides = null;
+
+        await dynamicConfigService.UpdateConfigAsync(fullConfig, cancellationToken).ConfigureAwait(false);
+        automationStatus.AppendRunNote($"Removed overrides (collections gone): {string.Join(", ", stale)}");
+        logger.LogInformation(
+            "Removed snapshot collection overrides for collections no longer in cluster: {Collections}",
+            string.Join(", ", stale));
     }
 
     private static bool IsCollectionGreen(IReadOnlyList<CollectionInfo> infos)
