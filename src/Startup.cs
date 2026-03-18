@@ -50,6 +50,7 @@ public partial class Startup(IConfiguration configuration)
         
         // Core services
         services.AddSingleton<IJobRegistry, JobRegistry>();
+        services.AddSingleton<ISnapshotAutomationStatus, SnapshotAutomationStatus>();
         services.AddSingleton<IRestoreReplicationFactorJobService, RestoreReplicationFactorJobService>();
         services.AddSingleton<ICollectionService, CollectionService>();
         services.AddSingleton<ISnapshotService, SnapshotService>();

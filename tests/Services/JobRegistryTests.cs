@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
@@ -174,6 +175,116 @@ public class JobRegistryTests
 
         Assert.That(_registry.GetPendingJobs(), Has.Count.EqualTo(0));
         await job.Received(1).AdvanceAsync(Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: monitor and JobsController can call ProcessPendingJobsAsync concurrently.
+    /// Without per-key gate, both would run AdvanceAsync; the first RemoveJobAsync cancels CTS and aborts the second (TaskCanceledException on HTTP).
+    /// </summary>
+    [Test]
+    public async Task ProcessPendingJobsAsync_TwoConcurrentCallsSameKey_AdvanceAsyncRunsOnce()
+    {
+        var job = Substitute.For<IJob>();
+        job.Key.Returns("snapshot-automation");
+        job.IsWaitingForReady.Returns(false);
+        job.CheckReadyAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<bool?>(true));
+        job.GetMetadata().Returns((IReadOnlyDictionary<string, object?>?)null);
+        job.DisposeAsync().Returns(ValueTask.CompletedTask);
+
+        var unblock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var advanceStarted = 0;
+        job.AdvanceAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref advanceStarted);
+                return unblock.Task.ContinueWith(
+                    static _ => (false, true, (string?)null),
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+            });
+
+        _registry.TryAddJob(job, new CancellationTokenSource());
+
+        var process1 = _registry.ProcessPendingJobsAsync(CancellationToken.None);
+        await Task.Delay(100);
+        Assert.That(advanceStarted, Is.EqualTo(1), "first processor should be inside AdvanceAsync");
+
+        var process2 = _registry.ProcessPendingJobsAsync(CancellationToken.None);
+        await Task.Delay(100);
+        Assert.That(advanceStarted, Is.EqualTo(1), "second call must wait on gate, not run AdvanceAsync in parallel");
+
+        unblock.SetResult();
+        await Task.WhenAll(process1, process2);
+
+        Assert.That(advanceStarted, Is.EqualTo(1));
+        Assert.That(_registry.GetPendingJobs(), Is.Empty);
+        await job.Received(1).AdvanceAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ProcessPendingJobsAsync_SecondWaitsThenSeesRemovedJob_DoesNotThrow()
+    {
+        var job = Substitute.For<IJob>();
+        job.Key.Returns("j");
+        job.IsWaitingForReady.Returns(false);
+        job.CheckReadyAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<bool?>(true));
+        job.GetMetadata().Returns((IReadOnlyDictionary<string, object?>?)null);
+        job.DisposeAsync().Returns(ValueTask.CompletedTask);
+
+        var step = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        job.AdvanceAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => step.Task.ContinueWith(
+                static _ => (false, true, (string?)null),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default));
+
+        _registry.TryAddJob(job, new CancellationTokenSource());
+
+        var a = _registry.ProcessPendingJobsAsync(CancellationToken.None);
+        var b = _registry.ProcessPendingJobsAsync(CancellationToken.None);
+
+        await Task.Delay(50);
+        step.SetResult();
+
+        Assert.DoesNotThrowAsync(async () => await Task.WhenAll(a, b));
+        Assert.That(_registry.GetPendingJobs(), Is.Empty);
+    }
+
+    [Test]
+    public async Task ProcessPendingJobsAsync_DifferentKeys_AdvanceAsyncRunsInParallel()
+    {
+        var jobA = CreateFakeJob("a");
+        var jobB = CreateFakeJob("b");
+        var entered = new ConcurrentBag<string>();
+
+        jobA.AdvanceAsync(Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                entered.Add("a");
+                await Task.Delay(150);
+                return (false, true, (string?)null);
+            });
+        jobB.AdvanceAsync(Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                entered.Add("b");
+                await Task.Delay(150);
+                return (false, true, (string?)null);
+            });
+
+        _registry.TryAddJob(jobA, new CancellationTokenSource());
+        _registry.TryAddJob(jobB, new CancellationTokenSource());
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await _registry.ProcessPendingJobsAsync(CancellationToken.None);
+        sw.Stop();
+
+        Assert.That(sw.ElapsedMilliseconds, Is.LessThan(250),
+            "jobs with different keys should not serialize each other");
+        await jobA.Received(1).AdvanceAsync(Arg.Any<CancellationToken>());
+        await jobB.Received(1).AdvanceAsync(Arg.Any<CancellationToken>());
     }
 
     private static IJob CreateFakeJob(string key)

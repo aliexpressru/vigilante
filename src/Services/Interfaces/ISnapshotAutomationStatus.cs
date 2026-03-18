@@ -1,0 +1,16 @@
+namespace Vigilante.Services.Interfaces;
+
+/// <summary>
+/// Tracks snapshot-automation runs for UI: the job is removed from <see cref="IJobRegistry"/> when idle,
+/// so this singleton keeps last state visible on the dashboard.
+/// </summary>
+public interface ISnapshotAutomationStatus
+{
+    void BeginRun();
+
+    void EndRun(bool success);
+
+    void SetCurrentAction(string? action);
+
+    IReadOnlyDictionary<string, object?> GetDisplayMetadata();
+}

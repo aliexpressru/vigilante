@@ -35,6 +35,7 @@ public class SnapshotAutomationJobTests
             .AddSingleton(_clusterManager)
             .AddSingleton(_orphanedState)
             .AddSingleton(_logger)
+            .AddSingleton<ISnapshotAutomationStatus, SnapshotAutomationStatus>()
             .BuildServiceProvider();
     }
 

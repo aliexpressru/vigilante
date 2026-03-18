@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Vigilante.Constants;
 using Vigilante.Models;
 using Vigilante.Services.Interfaces;
+using ISnapshotAutomationStatus = Vigilante.Services.Interfaces.ISnapshotAutomationStatus;
 using SnapshotInfo = Vigilante.Models.SnapshotInfo;
 
 namespace Vigilante.Services.Jobs;
@@ -55,21 +56,23 @@ public sealed class SnapshotAutomationJob : IJob
         var orphanedState = _serviceProvider.GetRequiredService<SnapshotOrphanedState>();
         var logger = _serviceProvider.GetRequiredService<ILogger<SnapshotAutomationJob>>();
 
-        SetCurrentAction(Actions.LoadingCollections);
-        var collections = await clusterManager.GetCollectionsInfoAsync(clearCache: true, cancellationToken);
-
         var snapshotCfg = _config.Snapshot;
 
         var anyScheduleEnabled = snapshotCfg.Schedule.Enabled
             || snapshotCfg.CollectionOverrides?.Values.Any(s => s.Enabled) == true;
 
         if (!anyScheduleEnabled && !snapshotCfg.DeleteOrphanedAfterMinutes.HasValue)
-        {
-            SetCurrentAction(null);
             return (false, true, null);
-        }
 
-        SetCurrentAction(Actions.LoadingSnapshots);
+        var automationStatus = _serviceProvider.GetRequiredService<ISnapshotAutomationStatus>();
+        automationStatus.BeginRun();
+        try
+        {
+            SetCurrentAction(Actions.LoadingCollections);
+            var collections = await clusterManager.GetCollectionsInfoAsync(clearCache: true, cancellationToken)
+                .ConfigureAwait(false);
+
+            SetCurrentAction(Actions.LoadingSnapshots);
 
         var byCollection = collections
             .GroupBy(c => c.CollectionName)
@@ -152,8 +155,15 @@ public sealed class SnapshotAutomationJob : IJob
             await ProcessOrphanedCollectionsAsync(snapshotService, orphanedState, logger, currentNames, snapshotsByCollection, snapshotCfg.DeleteOrphanedAfterMinutes.Value, cancellationToken);
         }
 
-        SetCurrentAction(null);
-        return (false, true, null);
+            SetCurrentAction(null);
+            automationStatus.EndRun(true);
+            return (false, true, null);
+        }
+        catch (Exception)
+        {
+            automationStatus.EndRun(false);
+            throw;
+        }
     }
 
     private void SetCurrentAction(string? action)
@@ -162,6 +172,8 @@ public sealed class SnapshotAutomationJob : IJob
         {
             _currentAction = action;
         }
+
+        _serviceProvider.GetService<ISnapshotAutomationStatus>()?.SetCurrentAction(action);
     }
 
     private async Task ProcessOrphanedCollectionsAsync(

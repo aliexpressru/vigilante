@@ -998,8 +998,12 @@ class VigilanteDashboard {
                 }).join(' · ')
                 : '';
 
-            const statusClass = error ? 'job-status-error' : 'job-status-running';
-            const statusText = error ? 'Error' : 'Running';
+            const phase = meta.phase != null ? String(meta.phase).toLowerCase() : null;
+            const statusClass = error ? 'job-status-error' : (phase === 'idle' ? 'job-status-idle' : 'job-status-running');
+            const statusText = error ? 'Error' : (phase === 'idle' ? 'Idle' : 'Running');
+            const lastLine = !error && meta.lastCompletedUtc
+                ? `<div class="job-meta">${meta.lastRunSuccess === false ? 'Last run: failed' : 'Last run: OK'} · ${new Date(meta.lastCompletedUtc).toLocaleString()}</div>`
+                : '';
             const errorBlock = error
                 ? `<div class="job-error">${this.escapeHtml(error)}${errorAt ? ` <span class="job-error-at">${errorAt}</span>` : ''}</div>`
                 : '';
@@ -1012,6 +1016,7 @@ class VigilanteDashboard {
                         <span class="job-key">${this.escapeHtml(key)}</span>
                         <span class="job-status ${statusClass}">${statusText}</span>
                     </div>
+                    ${lastLine}
                     ${currentActionBlock}
                     ${errorBlock}
                     ${metaBlock}

@@ -12,6 +12,8 @@ namespace Aer.Vigilante.Tests.Controllers;
 public class JobsControllerTests
 {
     private IJobRegistry _jobRegistry = null!;
+    private IDynamicConfigService _dynamicConfig = null!;
+    private ISnapshotAutomationStatus _snapshotStatus = null!;
     private ILogger<JobsController> _logger = null!;
     private JobsController _controller = null!;
 
@@ -19,8 +21,12 @@ public class JobsControllerTests
     public void SetUp()
     {
         _jobRegistry = Substitute.For<IJobRegistry>();
+        _dynamicConfig = Substitute.For<IDynamicConfigService>();
+        _dynamicConfig.GetConfigAsync(Arg.Any<CancellationToken>()).Returns(new DynamicConfig());
+        _snapshotStatus = Substitute.For<ISnapshotAutomationStatus>();
+        _snapshotStatus.GetDisplayMetadata().Returns(new Dictionary<string, object?> { ["phase"] = "idle" });
         _logger = Substitute.For<ILogger<JobsController>>();
-        _controller = new JobsController(_jobRegistry, _logger);
+        _controller = new JobsController(_jobRegistry, _dynamicConfig, _snapshotStatus, _logger);
     }
 
     [Test]
@@ -74,5 +80,30 @@ public class JobsControllerTests
         Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
         var objectResult = (ObjectResult)result.Result!;
         Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+    }
+
+    [Test]
+    public async Task GetJobsStatus_WhenSnapshotAutomationEnabled_IncludesSnapshotAutomationRow()
+    {
+        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        _jobRegistry.GetJobInfos().Returns(Array.Empty<JobInfoDto>());
+        _dynamicConfig.GetConfigAsync(Arg.Any<CancellationToken>()).Returns(new DynamicConfig
+        {
+            Snapshot = new SnapshotConfiguration { Schedule = new Schedule { Enabled = true } }
+        });
+        _snapshotStatus.GetDisplayMetadata().Returns(new Dictionary<string, object?>
+        {
+            ["phase"] = "idle",
+            ["lastCompletedUtc"] = DateTime.UtcNow,
+            ["lastRunSuccess"] = true
+        });
+
+        var result = await _controller.GetJobsStatus(CancellationToken.None);
+
+        var ok = (OkObjectResult)result.Result!;
+        var list = (IReadOnlyList<JobInfoDto>)ok.Value!;
+        Assert.That(list, Has.Count.EqualTo(1));
+        Assert.That(list[0].Key, Is.EqualTo("snapshot-automation"));
+        Assert.That(list[0].Metadata!["phase"], Is.EqualTo("idle"));
     }
 }

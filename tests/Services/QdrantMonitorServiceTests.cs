@@ -38,6 +38,7 @@ public class QdrantMonitorServiceTests
             .AddSingleton(snapshotService)
             .AddSingleton(snapshotOrphanedState)
             .AddSingleton(snapshotJobLogger)
+            .AddSingleton<ISnapshotAutomationStatus, SnapshotAutomationStatus>()
             .BuildServiceProvider();
 
         _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())

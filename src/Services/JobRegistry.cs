@@ -13,6 +13,13 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
 {
     private readonly ConcurrentDictionary<string, (IJob Job, CancellationTokenSource Cts)> _jobs = new();
 
+    /// <summary>
+    /// One processor at a time per job key. Otherwise two concurrent <see cref="ProcessPendingJobsAsync"/>
+    /// (e.g. monitor + JobsController from dashboard) could run <see cref="IJob.AdvanceAsync"/> on the same job;
+    /// the first completion calls <see cref="RemoveJobAsync"/> and cancels the CTS, aborting in-flight HTTP in the second.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _jobExecutionGates = new();
+
     public bool TryAddJob(IJob job, CancellationTokenSource cts)
     {
         return _jobs.TryAdd(job.Key, (job, cts));
@@ -128,14 +135,19 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
 
     private async Task ProcessOneJobAsync(PendingJob pending, CancellationToken cancellationToken)
     {
-        var job = pending.Job;
-        var key = job.Key;
-        var cts = pending.CancellationTokenSource;
-
+        var key = pending.Job.Key;
+        var gate = _jobExecutionGates.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (cancellationToken.IsCancellationRequested)
                 return;
+
+            if (!_jobs.TryGetValue(key, out var entry))
+                return;
+
+            var job = entry.Job;
+            var cts = entry.Cts;
 
             if (cts.Token.IsCancellationRequested)
             {
@@ -145,36 +157,40 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
 
             if (job.IsWaitingForReady)
             {
-                var ready = await job.CheckReadyAsync(cts.Token);
+                var ready = await job.CheckReadyAsync(cts.Token).ConfigureAwait(false);
                 if (ready == true)
                     job.OnReady();
             }
             else
             {
-                var (hasMore, success, error) = await job.AdvanceAsync(cts.Token);
+                var (hasMore, success, error) = await job.AdvanceAsync(cts.Token).ConfigureAwait(false);
                 if (!hasMore)
                 {
-                    await RemoveJobAsync(key);
+                    await RemoveJobAsync(key).ConfigureAwait(false);
                     if (success)
                         logger.LogInformation("Job completed for key {Key}", key);
                 }
                 else if (!success)
                 {
                     RecordJobFailure(key, error ?? "Unknown");
-                    await RemoveJobAsync(key);
+                    await RemoveJobAsync(key).ConfigureAwait(false);
                 }
             }
         }
         catch (OperationCanceledException)
         {
             logger.LogInformation("Job cancelled for key {Key}", key);
-            await RemoveJobAsync(key);
+            await RemoveJobAsync(key).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Job failed for key {Key}", key);
             RecordJobFailure(key, ex.Message);
-            await RemoveJobAsync(key);
+            await RemoveJobAsync(key).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
         }
     }
 }
