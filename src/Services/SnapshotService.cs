@@ -110,7 +110,9 @@ public class SnapshotService(
             successCount,
             results.Count);
 
-        if (!waitForResult && successCount > 0)
+        // Same follow-up job for manual (async) and automation (sync wait): tracks visibility in UI until snapshots show up.
+        // With waitForResult: true the next ProcessPendingJobs tick usually completes this job in one step.
+        if (successCount > 0)
         {
             var succeededNodeUrls = results.Where(kv => kv.Value != null).Select(kv => kv.Key).ToList();
             var requestedNodes = succeededNodeUrls
@@ -122,7 +124,8 @@ public class SnapshotService(
                 requestedNodes,
                 requestedAt);
             var cts = new CancellationTokenSource();
-            jobRegistry.TryAddJob(job, cts);
+            if (!jobRegistry.TryAddJob(job, cts))
+                cts.Dispose();
         }
 
         return results;

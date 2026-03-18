@@ -9,13 +9,19 @@ public sealed class SnapshotAutomationStatus : Interfaces.ISnapshotAutomationSta
     private DateTime? _lastRunStartedUtc;
     private DateTime? _lastCompletedUtc;
     private bool? _lastRunSuccess;
+    private readonly List<string> _runNotes = [];
+    private string? _lastRunSummary;
 
     public void BeginRun()
     {
         lock (_lock)
         {
             if (_runDepth == 0)
+            {
                 _lastRunStartedUtc = DateTime.UtcNow;
+                _runNotes.Clear();
+            }
+
             _runDepth++;
         }
     }
@@ -30,7 +36,20 @@ public sealed class SnapshotAutomationStatus : Interfaces.ISnapshotAutomationSta
             {
                 _lastCompletedUtc = DateTime.UtcNow;
                 _lastRunSuccess = success;
+                if (_runNotes.Count > 0)
+                    _lastRunSummary = string.Join(" · ", _runNotes);
+                _runNotes.Clear();
             }
+        }
+    }
+
+    public void AppendRunNote(string note)
+    {
+        if (string.IsNullOrWhiteSpace(note))
+            return;
+        lock (_lock)
+        {
+            _runNotes.Add(note.Trim());
         }
     }
 
@@ -56,6 +75,8 @@ public sealed class SnapshotAutomationStatus : Interfaces.ISnapshotAutomationSta
             };
             if (!string.IsNullOrEmpty(_currentAction))
                 d["CurrentAction"] = _currentAction;
+            if (!string.IsNullOrEmpty(_lastRunSummary))
+                d["lastRunSummary"] = _lastRunSummary;
             return d;
         }
     }

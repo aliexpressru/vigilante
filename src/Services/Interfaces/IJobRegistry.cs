@@ -46,5 +46,6 @@ public interface IJobRegistry
     /// Advances all pending jobs (AdvanceAsync / CheckReadyAsync). Removes completed or failed jobs.
     /// Call from monitor tick and on frontend refresh so jobs like PendingSnapshotCreationJob progress without waiting for the full monitor interval.
     /// </summary>
-    Task ProcessPendingJobsAsync(CancellationToken cancellationToken = default);
+    /// <param name="excludeJobKeys">Keys not to advance (e.g. snapshot-automation on GET jobs/status so the request does not block until the run finishes and the UI can show Running).</param>
+    Task ProcessPendingJobsAsync(CancellationToken cancellationToken = default, IReadOnlySet<string>? excludeJobKeys = null);
 }

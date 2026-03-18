@@ -12,7 +12,7 @@ namespace Vigilante.Services.Jobs;
 /// Uses the node list passed at creation; if a node becomes unavailable, the job fails with an error.
 /// Fails with timeout error if snapshots do not appear within <see cref="Timeout"/>.
 /// Resolves ISnapshotService and ILogger from the service provider when needed.
-/// Registered by SnapshotService when a manual snapshot is requested (waitForResult: false).
+/// Registered by SnapshotService after a successful multi-node create (manual or snapshot automation).
 /// </summary>
 public sealed class PendingSnapshotCreationJob : IJob
 {

@@ -340,6 +340,18 @@ body {
     font-weight: 500;
 }
 
+.job-last-run-summary {
+    margin-top: 6px;
+    font-size: 0.88rem;
+    color: #64748b;
+    line-height: 1.4;
+}
+
+.job-last-run-label {
+    font-weight: 600;
+    margin-right: 4px;
+}
+
 .job-meta {
     margin-top: 4px;
     font-size: 0.8rem;

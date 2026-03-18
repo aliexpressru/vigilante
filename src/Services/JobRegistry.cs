@@ -123,9 +123,11 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
         return list;
     }
 
-    public async Task ProcessPendingJobsAsync(CancellationToken cancellationToken = default)
+    public async Task ProcessPendingJobsAsync(CancellationToken cancellationToken = default, IReadOnlySet<string>? excludeJobKeys = null)
     {
         var jobs = GetPendingJobs();
+        if (excludeJobKeys is { Count: > 0 })
+            jobs = jobs.Where(p => !excludeJobKeys.Contains(p.Job.Key)).ToList();
         if (jobs.Count == 0)
             return;
 

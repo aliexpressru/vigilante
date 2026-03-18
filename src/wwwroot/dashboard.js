@@ -990,7 +990,12 @@ class VigilanteDashboard {
             const currentAction = meta.currentAction != null
                 ? (Array.isArray(meta.currentAction) ? meta.currentAction.join(' · ') : String(meta.currentAction))
                 : (meta.CurrentAction != null ? (Array.isArray(meta.CurrentAction) ? meta.CurrentAction.join(' · ') : String(meta.CurrentAction)) : null);
-            const metaRest = Object.entries(meta).filter(([k]) => k !== 'CurrentAction' && k !== 'currentAction');
+            const metaRest = Object.entries(meta).filter(([k]) =>
+                !['CurrentAction', 'currentAction', 'lastRunSummary', 'phase', 'lastRunStartedUtc', 'lastCompletedUtc', 'lastRunSuccess'].includes(k));
+            const rawSummary = meta.lastRunSummary ?? meta.LastRunSummary;
+            const lastRunSummary = rawSummary != null && String(rawSummary).trim() !== ''
+                ? String(rawSummary)
+                : null;
             const metaStr = metaRest.length
                 ? metaRest.map(([k, v]) => {
                     const val = Array.isArray(v) ? v.join(', ') : (typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v));
@@ -1008,6 +1013,9 @@ class VigilanteDashboard {
                 ? `<div class="job-error">${this.escapeHtml(error)}${errorAt ? ` <span class="job-error-at">${errorAt}</span>` : ''}</div>`
                 : '';
             const currentActionBlock = currentAction ? `<div class="job-current-action">${this.escapeHtml(currentAction)}</div>` : '';
+            const lastRunSummaryBlock = lastRunSummary
+                ? `<div class="job-last-run-summary"><span class="job-last-run-label">Last run:</span> ${this.escapeHtml(lastRunSummary)}</div>`
+                : '';
             const metaBlock = metaStr ? `<div class="job-meta">${this.escapeHtml(metaStr)}</div>` : '';
 
             return `
@@ -1017,6 +1025,7 @@ class VigilanteDashboard {
                         <span class="job-status ${statusClass}">${statusText}</span>
                     </div>
                     ${lastLine}
+                    ${lastRunSummaryBlock}
                     ${currentActionBlock}
                     ${errorBlock}
                     ${metaBlock}

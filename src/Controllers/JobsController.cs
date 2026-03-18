@@ -13,6 +13,10 @@ public class JobsController(
     ISnapshotAutomationStatus snapshotAutomationStatus,
     ILogger<JobsController> logger) : ControllerBase
 {
+    /// <summary>Do not drain snapshot-automation on status poll — otherwise the HTTP call blocks until the run ends and the UI only ever sees idle.</summary>
+    private static readonly IReadOnlySet<string> ExcludeSnapshotAutomationOnStatusPoll =
+        new HashSet<string> { SnapshotAutomationJob.JobKey };
+
     /// <summary>
     /// Returns current background jobs with metadata (e.g. ReplicationPlan for restore replication factor) and any errors.
     /// Advances pending jobs (e.g. PendingSnapshotCreationJob) on each call so they progress with frontend auto-refresh.
@@ -26,7 +30,7 @@ public class JobsController(
     {
         try
         {
-            await jobRegistry.ProcessPendingJobsAsync(cancellationToken);
+            await jobRegistry.ProcessPendingJobsAsync(cancellationToken, ExcludeSnapshotAutomationOnStatusPoll);
             var config = await dynamicConfigService.GetConfigAsync(cancellationToken);
             var infos = jobRegistry.GetJobInfos();
             if (IsSnapshotAutomationConfigured(config))

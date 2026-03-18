@@ -5,6 +5,7 @@ using NUnit.Framework;
 using Vigilante.Controllers;
 using Vigilante.Models;
 using Vigilante.Services.Interfaces;
+using Vigilante.Services.Jobs;
 
 namespace Aer.Vigilante.Tests.Controllers;
 
@@ -32,7 +33,7 @@ public class JobsControllerTests
     [Test]
     public async Task GetJobsStatus_WhenNoJobs_Returns200EmptyList()
     {
-        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>(), Arg.Any<IReadOnlySet<string>?>()).Returns(Task.CompletedTask);
         _jobRegistry.GetJobInfos().Returns(Array.Empty<JobInfoDto>());
 
         var result = await _controller.GetJobsStatus(CancellationToken.None);
@@ -42,13 +43,15 @@ public class JobsControllerTests
         var list = ok.Value as IReadOnlyList<JobInfoDto>;
         Assert.That(list, Is.Not.Null);
         Assert.That(list!, Is.Empty);
-        await _jobRegistry.Received(1).ProcessPendingJobsAsync(Arg.Any<CancellationToken>());
+        await _jobRegistry.Received(1).ProcessPendingJobsAsync(
+            Arg.Any<CancellationToken>(),
+            Arg.Is<IReadOnlySet<string>?>(s => s != null && s.Contains(SnapshotAutomationJob.JobKey)));
     }
 
     [Test]
     public async Task GetJobsStatus_WhenJobsExist_Returns200WithList()
     {
-        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>(), Arg.Any<IReadOnlySet<string>?>()).Returns(Task.CompletedTask);
         var infos = new List<JobInfoDto>
         {
             new("job1", null, null, null),
@@ -66,13 +69,15 @@ public class JobsControllerTests
         Assert.That(list[0].Key, Is.EqualTo("job1"));
         Assert.That(list[1].Key, Is.EqualTo("job2"));
         Assert.That(list[1].ErrorMessage, Is.EqualTo("error"));
-        await _jobRegistry.Received(1).ProcessPendingJobsAsync(Arg.Any<CancellationToken>());
+        await _jobRegistry.Received(1).ProcessPendingJobsAsync(
+            Arg.Any<CancellationToken>(),
+            Arg.Is<IReadOnlySet<string>?>(s => s != null && s.Contains(SnapshotAutomationJob.JobKey)));
     }
 
     [Test]
     public async Task GetJobsStatus_WhenRegistryThrows_Returns500()
     {
-        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>(), Arg.Any<IReadOnlySet<string>?>()).Returns(Task.CompletedTask);
         _jobRegistry.GetJobInfos().Returns(_ => throw new InvalidOperationException("registry broken"));
 
         var result = await _controller.GetJobsStatus(CancellationToken.None);
@@ -85,7 +90,7 @@ public class JobsControllerTests
     [Test]
     public async Task GetJobsStatus_WhenSnapshotAutomationEnabled_IncludesSnapshotAutomationRow()
     {
-        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>(), Arg.Any<IReadOnlySet<string>?>()).Returns(Task.CompletedTask);
         _jobRegistry.GetJobInfos().Returns(Array.Empty<JobInfoDto>());
         _dynamicConfig.GetConfigAsync(Arg.Any<CancellationToken>()).Returns(new DynamicConfig
         {

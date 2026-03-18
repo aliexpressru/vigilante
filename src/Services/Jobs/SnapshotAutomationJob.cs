@@ -24,6 +24,9 @@ public sealed class SnapshotAutomationJob : IJob
         public const string LoadingSnapshots = "Loading snapshots...";
         public const string DeletingOrphanedSnapshotsPrefix = "Deleting orphaned snapshots: ";
         public const string EnforcingRetentionPrefix = "Enforcing retention: ";
+
+        public static string CreatingSnapshot(string collection, int nodeCount) =>
+            $"Creating snapshot «{collection}» on {nodeCount} node(s)...";
     }
 
     private readonly IServiceProvider _serviceProvider;
@@ -118,7 +121,7 @@ public sealed class SnapshotAutomationJob : IJob
                         logger.LogInformation(
                             "Collection {CollectionName} is Green with HNSW; taking auto-snapshot on {MissingCount}/{TotalCount} nodes missing a snapshot",
                             collectionName, missingNodeUrls.Count, healthyNodeUrls.Count);
-                        await TakeAutoSnapshotAsync(snapshotService, clusterManager, logger, collectionName, missingNodeUrls, schedule, cancellationToken);
+                        await TakeAutoSnapshotAsync(snapshotService, clusterManager, logger, automationStatus, collectionName, missingNodeUrls, schedule, cancellationToken);
                     }
                 }
             }
@@ -145,14 +148,14 @@ public sealed class SnapshotAutomationJob : IJob
                     logger.LogInformation(
                         "Interval snapshot due for collection {CollectionName} on {DueCount}/{TotalCount} nodes (every {Minutes} min)",
                         collectionName, dueNodeUrls.Count, healthyNodeUrls.Count, schedule.IntervalMinutes.Value);
-                    await TakeAutoSnapshotAsync(snapshotService, clusterManager, logger, collectionName, dueNodeUrls, schedule, cancellationToken);
+                    await TakeAutoSnapshotAsync(snapshotService, clusterManager, logger, automationStatus, collectionName, dueNodeUrls, schedule, cancellationToken);
                 }
             }
         }
 
         if (snapshotCfg.DeleteOrphanedAfterMinutes.HasValue)
         {
-            await ProcessOrphanedCollectionsAsync(snapshotService, orphanedState, logger, currentNames, snapshotsByCollection, snapshotCfg.DeleteOrphanedAfterMinutes.Value, cancellationToken);
+            await ProcessOrphanedCollectionsAsync(snapshotService, orphanedState, logger, automationStatus, currentNames, snapshotsByCollection, snapshotCfg.DeleteOrphanedAfterMinutes.Value, cancellationToken);
         }
 
             SetCurrentAction(null);
@@ -180,6 +183,7 @@ public sealed class SnapshotAutomationJob : IJob
         ISnapshotService snapshotService,
         SnapshotOrphanedState orphanedState,
         ILogger<SnapshotAutomationJob> logger,
+        ISnapshotAutomationStatus automationStatus,
         HashSet<string> currentNames,
         Dictionary<string, List<SnapshotInfo>> snapshotsByCollection,
         int deleteAfterMinutes,
@@ -216,10 +220,11 @@ public sealed class SnapshotAutomationJob : IJob
                 "Deleting orphaned snapshots for collection {CollectionName} (missing for {Minutes} min)",
                 name, (int)(now - detectedAt).TotalMinutes);
 
+            var toDelete = snapshotsByCollection.GetValueOrDefault(name) ?? [];
             SetCurrentAction(Actions.DeletingOrphanedSnapshotsPrefix + name);
             try
             {
-                foreach (var snapshot in snapshotsByCollection.GetValueOrDefault(name) ?? [])
+                foreach (var snapshot in toDelete)
                 {
                     await snapshotService.DeleteSnapshotAsync(
                         name,
@@ -230,6 +235,9 @@ public sealed class SnapshotAutomationJob : IJob
                         podNamespace: snapshot.PodNamespace,
                         cancellationToken: token);
                 }
+
+                if (toDelete.Count > 0)
+                    automationStatus.AppendRunNote($"Orphan cleanup «{name}»: deleted {toDelete.Count} snapshot(s)");
             }
             catch (Exception ex)
             {
@@ -244,6 +252,7 @@ public sealed class SnapshotAutomationJob : IJob
         ISnapshotService snapshotService,
         IClusterManager clusterManager,
         ILogger<SnapshotAutomationJob> logger,
+        ISnapshotAutomationStatus automationStatus,
         string collectionName,
         List<string> nodeUrls,
         Schedule schedule,
@@ -257,6 +266,7 @@ public sealed class SnapshotAutomationJob : IJob
 
         try
         {
+            SetCurrentAction(Actions.CreatingSnapshot(collectionName, nodeUrls.Count));
             var results = await snapshotService.CreateCollectionSnapshotAsync(collectionName, nodeUrls, token, waitForResult: true);
             var succeededCount = results.Count(kv => kv.Value is not null);
             var failedCount = results.Count - succeededCount;
@@ -271,11 +281,20 @@ public sealed class SnapshotAutomationJob : IJob
                 clusterManager.ReportIssue(
                     IssueKeyConstants.Snapshot(collectionName),
                     $"Snapshot failed on {failedCount}/{results.Count} nodes: {failedNodes}");
+                automationStatus.AppendRunNote($"Snapshot «{collectionName}»: failed on {failedCount}/{results.Count} nodes");
             }
             else
             {
                 clusterManager.ClearIssue(IssueKeyConstants.Snapshot(collectionName));
             }
+
+            if (succeededCount > 0)
+            {
+                automationStatus.AppendRunNote($"Snapshot «{collectionName}»: created on {succeededCount}/{results.Count} node(s)");
+                SetCurrentAction($"Snapshot «{collectionName}» done ({succeededCount} node(s))");
+            }
+            else if (failedCount == results.Count && results.Count > 0)
+                SetCurrentAction($"Snapshot «{collectionName}» failed on all nodes");
 
             if (schedule.RetainLastN.HasValue && succeededCount > 0)
             {
@@ -285,12 +304,14 @@ public sealed class SnapshotAutomationJob : IJob
                     .Select(n => n.PeerId!)
                     .ToHashSet();
                 await snapshotService.EnforceRetentionAsync(collectionName, schedule.RetainLastN.Value, currentPeerIds, token);
+                automationStatus.AppendRunNote($"Retention «{collectionName}»: keep last {schedule.RetainLastN.Value}");
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to create auto-snapshot for collection {CollectionName}", collectionName);
             clusterManager.ReportIssue(IssueKeyConstants.Snapshot(collectionName), ex.Message);
+            automationStatus.AppendRunNote($"Snapshot «{collectionName}»: error — {ex.Message}");
         }
     }
 

@@ -177,6 +177,19 @@ public class JobRegistryTests
         await job.Received(1).AdvanceAsync(Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task ProcessPendingJobsAsync_WhenJobKeyExcluded_LeavesJobPendingAndDoesNotAdvance()
+    {
+        var job = CreateFakeJob("snapshot-automation");
+        var cts = new CancellationTokenSource();
+        _registry.TryAddJob(job, cts);
+
+        await _registry.ProcessPendingJobsAsync(CancellationToken.None, new HashSet<string> { "snapshot-automation" });
+
+        Assert.That(_registry.GetPendingJobs(), Has.Count.EqualTo(1));
+        await job.DidNotReceive().AdvanceAsync(Arg.Any<CancellationToken>());
+    }
+
     /// <summary>
     /// Regression: monitor and JobsController can call ProcessPendingJobsAsync concurrently.
     /// Without per-key gate, both would run AdvanceAsync; the first RemoveJobAsync cancels CTS and aborts the second (TaskCanceledException on HTTP).

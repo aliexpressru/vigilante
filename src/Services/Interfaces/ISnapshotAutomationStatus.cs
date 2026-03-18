@@ -10,6 +10,9 @@ public interface ISnapshotAutomationStatus
 
     void EndRun(bool success);
 
+    /// <summary>Short note for the last run summary (e.g. snapshot created, orphan deleted).</summary>
+    void AppendRunNote(string note);
+
     void SetCurrentAction(string? action);
 
     IReadOnlyDictionary<string, object?> GetDisplayMetadata();
