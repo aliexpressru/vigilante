@@ -74,7 +74,9 @@ public class SnapshotService(
         string collectionName,
         IEnumerable<string> nodeUrls,
         CancellationToken cancellationToken = default,
-        bool waitForResult = false)
+        bool waitForResult = false,
+        int? retainLastNAfterVisible = null,
+        IReadOnlySet<string>? retentionClusterPeerIds = null)
     {
         var requestedAt = DateTime.UtcNow;
         var nodeUrlsList = nodeUrls.ToList();
@@ -110,8 +112,7 @@ public class SnapshotService(
             successCount,
             results.Count);
 
-        // Same follow-up job for manual (async) and automation (sync wait): tracks visibility in UI until snapshots show up.
-        // With waitForResult: true the next ProcessPendingJobs tick usually completes this job in one step.
+        // Follow-up job: UI + optional retention after snapshots become visible (important when waitForResult is false).
         if (successCount > 0)
         {
             var succeededNodeUrls = results.Where(kv => kv.Value != null).Select(kv => kv.Key).ToList();
@@ -122,7 +123,9 @@ public class SnapshotService(
                 serviceProvider,
                 collectionName,
                 requestedNodes,
-                requestedAt);
+                requestedAt,
+                retainLastNAfterVisible,
+                retentionClusterPeerIds);
             var cts = new CancellationTokenSource();
             if (!jobRegistry.TryAddJob(job, cts))
                 cts.Dispose();

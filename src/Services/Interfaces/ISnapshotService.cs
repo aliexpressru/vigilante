@@ -20,11 +20,14 @@ public interface ISnapshotService
     /// <summary>
     /// Creates a snapshot for a collection on specified nodes
     /// </summary>
+    /// <param name="retainLastNAfterVisible">When set, <see cref="EnforceRetentionAsync"/> runs from <c>snapshot-create-*</c> job after new snapshots show up (use with <c>waitForResult: false</c>).</param>
     Task<Dictionary<string, string?>> CreateCollectionSnapshotAsync(
         string collectionName,
         IEnumerable<string> nodeUrls,
         CancellationToken cancellationToken = default,
-        bool waitForResult = false);
+        bool waitForResult = false,
+        int? retainLastNAfterVisible = null,
+        IReadOnlySet<string>? retentionClusterPeerIds = null);
 
     /// <summary>
     /// Gets snapshot information with sizes for a collection on a specific node

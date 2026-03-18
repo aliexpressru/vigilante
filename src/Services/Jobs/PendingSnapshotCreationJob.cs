@@ -12,7 +12,8 @@ namespace Vigilante.Services.Jobs;
 /// Uses the node list passed at creation; if a node becomes unavailable, the job fails with an error.
 /// Fails with timeout error if snapshots do not appear within <see cref="Timeout"/>.
 /// Resolves ISnapshotService and ILogger from the service provider when needed.
-/// Registered by SnapshotService after a successful multi-node create (manual or snapshot automation).
+/// Registered by SnapshotService after a successful multi-node create. When creation is async, polls until
+/// snapshots appear; optional retention runs only after they are visible.
 /// </summary>
 public sealed class PendingSnapshotCreationJob : IJob
 {
@@ -22,12 +23,15 @@ public sealed class PendingSnapshotCreationJob : IJob
     /// <summary>
     /// After this many minutes without snapshots appearing, the job fails with a timeout error.
     /// </summary>
-    public static readonly TimeSpan Timeout = TimeSpan.FromMinutes(5);
+    /// <summary>Large collections can take a long time before the snapshot file is listed.</summary>
+    public static readonly TimeSpan Timeout = TimeSpan.FromMinutes(30);
 
     private readonly IServiceProvider _serviceProvider;
     private readonly string _collectionName;
     private readonly IReadOnlyList<NodeInfo> _requestedNodes;
     private readonly DateTime _requestedAtUtc;
+    private readonly int? _retainLastNAfterVisible;
+    private readonly IReadOnlySet<string>? _retentionClusterPeerIds;
 
     public string Key => KeyPrefix + _collectionName;
     public bool IsWaitingForReady => false;
@@ -36,12 +40,16 @@ public sealed class PendingSnapshotCreationJob : IJob
         IServiceProvider serviceProvider,
         string collectionName,
         IReadOnlyList<NodeInfo> requestedNodes,
-        DateTime requestedAtUtc)
+        DateTime requestedAtUtc,
+        int? retainLastNAfterVisible = null,
+        IReadOnlySet<string>? retentionClusterPeerIds = null)
     {
         _serviceProvider = serviceProvider;
         _collectionName = collectionName;
         _requestedNodes = requestedNodes;
         _requestedAtUtc = requestedAtUtc;
+        _retainLastNAfterVisible = retainLastNAfterVisible;
+        _retentionClusterPeerIds = retentionClusterPeerIds;
     }
 
     public Task<bool?> CheckReadyAsync(CancellationToken cancellationToken) => Task.FromResult<bool?>(true);
@@ -93,7 +101,7 @@ public sealed class PendingSnapshotCreationJob : IJob
                 logger.LogInformation(
                     "Snapshot creation job completed for collection {CollectionName}: {Count} new snapshots visible in S3 (requested {RequestedCount} nodes)",
                     _collectionName, newSnapshots.Count, _requestedNodes.Count);
-                return (false, true, null);
+                return await CompleteSuccessAsync(snapshotService, logger, cancellationToken).ConfigureAwait(false);
             }
             return (true, true, null);
         }
@@ -109,17 +117,46 @@ public sealed class PendingSnapshotCreationJob : IJob
             logger.LogInformation(
                 "Snapshot creation job completed for collection {CollectionName}: snapshots visible on all {Count} nodes",
                 _collectionName, _requestedNodes.Count);
-            return (false, true, null);
+            return await CompleteSuccessAsync(snapshotService, logger, cancellationToken).ConfigureAwait(false);
         }
 
         return (true, true, null);
+    }
+
+    private async Task<(bool HasMore, bool Success, string? ErrorMessage)> CompleteSuccessAsync(
+        ISnapshotService snapshotService,
+        ILogger<PendingSnapshotCreationJob> logger,
+        CancellationToken cancellationToken)
+    {
+        if (_retainLastNAfterVisible is > 0)
+        {
+            try
+            {
+                await snapshotService
+                    .EnforceRetentionAsync(
+                        _collectionName,
+                        _retainLastNAfterVisible.Value,
+                        _retentionClusterPeerIds,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                logger.LogInformation(
+                    "Retention (last {N}) applied for {Collection} after snapshots became visible",
+                    _retainLastNAfterVisible, _collectionName);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Retention after snapshot visibility failed for {Collection}", _collectionName);
+            }
+        }
+
+        return (false, true, null);
     }
 
     public IReadOnlyDictionary<string, object?>? GetMetadata()
     {
         return new Dictionary<string, object?>
         {
-            [MetadataCurrentAction] = $"Creating snapshot: {_collectionName}"
+            [MetadataCurrentAction] = $"Waiting for snapshot: {_collectionName}"
         };
     }
 

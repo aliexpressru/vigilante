@@ -269,13 +269,25 @@ public sealed class SnapshotAutomationJob : IJob
 
         try
         {
+            var retentionPeerIds = _nodes
+                .Where(n => !string.IsNullOrEmpty(n.PeerId))
+                .Select(n => n.PeerId!)
+                .ToHashSet();
+
             SetCurrentAction(Actions.CreatingSnapshot(collectionName, nodeUrls.Count));
-            var results = await snapshotService.CreateCollectionSnapshotAsync(collectionName, nodeUrls, token, waitForResult: true);
+            var results = await snapshotService.CreateCollectionSnapshotAsync(
+                    collectionName,
+                    nodeUrls,
+                    token,
+                    waitForResult: false,
+                    retainLastNAfterVisible: schedule.RetainLastN,
+                    retentionClusterPeerIds: retentionPeerIds)
+                .ConfigureAwait(false);
             var succeededCount = results.Count(kv => kv.Value is not null);
             var failedCount = results.Count - succeededCount;
 
             logger.LogInformation(
-                "Auto-snapshot for collection {CollectionName}: {SuccessCount}/{TotalCount} nodes succeeded",
+                "Auto-snapshot for collection {CollectionName}: {SuccessCount}/{TotalCount} nodes accepted (async completion)",
                 collectionName, succeededCount, results.Count);
 
             if (failedCount > 0)
@@ -293,22 +305,12 @@ public sealed class SnapshotAutomationJob : IJob
 
             if (succeededCount > 0)
             {
-                automationStatus.AppendRunNote($"Snapshot «{collectionName}»: created on {succeededCount}/{results.Count} node(s)");
-                SetCurrentAction($"Snapshot «{collectionName}» done ({succeededCount} node(s))");
+                automationStatus.AppendRunNote(
+                    $"Snapshot «{collectionName}»: started on {succeededCount}/{results.Count} node(s) (appears when ready)");
+                SetCurrentAction($"Snapshot «{collectionName}» started ({succeededCount} node(s)); waiting for files…");
             }
             else if (failedCount == results.Count && results.Count > 0)
                 SetCurrentAction($"Snapshot «{collectionName}» failed on all nodes");
-
-            if (schedule.RetainLastN.HasValue && succeededCount > 0)
-            {
-                SetCurrentAction(Actions.EnforcingRetentionPrefix + collectionName);
-                var currentPeerIds = _nodes
-                    .Where(n => !string.IsNullOrEmpty(n.PeerId))
-                    .Select(n => n.PeerId!)
-                    .ToHashSet();
-                await snapshotService.EnforceRetentionAsync(collectionName, schedule.RetainLastN.Value, currentPeerIds, token);
-                automationStatus.AppendRunNote($"Retention «{collectionName}»: keep last {schedule.RetainLastN.Value}");
-            }
         }
         catch (Exception ex)
         {

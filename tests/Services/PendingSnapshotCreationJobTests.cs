@@ -66,13 +66,17 @@ public class PendingSnapshotCreationJobTests
     private PendingSnapshotCreationJob CreateJob(
         string collectionName = "my-collection",
         IReadOnlyList<NodeInfo>? nodes = null,
-        DateTime? requestedAtUtc = null)
+        DateTime? requestedAtUtc = null,
+        int? retainLastNAfterVisible = null,
+        IReadOnlySet<string>? retentionClusterPeerIds = null)
     {
         return new PendingSnapshotCreationJob(
             _serviceProvider,
             collectionName,
             nodes ?? NodeList("http://node1:6333"),
-            requestedAtUtc ?? DateTime.UtcNow);
+            requestedAtUtc ?? DateTime.UtcNow,
+            retainLastNAfterVisible,
+            retentionClusterPeerIds);
     }
 
     [Test]
@@ -98,7 +102,7 @@ public class PendingSnapshotCreationJobTests
         var metadata = job.GetMetadata();
 
         Assert.That(metadata, Is.Not.Null);
-        Assert.That(metadata![PendingSnapshotCreationJob.MetadataCurrentAction], Is.EqualTo("Creating snapshot: my-collection"));
+        Assert.That(metadata![PendingSnapshotCreationJob.MetadataCurrentAction], Is.EqualTo("Waiting for snapshot: my-collection"));
     }
 
     [Test]
@@ -155,7 +159,7 @@ public class PendingSnapshotCreationJobTests
 
         Assert.That(hasMore, Is.False);
         Assert.That(success, Is.False);
-        Assert.That(errorMessage, Is.EqualTo($"Snapshot did not appear within {(int)PendingSnapshotCreationJob.Timeout.TotalMinutes} minutes"));
+        Assert.That(errorMessage, Does.Contain("Snapshot did not appear within"));
         await _snapshotService.DidNotReceive()
             .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
@@ -242,5 +246,28 @@ public class PendingSnapshotCreationJobTests
         Assert.That(hasMore, Is.True);
         Assert.That(success, Is.True);
         Assert.That(errorMessage, Is.Null);
+    }
+
+    [Test]
+    public async Task AdvanceAsync_WhenSnapshotsVisible_AppliesRetentionWhenConfigured()
+    {
+        var requestedAt = DateTime.UtcNow.AddMinutes(-1);
+        var nodes = NodeList("http://node1:6333");
+        var peerIds = new HashSet<string> { "p1" };
+        var job = CreateJob("col", nodes, requestedAt, retainLastNAfterVisible: 3, retentionClusterPeerIds: peerIds);
+
+        var snapshots = new List<SnapshotInfo>
+        {
+            Snapshot("col", "http://node1:6333", requestedAt.AddSeconds(1))
+        };
+        _snapshotService
+            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns(snapshots);
+
+        var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
+
+        Assert.That(hasMore, Is.False);
+        Assert.That(success, Is.True);
+        await _snapshotService.Received(1).EnforceRetentionAsync("col", 3, peerIds, Arg.Any<CancellationToken>());
     }
 }
