@@ -78,12 +78,18 @@ public class SnapshotService(
         int? retainLastNAfterVisible = null,
         IReadOnlySet<string>? retentionClusterPeerIds = null)
     {
-        var requestedAt = DateTime.UtcNow;
         var nodeUrlsList = nodeUrls.ToList();
         logger.LogInformation(
             "Creating snapshot for collection {CollectionName} on {NodeCount} specified nodes",
             collectionName,
             nodeUrlsList.Count);
+
+        var baselineSnapshotKeys = await BuildBaselineSnapshotKeysForCollectionAsync(
+                collectionName,
+                nodeUrlsList,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var requestedAt = DateTime.UtcNow;
 
         var results = new Dictionary<string, string?>();
 
@@ -124,6 +130,7 @@ public class SnapshotService(
                 collectionName,
                 requestedNodes,
                 requestedAt,
+                baselineSnapshotKeys,
                 retainLastNAfterVisible,
                 retentionClusterPeerIds);
             var cts = new CancellationTokenSource();
@@ -897,7 +904,7 @@ public class SnapshotService(
 
         logger.LogInformation("Found {Count} snapshots in S3 storage", allSnapshots.Count);
 
-        foreach (var (collectionName, snapshotName, sizeBytes) in allSnapshots)
+        foreach (var (collectionName, snapshotName, sizeBytes, lastModifiedUtc) in allSnapshots)
         {
             var snapshotInfo = new SnapshotInfo
             {
@@ -909,7 +916,8 @@ public class SnapshotService(
                 SizeBytes = sizeBytes,
                 PodNamespace = firstNode.Namespace ?? KubernetesConstants.DefaultNamespace,
                 Source = SnapshotSource.S3Storage,
-                CreatedAt = ParseSnapshotName(snapshotName, collectionName).CreatedAt
+                CreatedAt = ParseSnapshotName(snapshotName, collectionName).CreatedAt,
+                S3StorageModifiedUtc = lastModifiedUtc
             };
 
             result.Add(snapshotInfo);
@@ -1117,6 +1125,29 @@ public class SnapshotService(
     }
 
     private sealed record SnapshotParsedInfo(string CollectionName, string PeerId, DateTime? CreatedAt);
+
+    private async Task<HashSet<string>> BuildBaselineSnapshotKeysForCollectionAsync(
+        string collectionName,
+        List<string> nodeUrls,
+        CancellationToken cancellationToken)
+    {
+        var nodes = nodeUrls.Select(u => new NodeInfo { Url = u }).ToList();
+        try
+        {
+            var list = await GetSnapshotsInfoAsync(true, cancellationToken, nodesToUse: nodes).ConfigureAwait(false);
+            return list
+                .Where(s => string.Equals(s.CollectionName, collectionName, StringComparison.OrdinalIgnoreCase))
+                .Select(PendingSnapshotCreationJob.BaselineKey)
+                .ToHashSet(StringComparer.Ordinal);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Could not list snapshots for baseline before create for {CollectionName}; pending job uses empty baseline",
+                collectionName);
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+    }
 
     /// <summary>
     /// Parses snapshot name into its constituent parts.

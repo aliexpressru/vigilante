@@ -1129,11 +1129,11 @@ public class SnapshotServiceTests
         _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
-        var s3Snapshots = new List<(string CollectionName, string SnapshotName, long SizeBytes)>
+        var s3Snapshots = new List<(string CollectionName, string SnapshotName, long SizeBytes, DateTime LastModifiedUtc)>
         {
-            ("col1", "col1-111-2026-03-01-12-00-00.snapshot", 1000),
-            ("col1", "col1-222-2026-03-01-12-00-00.snapshot", 1000),
-            ("col1", "col1-999-2026-03-01-11-00-00.snapshot", 500) // orphan peer
+            ("col1", "col1-111-2026-03-01-12-00-00.snapshot", 1000, new DateTime(2026, 3, 1, 12, 0, 0, DateTimeKind.Utc)),
+            ("col1", "col1-222-2026-03-01-12-00-00.snapshot", 1000, new DateTime(2026, 3, 1, 12, 0, 0, DateTimeKind.Utc)),
+            ("col1", "col1-999-2026-03-01-11-00-00.snapshot", 500, new DateTime(2026, 3, 1, 11, 0, 0, DateTimeKind.Utc)) // orphan peer
         };
         _s3SnapshotService.ListAllSnapshotsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(s3Snapshots));
@@ -1171,11 +1171,11 @@ public class SnapshotServiceTests
         _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
-        var s3Snapshots = new List<(string CollectionName, string SnapshotName, long SizeBytes)>
+        var s3Snapshots = new List<(string CollectionName, string SnapshotName, long SizeBytes, DateTime LastModifiedUtc)>
         {
-            ("col1", "col1-111-2026-03-01-10-00-00.snapshot", 1000),
-            ("col1", "col1-111-2026-03-01-12-00-00.snapshot", 1000),
-            ("col1", "col1-999-2026-03-01-11-00-00.snapshot", 500)
+            ("col1", "col1-111-2026-03-01-10-00-00.snapshot", 1000, new DateTime(2026, 3, 1, 10, 0, 0, DateTimeKind.Utc)),
+            ("col1", "col1-111-2026-03-01-12-00-00.snapshot", 1000, new DateTime(2026, 3, 1, 12, 0, 0, DateTimeKind.Utc)),
+            ("col1", "col1-999-2026-03-01-11-00-00.snapshot", 500, new DateTime(2026, 3, 1, 11, 0, 0, DateTimeKind.Utc))
         };
         _s3SnapshotService.ListAllSnapshotsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(s3Snapshots));
@@ -1219,10 +1219,10 @@ public class SnapshotServiceTests
         _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
-        var s3Snapshots = new List<(string CollectionName, string SnapshotName, long SizeBytes)>
+        var s3Snapshots = new List<(string CollectionName, string SnapshotName, long SizeBytes, DateTime LastModifiedUtc)>
         {
-            ("col1", "col1-111-2026-03-01-12-00-00.snapshot", 1000),
-            ("col1", "col1-999-2026-03-01-11-00-00.snapshot", 500)
+            ("col1", "col1-111-2026-03-01-12-00-00.snapshot", 1000, new DateTime(2026, 3, 1, 12, 0, 0, DateTimeKind.Utc)),
+            ("col1", "col1-999-2026-03-01-11-00-00.snapshot", 500, new DateTime(2026, 3, 1, 11, 0, 0, DateTimeKind.Utc))
         };
         _s3SnapshotService.ListAllSnapshotsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(s3Snapshots));

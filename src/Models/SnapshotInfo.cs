@@ -30,5 +30,10 @@ public class SnapshotInfo
     /// Snapshot creation date parsed from the snapshot name. Null if the name does not match the expected format.
     /// </summary>
     public DateTime? CreatedAt { get; set; }
+
+    /// <summary>
+    /// S3 object last-modified (UTC). Used to detect new uploads when filename timestamps lag wall clock.
+    /// </summary>
+    public DateTime? S3StorageModifiedUtc { get; set; }
 }
 

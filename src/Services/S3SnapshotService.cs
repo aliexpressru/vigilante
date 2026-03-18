@@ -35,7 +35,7 @@ public class S3SnapshotService(
     /// Returns list of tuples: (collectionName, snapshotName, sizeBytes)
     /// This includes snapshots for deleted/old collection versions
     /// </summary>
-    public async Task<List<(string CollectionName, string SnapshotName, long SizeBytes)>> ListAllSnapshotsAsync(
+    public async Task<List<(string CollectionName, string SnapshotName, long SizeBytes, DateTime LastModifiedUtc)>> ListAllSnapshotsAsync(
         string? namespaceParameter = null,
         CancellationToken cancellationToken = default)
     {
@@ -43,7 +43,7 @@ public class S3SnapshotService(
         if (client == null)
         {
             logger.LogWarning("S3 client is not available, cannot list snapshots");
-            return new List<(string, string, long)>();
+            return new List<(string, string, long, DateTime)>();
         }
 
         try
@@ -69,7 +69,7 @@ public class S3SnapshotService(
             if (response.S3Objects == null || response.KeyCount == 0)
             {
                 logger.LogInformation("No objects found in S3 snapshots bucket");
-                return new List<(string, string, long)>();
+                return new List<(string, string, long, DateTime)>();
             }
             
             logger.LogInformation("S3Objects count: {Count}", response.S3Objects.Count);
@@ -78,7 +78,7 @@ public class S3SnapshotService(
             var firstKeys = response.S3Objects.Take(3).Select(o => o.Key).ToArray();
             logger.LogInformation("First few S3 keys: {Keys}", string.Join(", ", firstKeys));
             
-            var snapshots = new List<(string, string, long)>();
+            var snapshots = new List<(string, string, long, DateTime)>();
             
             foreach (var obj in response.S3Objects)
             {
@@ -104,8 +104,12 @@ public class S3SnapshotService(
                 var encodedSnapshotName = parts[2];
                 var snapshotName = Uri.UnescapeDataString(encodedSnapshotName); // Decode the snapshot filename too
                 var sizeBytes = obj.Size ?? 0L;
+                var lm = obj.LastModified;
+                var modifiedUtc = lm.HasValue
+                    ? (lm.Value.Kind == DateTimeKind.Utc ? lm.Value : lm.Value.ToUniversalTime())
+                    : DateTime.UtcNow;
 
-                snapshots.Add((collectionName, snapshotName, sizeBytes));
+                snapshots.Add((collectionName, snapshotName, sizeBytes, modifiedUtc));
             }
 
             logger.LogInformation("Found {Count} total snapshots in S3 storage", snapshots.Count);
@@ -115,7 +119,7 @@ public class S3SnapshotService(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to list all snapshots from S3");
-            return new List<(string, string, long)>();
+            return new List<(string, string, long, DateTime)>();
         }
     }
 

@@ -7,10 +7,10 @@ public interface IS3SnapshotService
 {
     /// <summary>
     /// Lists ALL snapshots from S3 storage
-    /// Returns list of tuples: (collectionName, snapshotName, sizeBytes)
+    /// Returns list of tuples: (collectionName, snapshotName, sizeBytes, lastModifiedUtc).
     /// This includes snapshots for deleted/old collection versions
     /// </summary>
-    Task<List<(string CollectionName, string SnapshotName, long SizeBytes)>> ListAllSnapshotsAsync(
+    Task<List<(string CollectionName, string SnapshotName, long SizeBytes, DateTime LastModifiedUtc)>> ListAllSnapshotsAsync(
         string? namespaceParameter = null,
         CancellationToken cancellationToken = default);
 

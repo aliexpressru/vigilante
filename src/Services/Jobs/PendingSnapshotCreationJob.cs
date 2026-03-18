@@ -8,28 +8,22 @@ using Vigilante.Services.Interfaces;
 namespace Vigilante.Services.Jobs;
 
 /// <summary>
-/// Job that completes when snapshots created for the given collection (on requested nodes) have appeared.
-/// Uses the node list passed at creation; if a node becomes unavailable, the job fails with an error.
-/// Fails with timeout error if snapshots do not appear within <see cref="Timeout"/>.
-/// Resolves ISnapshotService and ILogger from the service provider when needed.
-/// Registered by SnapshotService after a successful multi-node create. When creation is async, polls until
-/// snapshots appear; optional retention runs only after they are visible.
+/// Job that completes when new snapshots for the collection appear after the create request.
+/// Baseline = snapshot keys listed immediately before the request; success = new keys not in baseline
+/// with S3 LastModified or parsed filename time at/after the request moment.
 /// </summary>
 public sealed class PendingSnapshotCreationJob : IJob
 {
     public const string KeyPrefix = "snapshot-create-";
     public const string MetadataCurrentAction = "CurrentAction";
 
-    /// <summary>
-    /// After this many minutes without snapshots appearing, the job fails with a timeout error.
-    /// </summary>
-    /// <summary>Large collections can take a long time before the snapshot file is listed.</summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromMinutes(30);
 
     private readonly IServiceProvider _serviceProvider;
     private readonly string _collectionName;
     private readonly IReadOnlyList<NodeInfo> _requestedNodes;
     private readonly DateTime _requestedAtUtc;
+    private readonly HashSet<string> _baselineSnapshotKeys;
     private readonly int? _retainLastNAfterVisible;
     private readonly IReadOnlySet<string>? _retentionClusterPeerIds;
 
@@ -41,6 +35,7 @@ public sealed class PendingSnapshotCreationJob : IJob
         string collectionName,
         IReadOnlyList<NodeInfo> requestedNodes,
         DateTime requestedAtUtc,
+        IReadOnlySet<string> baselineSnapshotKeys,
         int? retainLastNAfterVisible = null,
         IReadOnlySet<string>? retentionClusterPeerIds = null)
     {
@@ -48,8 +43,18 @@ public sealed class PendingSnapshotCreationJob : IJob
         _collectionName = collectionName;
         _requestedNodes = requestedNodes;
         _requestedAtUtc = requestedAtUtc;
+        _baselineSnapshotKeys = new HashSet<string>(baselineSnapshotKeys, StringComparer.Ordinal);
         _retainLastNAfterVisible = retainLastNAfterVisible;
         _retentionClusterPeerIds = retentionClusterPeerIds;
+    }
+
+    /// <summary>Stable identity for a snapshot row when comparing to the pre-request baseline.</summary>
+    public static string BaselineKey(SnapshotInfo s)
+    {
+        if (s.Source == SnapshotSource.S3Storage
+            || string.Equals(s.NodeUrl, S3Constants.StorageIdentifier, StringComparison.OrdinalIgnoreCase))
+            return "s3:" + s.SnapshotName;
+        return "n:" + s.NodeUrl + "|" + s.SnapshotName;
     }
 
     public Task<bool?> CheckReadyAsync(CancellationToken cancellationToken) => Task.FromResult<bool?>(true);
@@ -60,8 +65,7 @@ public sealed class PendingSnapshotCreationJob : IJob
         var snapshotService = _serviceProvider.GetRequiredService<ISnapshotService>();
         var logger = _serviceProvider.GetRequiredService<ILogger<PendingSnapshotCreationJob>>();
 
-        var elapsed = DateTime.UtcNow - _requestedAtUtc;
-        if (elapsed > Timeout)
+        if (DateTime.UtcNow - _requestedAtUtc > Timeout)
         {
             logger.LogWarning(
                 "Snapshot creation job timed out for collection {CollectionName}: snapshots did not appear within {Minutes} minutes",
@@ -87,40 +91,52 @@ public sealed class PendingSnapshotCreationJob : IJob
             .Where(s => string.Equals(s.CollectionName, _collectionName, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        // Consider a node "done" if it has a snapshot created at or after request time (with 1s tolerance for clock skew)
-        var cutoff = _requestedAtUtc.AddSeconds(-1);
-        var newSnapshots = collectionSnapshots.Where(s => s.CreatedAt >= cutoff).ToList();
+        var qualifiedNew = collectionSnapshots
+            .Where(s => !_baselineSnapshotKeys.Contains(BaselineKey(s)) && IsAtOrAfterRequest(s))
+            .ToList();
 
-        // When snapshots come from S3, GetSnapshotsInfoAsync returns NodeUrl = S3Constants.StorageIdentifier for all;
-        // we cannot match by node URL. Treat as complete when we have at least N new snapshots (N = requested nodes).
-        var fromS3 = newSnapshots.Any(s => s.Source == SnapshotSource.S3Storage || string.Equals(s.NodeUrl, S3Constants.StorageIdentifier, StringComparison.OrdinalIgnoreCase));
+        var fromS3 = collectionSnapshots.Any(s =>
+            s.Source == SnapshotSource.S3Storage
+            || string.Equals(s.NodeUrl, S3Constants.StorageIdentifier, StringComparison.OrdinalIgnoreCase));
+
         if (fromS3)
         {
-            if (newSnapshots.Count >= _requestedNodes.Count)
+            if (qualifiedNew.Count >= _requestedNodes.Count)
             {
                 logger.LogInformation(
-                    "Snapshot creation job completed for collection {CollectionName}: {Count} new snapshots visible in S3 (requested {RequestedCount} nodes)",
-                    _collectionName, newSnapshots.Count, _requestedNodes.Count);
+                    "Snapshot creation job completed for collection {CollectionName}: {Count} new snapshot(s) after baseline (S3), expected {RequestedCount} node(s)",
+                    _collectionName, qualifiedNew.Count, _requestedNodes.Count);
                 return await CompleteSuccessAsync(snapshotService, logger, cancellationToken).ConfigureAwait(false);
             }
+
             return (true, true, null);
         }
 
-        var nodeUrlsWithNewSnapshot = newSnapshots
-            .Select(s => s.NodeUrl)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var requestedUrls = _requestedNodes.Select(n => n.Url).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var missing = requestedUrls.Where(url => !nodeUrlsWithNewSnapshot.Contains(url)).ToList();
+        var missing = requestedUrls
+            .Where(url => !qualifiedNew.Any(s => string.Equals(s.NodeUrl, url, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
 
-        if (missing.Count == 0)
+        if (missing.Count == 0 && qualifiedNew.Count > 0)
         {
             logger.LogInformation(
-                "Snapshot creation job completed for collection {CollectionName}: snapshots visible on all {Count} nodes",
+                "Snapshot creation job completed for collection {CollectionName}: new snapshots on all {Count} nodes",
                 _collectionName, _requestedNodes.Count);
             return await CompleteSuccessAsync(snapshotService, logger, cancellationToken).ConfigureAwait(false);
         }
 
         return (true, true, null);
+    }
+
+    /// <summary>True if snapshot timing is at/after the create request (S3 upload time or parsed name time).</summary>
+    private bool IsAtOrAfterRequest(SnapshotInfo s)
+    {
+        var t0 = _requestedAtUtc.AddSeconds(-15);
+        if (s.S3StorageModifiedUtc is { } sm && sm >= t0)
+            return true;
+        if (s.CreatedAt is { } ca && ca >= t0)
+            return true;
+        return false;
     }
 
     private async Task<(bool HasMore, bool Success, string? ErrorMessage)> CompleteSuccessAsync(

@@ -49,7 +49,11 @@ public class PendingSnapshotCreationJobTests
             CreatedAt = createdAt
         };
 
-    private static SnapshotInfo S3Snapshot(string collectionName, DateTime createdAt, string snapshotName = "snap-1") =>
+    private static SnapshotInfo S3Snapshot(
+        string collectionName,
+        DateTime createdAt,
+        string snapshotName = "snap-1",
+        DateTime? s3ModifiedUtc = null) =>
         new()
         {
             PodName = S3Constants.StorageIdentifier,
@@ -60,13 +64,15 @@ public class PendingSnapshotCreationJobTests
             SizeBytes = 0,
             PodNamespace = "default",
             Source = SnapshotSource.S3Storage,
-            CreatedAt = createdAt
+            CreatedAt = createdAt,
+            S3StorageModifiedUtc = s3ModifiedUtc ?? createdAt
         };
 
     private PendingSnapshotCreationJob CreateJob(
         string collectionName = "my-collection",
         IReadOnlyList<NodeInfo>? nodes = null,
         DateTime? requestedAtUtc = null,
+        IReadOnlySet<string>? baselineSnapshotKeys = null,
         int? retainLastNAfterVisible = null,
         IReadOnlySet<string>? retentionClusterPeerIds = null)
     {
@@ -75,6 +81,7 @@ public class PendingSnapshotCreationJobTests
             collectionName,
             nodes ?? NodeList("http://node1:6333"),
             requestedAtUtc ?? DateTime.UtcNow,
+            baselineSnapshotKeys ?? new HashSet<string>(StringComparer.Ordinal),
             retainLastNAfterVisible,
             retentionClusterPeerIds);
     }
@@ -186,9 +193,10 @@ public class PendingSnapshotCreationJobTests
         var nodes = NodeList("http://node1:6333");
         var job = CreateJob("col", nodes, requestedAt);
 
+        // Job treats CreatedAt >= requestedAt - 15s as "at request"; older rows are ignored → keep waiting.
         var snapshots = new List<SnapshotInfo>
         {
-            Snapshot("col", "http://node1:6333", requestedAt.AddSeconds(-5))
+            Snapshot("col", "http://node1:6333", requestedAt.AddSeconds(-20))
         };
         _snapshotService
             .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
@@ -210,9 +218,9 @@ public class PendingSnapshotCreationJobTests
 
         var snapshots = new List<SnapshotInfo>
         {
-            S3Snapshot("col", requestedAt.AddSeconds(1), "col-peer1-1.snapshot"),
-            S3Snapshot("col", requestedAt.AddSeconds(2), "col-peer2-2.snapshot"),
-            S3Snapshot("col", requestedAt.AddSeconds(3), "col-peer3-3.snapshot")
+            S3Snapshot("col", requestedAt.AddSeconds(1), "col-peer1-1.snapshot", requestedAt.AddSeconds(1)),
+            S3Snapshot("col", requestedAt.AddSeconds(2), "col-peer2-2.snapshot", requestedAt.AddSeconds(2)),
+            S3Snapshot("col", requestedAt.AddSeconds(3), "col-peer3-3.snapshot", requestedAt.AddSeconds(3))
         };
         _snapshotService
             .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
@@ -249,12 +257,76 @@ public class PendingSnapshotCreationJobTests
     }
 
     [Test]
+    public async Task AdvanceAsync_WhenS3UploadAfterRequest_CompletesEvenIfFilenameTimestampPredatesRequest()
+    {
+        var requestedAt = DateTime.UtcNow.AddMinutes(-1);
+        var nodes = NodeList("http://node1:6333", "http://node2:6333", "http://node3:6333");
+        var job = CreateJob("col", nodes, requestedAt);
+
+        var oldNameTime = requestedAt.AddHours(-3);
+        var uploadTime = requestedAt.AddSeconds(30);
+        var snapshots = new List<SnapshotInfo>
+        {
+            S3Snapshot("col", oldNameTime, "col-111-2026-03-18-10-00-00.snapshot", uploadTime),
+            S3Snapshot("col", oldNameTime, "col-222-2026-03-18-10-00-00.snapshot", uploadTime),
+            S3Snapshot("col", oldNameTime, "col-333-2026-03-18-10-00-00.snapshot", uploadTime)
+        };
+        _snapshotService
+            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns(snapshots);
+
+        var (hasMore, success, _) = await job.AdvanceAsync(CancellationToken.None);
+
+        Assert.That(hasMore, Is.False);
+        Assert.That(success, Is.True);
+    }
+
+    [Test]
+    public async Task AdvanceAsync_WhenBaselineContainsOld_IgnoresThem_CountsOnlyNewS3Snapshots()
+    {
+        var requestedAt = DateTime.UtcNow;
+        var nodes = NodeList("http://n1", "http://n2", "http://n3");
+        var baseline = new HashSet<string>(StringComparer.Ordinal)
+        {
+            PendingSnapshotCreationJob.BaselineKey(S3Snapshot("col", requestedAt.AddDays(-1), "col-old1.snapshot")),
+            PendingSnapshotCreationJob.BaselineKey(S3Snapshot("col", requestedAt.AddDays(-1), "col-old2.snapshot")),
+            PendingSnapshotCreationJob.BaselineKey(S3Snapshot("col", requestedAt.AddDays(-1), "col-old3.snapshot"))
+        };
+        var job = CreateJob("col", nodes, requestedAt, baseline);
+
+        var uploadAfter = requestedAt.AddMinutes(2);
+        var snapshots = new List<SnapshotInfo>
+        {
+            S3Snapshot("col", requestedAt.AddDays(-1), "col-old1.snapshot", uploadAfter.AddMinutes(-10)),
+            S3Snapshot("col", requestedAt.AddDays(-1), "col-old2.snapshot", uploadAfter.AddMinutes(-10)),
+            S3Snapshot("col", requestedAt.AddDays(-1), "col-old3.snapshot", uploadAfter.AddMinutes(-10)),
+            S3Snapshot("col", requestedAt.AddHours(-5), "col-p1-new.snapshot", uploadAfter),
+            S3Snapshot("col", requestedAt.AddHours(-5), "col-p2-new.snapshot", uploadAfter),
+            S3Snapshot("col", requestedAt.AddHours(-5), "col-p3-new.snapshot", uploadAfter)
+        };
+        _snapshotService
+            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns(snapshots);
+
+        var (hasMore, success, _) = await job.AdvanceAsync(CancellationToken.None);
+
+        Assert.That(hasMore, Is.False);
+        Assert.That(success, Is.True);
+    }
+
+    [Test]
     public async Task AdvanceAsync_WhenSnapshotsVisible_AppliesRetentionWhenConfigured()
     {
         var requestedAt = DateTime.UtcNow.AddMinutes(-1);
         var nodes = NodeList("http://node1:6333");
         var peerIds = new HashSet<string> { "p1" };
-        var job = CreateJob("col", nodes, requestedAt, retainLastNAfterVisible: 3, retentionClusterPeerIds: peerIds);
+        var job = CreateJob(
+            "col",
+            nodes,
+            requestedAt,
+            baselineSnapshotKeys: null,
+            retainLastNAfterVisible: 3,
+            retentionClusterPeerIds: peerIds);
 
         var snapshots = new List<SnapshotInfo>
         {
