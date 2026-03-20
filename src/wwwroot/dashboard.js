@@ -990,8 +990,10 @@ class VigilanteDashboard {
             const currentAction = meta.currentAction != null
                 ? (Array.isArray(meta.currentAction) ? meta.currentAction.join(' · ') : String(meta.currentAction))
                 : (meta.CurrentAction != null ? (Array.isArray(meta.CurrentAction) ? meta.CurrentAction.join(' · ') : String(meta.CurrentAction)) : null);
+            const startedAtRaw = meta.startedAtUtc ?? meta.StartedAtUtc ?? null;
+            const startedAt = startedAtRaw ? new Date(startedAtRaw).toLocaleString() : '';
             const metaRest = Object.entries(meta).filter(([k]) =>
-                !['CurrentAction', 'currentAction', 'lastRunSummary', 'phase', 'lastRunStartedUtc', 'lastCompletedUtc', 'lastRunSuccess'].includes(k));
+                !['CurrentAction', 'currentAction', 'StartedAtUtc', 'startedAtUtc', 'lastRunSummary', 'phase', 'lastRunStartedUtc', 'lastCompletedUtc', 'lastRunSuccess'].includes(k));
             const rawSummary = meta.lastRunSummary ?? meta.LastRunSummary;
             const lastRunSummary = rawSummary != null && String(rawSummary).trim() !== ''
                 ? String(rawSummary)
@@ -1013,6 +1015,7 @@ class VigilanteDashboard {
                 ? `<div class="job-error">${this.escapeHtml(error)}${errorAt ? ` <span class="job-error-at">${errorAt}</span>` : ''}</div>`
                 : '';
             const currentActionBlock = currentAction ? `<div class="job-current-action">${this.escapeHtml(currentAction)}</div>` : '';
+            const startedAtBlock = startedAt ? `<div class="job-meta">Started: ${this.escapeHtml(startedAt)}</div>` : '';
             const lastRunSummaryBlock = lastRunSummary
                 ? `<div class="job-last-run-summary"><span class="job-last-run-label">Last run:</span> ${this.escapeHtml(lastRunSummary)}</div>`
                 : '';
@@ -1027,6 +1030,7 @@ class VigilanteDashboard {
                     ${lastLine}
                     ${lastRunSummaryBlock}
                     ${currentActionBlock}
+                    ${startedAtBlock}
                     ${errorBlock}
                     ${metaBlock}
                 </div>
@@ -5655,6 +5659,7 @@ class VigilanteDashboard {
             document.getElementById('monitoringInterval').value = config.monitoringIntervalSeconds || 120;
 
             // DeleteWithCollection (default true)
+            document.getElementById('snapshotPendingCreateTimeoutSeconds').value = snap.pendingCreateTimeoutSeconds ?? 1800;
             document.getElementById('snapshotDeleteWithCollection').checked = snap.deleteWithCollection !== false;
 
             // Orphaned
@@ -5708,6 +5713,12 @@ class VigilanteDashboard {
         }
 
         // Orphaned cleanup
+        const pendingTimeoutSeconds = parseInt(document.getElementById('snapshotPendingCreateTimeoutSeconds').value);
+        if (isNaN(pendingTimeoutSeconds) || pendingTimeoutSeconds < 1 || pendingTimeoutSeconds > 86400) {
+            this.showToast('Pending snapshot timeout must be between 1 and 86400 seconds', 'error');
+            return;
+        }
+
         const orphanEnabled = document.getElementById('snapshotOrphanedEnabled').checked;
         const orphanMinutesRaw = document.getElementById('snapshotOrphanedAfterMinutes').value;
         const orphanMinutes = orphanEnabled && orphanMinutesRaw ? parseInt(orphanMinutesRaw) : null;
@@ -5770,6 +5781,7 @@ class VigilanteDashboard {
                 body: JSON.stringify({
                     monitoringIntervalSeconds: monitoringInterval,
                     snapshot: {
+                        pendingCreateTimeoutSeconds: pendingTimeoutSeconds,
                         deleteWithCollection: document.getElementById('snapshotDeleteWithCollection').checked,
                         deleteOrphanedAfterMinutes: orphanMinutes,
                         schedule: {

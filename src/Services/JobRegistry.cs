@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Vigilante.Models;
 using Vigilante.Services.Interfaces;
+using Vigilante.Services.Jobs;
 
 namespace Vigilante.Services;
 
@@ -23,6 +24,20 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
     public bool TryAddJob(IJob job, CancellationTokenSource cts)
     {
         return _jobs.TryAdd(job.Key, (job, cts));
+    }
+
+    public bool HasPendingSnapshotCreationForCollection(string collectionName)
+    {
+        var prefix = PendingSnapshotCreationJob.KeyPrefix;
+        foreach (var key in _jobs.Keys)
+        {
+            if (key.Length <= prefix.Length || !key.StartsWith(prefix, StringComparison.Ordinal))
+                continue;
+            if (string.Equals(key[prefix.Length..], collectionName, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     public IReadOnlyList<PendingJob> GetPendingJobs()
@@ -168,6 +183,8 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
                 var (hasMore, success, error) = await job.AdvanceAsync(cts.Token).ConfigureAwait(false);
                 if (!hasMore)
                 {
+                    if (!success)
+                        RecordJobFailure(key, error ?? "Unknown");
                     await RemoveJobAsync(key).ConfigureAwait(false);
                     if (success)
                         logger.LogInformation("Job completed for key {Key}", key);

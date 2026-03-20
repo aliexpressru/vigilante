@@ -293,6 +293,15 @@
                 <div class="config-section">
                     <div class="config-section-title"><i class="fas fa-camera"></i> Snapshot Automation</div>
 
+                    <div class="form-group">
+                        <label for="snapshotPendingCreateTimeoutSeconds">
+                            Pending snapshot timeout (seconds)
+                            <span class="config-label-hint">How long snapshot-create job waits for files to appear</span>
+                        </label>
+                        <input type="number" id="snapshotPendingCreateTimeoutSeconds" class="form-input" min="1" max="86400" placeholder="1800">
+                        <small class="form-hint">Valid range: 1-86400 seconds</small>
+                    </div>
+
                     <div class="config-toggle-row">
                         <input type="checkbox" id="snapshotDeleteWithCollection">
                         <label for="snapshotDeleteWithCollection">Delete snapshots when collection is deleted via Vigilante</label>

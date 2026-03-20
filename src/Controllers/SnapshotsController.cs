@@ -103,6 +103,7 @@ public class SnapshotsController(
     [HttpPost]
     [ProducesResponseType(typeof(V1CreateSnapshotResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1CreateSnapshotResponse), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(V1CreateSnapshotResponse), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<V1CreateSnapshotResponse>> CreateSnapshot(
         [FromBody] V1CreateSnapshotRequest request,
@@ -120,12 +121,23 @@ public class SnapshotsController(
                 });
             }
 
-            // Create snapshot on specified nodes
-            var results = await snapshotService.CreateCollectionSnapshotAsync(
+            var batch = await snapshotService.CreateCollectionSnapshotAsync(
                 request.CollectionName,
                 request.NodeUrls,
                 cancellationToken);
 
+            if (batch.SkippedDuplicatePending)
+            {
+                return Conflict(new V1CreateSnapshotResponse
+                {
+                    Success = false,
+                    Message =
+                        "Snapshot creation for this collection is already in progress; wait until it finishes before starting another.",
+                    Results = batch.Results
+                });
+            }
+
+            var results = batch.Results;
             var successCount = results.Values.Count(s => s != null);
             var response = new V1CreateSnapshotResponse
             {

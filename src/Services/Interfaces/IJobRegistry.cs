@@ -13,6 +13,11 @@ public interface IJobRegistry
     bool TryAddJob(IJob job, CancellationTokenSource cts);
 
     /// <summary>
+    /// Whether a pending snapshot-create job exists for this collection (case-insensitive).
+    /// </summary>
+    bool HasPendingSnapshotCreationForCollection(string collectionName);
+
+    /// <summary>
     /// Returns all pending jobs (for monitor to process each tick).
     /// </summary>
     IReadOnlyList<PendingJob> GetPendingJobs();

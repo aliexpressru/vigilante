@@ -84,6 +84,11 @@ public class ConfigController : ControllerBase
             return BadRequest(new { error = "MonitoringIntervalSeconds cannot exceed 3600 (1 hour)" });
         }
 
+        if (request.Snapshot?.PendingCreateTimeoutSeconds is < 1 or > 86400)
+        {
+            return BadRequest(new { error = "Snapshot.PendingCreateTimeoutSeconds must be between 1 and 86400" });
+        }
+
         try
         {
             var previousConfig = await _dynamicConfigService.GetConfigAsync(cancellationToken);

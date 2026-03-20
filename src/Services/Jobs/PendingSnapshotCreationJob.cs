@@ -16,8 +16,9 @@ public sealed class PendingSnapshotCreationJob : IJob
 {
     public const string KeyPrefix = "snapshot-create-";
     public const string MetadataCurrentAction = "CurrentAction";
+    public const string MetadataStartedAtUtc = "StartedAtUtc";
 
-    public static readonly TimeSpan Timeout = TimeSpan.FromMinutes(30);
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(30);
 
     private readonly IServiceProvider _serviceProvider;
     private readonly string _collectionName;
@@ -26,6 +27,7 @@ public sealed class PendingSnapshotCreationJob : IJob
     private readonly HashSet<string> _baselineSnapshotKeys;
     private readonly int? _retainLastNAfterVisible;
     private readonly IReadOnlySet<string>? _retentionClusterPeerIds;
+    private readonly TimeSpan _timeout;
 
     public string Key => KeyPrefix + _collectionName;
     public bool IsWaitingForReady => false;
@@ -37,7 +39,8 @@ public sealed class PendingSnapshotCreationJob : IJob
         DateTime requestedAtUtc,
         IReadOnlySet<string> baselineSnapshotKeys,
         int? retainLastNAfterVisible = null,
-        IReadOnlySet<string>? retentionClusterPeerIds = null)
+        IReadOnlySet<string>? retentionClusterPeerIds = null,
+        TimeSpan? timeout = null)
     {
         _serviceProvider = serviceProvider;
         _collectionName = collectionName;
@@ -46,6 +49,7 @@ public sealed class PendingSnapshotCreationJob : IJob
         _baselineSnapshotKeys = new HashSet<string>(baselineSnapshotKeys, StringComparer.Ordinal);
         _retainLastNAfterVisible = retainLastNAfterVisible;
         _retentionClusterPeerIds = retentionClusterPeerIds;
+        _timeout = timeout ?? DefaultTimeout;
     }
 
     /// <summary>Stable identity for a snapshot row when comparing to the pre-request baseline.</summary>
@@ -65,12 +69,15 @@ public sealed class PendingSnapshotCreationJob : IJob
         var snapshotService = _serviceProvider.GetRequiredService<ISnapshotService>();
         var logger = _serviceProvider.GetRequiredService<ILogger<PendingSnapshotCreationJob>>();
 
-        if (DateTime.UtcNow - _requestedAtUtc > Timeout)
+        if (DateTime.UtcNow - _requestedAtUtc > _timeout)
         {
+            var timeoutText = _timeout.TotalMinutes >= 1
+                ? $"{(int)_timeout.TotalMinutes} minute(s)"
+                : $"{(int)_timeout.TotalSeconds} second(s)";
             logger.LogWarning(
-                "Snapshot creation job timed out for collection {CollectionName}: snapshots did not appear within {Minutes} minutes",
-                _collectionName, (int)Timeout.TotalMinutes);
-            return (false, false, $"Snapshot did not appear within {(int)Timeout.TotalMinutes} minutes");
+                "Snapshot creation job timed out for collection {CollectionName}: snapshots did not appear within {Timeout}",
+                _collectionName, timeoutText);
+            return (false, false, $"Snapshot did not appear within {timeoutText}");
         }
 
         IReadOnlyList<SnapshotInfo> snapshots;
@@ -172,7 +179,8 @@ public sealed class PendingSnapshotCreationJob : IJob
     {
         return new Dictionary<string, object?>
         {
-            [MetadataCurrentAction] = $"Waiting for snapshot: {_collectionName}"
+            [MetadataCurrentAction] = $"Waiting for snapshot: {_collectionName}",
+            [MetadataStartedAtUtc] = _requestedAtUtc
         };
     }
 

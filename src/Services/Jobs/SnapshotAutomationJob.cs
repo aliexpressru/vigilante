@@ -275,7 +275,7 @@ public sealed class SnapshotAutomationJob : IJob
                 .ToHashSet();
 
             SetCurrentAction(Actions.CreatingSnapshot(collectionName, nodeUrls.Count));
-            var results = await snapshotService.CreateCollectionSnapshotAsync(
+            var batch = await snapshotService.CreateCollectionSnapshotAsync(
                     collectionName,
                     nodeUrls,
                     token,
@@ -283,6 +283,18 @@ public sealed class SnapshotAutomationJob : IJob
                     retainLastNAfterVisible: schedule.RetainLastN,
                     retentionClusterPeerIds: retentionPeerIds)
                 .ConfigureAwait(false);
+            if (batch.SkippedDuplicatePending)
+            {
+                logger.LogInformation(
+                    "Auto-snapshot skipped for {CollectionName}: snapshot create already pending or in flight",
+                    collectionName);
+                automationStatus.AppendRunNote(
+                    $"Snapshot «{collectionName}»: skipped — previous snapshot create still in progress");
+                SetCurrentAction($"Snapshot «{collectionName}»: skipped (create already in progress)");
+                return;
+            }
+
+            var results = batch.Results;
             var succeededCount = results.Count(kv => kv.Value is not null);
             var failedCount = results.Count - succeededCount;
 

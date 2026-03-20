@@ -252,7 +252,11 @@ public class SnapshotsControllerTests
             request.CollectionName,
             Arg.Is<IEnumerable<string>>(urls => urls.Count() == 1),
             Arg.Any<CancellationToken>())
-            .Returns(results);
+            .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
+            {
+                Results = results,
+                SkippedDuplicatePending = false
+            }));
 
         // Act
         var result = await _controller.CreateSnapshot(request, CancellationToken.None);
@@ -283,7 +287,11 @@ public class SnapshotsControllerTests
             request.CollectionName,
             Arg.Is<IEnumerable<string>>(urls => urls.Count() == 1),
             Arg.Any<CancellationToken>())
-            .Returns(results);
+            .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
+            {
+                Results = results,
+                SkippedDuplicatePending = false
+            }));
 
         // Act
         var result = await _controller.CreateSnapshot(request, CancellationToken.None);
@@ -292,6 +300,31 @@ public class SnapshotsControllerTests
         Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
         var objectResult = (ObjectResult)result.Result!;
         Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+    }
+
+    [Test]
+    public async Task CreateSnapshot_WhenDuplicatePending_Returns409()
+    {
+        var request = new V1CreateSnapshotRequest
+        {
+            CollectionName = "test_collection",
+            NodeUrls = new List<string> { "http://node1:6333" }
+        };
+
+        _snapshotService.CreateCollectionSnapshotAsync(
+                request.CollectionName,
+                Arg.Any<IEnumerable<string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(CreateCollectionSnapshotBatchResult.SkippedForNodes(request.NodeUrls!)));
+
+        var result = await _controller.CreateSnapshot(request, CancellationToken.None);
+
+        Assert.That(result.Result, Is.InstanceOf<ConflictObjectResult>());
+        var conflict = (ConflictObjectResult)result.Result!;
+        Assert.That(conflict.StatusCode, Is.EqualTo(409));
+        var response = conflict.Value as V1CreateSnapshotResponse;
+        Assert.That(response!.Success, Is.False);
+        Assert.That(response.Message, Does.Contain("already in progress"));
     }
 
     [Test]
@@ -314,7 +347,11 @@ public class SnapshotsControllerTests
             request.CollectionName,
             Arg.Is<IEnumerable<string>>(urls => urls.Count() == 2),
             Arg.Any<CancellationToken>())
-            .Returns(results);
+            .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
+            {
+                Results = results,
+                SkippedDuplicatePending = false
+            }));
 
         // Act
         var result = await _controller.CreateSnapshot(request, CancellationToken.None);

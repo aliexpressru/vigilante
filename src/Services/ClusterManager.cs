@@ -6,6 +6,7 @@ using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
+using Vigilante.Services.Jobs;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Aer.QdrantClient.Http.Models.Shared;
@@ -87,7 +88,10 @@ public class ClusterManager(
         var jobErrors = jobRegistry.GetActiveErrorsAndPruneExpired(now, JobErrorTtl);
         foreach (var (key, message) in jobErrors)
         {
-            state.Health.Issues.Add($"[{IssueKeyConstants.JobFailure(key)}] {ClusterConstants.RestoreReplicationFactorFailedPrefix}{message}");
+            var prefix = key.StartsWith(PendingSnapshotCreationJob.KeyPrefix, StringComparison.Ordinal)
+                ? "Snapshot creation failed: "
+                : ClusterConstants.RestoreReplicationFactorFailedPrefix;
+            state.Health.Issues.Add($"[{IssueKeyConstants.JobFailure(key)}] {prefix}{message}");
         }
 
         return state;

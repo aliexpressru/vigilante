@@ -74,7 +74,8 @@ public class PendingSnapshotCreationJobTests
         DateTime? requestedAtUtc = null,
         IReadOnlySet<string>? baselineSnapshotKeys = null,
         int? retainLastNAfterVisible = null,
-        IReadOnlySet<string>? retentionClusterPeerIds = null)
+        IReadOnlySet<string>? retentionClusterPeerIds = null,
+        TimeSpan? timeout = null)
     {
         return new PendingSnapshotCreationJob(
             _serviceProvider,
@@ -83,7 +84,8 @@ public class PendingSnapshotCreationJobTests
             requestedAtUtc ?? DateTime.UtcNow,
             baselineSnapshotKeys ?? new HashSet<string>(StringComparer.Ordinal),
             retainLastNAfterVisible,
-            retentionClusterPeerIds);
+            retentionClusterPeerIds,
+            timeout);
     }
 
     [Test]
@@ -104,18 +106,20 @@ public class PendingSnapshotCreationJobTests
     [Test]
     public void GetMetadata_ReturnsCurrentActionWithCollectionName()
     {
-        var job = CreateJob("my-collection");
+        var requestedAt = DateTime.UtcNow;
+        var job = CreateJob("my-collection", requestedAtUtc: requestedAt);
 
         var metadata = job.GetMetadata();
 
         Assert.That(metadata, Is.Not.Null);
         Assert.That(metadata![PendingSnapshotCreationJob.MetadataCurrentAction], Is.EqualTo("Waiting for snapshot: my-collection"));
+        Assert.That(metadata[PendingSnapshotCreationJob.MetadataStartedAtUtc], Is.EqualTo(requestedAt));
     }
 
     [Test]
     public async Task AdvanceAsync_WhenSnapshotsAppearOnAllNodes_CompletesSuccessfully()
     {
-        var requestedAt = DateTime.UtcNow.AddMinutes(-1);
+        var requestedAt = DateTime.UtcNow.AddSeconds(-10);
         var nodes = NodeList("http://node1:6333");
         var job = CreateJob("col", nodes, requestedAt);
 
@@ -137,7 +141,7 @@ public class PendingSnapshotCreationJobTests
     [Test]
     public async Task AdvanceAsync_WhenSnapshotMissingOnSomeNodes_ReturnsHasMore()
     {
-        var requestedAt = DateTime.UtcNow.AddMinutes(-1);
+        var requestedAt = DateTime.UtcNow.AddSeconds(-10);
         var nodes = NodeList("http://node1:6333", "http://node2:6333");
         var job = CreateJob("col", nodes, requestedAt);
 
@@ -159,7 +163,7 @@ public class PendingSnapshotCreationJobTests
     [Test]
     public async Task AdvanceAsync_WhenTimeoutExceeded_FailsWithErrorMessage()
     {
-        var requestedAt = DateTime.UtcNow - PendingSnapshotCreationJob.Timeout - TimeSpan.FromMinutes(1);
+        var requestedAt = DateTime.UtcNow - PendingSnapshotCreationJob.DefaultTimeout - TimeSpan.FromMinutes(1);
         var job = CreateJob("col", requestedAtUtc: requestedAt);
 
         var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
@@ -169,6 +173,22 @@ public class PendingSnapshotCreationJobTests
         Assert.That(errorMessage, Does.Contain("Snapshot did not appear within"));
         await _snapshotService.DidNotReceive()
             .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
+    }
+
+    [Test]
+    public async Task AdvanceAsync_WhenCustomTimeoutIsLonger_DoesNotFailByDefaultTimeout()
+    {
+        var requestedAt = DateTime.UtcNow.AddSeconds(-35);
+        var job = CreateJob("col", requestedAtUtc: requestedAt, timeout: TimeSpan.FromSeconds(60));
+        _snapshotService
+            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns(new List<SnapshotInfo>());
+
+        var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
+
+        Assert.That(hasMore, Is.True);
+        Assert.That(success, Is.True);
+        Assert.That(errorMessage, Is.Null);
     }
 
     [Test]
@@ -189,7 +209,7 @@ public class PendingSnapshotCreationJobTests
     [Test]
     public async Task AdvanceAsync_WhenSnapshotCreatedBeforeCutoff_StillWaits()
     {
-        var requestedAt = DateTime.UtcNow.AddMinutes(-1);
+        var requestedAt = DateTime.UtcNow.AddSeconds(-10);
         var nodes = NodeList("http://node1:6333");
         var job = CreateJob("col", nodes, requestedAt);
 
@@ -212,7 +232,7 @@ public class PendingSnapshotCreationJobTests
     [Test]
     public async Task AdvanceAsync_WhenS3SnapshotsAppearWithEnoughNewCount_CompletesSuccessfully()
     {
-        var requestedAt = DateTime.UtcNow.AddMinutes(-1);
+        var requestedAt = DateTime.UtcNow.AddSeconds(-10);
         var nodes = NodeList("http://node1:6333", "http://node2:6333", "http://node3:6333");
         var job = CreateJob("col", nodes, requestedAt);
 
@@ -236,7 +256,7 @@ public class PendingSnapshotCreationJobTests
     [Test]
     public async Task AdvanceAsync_WhenS3SnapshotsButNotEnoughNew_ReturnsHasMore()
     {
-        var requestedAt = DateTime.UtcNow.AddMinutes(-1);
+        var requestedAt = DateTime.UtcNow.AddSeconds(-10);
         var nodes = NodeList("http://node1:6333", "http://node2:6333", "http://node3:6333");
         var job = CreateJob("col", nodes, requestedAt);
 
@@ -259,7 +279,7 @@ public class PendingSnapshotCreationJobTests
     [Test]
     public async Task AdvanceAsync_WhenS3UploadAfterRequest_CompletesEvenIfFilenameTimestampPredatesRequest()
     {
-        var requestedAt = DateTime.UtcNow.AddMinutes(-1);
+        var requestedAt = DateTime.UtcNow.AddSeconds(-10);
         var nodes = NodeList("http://node1:6333", "http://node2:6333", "http://node3:6333");
         var job = CreateJob("col", nodes, requestedAt);
 
@@ -317,7 +337,7 @@ public class PendingSnapshotCreationJobTests
     [Test]
     public async Task AdvanceAsync_WhenSnapshotsVisible_AppliesRetentionWhenConfigured()
     {
-        var requestedAt = DateTime.UtcNow.AddMinutes(-1);
+        var requestedAt = DateTime.UtcNow.AddSeconds(-10);
         var nodes = NodeList("http://node1:6333");
         var peerIds = new HashSet<string> { "p1" };
         var job = CreateJob(

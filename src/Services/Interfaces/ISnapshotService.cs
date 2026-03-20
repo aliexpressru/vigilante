@@ -21,7 +21,8 @@ public interface ISnapshotService
     /// Creates a snapshot for a collection on specified nodes
     /// </summary>
     /// <param name="retainLastNAfterVisible">When set, <see cref="EnforceRetentionAsync"/> runs from <c>snapshot-create-*</c> job after new snapshots show up (use with <c>waitForResult: false</c>).</param>
-    Task<Dictionary<string, string?>> CreateCollectionSnapshotAsync(
+    /// <remarks>When <see cref="CreateCollectionSnapshotBatchResult.SkippedDuplicatePending"/> is true, no Qdrant create was sent (pending job or concurrent create for the same collection).</remarks>
+    Task<CreateCollectionSnapshotBatchResult> CreateCollectionSnapshotAsync(
         string collectionName,
         IEnumerable<string> nodeUrls,
         CancellationToken cancellationToken = default,

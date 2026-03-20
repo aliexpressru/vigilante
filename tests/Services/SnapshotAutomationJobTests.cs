@@ -19,6 +19,8 @@ public class SnapshotAutomationJobTests
 {
     private ISnapshotService _snapshotService = null!;
     private IClusterManager _clusterManager = null!;
+    private ICollectionService _collectionService = null!;
+    private IDynamicConfigService _dynamicConfigService = null!;
     private SnapshotOrphanedState _orphanedState = null!;
     private ILogger<SnapshotAutomationJob> _logger = null!;
     private IServiceProvider _serviceProvider = null!;
@@ -28,11 +30,21 @@ public class SnapshotAutomationJobTests
     {
         _snapshotService = Substitute.For<ISnapshotService>();
         _clusterManager = Substitute.For<IClusterManager>();
+        _collectionService = Substitute.For<ICollectionService>();
+        _dynamicConfigService = Substitute.For<IDynamicConfigService>();
         _orphanedState = new SnapshotOrphanedState();
         _logger = Substitute.For<ILogger<SnapshotAutomationJob>>();
+        _collectionService
+            .GetCollectionsFromQdrantAsync(
+                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
+            .Returns(Task.FromResult((new List<CollectionInfo>(), false, (string?)null)));
         _serviceProvider = new ServiceCollection()
             .AddSingleton(_snapshotService)
             .AddSingleton(_clusterManager)
+            .AddSingleton(_collectionService)
+            .AddSingleton(_dynamicConfigService)
             .AddSingleton(_orphanedState)
             .AddSingleton(_logger)
             .AddSingleton<ISnapshotAutomationStatus, SnapshotAutomationStatus>()
@@ -102,7 +114,11 @@ public class SnapshotAutomationJobTests
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
                 Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
-            .Returns(new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" });
+            .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
+            {
+                Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" },
+                SkippedDuplicatePending = false
+            }));
 
         var job = CreateJob(config: config);
 
@@ -112,6 +128,47 @@ public class SnapshotAutomationJobTests
         Assert.That(success, Is.True);
         await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
             "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), false, null, Arg.Any<IReadOnlySet<string>>());
+    }
+
+    [Test]
+    public async Task AdvanceAsync_WhenOverridesExist_OverrideAppliedAndOthersUseGlobalSchedule()
+    {
+        var config = new DynamicConfig
+        {
+            Snapshot = new SnapshotConfiguration
+            {
+                Schedule = new Schedule { Enabled = true, IntervalMinutes = null },
+                CollectionOverrides = new Dictionary<string, Schedule>(StringComparer.Ordinal)
+                {
+                    ["col1"] = new() { Enabled = true, IntervalMinutes = null }
+                }
+            }
+        };
+
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(new List<CollectionInfo>
+            {
+                new() { CollectionName = "col1", NodeUrl = "http://node1:6333", Status = QdrantCollectionStatus.Green, HnswM = 16 },
+                new() { CollectionName = "col2", NodeUrl = "http://node1:6333", Status = QdrantCollectionStatus.Green, HnswM = 16 }
+            });
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns(new List<SnapshotInfo>());
+        _snapshotService.CreateCollectionSnapshotAsync(
+                Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+                Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
+            .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
+            {
+                Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" },
+                SkippedDuplicatePending = false
+            }));
+
+        var job = CreateJob(config: config);
+        await job.AdvanceAsync(CancellationToken.None);
+
+        await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
+            "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), false, null, Arg.Any<IReadOnlySet<string>>());
+        await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
+            "col2", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), false, null, Arg.Any<IReadOnlySet<string>>());
     }
 
     [Test]
@@ -168,7 +225,11 @@ public class SnapshotAutomationJobTests
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
                 Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
-            .Returns(new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" });
+            .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
+            {
+                Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" },
+                SkippedDuplicatePending = false
+            }));
 
         var job = CreateJob(config: config);
 
@@ -211,7 +272,11 @@ public class SnapshotAutomationJobTests
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
                 Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
-            .Returns(new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" });
+            .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
+            {
+                Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" },
+                SkippedDuplicatePending = false
+            }));
 
         var job = CreateJob(config: config);
 
@@ -272,7 +337,11 @@ public class SnapshotAutomationJobTests
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
                 Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
-            .Returns(new Dictionary<string, string?> { ["http://node1:6333"] = "snap" });
+            .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
+            {
+                Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap" },
+                SkippedDuplicatePending = false
+            }));
 
         var job = new SnapshotAutomationJob(sp, HealthyNodes(), cfg);
 
@@ -359,7 +428,11 @@ public class SnapshotAutomationJobTests
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
                 Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
-            .Returns(new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" });
+            .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
+            {
+                Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" },
+                SkippedDuplicatePending = false
+            }));
 
         var nodes = HealthyNodes("http://node1:6333", "111");
         var job = CreateJob(nodes, config);
@@ -375,5 +448,24 @@ public class SnapshotAutomationJobTests
             Arg.Is<IReadOnlySet<string>>(set => set != null && set.Contains("111")));
         await _snapshotService.DidNotReceive()
             .EnforceRetentionAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<IReadOnlySet<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AdvanceAsync_WhenCreateSkipped_DoesNotReportSnapshotFailure()
+    {
+        var config = ScheduleEnabled(intervalMinutes: null);
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(GreenHnswCollection("col1"));
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns(new List<SnapshotInfo>());
+        _snapshotService.CreateCollectionSnapshotAsync(
+                Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+                Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
+            .Returns(Task.FromResult(CreateCollectionSnapshotBatchResult.SkippedForNodes(new[] { "http://node1:6333" })));
+
+        var job = CreateJob(config: config);
+        await job.AdvanceAsync(CancellationToken.None);
+
+        _clusterManager.DidNotReceive().ReportIssue(IssueKeyConstants.Snapshot("col1"), Arg.Any<string>());
     }
 }

@@ -6,6 +6,11 @@ namespace Vigilante.Models;
 public class SnapshotConfiguration
 {
     /// <summary>
+    /// Timeout for waiting until async snapshot files become visible (used by snapshot-create-* jobs).
+    /// </summary>
+    public int PendingCreateTimeoutSeconds { get; set; } = 1800;
+
+    /// <summary>
     /// Delete snapshots when the collection is deleted via Vigilante. Default: true.
     /// </summary>
     public bool DeleteWithCollection { get; set; } = true;

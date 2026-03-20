@@ -24,6 +24,7 @@ public class SnapshotServiceTests
     private ILogger<SnapshotService> _logger = null!;
     private IS3SnapshotService _s3SnapshotService = null!;
     private IPodCommandExecutor _commandExecutor = null!;
+    private IDynamicConfigService _dynamicConfigService = null!;
     private IJobRegistry _jobRegistry = null!;
     private SnapshotService _snapshotManager = null!;
 
@@ -35,6 +36,7 @@ public class SnapshotServiceTests
         _options = Substitute.For<IOptions<QdrantOptions>>();
         _logger = Substitute.For<ILogger<SnapshotService>>();
         _commandExecutor = Substitute.For<IPodCommandExecutor>();
+        _dynamicConfigService = Substitute.For<IDynamicConfigService>();
         _jobRegistry = Substitute.For<IJobRegistry>();
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
 
@@ -46,6 +48,8 @@ public class SnapshotServiceTests
         // Default: S3 is not available (tests can override this)
         _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(false));
+        _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new DynamicConfig()));
 
         _snapshotManager = new SnapshotService(
             _nodesProvider,
@@ -53,6 +57,7 @@ public class SnapshotServiceTests
             _s3SnapshotService,
             _commandExecutor,
             _options,
+            _dynamicConfigService,
             _jobRegistry,
             serviceProvider,
             _logger);
@@ -306,15 +311,42 @@ public class SnapshotServiceTests
         var nodeUrls = new[] { "http://node1:6333", "http://node2:6333" };
 
         // Act
-        var result = await _snapshotManager.CreateCollectionSnapshotAsync(
+        var batch = await _snapshotManager.CreateCollectionSnapshotAsync(
             collectionName, 
             nodeUrls, 
             CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result["http://node1:6333"], Is.EqualTo("snapshot1.snapshot"));
-        Assert.That(result["http://node2:6333"], Is.EqualTo("snapshot2.snapshot"));
+        Assert.That(batch.SkippedDuplicatePending, Is.False);
+        Assert.That(batch.Results, Has.Count.EqualTo(2));
+        Assert.That(batch.Results["http://node1:6333"], Is.EqualTo("snapshot1.snapshot"));
+        Assert.That(batch.Results["http://node2:6333"], Is.EqualTo("snapshot2.snapshot"));
+    }
+
+    [Test]
+    public async Task CreateCollectionSnapshot_MultiNode_WhenPendingJobExists_SkipsWithoutCallingQdrant()
+    {
+        var collectionName = "test_collection";
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
+        };
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient);
+        _jobRegistry.HasPendingSnapshotCreationForCollection(collectionName).Returns(true);
+
+        var batch = await _snapshotManager.CreateCollectionSnapshotAsync(
+            collectionName,
+            new[] { "http://node1:6333" },
+            CancellationToken.None);
+
+        Assert.That(batch.SkippedDuplicatePending, Is.True);
+        await mockClient.DidNotReceive()
+            .CreateCollectionSnapshot(Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>());
+        _jobRegistry.DidNotReceive().TryAddJob(Arg.Any<IJob>(), Arg.Any<CancellationTokenSource>());
     }
 
     #endregion

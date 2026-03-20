@@ -5,6 +5,7 @@ using NUnit.Framework;
 using Vigilante.Models;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
+using Vigilante.Services.Jobs;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -50,6 +51,17 @@ public class JobRegistryTests
         var pending = _registry.GetPendingJobs();
         Assert.That(pending, Has.Count.EqualTo(1));
         cts2.Dispose();
+    }
+
+    [Test]
+    public void HasPendingSnapshotCreationForCollection_MatchesSnapshotCreatePrefixCaseInsensitive()
+    {
+        var job = CreateFakeJob(PendingSnapshotCreationJob.KeyPrefix + "MyCollection");
+        _registry.TryAddJob(job, new CancellationTokenSource());
+
+        Assert.That(_registry.HasPendingSnapshotCreationForCollection("mycollection"), Is.True);
+        Assert.That(_registry.HasPendingSnapshotCreationForCollection("MyCollection"), Is.True);
+        Assert.That(_registry.HasPendingSnapshotCreationForCollection("other"), Is.False);
     }
 
     [Test]
@@ -175,6 +187,22 @@ public class JobRegistryTests
 
         Assert.That(_registry.GetPendingJobs(), Has.Count.EqualTo(0));
         await job.Received(1).AdvanceAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ProcessPendingJobsAsync_WhenJobCompletesWithFailure_RecordsErrorAndRemovesJob()
+    {
+        var job = CreateFakeJob("job1");
+        var cts = new CancellationTokenSource();
+        job.AdvanceAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult((false, false, (string?)"timeout")));
+        _registry.TryAddJob(job, cts);
+
+        await _registry.ProcessPendingJobsAsync(CancellationToken.None);
+
+        Assert.That(_registry.GetPendingJobs(), Is.Empty);
+        var infos = _registry.GetJobInfos();
+        Assert.That(infos.Any(i => i.Key == "job1" && i.ErrorMessage == "timeout"), Is.True);
     }
 
     [Test]

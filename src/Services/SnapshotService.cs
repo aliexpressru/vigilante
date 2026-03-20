@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using Aer.QdrantClient.Http.Abstractions;
 using Microsoft.Extensions.Options;
@@ -20,6 +21,7 @@ public class SnapshotService(
     IS3SnapshotService s3SnapshotService,
     IPodCommandExecutor? commandExecutor,
     IOptions<QdrantOptions> options,
+    IDynamicConfigService dynamicConfigService,
     IJobRegistry jobRegistry,
     IServiceProvider serviceProvider,
     ILogger<SnapshotService> logger) : ISnapshotService
@@ -27,6 +29,9 @@ public class SnapshotService(
     private readonly QdrantOptions _options = options.Value;
     private IReadOnlyList<SnapshotInfo>? _snapshotsCache;
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
+
+    /// <summary>Excludes overlapping multi-node creates until the pending job is registered (same collection, case-insensitive).</summary>
+    private readonly ConcurrentDictionary<string, byte> _snapshotCreateInFlight = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Creates a snapshot of a collection on a specific node
@@ -70,7 +75,7 @@ public class SnapshotService(
         }
     }
 
-    public async Task<Dictionary<string, string?>> CreateCollectionSnapshotAsync(
+    public async Task<CreateCollectionSnapshotBatchResult> CreateCollectionSnapshotAsync(
         string collectionName,
         IEnumerable<string> nodeUrls,
         CancellationToken cancellationToken = default,
@@ -79,66 +84,101 @@ public class SnapshotService(
         IReadOnlySet<string>? retentionClusterPeerIds = null)
     {
         var nodeUrlsList = nodeUrls.ToList();
-        logger.LogInformation(
-            "Creating snapshot for collection {CollectionName} on {NodeCount} specified nodes",
-            collectionName,
-            nodeUrlsList.Count);
 
-        var baselineSnapshotKeys = await BuildBaselineSnapshotKeysForCollectionAsync(
-                collectionName,
-                nodeUrlsList,
-                cancellationToken)
-            .ConfigureAwait(false);
-        var requestedAt = DateTime.UtcNow;
-
-        var results = new Dictionary<string, string?>();
-
-        var createTasks = nodeUrlsList.Select(async nodeUrl =>
+        if (jobRegistry.HasPendingSnapshotCreationForCollection(collectionName))
         {
-            var snapshotName = await CreateCollectionSnapshotAsync(
-                nodeUrl,
-                collectionName,
-                cancellationToken,
-                waitForResult);
-
-            return (NodeUrl: nodeUrl, SnapshotName: snapshotName);
-        });
-
-        var createResults = await Task.WhenAll(createTasks);
-
-        foreach (var result in createResults)
-        {
-            results[result.NodeUrl] = result.SnapshotName;
+            logger.LogInformation(
+                "Snapshot create skipped for {CollectionName}: still waiting for previous snapshot(s) (pending job)",
+                collectionName);
+            return CreateCollectionSnapshotBatchResult.SkippedForNodes(nodeUrlsList);
         }
 
-        var successCount = results.Values.Count(s => s != null);
-        logger.LogInformation(
-            "Snapshot created for collection {CollectionName}: {SuccessCount}/{TotalCount} nodes",
-            collectionName,
-            successCount,
-            results.Count);
-
-        // Follow-up job: UI + optional retention after snapshots become visible (important when waitForResult is false).
-        if (successCount > 0)
+        // Guards the gap before snapshot-create job is registered:
+        // two concurrent calls can both see "no pending job" and race into duplicate create requests.
+        var flightKey = collectionName.ToLowerInvariant();
+        if (!_snapshotCreateInFlight.TryAdd(flightKey, 0))
         {
-            var succeededNodeUrls = results.Where(kv => kv.Value != null).Select(kv => kv.Key).ToList();
-            var requestedNodes = succeededNodeUrls
-                .Select(url => new NodeInfo { Url = url })
-                .ToList();
-            var job = new PendingSnapshotCreationJob(
-                serviceProvider,
-                collectionName,
-                requestedNodes,
-                requestedAt,
-                baselineSnapshotKeys,
-                retainLastNAfterVisible,
-                retentionClusterPeerIds);
-            var cts = new CancellationTokenSource();
-            if (!jobRegistry.TryAddJob(job, cts))
-                cts.Dispose();
+            logger.LogInformation(
+                "Snapshot create skipped for {CollectionName}: another create operation is in progress",
+                collectionName);
+            return CreateCollectionSnapshotBatchResult.SkippedForNodes(nodeUrlsList);
         }
 
-        return results;
+        try
+        {
+            logger.LogInformation(
+                "Creating snapshot for collection {CollectionName} on {NodeCount} specified nodes",
+                collectionName,
+                nodeUrlsList.Count);
+
+            var baselineSnapshotKeys = await BuildBaselineSnapshotKeysForCollectionAsync(
+                    collectionName,
+                    nodeUrlsList,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var requestedAt = DateTime.UtcNow;
+
+            var results = new Dictionary<string, string?>();
+
+            var createTasks = nodeUrlsList.Select(async nodeUrl =>
+            {
+                var snapshotName = await CreateCollectionSnapshotAsync(
+                    nodeUrl,
+                    collectionName,
+                    cancellationToken,
+                    waitForResult);
+
+                return (NodeUrl: nodeUrl, SnapshotName: snapshotName);
+            });
+
+            var createResults = await Task.WhenAll(createTasks);
+
+            foreach (var result in createResults)
+            {
+                results[result.NodeUrl] = result.SnapshotName;
+            }
+
+            var successCount = results.Values.Count(s => s != null);
+            logger.LogInformation(
+                "Snapshot created for collection {CollectionName}: {SuccessCount}/{TotalCount} nodes",
+                collectionName,
+                successCount,
+                results.Count);
+
+            // Follow-up job: UI + optional retention after snapshots become visible (important when waitForResult is false).
+            if (successCount > 0)
+            {
+                var dynamicConfig = await dynamicConfigService.GetConfigAsync(cancellationToken).ConfigureAwait(false);
+                var timeoutSeconds = Math.Max(1, dynamicConfig.Snapshot.PendingCreateTimeoutSeconds);
+                var pendingTimeout = TimeSpan.FromSeconds(timeoutSeconds);
+                var succeededNodeUrls = results.Where(kv => kv.Value != null).Select(kv => kv.Key).ToList();
+                var requestedNodes = succeededNodeUrls
+                    .Select(url => new NodeInfo { Url = url })
+                    .ToList();
+                var job = new PendingSnapshotCreationJob(
+                    serviceProvider,
+                    collectionName,
+                    requestedNodes,
+                    requestedAt,
+                    baselineSnapshotKeys,
+                    retainLastNAfterVisible,
+                    retentionClusterPeerIds,
+                    timeout: pendingTimeout);
+                var cts = new CancellationTokenSource();
+                if (!jobRegistry.TryAddJob(job, cts))
+                    cts.Dispose();
+            }
+
+            return new CreateCollectionSnapshotBatchResult
+            {
+                Results = results,
+                SkippedDuplicatePending = false
+            };
+        }
+        finally
+        {
+            _snapshotCreateInFlight.TryRemove(flightKey, out _);
+        }
     }
     
     /// <summary>
