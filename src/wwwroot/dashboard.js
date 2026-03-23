@@ -987,14 +987,14 @@ class VigilanteDashboard {
             const error = job.errorMessage || null;
             const errorAt = job.errorRecordedAt ? new Date(job.errorRecordedAt).toLocaleString() : '';
             const meta = job.metadata || {};
-            const currentAction = meta.currentAction != null
-                ? (Array.isArray(meta.currentAction) ? meta.currentAction.join(' · ') : String(meta.currentAction))
-                : (meta.CurrentAction != null ? (Array.isArray(meta.CurrentAction) ? meta.CurrentAction.join(' · ') : String(meta.CurrentAction)) : null);
-            const startedAtRaw = meta.startedAtUtc ?? meta.StartedAtUtc ?? null;
+            const currentAction = meta.CurrentAction != null
+                ? (Array.isArray(meta.CurrentAction) ? meta.CurrentAction.join(' · ') : String(meta.CurrentAction))
+                : null;
+            const startedAtRaw = meta.StartedAtUtc ?? null;
             const startedAt = startedAtRaw ? new Date(startedAtRaw).toLocaleString() : '';
             const metaRest = Object.entries(meta).filter(([k]) =>
-                !['CurrentAction', 'currentAction', 'StartedAtUtc', 'startedAtUtc', 'lastRunSummary', 'phase', 'lastRunStartedUtc', 'lastCompletedUtc', 'lastRunSuccess'].includes(k));
-            const rawSummary = meta.lastRunSummary ?? meta.LastRunSummary;
+                !['CurrentAction', 'StartedAtUtc', 'LastRunSummary', 'Phase', 'LastRunStartedUtc', 'LastCompletedUtc', 'LastRunSuccess', 'ReplicationPlan'].includes(k));
+            const rawSummary = meta.LastRunSummary;
             const lastRunSummary = rawSummary != null && String(rawSummary).trim() !== ''
                 ? String(rawSummary)
                 : null;
@@ -1005,17 +1005,18 @@ class VigilanteDashboard {
                 }).join(' · ')
                 : '';
 
-            const phase = meta.phase != null ? String(meta.phase).toLowerCase() : null;
+            const phase = meta.Phase != null ? String(meta.Phase).toLowerCase() : null;
             const statusClass = error ? 'job-status-error' : (phase === 'idle' ? 'job-status-idle' : 'job-status-running');
             const statusText = error ? 'Error' : (phase === 'idle' ? 'Idle' : 'Running');
-            const lastLine = !error && meta.lastCompletedUtc
-                ? `<div class="job-meta">${meta.lastRunSuccess === false ? 'Last run: failed' : 'Last run: OK'} · ${new Date(meta.lastCompletedUtc).toLocaleString()}</div>`
+            const lastLine = !error && meta.LastCompletedUtc
+                ? `<div class="job-meta">${meta.LastRunSuccess === false ? 'Last run: failed' : 'Last run: OK'} · ${new Date(meta.LastCompletedUtc).toLocaleString()}</div>`
                 : '';
             const errorBlock = error
                 ? `<div class="job-error">${this.escapeHtml(error)}${errorAt ? ` <span class="job-error-at">${errorAt}</span>` : ''}</div>`
                 : '';
             const currentActionBlock = currentAction ? `<div class="job-current-action">${this.escapeHtml(currentAction)}</div>` : '';
             const startedAtBlock = startedAt ? `<div class="job-meta">Started: ${this.escapeHtml(startedAt)}</div>` : '';
+            const replicationPlanBlock = this.renderReplicationPlan(meta);
             const lastRunSummaryBlock = lastRunSummary
                 ? `<div class="job-last-run-summary"><span class="job-last-run-label">Last run:</span> ${this.escapeHtml(lastRunSummary)}</div>`
                 : '';
@@ -1031,11 +1032,58 @@ class VigilanteDashboard {
                     ${lastRunSummaryBlock}
                     ${currentActionBlock}
                     ${startedAtBlock}
+                    ${replicationPlanBlock}
                     ${errorBlock}
                     ${metaBlock}
                 </div>
             `;
         }).join('');
+    }
+
+    normalizeReplicationAction(actionRaw, targetPeerId) {
+        if (actionRaw == null) {
+            return targetPeerId == null ? 'DropReplica' : 'AddReplica';
+        }
+
+        const value = String(actionRaw).trim().toLowerCase();
+        if (value === 'addreplica' || value === 'add_replica' || value === 'add') return 'AddReplica';
+        if (value === 'dropreplica' || value === 'drop_replica' || value === 'drop') return 'DropReplica';
+        if (value === 'movereplica' || value === 'move_replica' || value === 'move') return 'MoveReplica';
+        return String(actionRaw);
+    }
+
+    renderReplicationPlan(meta) {
+        const rawPlan = meta.ReplicationPlan;
+        if (!Array.isArray(rawPlan) || rawPlan.length === 0) {
+            return '';
+        }
+
+        const normalized = rawPlan.map((step, idx) => {
+            const actionRaw = step?.action ?? step?.replicatorAction;
+            const targetPeerId = step?.targetPeerId ?? null;
+            const stepNumber = step?.stepNumber ?? (idx + 1);
+            return {
+                stepNumber: Number.isFinite(Number(stepNumber)) ? Number(stepNumber) : (idx + 1),
+                shardId: step?.shardId ?? '?',
+                sourcePeerId: step?.sourcePeerId ?? '?',
+                sourcePeerUri: step?.sourcePeerUri ?? null,
+                targetPeerId: targetPeerId,
+                targetPeerUri: step?.targetPeerUri ?? null,
+                action: this.normalizeReplicationAction(actionRaw, targetPeerId)
+            };
+        }).sort((a, b) => a.stepNumber - b.stepNumber);
+
+        const itemsHtml = normalized.map(p => {
+            const srcPeer = this.escapeHtml(String(p.sourcePeerId));
+            const srcUri = p.sourcePeerUri ? ` (${this.escapeHtml(String(p.sourcePeerUri))})` : '';
+            const tgtPeer = p.targetPeerId == null ? '-' : this.escapeHtml(String(p.targetPeerId));
+            const tgtUri = p.targetPeerUri ? ` (${this.escapeHtml(String(p.targetPeerUri))})` : '';
+            const action = this.escapeHtml(String(p.action));
+            const shardId = this.escapeHtml(String(p.shardId));
+            return `<div class="job-meta">#${p.stepNumber} · ${action} · shard ${shardId} · ${srcPeer}${srcUri} -> ${tgtPeer}${tgtUri}</div>`;
+        }).join('');
+
+        return `<div class="job-meta"><strong>Replication plan (${normalized.length}):</strong></div>${itemsHtml}`;
     }
 
     async loadCollectionSizes(clearCache = false) {

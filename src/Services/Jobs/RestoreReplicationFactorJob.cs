@@ -2,8 +2,7 @@ using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Infrastructure.Replication;
 using Aer.QdrantClient.Http.Models.Responses;
 using Aer.QdrantClient.Http.Models.Shared;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Vigilante.Constants;
 using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services.Jobs;
@@ -17,6 +16,8 @@ internal sealed class RestoreReplicationFactorJob : IJob
     private readonly string _collectionName;
     private readonly IAsyncEnumerator<ReplicateShardsToPeerResponse> _enumerator;
     private readonly ShardReplicator? _replicator;
+    private readonly DateTime _startedAtUtc;
+    private readonly IReadOnlyList<ScheduledShardReplication> _replicationPlanSnapshot;
     private bool _waitingForReady;
     private bool _disposed;
 
@@ -34,6 +35,10 @@ internal sealed class RestoreReplicationFactorJob : IJob
         _collectionName = collectionName;
         _enumerator = enumerator;
         _replicator = replicator;
+        _startedAtUtc = DateTime.UtcNow;
+        _replicationPlanSnapshot = replicator?.ReplicationPlan
+            .OrderBy(p => p.StepNumber)
+            .ToList() ?? [];
         _waitingForReady = waitingForReady;
     }
 
@@ -91,12 +96,21 @@ internal sealed class RestoreReplicationFactorJob : IJob
 
     public IReadOnlyDictionary<string, object?>? GetMetadata()
     {
-        if (_replicator == null)
-            return null;
-        var plan = _replicator.ReplicationPlan;
-        if (plan is not { Count: > 0 })
-            return null;
-        return new Dictionary<string, object?> { ["ReplicationPlan"] = plan.ToList() };
+        // Keep metadata stable for the whole job lifetime; live ReplicationPlan queue is consumed during execution.
+        var currentAction = _waitingForReady
+            ? "Waiting for shard transfers to complete"
+            : "Restoring replication factor";
+
+        var metadata = new Dictionary<string, object?>
+        {
+            [JobMetadataKeys.CurrentAction] = currentAction,
+            [JobMetadataKeys.StartedAtUtc] = _startedAtUtc
+        };
+
+        if (_replicationPlanSnapshot.Count > 0)
+            metadata[JobMetadataKeys.ReplicationPlan] = _replicationPlanSnapshot;
+
+        return metadata;
     }
 
     public async Task<bool?> CheckReadyAsync(CancellationToken cancellationToken)

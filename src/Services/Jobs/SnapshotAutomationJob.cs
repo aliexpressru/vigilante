@@ -16,14 +16,12 @@ namespace Vigilante.Services.Jobs;
 public sealed class SnapshotAutomationJob : IJob
 {
     public const string JobKey = "snapshot-automation";
-    public const string MetadataCurrentAction = "CurrentAction";
 
     public static class Actions
     {
         public const string LoadingCollections = "Loading collections...";
         public const string LoadingSnapshots = "Loading snapshots...";
         public const string DeletingOrphanedSnapshotsPrefix = "Deleting orphaned snapshots: ";
-        public const string EnforcingRetentionPrefix = "Enforcing retention: ";
 
         public static string CreatingSnapshot(string collection, int nodeCount) =>
             $"Creating snapshot «{collection}» on {nodeCount} node(s)...";
@@ -32,6 +30,7 @@ public sealed class SnapshotAutomationJob : IJob
     private readonly IServiceProvider _serviceProvider;
     private readonly IReadOnlyList<NodeInfo> _nodes;
     private readonly DynamicConfig _config;
+    private readonly DateTime _startedAtUtc;
     private readonly object _actionLock = new();
     private volatile string? _currentAction;
 
@@ -46,6 +45,7 @@ public sealed class SnapshotAutomationJob : IJob
         _serviceProvider = serviceProvider;
         _nodes = nodes;
         _config = config;
+        _startedAtUtc = DateTime.UtcNow;
     }
 
     public Task<bool?> CheckReadyAsync(CancellationToken cancellationToken) => Task.FromResult<bool?>(true);
@@ -400,7 +400,11 @@ public sealed class SnapshotAutomationJob : IJob
         {
             if (string.IsNullOrEmpty(_currentAction))
                 return null;
-            return new Dictionary<string, object?> { [MetadataCurrentAction] = _currentAction };
+            return new Dictionary<string, object?>
+            {
+                [JobMetadataKeys.CurrentAction] = _currentAction,
+                [JobMetadataKeys.StartedAtUtc] = _startedAtUtc
+            };
         }
     }
 
