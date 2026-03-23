@@ -20,6 +20,7 @@ class VigilanteDashboard {
         this.restoreReplicationFactorEndpoint = '/api/v1/collections/restore-replication-factor';
         this.restoreReplicationFactorCancelEndpoint = '/api/v1/collections/restore-replication-factor/cancel';
         this.jobsStatusEndpoint = '/api/v1/jobs/status';
+        this.jobsCancelEndpoint = '/api/v1/jobs/cancel';
         this.qdrantLogsEndpoint = '/api/v1/logs/qdrant';
         this.vigilanteLogsEndpoint = '/api/v1/logs/vigilante';
         this.environmentEndpoint = '/api/v1/config/environment';
@@ -54,6 +55,7 @@ class VigilanteDashboard {
         this.snapshotTotalPages = 1;
         this.snapshotNameFilter = '';
         this.jobs = []; // Background jobs from GET /api/v1/jobs/status
+        this.pendingJobCancellations = new Set();
         this._configCollectionNames = []; // For config modal override row pickers
         this.init();
         this.setupRefreshControls();
@@ -1008,6 +1010,8 @@ class VigilanteDashboard {
             const phase = meta.Phase != null ? String(meta.Phase).toLowerCase() : null;
             const statusClass = error ? 'job-status-error' : (phase === 'idle' ? 'job-status-idle' : 'job-status-running');
             const statusText = error ? 'Error' : (phase === 'idle' ? 'Idle' : 'Running');
+            const canCancel = !error && phase !== 'idle';
+            const isCancelling = this.pendingJobCancellations.has(String(key));
             const lastLine = !error && meta.LastCompletedUtc
                 ? `<div class="job-meta">${meta.LastRunSuccess === false ? 'Last run: failed' : 'Last run: OK'} · ${new Date(meta.LastCompletedUtc).toLocaleString()}</div>`
                 : '';
@@ -1021,12 +1025,18 @@ class VigilanteDashboard {
                 ? `<div class="job-last-run-summary"><span class="job-last-run-label">Last run:</span> ${this.escapeHtml(lastRunSummary)}</div>`
                 : '';
             const metaBlock = metaStr ? `<div class="job-meta">${this.escapeHtml(metaStr)}</div>` : '';
+            const cancelButtonBlock = canCancel
+                ? `<button type="button" class="job-cancel-btn" data-job-key="${encodeURIComponent(String(key))}" ${isCancelling ? 'disabled' : ''}>${isCancelling ? 'Cancelling...' : 'Cancel'}</button>`
+                : '';
 
             return `
                 <div class="job-item">
                     <div class="job-header">
                         <span class="job-key">${this.escapeHtml(key)}</span>
-                        <span class="job-status ${statusClass}">${statusText}</span>
+                        <div class="job-header-actions">
+                            <span class="job-status ${statusClass}">${statusText}</span>
+                            ${cancelButtonBlock}
+                        </div>
                     </div>
                     ${lastLine}
                     ${lastRunSummaryBlock}
@@ -1038,6 +1048,20 @@ class VigilanteDashboard {
                 </div>
             `;
         }).join('');
+
+        container.querySelectorAll('.job-cancel-btn').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const encodedKey = button.getAttribute('data-job-key');
+                if (!encodedKey) return;
+                const key = decodeURIComponent(encodedKey);
+                if (this.pendingJobCancellations.has(key)) return;
+                const confirmed = window.confirm(`Cancel job '${key}'?`);
+                if (!confirmed) return;
+                await this.cancelJobByKey(key);
+            });
+        });
     }
 
     normalizeReplicationAction(actionRaw, targetPeerId) {
@@ -4782,6 +4806,48 @@ class VigilanteDashboard {
         } catch (error) {
             this.removeToast(toastId);
             this.showToast(`Error: ${this.getErrorMessage(error)}`, 'error', 'Cancel RRF', 10000);
+        }
+    }
+
+    async cancelJobByKey(jobKey) {
+        if (this.pendingJobCancellations.has(jobKey)) return;
+        this.pendingJobCancellations.add(jobKey);
+        this.updateJobs();
+
+        const toastId = this.showToast(
+            `Cancelling job '${jobKey}'...`,
+            'info',
+            'Cancel Job',
+            0,
+            true
+        );
+        try {
+            const response = await fetch(this.jobsCancelEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: jobKey })
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                this.updateToast(toastId, data.message || 'Cancellation requested.', 'success', 'Cancel Job');
+                this.loadJobs();
+                return;
+            }
+
+            if (response.status === 404) {
+                this.updateToast(toastId, data.error || 'Job not found (already completed?)', 'warning', 'Cancel Job');
+                this.loadJobs();
+                return;
+            }
+
+            this.updateToast(toastId, data.error || data.message || `HTTP ${response.status}`, 'error', 'Cancel Job');
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`Error: ${this.getErrorMessage(error)}`, 'error', 'Cancel Job', 10000);
+        } finally {
+            this.pendingJobCancellations.delete(jobKey);
+            this.updateJobs();
         }
     }
 

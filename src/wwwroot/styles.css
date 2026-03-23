@@ -294,6 +294,12 @@ body {
     gap: 10px;
 }
 
+.job-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .job-key {
     font-weight: 600;
     font-family: var(--font-mono, monospace);
@@ -320,6 +326,29 @@ body {
 .job-status-error {
     background: #ffebee;
     color: #c62828;
+}
+
+.job-cancel-btn {
+    border: 1px solid #ef9a9a;
+    background: #ffebee;
+    color: #c62828;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.job-cancel-btn:hover {
+    background: #ffcdd2;
+}
+
+.job-cancel-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+    background: #f5f5f5;
+    color: #9e9e9e;
+    border-color: #e0e0e0;
 }
 
 .job-error {

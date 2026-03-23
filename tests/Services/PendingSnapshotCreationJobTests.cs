@@ -113,7 +113,7 @@ public class PendingSnapshotCreationJobTests
 
         Assert.That(metadata, Is.Not.Null);
         Assert.That(metadata![JobMetadataKeys.CurrentAction], Is.EqualTo("Waiting for snapshot: my-collection"));
-        Assert.That(metadata[JobMetadataKeys.CurrentAction], Is.EqualTo(requestedAt));
+        Assert.That(metadata[JobMetadataKeys.StartedAtUtc], Is.EqualTo(requestedAt));
     }
 
     [Test]
