@@ -65,6 +65,14 @@ public class Schedule
     public int? IntervalMinutes { get; set; }
 
     /// <summary>
+    /// Optional anchor time for interval-based snapshots.
+    /// When set with IntervalMinutes, snapshot windows are aligned to this time.
+    /// Value is converted to UTC and only time-of-day is used.
+    /// Example: IntervalMinutes=1440 and StartAt at 00:00 UTC means "once per day at midnight UTC".
+    /// </summary>
+    public DateTimeOffset? StartAt { get; set; }
+
+    /// <summary>
     /// Keep only the last N snapshots per collection per node; delete older ones. null = keep all.
     /// </summary>
     public int? RetainLastN { get; set; }

@@ -5702,7 +5702,27 @@ class VigilanteDashboard {
         });
     }
 
-    addOverrideRow(name = '', schedule = { enabled: true, intervalMinutes: null, retainLastN: null }) {
+    _toTimeInputValue(startAt) {
+        if (!startAt) return '';
+        const d = new Date(startAt);
+        if (Number.isNaN(d.getTime())) return '';
+        const hh = String(d.getUTCHours()).padStart(2, '0');
+        const mm = String(d.getUTCMinutes()).padStart(2, '0');
+        return `${hh}:${mm}`;
+    }
+
+    _timeInputToIsoUtc(value) {
+        if (!value) return null;
+        const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(value).trim());
+        if (!m) return null;
+        const h = Number(m[1]);
+        const min = Number(m[2]);
+        const sec = m[3] ? Number(m[3]) : 0;
+        if (h < 0 || h > 23 || min < 0 || min > 59 || sec < 0 || sec > 59) return null;
+        return new Date(Date.UTC(1970, 0, 1, h, min, sec)).toISOString();
+    }
+
+    addOverrideRow(name = '', schedule = { enabled: true, intervalMinutes: null, retainLastN: null, startAt: null }) {
         const row = document.createElement('div');
         row.className = 'override-row';
         row.innerHTML = `
@@ -5712,6 +5732,7 @@ class VigilanteDashboard {
             </div>
             <input type="number" class="override-input override-interval" placeholder="—" min="1" value="${schedule.intervalMinutes ?? ''}">
             <input type="number" class="override-input override-retain" placeholder="—" min="1" value="${schedule.retainLastN ?? ''}">
+            <input type="time" class="override-input override-start-at" step="60" value="${this._toTimeInputValue(schedule.startAt)}">
             <button type="button" class="btn-remove-override" title="Remove"><i class="fas fa-times"></i></button>
         `;
         row.querySelector('.btn-remove-override').addEventListener('click', () => row.remove());
@@ -5787,6 +5808,7 @@ class VigilanteDashboard {
             document.getElementById('snapshotScheduleSection').style.display = schedule.enabled ? 'block' : 'none';
             document.getElementById('snapshotScheduleInterval').value = schedule.intervalMinutes ?? '';
             document.getElementById('snapshotScheduleRetain').value = schedule.retainLastN ?? '';
+            document.getElementById('snapshotScheduleStartAt').value = this._toTimeInputValue(schedule.startAt);
 
             // Collection overrides
             const overridesEnabled = overrides != null;
@@ -5845,8 +5867,10 @@ class VigilanteDashboard {
         const scheduleEnabled = document.getElementById('snapshotScheduleEnabled').checked;
         const intervalRaw = document.getElementById('snapshotScheduleInterval').value;
         const retainRaw = document.getElementById('snapshotScheduleRetain').value;
+        const startAtRaw = document.getElementById('snapshotScheduleStartAt').value;
         const intervalMinutes = intervalRaw ? parseInt(intervalRaw) : null;
         const retainLastN = retainRaw ? parseInt(retainRaw) : null;
+        const startAt = this._timeInputToIsoUtc(startAtRaw);
 
         // Collection overrides
         const overridesEnabled = document.getElementById('snapshotOverridesEnabled').checked;
@@ -5862,10 +5886,12 @@ class VigilanteDashboard {
                 }
                 const iRaw = row.querySelector('.override-interval').value;
                 const rRaw = row.querySelector('.override-retain').value;
+                const sRaw = row.querySelector('.override-start-at').value;
                 collectionOverrides[name] = {
                     enabled: row.querySelector('.override-enabled').checked,
                     intervalMinutes: iRaw ? parseInt(iRaw) : null,
                     retainLastN: rRaw ? parseInt(rRaw) : null,
+                    startAt: this._timeInputToIsoUtc(sRaw),
                 };
             });
             if (overrideError) {
@@ -5901,7 +5927,8 @@ class VigilanteDashboard {
                         schedule: {
                             enabled: scheduleEnabled,
                             intervalMinutes: intervalMinutes,
-                            retainLastN: retainLastN
+                            retainLastN: retainLastN,
+                            startAt: startAt
                         },
                         collectionOverrides: collectionOverrides
                     },
