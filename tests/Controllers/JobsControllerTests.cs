@@ -4,6 +4,7 @@ using NSubstitute;
 using NUnit.Framework;
 using Vigilante.Controllers;
 using Vigilante.Models;
+using Vigilante.Models.Requests;
 using Vigilante.Services.Interfaces;
 using Vigilante.Services.Jobs;
 
@@ -110,5 +111,48 @@ public class JobsControllerTests
         Assert.That(list, Has.Count.EqualTo(1));
         Assert.That(list[0].Key, Is.EqualTo("snapshot-automation"));
         Assert.That(list[0].Metadata!["phase"], Is.EqualTo("idle"));
+    }
+
+    [Test]
+    public async Task CancelJob_WhenKeyMissing_ReturnsBadRequest()
+    {
+        var result = await _controller.CancelJob(new V1CancelJobRequest { Key = " " }, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
+    }
+
+    [Test]
+    public async Task CancelJob_WhenJobExists_ReturnsOk()
+    {
+        _jobRegistry.CancelJobAsync("job1", Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await _controller.CancelJob(new V1CancelJobRequest { Key = "job1" }, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        await _jobRegistry.Received(1).CancelJobAsync("job1", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CancelJob_WhenJobMissing_ReturnsNotFound()
+    {
+        _jobRegistry.CancelJobAsync("missing", Arg.Any<CancellationToken>()).Returns(false);
+
+        var result = await _controller.CancelJob(new V1CancelJobRequest { Key = "missing" }, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<NotFoundObjectResult>());
+        await _jobRegistry.Received(1).CancelJobAsync("missing", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CancelJob_WhenRegistryThrows_Returns500()
+    {
+        _jobRegistry.CancelJobAsync("job1", Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new InvalidOperationException("broken")));
+
+        var result = await _controller.CancelJob(new V1CancelJobRequest { Key = "job1" }, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        var objectResult = (ObjectResult)result;
+        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
     }
 }

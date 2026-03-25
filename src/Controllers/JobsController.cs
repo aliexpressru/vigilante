@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Vigilante.Models;
+using Vigilante.Models.Requests;
 using Vigilante.Services.Interfaces;
 using Vigilante.Services.Jobs;
 
@@ -41,6 +42,34 @@ public class JobsController(
         {
             logger.LogError(ex, "Failed to get jobs status");
             return StatusCode(500, new { error = "Failed to get jobs status", details = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Cancels a running job by key and removes it from registry.
+    /// </summary>
+    [HttpPost("cancel")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> CancelJob([FromBody] V1CancelJobRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Key))
+            return BadRequest(new { error = "Job key is required" });
+
+        try
+        {
+            var cancelled = await jobRegistry.CancelJobAsync(request.Key, cancellationToken);
+            if (!cancelled)
+                return NotFound(new { error = $"Job with key '{request.Key}' was not found" });
+
+            return Ok(new { success = true, message = $"Job '{request.Key}' was cancelled" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to cancel job with key {Key}", request.Key);
+            return StatusCode(500, new { error = "Failed to cancel job", details = ex.Message });
         }
     }
 

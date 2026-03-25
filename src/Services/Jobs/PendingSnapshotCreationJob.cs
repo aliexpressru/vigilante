@@ -15,8 +15,6 @@ namespace Vigilante.Services.Jobs;
 public sealed class PendingSnapshotCreationJob : IJob
 {
     public const string KeyPrefix = "snapshot-create-";
-    public const string MetadataCurrentAction = "CurrentAction";
-    public const string MetadataStartedAtUtc = "StartedAtUtc";
 
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(30);
 
@@ -179,8 +177,8 @@ public sealed class PendingSnapshotCreationJob : IJob
     {
         return new Dictionary<string, object?>
         {
-            [MetadataCurrentAction] = $"Waiting for snapshot: {_collectionName}",
-            [MetadataStartedAtUtc] = _requestedAtUtc
+            [JobMetadataKeys.CurrentAction] = $"Waiting for snapshot: {_collectionName}",
+            [JobMetadataKeys.StartedAtUtc] = _requestedAtUtc
         };
     }
 

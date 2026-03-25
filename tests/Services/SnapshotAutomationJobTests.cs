@@ -75,7 +75,7 @@ public class SnapshotAutomationJobTests
     private static IReadOnlyList<NodeInfo> HealthyNodes(string url = "http://node1:6333", string peerId = "peer1") =>
         new List<NodeInfo> { new() { Url = url, IsHealthy = true, PeerId = peerId } };
 
-    private static DynamicConfig ScheduleEnabled(int? intervalMinutes = null, int? retainLastN = null) =>
+    private static DynamicConfig ScheduleEnabled(int? intervalMinutes = null, int? retainLastN = null, DateTimeOffset? startAt = null) =>
         new()
         {
             Snapshot = new SnapshotConfiguration
@@ -84,6 +84,7 @@ public class SnapshotAutomationJobTests
                 {
                     Enabled = true,
                     IntervalMinutes = intervalMinutes,
+                    StartAt = startAt,
                     RetainLastN = retainLastN
                 }
             }
@@ -467,5 +468,50 @@ public class SnapshotAutomationJobTests
         await job.AdvanceAsync(CancellationToken.None);
 
         _clusterManager.DidNotReceive().ReportIssue(IssueKeyConstants.Snapshot("col1"), Arg.Any<string>());
+    }
+
+    [Test]
+    public void IsIntervalSnapshotDue_WithoutStartAt_UsesLegacyBehavior()
+    {
+        var now = new DateTime(2026, 3, 23, 12, 0, 0, DateTimeKind.Utc);
+        var lastCreatedAt = now.AddMinutes(-59);
+
+        var due = SnapshotAutomationJob.IsIntervalSnapshotDue(
+            now,
+            lastCreatedAt,
+            intervalMinutes: 60,
+            startAt: null);
+
+        Assert.That(due, Is.False);
+    }
+
+    [Test]
+    public void IsIntervalSnapshotDue_WithStartAt_DueWhenCurrentWindowHasNoSnapshot()
+    {
+        var now = new DateTime(2026, 3, 23, 15, 0, 0, DateTimeKind.Utc);
+        var lastCreatedAt = new DateTime(2026, 3, 22, 23, 50, 0, DateTimeKind.Utc);
+
+        var due = SnapshotAutomationJob.IsIntervalSnapshotDue(
+            now,
+            lastCreatedAt,
+            intervalMinutes: 1440,
+            startAt: new DateTimeOffset(2026, 3, 23, 0, 0, 0, TimeSpan.Zero));
+
+        Assert.That(due, Is.True);
+    }
+
+    [Test]
+    public void IsIntervalSnapshotDue_WithStartAt_NotDueWhenSnapshotAlreadyInCurrentWindow()
+    {
+        var now = new DateTime(2026, 3, 23, 15, 0, 0, DateTimeKind.Utc);
+        var lastCreatedAt = new DateTime(2026, 3, 23, 1, 0, 0, DateTimeKind.Utc);
+
+        var due = SnapshotAutomationJob.IsIntervalSnapshotDue(
+            now,
+            lastCreatedAt,
+            intervalMinutes: 1440,
+            startAt: new DateTimeOffset(2026, 3, 23, 0, 0, 0, TimeSpan.Zero));
+
+        Assert.That(due, Is.False);
     }
 }

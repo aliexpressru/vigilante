@@ -1,3 +1,5 @@
+using Vigilante.Constants;
+
 namespace Vigilante.Services;
 
 /// <inheritdoc />
@@ -68,15 +70,15 @@ public sealed class SnapshotAutomationStatus : Interfaces.ISnapshotAutomationSta
             var running = _runDepth > 0;
             var d = new Dictionary<string, object?>
             {
-                ["phase"] = running ? "running" : "idle",
-                ["lastRunStartedUtc"] = _lastRunStartedUtc,
-                ["lastCompletedUtc"] = _lastCompletedUtc,
-                ["lastRunSuccess"] = _lastRunSuccess
+                [JobMetadataKeys.Phase] = running ? "running" : "idle",
+                [JobMetadataKeys.LastRunStartedUtc] = _lastRunStartedUtc,
+                [JobMetadataKeys.LastCompletedUtc] = _lastCompletedUtc,
+                [JobMetadataKeys.LastRunSuccess] = _lastRunSuccess
             };
             if (!string.IsNullOrEmpty(_currentAction))
-                d["CurrentAction"] = _currentAction;
+                d[JobMetadataKeys.CurrentAction] = _currentAction;
             if (!string.IsNullOrEmpty(_lastRunSummary))
-                d["lastRunSummary"] = _lastRunSummary;
+                d[JobMetadataKeys.LastRunSummary] = _lastRunSummary;
             return d;
         }
     }

@@ -346,7 +346,19 @@
                                 </label>
                                 <input type="number" id="snapshotScheduleRetain" class="form-input" min="1" placeholder="— keep all —">
                             </div>
+                            <div class="form-group">
+                                <label for="snapshotScheduleStartAt">
+                                    Start at (UTC)
+                                    <span class="config-label-hint">Used only when Interval (minutes) is set</span>
+                                </label>
+                                <input type="time" id="snapshotScheduleStartAt" class="form-input" step="60">
+                            </div>
                         </div>
+                        <small class="form-hint">
+                            <strong>How Start at works:</strong> this is the UTC anchor time for interval windows.
+                            Example: Interval = 1440 and Start at = 00:00 means one snapshot per day at midnight UTC.
+                            If Start at is empty, next snapshot is based on time since the last snapshot.
+                        </small>
                     </div>
                 </div>
 
@@ -359,11 +371,15 @@
                         <label for="snapshotOverridesEnabled">Enable per-collection schedule overrides</label>
                     </div>
                     <div id="snapshotOverridesSection" class="config-sub-section" style="display:none">
+                        <small class="form-hint">
+                            In overrides, <strong>Start at (UTC)</strong> works the same way as global schedule and is applied per collection.
+                        </small>
                         <div class="override-table-header">
                             <span>Collection</span>
                             <span>Enabled</span>
                             <span>Interval (min)</span>
                             <span>Retain last N</span>
+                            <span title="Used only when Interval (min) is set">Start at (UTC)</span>
                             <span></span>
                         </div>
                         <div id="overrideRows"></div>

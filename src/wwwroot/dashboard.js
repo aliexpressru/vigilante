@@ -20,6 +20,7 @@ class VigilanteDashboard {
         this.restoreReplicationFactorEndpoint = '/api/v1/collections/restore-replication-factor';
         this.restoreReplicationFactorCancelEndpoint = '/api/v1/collections/restore-replication-factor/cancel';
         this.jobsStatusEndpoint = '/api/v1/jobs/status';
+        this.jobsCancelEndpoint = '/api/v1/jobs/cancel';
         this.qdrantLogsEndpoint = '/api/v1/logs/qdrant';
         this.vigilanteLogsEndpoint = '/api/v1/logs/vigilante';
         this.environmentEndpoint = '/api/v1/config/environment';
@@ -54,6 +55,7 @@ class VigilanteDashboard {
         this.snapshotTotalPages = 1;
         this.snapshotNameFilter = '';
         this.jobs = []; // Background jobs from GET /api/v1/jobs/status
+        this.pendingJobCancellations = new Set();
         this._configCollectionNames = []; // For config modal override row pickers
         this.init();
         this.setupRefreshControls();
@@ -987,14 +989,14 @@ class VigilanteDashboard {
             const error = job.errorMessage || null;
             const errorAt = job.errorRecordedAt ? new Date(job.errorRecordedAt).toLocaleString() : '';
             const meta = job.metadata || {};
-            const currentAction = meta.currentAction != null
-                ? (Array.isArray(meta.currentAction) ? meta.currentAction.join(' · ') : String(meta.currentAction))
-                : (meta.CurrentAction != null ? (Array.isArray(meta.CurrentAction) ? meta.CurrentAction.join(' · ') : String(meta.CurrentAction)) : null);
-            const startedAtRaw = meta.startedAtUtc ?? meta.StartedAtUtc ?? null;
+            const currentAction = meta.CurrentAction != null
+                ? (Array.isArray(meta.CurrentAction) ? meta.CurrentAction.join(' · ') : String(meta.CurrentAction))
+                : null;
+            const startedAtRaw = meta.StartedAtUtc ?? null;
             const startedAt = startedAtRaw ? new Date(startedAtRaw).toLocaleString() : '';
             const metaRest = Object.entries(meta).filter(([k]) =>
-                !['CurrentAction', 'currentAction', 'StartedAtUtc', 'startedAtUtc', 'lastRunSummary', 'phase', 'lastRunStartedUtc', 'lastCompletedUtc', 'lastRunSuccess'].includes(k));
-            const rawSummary = meta.lastRunSummary ?? meta.LastRunSummary;
+                !['CurrentAction', 'StartedAtUtc', 'LastRunSummary', 'Phase', 'LastRunStartedUtc', 'LastCompletedUtc', 'LastRunSuccess', 'ReplicationPlan'].includes(k));
+            const rawSummary = meta.LastRunSummary;
             const lastRunSummary = rawSummary != null && String(rawSummary).trim() !== ''
                 ? String(rawSummary)
                 : null;
@@ -1005,37 +1007,107 @@ class VigilanteDashboard {
                 }).join(' · ')
                 : '';
 
-            const phase = meta.phase != null ? String(meta.phase).toLowerCase() : null;
+            const phase = meta.Phase != null ? String(meta.Phase).toLowerCase() : null;
             const statusClass = error ? 'job-status-error' : (phase === 'idle' ? 'job-status-idle' : 'job-status-running');
             const statusText = error ? 'Error' : (phase === 'idle' ? 'Idle' : 'Running');
-            const lastLine = !error && meta.lastCompletedUtc
-                ? `<div class="job-meta">${meta.lastRunSuccess === false ? 'Last run: failed' : 'Last run: OK'} · ${new Date(meta.lastCompletedUtc).toLocaleString()}</div>`
+            const canCancel = !error && phase !== 'idle';
+            const isCancelling = this.pendingJobCancellations.has(String(key));
+            const lastLine = !error && meta.LastCompletedUtc
+                ? `<div class="job-meta">${meta.LastRunSuccess === false ? 'Last run: failed' : 'Last run: OK'} · ${new Date(meta.LastCompletedUtc).toLocaleString()}</div>`
                 : '';
             const errorBlock = error
                 ? `<div class="job-error">${this.escapeHtml(error)}${errorAt ? ` <span class="job-error-at">${errorAt}</span>` : ''}</div>`
                 : '';
             const currentActionBlock = currentAction ? `<div class="job-current-action">${this.escapeHtml(currentAction)}</div>` : '';
             const startedAtBlock = startedAt ? `<div class="job-meta">Started: ${this.escapeHtml(startedAt)}</div>` : '';
+            const replicationPlanBlock = this.renderReplicationPlan(meta);
             const lastRunSummaryBlock = lastRunSummary
                 ? `<div class="job-last-run-summary"><span class="job-last-run-label">Last run:</span> ${this.escapeHtml(lastRunSummary)}</div>`
                 : '';
             const metaBlock = metaStr ? `<div class="job-meta">${this.escapeHtml(metaStr)}</div>` : '';
+            const cancelButtonBlock = canCancel
+                ? `<button type="button" class="job-cancel-btn" data-job-key="${encodeURIComponent(String(key))}" ${isCancelling ? 'disabled' : ''}>${isCancelling ? 'Cancelling...' : 'Cancel'}</button>`
+                : '';
 
             return `
                 <div class="job-item">
                     <div class="job-header">
                         <span class="job-key">${this.escapeHtml(key)}</span>
-                        <span class="job-status ${statusClass}">${statusText}</span>
+                        <div class="job-header-actions">
+                            <span class="job-status ${statusClass}">${statusText}</span>
+                            ${cancelButtonBlock}
+                        </div>
                     </div>
                     ${lastLine}
                     ${lastRunSummaryBlock}
                     ${currentActionBlock}
                     ${startedAtBlock}
+                    ${replicationPlanBlock}
                     ${errorBlock}
                     ${metaBlock}
                 </div>
             `;
         }).join('');
+
+        container.querySelectorAll('.job-cancel-btn').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const encodedKey = button.getAttribute('data-job-key');
+                if (!encodedKey) return;
+                const key = decodeURIComponent(encodedKey);
+                if (this.pendingJobCancellations.has(key)) return;
+                const confirmed = window.confirm(`Cancel job '${key}'?`);
+                if (!confirmed) return;
+                await this.cancelJobByKey(key);
+            });
+        });
+    }
+
+    normalizeReplicationAction(actionRaw, targetPeerId) {
+        if (actionRaw == null) {
+            return targetPeerId == null ? 'DropReplica' : 'AddReplica';
+        }
+
+        const value = String(actionRaw).trim().toLowerCase();
+        if (value === 'addreplica' || value === 'add_replica' || value === 'add') return 'AddReplica';
+        if (value === 'dropreplica' || value === 'drop_replica' || value === 'drop') return 'DropReplica';
+        if (value === 'movereplica' || value === 'move_replica' || value === 'move') return 'MoveReplica';
+        return String(actionRaw);
+    }
+
+    renderReplicationPlan(meta) {
+        const rawPlan = meta.ReplicationPlan;
+        if (!Array.isArray(rawPlan) || rawPlan.length === 0) {
+            return '';
+        }
+
+        const normalized = rawPlan.map((step, idx) => {
+            const actionRaw = step?.action ?? step?.replicatorAction;
+            const targetPeerId = step?.targetPeerId ?? null;
+            const stepNumber = step?.stepNumber ?? (idx + 1);
+            return {
+                stepNumber: Number.isFinite(Number(stepNumber)) ? Number(stepNumber) : (idx + 1),
+                shardId: step?.shardId ?? '?',
+                sourcePeerId: step?.sourcePeerId ?? '?',
+                sourcePeerUri: step?.sourcePeerUri ?? null,
+                targetPeerId: targetPeerId,
+                targetPeerUri: step?.targetPeerUri ?? null,
+                action: this.normalizeReplicationAction(actionRaw, targetPeerId)
+            };
+        }).sort((a, b) => a.stepNumber - b.stepNumber);
+
+        const itemsHtml = normalized.map(p => {
+            const srcPeer = this.escapeHtml(String(p.sourcePeerId));
+            const srcUri = p.sourcePeerUri ? ` (${this.escapeHtml(String(p.sourcePeerUri))})` : '';
+            const tgtPeer = p.targetPeerId == null ? '-' : this.escapeHtml(String(p.targetPeerId));
+            const tgtUri = p.targetPeerUri ? ` (${this.escapeHtml(String(p.targetPeerUri))})` : '';
+            const action = this.escapeHtml(String(p.action));
+            const shardId = this.escapeHtml(String(p.shardId));
+            return `<div class="job-meta">#${p.stepNumber} · ${action} · shard ${shardId} · ${srcPeer}${srcUri} -> ${tgtPeer}${tgtUri}</div>`;
+        }).join('');
+
+        return `<div class="job-meta"><strong>Replication plan (${normalized.length}):</strong></div>${itemsHtml}`;
     }
 
     async loadCollectionSizes(clearCache = false) {
@@ -4737,6 +4809,48 @@ class VigilanteDashboard {
         }
     }
 
+    async cancelJobByKey(jobKey) {
+        if (this.pendingJobCancellations.has(jobKey)) return;
+        this.pendingJobCancellations.add(jobKey);
+        this.updateJobs();
+
+        const toastId = this.showToast(
+            `Cancelling job '${jobKey}'...`,
+            'info',
+            'Cancel Job',
+            0,
+            true
+        );
+        try {
+            const response = await fetch(this.jobsCancelEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: jobKey })
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                this.updateToast(toastId, data.message || 'Cancellation requested.', 'success', 'Cancel Job');
+                this.loadJobs();
+                return;
+            }
+
+            if (response.status === 404) {
+                this.updateToast(toastId, data.error || 'Job not found (already completed?)', 'warning', 'Cancel Job');
+                this.loadJobs();
+                return;
+            }
+
+            this.updateToast(toastId, data.error || data.message || `HTTP ${response.status}`, 'error', 'Cancel Job');
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`Error: ${this.getErrorMessage(error)}`, 'error', 'Cancel Job', 10000);
+        } finally {
+            this.pendingJobCancellations.delete(jobKey);
+            this.updateJobs();
+        }
+    }
+
     async downloadSnapshot(collectionName, snapshotName, nodeUrl, podName, podNamespace, source) {
         const toastId = this.showToast(
             `Preparing download of '${snapshotName}'...`,
@@ -5588,7 +5702,27 @@ class VigilanteDashboard {
         });
     }
 
-    addOverrideRow(name = '', schedule = { enabled: true, intervalMinutes: null, retainLastN: null }) {
+    _toTimeInputValue(startAt) {
+        if (!startAt) return '';
+        const d = new Date(startAt);
+        if (Number.isNaN(d.getTime())) return '';
+        const hh = String(d.getUTCHours()).padStart(2, '0');
+        const mm = String(d.getUTCMinutes()).padStart(2, '0');
+        return `${hh}:${mm}`;
+    }
+
+    _timeInputToIsoUtc(value) {
+        if (!value) return null;
+        const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(value).trim());
+        if (!m) return null;
+        const h = Number(m[1]);
+        const min = Number(m[2]);
+        const sec = m[3] ? Number(m[3]) : 0;
+        if (h < 0 || h > 23 || min < 0 || min > 59 || sec < 0 || sec > 59) return null;
+        return new Date(Date.UTC(1970, 0, 1, h, min, sec)).toISOString();
+    }
+
+    addOverrideRow(name = '', schedule = { enabled: true, intervalMinutes: null, retainLastN: null, startAt: null }) {
         const row = document.createElement('div');
         row.className = 'override-row';
         row.innerHTML = `
@@ -5598,6 +5732,7 @@ class VigilanteDashboard {
             </div>
             <input type="number" class="override-input override-interval" placeholder="—" min="1" value="${schedule.intervalMinutes ?? ''}">
             <input type="number" class="override-input override-retain" placeholder="—" min="1" value="${schedule.retainLastN ?? ''}">
+            <input type="time" class="override-input override-start-at" step="60" value="${this._toTimeInputValue(schedule.startAt)}">
             <button type="button" class="btn-remove-override" title="Remove"><i class="fas fa-times"></i></button>
         `;
         row.querySelector('.btn-remove-override').addEventListener('click', () => row.remove());
@@ -5673,6 +5808,7 @@ class VigilanteDashboard {
             document.getElementById('snapshotScheduleSection').style.display = schedule.enabled ? 'block' : 'none';
             document.getElementById('snapshotScheduleInterval').value = schedule.intervalMinutes ?? '';
             document.getElementById('snapshotScheduleRetain').value = schedule.retainLastN ?? '';
+            document.getElementById('snapshotScheduleStartAt').value = this._toTimeInputValue(schedule.startAt);
 
             // Collection overrides
             const overridesEnabled = overrides != null;
@@ -5731,8 +5867,10 @@ class VigilanteDashboard {
         const scheduleEnabled = document.getElementById('snapshotScheduleEnabled').checked;
         const intervalRaw = document.getElementById('snapshotScheduleInterval').value;
         const retainRaw = document.getElementById('snapshotScheduleRetain').value;
+        const startAtRaw = document.getElementById('snapshotScheduleStartAt').value;
         const intervalMinutes = intervalRaw ? parseInt(intervalRaw) : null;
         const retainLastN = retainRaw ? parseInt(retainRaw) : null;
+        const startAt = this._timeInputToIsoUtc(startAtRaw);
 
         // Collection overrides
         const overridesEnabled = document.getElementById('snapshotOverridesEnabled').checked;
@@ -5748,10 +5886,12 @@ class VigilanteDashboard {
                 }
                 const iRaw = row.querySelector('.override-interval').value;
                 const rRaw = row.querySelector('.override-retain').value;
+                const sRaw = row.querySelector('.override-start-at').value;
                 collectionOverrides[name] = {
                     enabled: row.querySelector('.override-enabled').checked,
                     intervalMinutes: iRaw ? parseInt(iRaw) : null,
                     retainLastN: rRaw ? parseInt(rRaw) : null,
+                    startAt: this._timeInputToIsoUtc(sRaw),
                 };
             });
             if (overrideError) {
@@ -5787,7 +5927,8 @@ class VigilanteDashboard {
                         schedule: {
                             enabled: scheduleEnabled,
                             intervalMinutes: intervalMinutes,
-                            retainLastN: retainLastN
+                            retainLastN: retainLastN,
+                            startAt: startAt
                         },
                         collectionOverrides: collectionOverrides
                     },

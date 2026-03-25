@@ -16,14 +16,12 @@ namespace Vigilante.Services.Jobs;
 public sealed class SnapshotAutomationJob : IJob
 {
     public const string JobKey = "snapshot-automation";
-    public const string MetadataCurrentAction = "CurrentAction";
 
     public static class Actions
     {
         public const string LoadingCollections = "Loading collections...";
         public const string LoadingSnapshots = "Loading snapshots...";
         public const string DeletingOrphanedSnapshotsPrefix = "Deleting orphaned snapshots: ";
-        public const string EnforcingRetentionPrefix = "Enforcing retention: ";
 
         public static string CreatingSnapshot(string collection, int nodeCount) =>
             $"Creating snapshot «{collection}» on {nodeCount} node(s)...";
@@ -32,6 +30,7 @@ public sealed class SnapshotAutomationJob : IJob
     private readonly IServiceProvider _serviceProvider;
     private readonly IReadOnlyList<NodeInfo> _nodes;
     private readonly DynamicConfig _config;
+    private readonly DateTime _startedAtUtc;
     private readonly object _actionLock = new();
     private volatile string? _currentAction;
 
@@ -46,6 +45,7 @@ public sealed class SnapshotAutomationJob : IJob
         _serviceProvider = serviceProvider;
         _nodes = nodes;
         _config = config;
+        _startedAtUtc = DateTime.UtcNow;
     }
 
     public Task<bool?> CheckReadyAsync(CancellationToken cancellationToken) => Task.FromResult<bool?>(true);
@@ -141,8 +141,11 @@ public sealed class SnapshotAutomationJob : IJob
                         var lastCreatedAt = existingSnaps
                             .Where(s => s.SnapshotName.Contains(peerId, StringComparison.OrdinalIgnoreCase) && s.CreatedAt.HasValue)
                             .Max(s => s.CreatedAt);
-                        return lastCreatedAt is null
-                            || (now - lastCreatedAt.Value).TotalMinutes >= schedule.IntervalMinutes.Value;
+                        return IsIntervalSnapshotDue(
+                            now,
+                            lastCreatedAt,
+                            schedule.IntervalMinutes.Value,
+                            schedule.StartAt);
                     })
                     .ToList();
 
@@ -394,13 +397,44 @@ public sealed class SnapshotAutomationJob : IJob
             && infos.All(c => c.HnswM > 0);
     }
 
+    internal static bool IsIntervalSnapshotDue(
+        DateTime nowUtc,
+        DateTime? lastCreatedAtUtc,
+        int intervalMinutes,
+        DateTimeOffset? startAt)
+    {
+        // Backward-compatible mode: no anchor time configured.
+        if (startAt is null)
+        {
+            return lastCreatedAtUtc is null
+                || (nowUtc - lastCreatedAtUtc.Value).TotalMinutes >= intervalMinutes;
+        }
+
+        var interval = TimeSpan.FromMinutes(intervalMinutes);
+        var startTime = startAt.Value.UtcDateTime.TimeOfDay;
+        var anchor = nowUtc.Date.Add(startTime);
+        if (nowUtc < anchor)
+            anchor = anchor.AddDays(-1);
+
+        var elapsed = nowUtc - anchor;
+        var periodsSinceAnchor = (long)Math.Floor(elapsed.Ticks / (double)interval.Ticks);
+        var currentWindowStart = anchor.AddTicks(periodsSinceAnchor * interval.Ticks);
+
+        // If there was no snapshot yet or the last one is from an older window, it's due.
+        return lastCreatedAtUtc is null || lastCreatedAtUtc.Value < currentWindowStart;
+    }
+
     public IReadOnlyDictionary<string, object?>? GetMetadata()
     {
         lock (_actionLock)
         {
             if (string.IsNullOrEmpty(_currentAction))
                 return null;
-            return new Dictionary<string, object?> { [MetadataCurrentAction] = _currentAction };
+            return new Dictionary<string, object?>
+            {
+                [JobMetadataKeys.CurrentAction] = _currentAction,
+                [JobMetadataKeys.StartedAtUtc] = _startedAtUtc
+            };
         }
     }
 
