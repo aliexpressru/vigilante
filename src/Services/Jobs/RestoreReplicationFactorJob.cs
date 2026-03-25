@@ -15,7 +15,6 @@ internal sealed class RestoreReplicationFactorJob : IJob
     private readonly IQdrantHttpClient _client;
     private readonly string _collectionName;
     private readonly IAsyncEnumerator<ReplicateShardsToPeerResponse> _enumerator;
-    private readonly ShardReplicator? _replicator;
     private readonly DateTime _startedAtUtc;
     private readonly IReadOnlyList<ScheduledShardReplication> _replicationPlanSnapshot;
     private bool _waitingForReady;
@@ -34,7 +33,6 @@ internal sealed class RestoreReplicationFactorJob : IJob
         _client = client;
         _collectionName = collectionName;
         _enumerator = enumerator;
-        _replicator = replicator;
         _startedAtUtc = DateTime.UtcNow;
         _replicationPlanSnapshot = replicator?.ReplicationPlan
             .OrderBy(p => p.StepNumber)
@@ -63,10 +61,19 @@ internal sealed class RestoreReplicationFactorJob : IJob
             shardTransferMethod: transferMethod,
             timeout: timeout);
 
-        if (response?.Status?.IsSuccess != true || response.Result == null || !response.Result.ShardsNeedReplication)
-        {
+        if (response is null)
             return (null, null);
+
+        if (response.Status.IsSuccess != true)
+        {
+            return (null, GetRestoreShardReplicationFactorStartFailureMessage(response.Status));
         }
+
+        if (response.Result is null)
+            return (null, null);
+
+        if (!response.Result.ShardsNeedReplication)
+            return (null, null);
 
         var replicator = response.Result;
         var enumerator = replicator.ExecuteReplications(cancellationToken, transferMethod, timeout).GetAsyncEnumerator(cancellationToken);
@@ -77,18 +84,14 @@ internal sealed class RestoreReplicationFactorJob : IJob
         }
 
         var replicateResponse = enumerator.Current;
-        var replicatedShards = replicateResponse.Result?.ReplicatedShards;
-        if (replicatedShards != null)
-        {
-            foreach (var item in replicatedShards)
-            {
-                if (!item.IsSuccess)
-                {
-                    var msg = $"Step 1: replication failed (ShardId: {item.ShardId}, Source: {item.SourcePeerId}, Target: {item.TargetPeerId})";
-                    return (null, msg);
-                }
-            }
-        }
+        var step1Failure = GetReplicationStepFailureMessage(
+            replicateResponse,
+            failedToStartPrefix: "Step 1: replication failed to start",
+            noReplicatedShardsMessage: "Step 1: replication response has no ReplicatedShards",
+            itemFailurePrefix: "Step 1: replication failed");
+
+        if (step1Failure is not null)
+            return (null, step1Failure);
 
         var job = new RestoreReplicationFactorJob(client, collectionName, enumerator, replicator, waitingForReady: true);
         return (job, null);
@@ -141,18 +144,14 @@ internal sealed class RestoreReplicationFactorJob : IJob
         }
 
         var replicateResponse = _enumerator.Current;
-        var replicatedShards = replicateResponse.Result?.ReplicatedShards;
-        if (replicatedShards != null)
-        {
-            foreach (var item in replicatedShards)
-            {
-                if (!item.IsSuccess)
-                {
-                    var msg = $"Replication failed (ShardId: {item.ShardId}, Source: {item.SourcePeerId}, Target: {item.TargetPeerId})";
-                    return (false, false, msg);
-                }
-            }
-        }
+        var failure = GetReplicationStepFailureMessage(
+            replicateResponse,
+            failedToStartPrefix: "Replication step failed to start",
+            noReplicatedShardsMessage: "Replication step failed: response has no ReplicatedShards",
+            itemFailurePrefix: "Replication failed");
+
+        if (failure is not null)
+            return (false, false, failure);
 
         _waitingForReady = true;
         return (true, true, null);
@@ -164,5 +163,38 @@ internal sealed class RestoreReplicationFactorJob : IJob
             return ValueTask.CompletedTask;
         _disposed = true;
         return _enumerator.DisposeAsync();
+    }
+
+    internal static string GetRestoreShardReplicationFactorStartFailureMessage(QdrantStatus status)
+    {
+        var msg = status.GetErrorMessage() ?? "Unknown error";
+        return $"Failed to start restore replication factor: {msg}";
+    }
+
+    internal static string? GetReplicationStepFailureMessage(
+        ReplicateShardsToPeerResponse replicateResponse,
+        string failedToStartPrefix,
+        string noReplicatedShardsMessage,
+        string itemFailurePrefix)
+    {
+        if (replicateResponse.Status.IsSuccess != true)
+        {
+            var msg = replicateResponse.Status.GetErrorMessage() ?? "Unknown error";
+            return $"{failedToStartPrefix}: {msg}";
+        }
+
+        var replicatedShards = replicateResponse.Result?.ReplicatedShards;
+        if (replicatedShards is null)
+            return noReplicatedShardsMessage;
+
+        foreach (var item in replicatedShards)
+        {
+            if (item.IsSuccess)
+                continue;
+
+            return $"{itemFailurePrefix} (ShardId: {item.ShardId}, Source: {item.SourcePeerId}, Target: {item.TargetPeerId})";
+        }
+
+        return null;
     }
 }
