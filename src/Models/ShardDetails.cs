@@ -1,3 +1,4 @@
+using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Extensions;
 
 namespace Vigilante.Models;
@@ -7,9 +8,14 @@ namespace Vigilante.Models;
 /// </summary>
 public class ShardDetails
 {
+    private ShardState? ParsedState =>
+        Enum.TryParse<ShardState>(State, ignoreCase: true, out var parsed) ? parsed : null;
+    
     public required uint ShardId { get; set; }
 
     public string? State { get; set; }
+
+    public bool IsActive => ParsedState == ShardState.Active;
 
     /// <summary>Physical size on disk (from storage).</summary>
     public long? SizeBytes { get; set; }

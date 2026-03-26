@@ -1116,7 +1116,7 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object>
+                Metrics = new CollectionMetrics
                 {
                     { "prettySize", MetricConstants.NotAvailableValue },
                     { "sizeBytes", 0L }
@@ -1181,7 +1181,7 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object>
+                Metrics = new CollectionMetrics
                 {
                     { "prettySize", MetricConstants.NotAvailableValue },
                     { "sizeBytes", 0L }
@@ -1213,8 +1213,8 @@ public class ClusterManagerTests
         Assert.That(result, Has.Count.EqualTo(1));
         Assert.That(result[0].Issues, Has.Count.EqualTo(1));
         Assert.That(result[0].Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
-        Assert.That(result[0].Metrics["prettySize"], Is.EqualTo(MetricConstants.NotAvailableValue));
-        Assert.That(result[0].Metrics["sizeBytes"], Is.EqualTo(0L));
+        Assert.That(result[0].Metrics.PrettySize, Is.EqualTo(MetricConstants.NotAvailableValue));
+        Assert.That(result[0].Metrics.SizeBytes, Is.EqualTo(0L));
     }
 
     [Test]
@@ -1253,7 +1253,7 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object>
+                Metrics = new CollectionMetrics
                 {
                     { "prettySize", "1 GB" },
                     { "sizeBytes", 1073741824L }
@@ -1295,8 +1295,8 @@ public class ClusterManagerTests
         // Assert
         Assert.That(result, Has.Count.EqualTo(1));
         Assert.That(result[0].Issues, Has.Count.EqualTo(0), "Should have no issues when collection exists in both API and storage");
-        Assert.That(result[0].Metrics["prettySize"], Is.EqualTo("1 GB"));
-        Assert.That(result[0].Metrics["sizeBytes"], Is.EqualTo(1073741824L));
+        Assert.That(result[0].Metrics.PrettySize, Is.EqualTo("1 GB"));
+        Assert.That(result[0].Metrics.SizeBytes, Is.EqualTo(1073741824L));
     }
 
     [Test]
@@ -1335,7 +1335,7 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object>
+                Metrics = new CollectionMetrics
                 {
                     { "prettySize", "476.84 MB" },
                     { "sizeBytes", 500000000L }
@@ -1347,7 +1347,7 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object>
+                Metrics = new CollectionMetrics
                 {
                     { "prettySize", MetricConstants.NotAvailableValue },
                     { "sizeBytes", 0L }
@@ -1360,7 +1360,7 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object>
+                Metrics = new CollectionMetrics
                 {
                     { "prettySize", "715.26 MB" },
                     { "sizeBytes", 750000000L }
@@ -1412,16 +1412,16 @@ public class ClusterManagerTests
         
         var collectionInBoth = result.First(c => c.CollectionName == "collection_in_both");
         Assert.That(collectionInBoth.Issues, Has.Count.EqualTo(0));
-        Assert.That(collectionInBoth.Metrics["sizeBytes"], Is.EqualTo(500000000L));
+        Assert.That(collectionInBoth.Metrics.SizeBytes, Is.EqualTo(500000000L));
 
         var collectionMissing = result.First(c => c.CollectionName == "collection_missing_from_storage");
         Assert.That(collectionMissing.Issues, Has.Count.EqualTo(1));
         Assert.That(collectionMissing.Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
-        Assert.That(collectionMissing.Metrics["prettySize"], Is.EqualTo(MetricConstants.NotAvailableValue));
+        Assert.That(collectionMissing.Metrics.PrettySize, Is.EqualTo(MetricConstants.NotAvailableValue));
 
         var anotherInBoth = result.First(c => c.CollectionName == "another_in_both");
         Assert.That(anotherInBoth.Issues, Has.Count.EqualTo(0));
-        Assert.That(anotherInBoth.Metrics["sizeBytes"], Is.EqualTo(750000000L));
+        Assert.That(anotherInBoth.Metrics.SizeBytes, Is.EqualTo(750000000L));
     }
 
     [Test]
@@ -1525,7 +1525,7 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object>
+                Metrics = new CollectionMetrics
                 {
                     { "prettySize", "953.67 MB" },
                     { "sizeBytes", 1000000000L }
@@ -1537,7 +1537,7 @@ public class ClusterManagerTests
                 NodeUrl = "http://node2:6333",
                 PodName = "pod2",
                 PeerId = "1002",
-                Metrics = new Dictionary<string, object>
+                Metrics = new CollectionMetrics
                 {
                     { "prettySize", MetricConstants.NotAvailableValue },
                     { "sizeBytes", 0L }
@@ -1588,7 +1588,7 @@ public class ClusterManagerTests
         
         var node1Collection = result.First(c => c.NodeUrl == "http://node1:6333");
         Assert.That(node1Collection.Issues, Has.Count.EqualTo(0));
-        Assert.That(node1Collection.Metrics["sizeBytes"], Is.EqualTo(1000000000L));
+        Assert.That(node1Collection.Metrics.SizeBytes, Is.EqualTo(1000000000L));
 
         var node2Collection = result.First(c => c.NodeUrl == "http://node2:6333");
         Assert.That(node2Collection.Issues, Has.Count.EqualTo(1));
@@ -1629,7 +1629,7 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object>
+                Metrics = new CollectionMetrics
                 {
                     { "prettySize", "1 MB" },
                     { "sizeBytes", 1048576L }
@@ -1697,7 +1697,7 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object> { { "sizeBytes", 1000L } }
+                Metrics = new CollectionMetrics { { "sizeBytes", 1000L } }
             }
         };
 
@@ -1709,7 +1709,7 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object> { { "sizeBytes", 2000L } }
+                Metrics = new CollectionMetrics { { "sizeBytes", 2000L } }
             }
         };
 
@@ -1778,7 +1778,7 @@ public class ClusterManagerTests
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
                 PeerId = "1001",
-                Metrics = new Dictionary<string, object> { { "sizeBytes", 1000L } }
+                Metrics = new CollectionMetrics { { "sizeBytes", 1000L } }
             }
         };
 

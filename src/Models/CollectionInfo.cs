@@ -14,7 +14,7 @@ public class CollectionInfo
     
     public string PodNamespace { get; set; } = string.Empty;
 
-    public Dictionary<string, object> Metrics { get; set; } = new();
+    public CollectionMetrics Metrics { get; set; } = new();
     
     public List<string> Issues { get; set; } = new();
     

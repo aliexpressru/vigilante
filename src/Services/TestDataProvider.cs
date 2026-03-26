@@ -139,7 +139,7 @@ public class TestDataProvider
                     CollectionName = collection,
                     PodName = podName,
                     PeerId = peerId,
-                    Metrics = metrics,
+                    Metrics = new CollectionMetrics(metrics),
                     Aliases = aliases
                 });
             }

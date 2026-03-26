@@ -335,110 +335,6 @@ public class CollectionService : ICollectionService
     }
 
 
-    public async Task<bool> RecoverCollectionFromSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken,
-        SnapshotPriority snapshotPriority = SnapshotPriority.Snapshot,
-        bool waitForResult = true)
-    {
-        try
-        {
-            _logger.LogInformation(
-                "Recovering collection {CollectionName} from snapshot {SnapshotName} on node {NodeUrl}",
-                collectionName, snapshotName, nodeUrl);
-
-            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            var result = await qdrantClient.RecoverCollectionFromSnapshot(
-                collectionName,
-                snapshotName,
-                cancellationToken,
-                isWaitForResult: waitForResult,
-                snapshotPriority: snapshotPriority);
-
-            if (result.IsAcceptedOrSuccess())
-            {
-                var statusText = result.IsAccepted()
-                    ? MetricConstants.RecoveryAcceptedMessage
-                    : MetricConstants.RecoverySuccessMessage;
-
-                _logger.LogInformation(
-                    "Collection {CollectionName} {StatusText} from snapshot {SnapshotName} on node {NodeUrl}",
-                    collectionName, statusText, snapshotName, nodeUrl);
-
-                return true;
-            }
-
-            _logger.LogError("Failed to recover collection {CollectionName} from snapshot {SnapshotName}: {Error}",
-                collectionName, snapshotName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
-
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex,
-                "Failed to recover collection {CollectionName} from snapshot {SnapshotName} on node {NodeUrl}",
-                collectionName, snapshotName, nodeUrl);
-
-            return false;
-        }
-    }
-
-    public async Task<bool> RecoverCollectionFromUrlAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotUrl,
-        string? snapshotChecksum,
-        bool waitForResult,
-        SnapshotPriority snapshotPriority,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogInformation("Recovering collection {CollectionName} from URL {SnapshotUrl} on node {NodeUrl} with priority {SnapshotPriority}",
-                collectionName, snapshotUrl, nodeUrl, snapshotPriority);
-
-            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-
-            var snapshotLocationUri = new Uri(snapshotUrl);
-
-            var result = await qdrantClient.RecoverCollectionFromSnapshot(
-                collectionName,
-                snapshotLocationUri,
-                cancellationToken,
-                isWaitForResult: waitForResult,
-                snapshotPriority: snapshotPriority,
-                snapshotChecksum: snapshotChecksum);
-
-            if (result.IsAcceptedOrSuccess())
-            {
-                var statusText = result.IsAccepted()
-                    ? MetricConstants.RecoveryAcceptedMessage
-                    : MetricConstants.RecoverySuccessMessage;
-
-                _logger.LogInformation(
-                    "Collection {CollectionName} {StatusText} from URL {SnapshotUrl} on node {NodeUrl}",
-                    collectionName, statusText, snapshotUrl, nodeUrl);
-
-                return true;
-            }
-
-            _logger.LogError("Failed to recover collection {CollectionName} from URL {SnapshotUrl}: {Error}",
-                collectionName, snapshotUrl, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
-
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex,
-                "Failed to recover collection {CollectionName} from URL {SnapshotUrl} on node {NodeUrl}",
-                collectionName, snapshotUrl, nodeUrl);
-
-            return false;
-        }
-    }
-
     public async Task<(List<CollectionInfo> Collections, bool IsHealthy, string? ErrorMessage)> GetCollectionsFromQdrantAsync(
         IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken,
@@ -575,10 +471,10 @@ public class CollectionService : ICollectionService
                         PodName = node.PodName ?? MetricConstants.UnknownPodName,
                         PeerId = node.PeerId,
                         PodNamespace = node.Namespace ?? string.Empty,
-                        Metrics = new Dictionary<string, object>
+                        Metrics = new CollectionMetrics
                         {
-                            { MetricConstants.PrettySizeKey, MetricConstants.NotAvailableValue },
-                            { MetricConstants.SizeBytesKey, 0L }
+                            [MetricConstants.PrettySizeKey] = MetricConstants.NotAvailableValue,
+                            [MetricConstants.SizeBytesKey] = 0L
                         },
                         Aliases = aliases,
                         Status = collectionInfoResponse.Result?.Status,
@@ -972,8 +868,8 @@ public class CollectionService : ICollectionService
 
         if (shardDetails.Count != 0)
         {
-            info.Metrics[MetricConstants.ShardsKey] = shardDetails;
-            info.Metrics[MetricConstants.ShardStatesKey] = shardStates;
+            info.Metrics.Shards = shardDetails;
+            info.Metrics.ShardStates = shardStates;
         }
     }
 
@@ -988,9 +884,9 @@ public class CollectionService : ICollectionService
 
         var outgoingTransfers = clusteringResult.ShardTransfers
             .Where(t => t.From.ToString() == info.PeerId)
-            .Select(t => new
+            .Select(t => new OutgoingTransferInfo
             {
-                t.ShardId,
+                ShardId = t.ShardId,
                 To = peerToPodMap.TryGetValue(t.To.ToString(), out var podName) ? podName : t.To.ToString(),
                 ToPeerId = t.To.ToString(),
                 IsSync = t.Sync,
@@ -1000,7 +896,7 @@ public class CollectionService : ICollectionService
 
         if (outgoingTransfers.Count != 0)
         {
-            info.Metrics[MetricConstants.OutgoingTransfersKey] = outgoingTransfers;
+            info.Metrics.OutgoingTransfers = outgoingTransfers;
         }
     }
 
@@ -1058,8 +954,8 @@ public class CollectionService : ICollectionService
 
             if (storageCollections.TryGetValue(key, out var storageInfo))
             {
-                collection.Metrics[MetricConstants.PrettySizeKey] = storageInfo.PrettySize;
-                collection.Metrics[MetricConstants.SizeBytesKey] = storageInfo.SizeBytes;
+                collection.Metrics.PrettySize = storageInfo.PrettySize;
+                collection.Metrics.SizeBytes = storageInfo.SizeBytes;
             }
             else
             {
@@ -1073,8 +969,7 @@ public class CollectionService : ICollectionService
             if (shardSizes.TryGetValue(key, out var shardSizesList))
             {
                 // Get existing shard details from Metrics if they exist (from clustering info)
-                if (collection.Metrics.TryGetValue(MetricConstants.ShardsKey, out var shardsObj)
-                    && shardsObj is List<ShardDetails> existingShardDetails)
+                if (collection.Metrics.Shards is { } existingShardDetails)
                 {
                     // Create a dictionary for quick lookup of shard sizes
                     var sizeByShardId = shardSizesList.ToDictionary(s => s.ShardId, s => s.SizeBytes);
@@ -1102,7 +997,7 @@ public class CollectionService : ICollectionService
                         SizeBytes = s.SizeBytes
                     }).ToList();
 
-                    collection.Metrics[MetricConstants.ShardsKey] = shardDetails;
+                    collection.Metrics.Shards = shardDetails;
                     
                     _logger.LogDebug(
                         "Created {ShardCount} shard(s) info from storage for collection {CollectionName} on node {NodeUrl}",
@@ -1152,8 +1047,7 @@ public class CollectionService : ICollectionService
                         if (info == null)
                             continue;
 
-                        if (!info.Metrics.TryGetValue(MetricConstants.ShardsKey, out var shardsObj)
-                            || shardsObj is not List<ShardDetails> shardDetails)
+                        if (info.Metrics.Shards is not { } shardDetails)
                             continue;
 
                         var detail = shardDetails.FirstOrDefault(s => s.ShardId == shard.Id);

@@ -529,7 +529,7 @@ class VigilanteDashboard {
             ${prioritySelectHtml}
             <div class="form-group">
                 <label class="checkbox-label">
-                    <input type="checkbox" id="recoverModalWaitForResult" checked />
+                    <input type="checkbox" id="recoverModalWaitForResult" />
                     Wait for result
                 </label>
             </div>`;
@@ -607,18 +607,19 @@ class VigilanteDashboard {
             }
 
             const priority = overlay.querySelector('#recoverModalPriority')?.value || 'Snapshot';
-            const waitForResult = overlay.querySelector('#recoverModalWaitForResult')?.checked ?? true;
-            const checksum = isS3 ? (overlay.querySelector('#recoverModalChecksum')?.value.trim() || null) : null;
-
+            const waitForResult = overlay.querySelector('#recoverModalWaitForResult')?.checked ?? false;
             closeModal();
-
-            if (isS3) {
-                await this.recoverCollectionFromUrl(targetNodeUrl, collectionNameVal, snapshotUrl, checksum, priority, waitForResult);
-            } else {
-                const targetNode = this.clusterNodes?.find(n => (n.nodeUrl || n.url) === targetNodeUrl);
-                const podName = targetNode ? targetNode.podName : snapshot.podName;
-                await this.recoverSnapshotFromNode(targetNodeUrl, collectionNameVal, snapshotName, podName, snapshot.source, collectionName, priority, waitForResult);
-            }
+            const targetNode = this.clusterNodes?.find(n => (n.nodeUrl || n.url) === targetNodeUrl);
+            const podName = targetNode ? targetNode.podName : snapshot.podName;
+            await this.recoverSnapshotFromNode(
+                targetNodeUrl,
+                collectionNameVal,
+                snapshotName,
+                podName,
+                snapshot.source,
+                collectionName,
+                priority,
+                waitForResult);
         });
 
         overlay.querySelector('#recoverModalCollectionName')?.addEventListener('keypress', (e) => {
@@ -2937,7 +2938,7 @@ class VigilanteDashboard {
                 </div>
                 <div class="form-group">
                     <label class="checkbox-label">
-                        <input type="checkbox" id="recoverFromUrlWaitForResult" checked />
+                        <input type="checkbox" id="recoverFromUrlWaitForResult" />
                         Wait for result
                     </label>
                 </div>
@@ -3014,7 +3015,7 @@ class VigilanteDashboard {
             const snapshotUrl = snapshotUrlInput.value.trim();
             const snapshotChecksum = snapshotChecksumInput?.value.trim() || null;
             const snapshotPriority = snapshotPriorityInput?.value || 'Snapshot';
-            const waitForResult = waitForResultInput?.checked ?? true;
+            const waitForResult = waitForResultInput?.checked ?? false;
             
             console.log('Recover from URL form values:', {
                 collectionName,

@@ -14,7 +14,6 @@ namespace Vigilante.Controllers;
 public class SnapshotsController(
     ISnapshotService snapshotService,
     IS3SnapshotService s3SnapshotService,
-    ICollectionService collectionService,
     IClusterManager clusterManager,
     ILogger<SnapshotsController> logger)
     : ControllerBase
@@ -322,6 +321,8 @@ public class SnapshotsController(
 
     [HttpPost("recover")]
     [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<V1RecoverFromSnapshotResponse>> RecoverFromSnapshot(
@@ -330,8 +331,6 @@ public class SnapshotsController(
     {
         try
         {
-            bool success;
-            
             // Parse source from request
             if (!Enum.TryParse<SnapshotSource>(request.Source, out var source))
             {
@@ -347,103 +346,50 @@ public class SnapshotsController(
                 ? parsedPriority
                 : SnapshotPriority.Snapshot;
 
-            if (source == SnapshotSource.S3Storage)
-            {
-                // For S3 snapshots, use SourceCollectionName to locate the file (if provided)
-                // Otherwise, fallback to CollectionName
-                var sourceCollectionName = !string.IsNullOrWhiteSpace(request.SourceCollectionName) 
-                    ? request.SourceCollectionName 
-                    : request.CollectionName;
-                
-                // For S3 snapshots, generate presigned URL and use recover-from-url endpoint
-                var presignedUrl = await s3SnapshotService.GetPresignedDownloadUrlAsync(
-                    sourceCollectionName,  // Use source collection name to find the snapshot in S3
-                    request.SnapshotName,
-                    TimeSpan.FromHours(1), // URL valid for 1 hour
-                    null,
-                    cancellationToken);
+            var result = await snapshotService.RequestRecoverFromSnapshotAsync(
+                request.CollectionName,
+                request.SnapshotName,
+                request.TargetNodeUrl,
+                source,
+                request.SourceCollectionName,
+                snapshotPriority,
+                request.WaitForResult,
+                cancellationToken);
 
-                if (string.IsNullOrEmpty(presignedUrl))
-                {
-                    return StatusCode(500, new V1RecoverFromSnapshotResponse
-                    {
-                        Success = false,
-                        Message = $"Failed to generate S3 download URL for snapshot '{request.SnapshotName}'",
-                        Error = "Failed to generate S3 URL"
-                    });
-                }
-
-                // Recover to target collection name (which may be different from source)
-                success = await collectionService.RecoverCollectionFromUrlAsync(
-                    request.TargetNodeUrl,
-                    request.CollectionName,  // Use target collection name for recovery
-                    presignedUrl,
-                    snapshotChecksum: null,
-                    waitForResult: true,
-                    snapshotPriority,
-                    cancellationToken);
-            }
-            else if (source == SnapshotSource.KubernetesStorage)
+            if (result.AlreadyInProgress)
             {
-                // For Kubernetes storage with different source/target collection names,
-                // we need to use file:// URL to specify the full path to the snapshot
-                var sourceCollectionName = !string.IsNullOrWhiteSpace(request.SourceCollectionName) 
-                    ? request.SourceCollectionName 
-                    : request.CollectionName;
-                
-                // If source and target collection names are different, use file:// URL
-                if (sourceCollectionName != request.CollectionName)
+                return Conflict(new V1RecoverFromSnapshotResponse
                 {
-                    // Construct file:// URL with full path to snapshot in source collection directory
-                    var snapshotPath = $"file:///qdrant/snapshots/{sourceCollectionName}/{request.SnapshotName}";
-                    
-                    logger.LogInformation(
-                        "Recovering collection {TargetCollection} from snapshot in source collection {SourceCollection} using path {SnapshotPath}",
-                        request.CollectionName, sourceCollectionName, snapshotPath);
-                    
-                    success = await collectionService.RecoverCollectionFromUrlAsync(
-                        request.TargetNodeUrl,
-                        request.CollectionName,
-                        snapshotPath,
-                        snapshotChecksum: null,
-                        waitForResult: true,
-                        snapshotPriority,
-                        cancellationToken);
-                }
-                else
-                {
-                    // Same collection name - use standard recovery (snapshot in same directory)
-                    success = await collectionService.RecoverCollectionFromSnapshotAsync(
-                        request.TargetNodeUrl,
-                        request.CollectionName,
-                        request.SnapshotName,
-                        cancellationToken,
-                        snapshotPriority,
-                        request.WaitForResult);
-                }
-            }
-            else
-            {
-                // For QdrantApi source, use standard recovery
-                success = await collectionService.RecoverCollectionFromSnapshotAsync(
-                    request.TargetNodeUrl,
-                    request.CollectionName,
-                    request.SnapshotName,
-                    cancellationToken,
-                    snapshotPriority,
-                    request.WaitForResult);
+                    Success = false,
+                    Message = result.Message,
+                    Error = "Already in progress"
+                });
             }
 
-            var response = new V1RecoverFromSnapshotResponse
+            if (result.ApiError)
             {
-                Success = success,
-                Message = success
-                    ? $"Collection '{request.CollectionName}' {MetricConstants.RecoverySuccessMessage} from snapshot '{request.SnapshotName}' on {request.TargetNodeUrl}"
-                    : $"Failed to recover collection '{request.CollectionName}' from snapshot '{request.SnapshotName}' on {request.TargetNodeUrl}",
-                Error = success ? null : "Recovery failed"
-            };
+                return StatusCode(500, new V1RecoverFromSnapshotResponse
+                {
+                    Success = false,
+                    Message = result.Message,
+                    Error = "Recovery failed"
+                });
+            }
 
-            return success ? Ok(response) : StatusCode(500, response);
+            if (request.WaitForResult)
+            {
+                return Ok(new V1RecoverFromSnapshotResponse
+                {
+                    Success = true,
+                    Message = result.Message
+                });
+            }
+
+            return Accepted(new V1RecoverFromSnapshotResponse
+            {
+                Success = true,
+                Message = result.Message
+            });
         }
         catch (Exception ex)
         {
@@ -515,13 +461,13 @@ public class SnapshotsController(
             // Parse SnapshotPriority, default to Snapshot if not provided
             var snapshotPriority = request.SnapshotPriority.ParseEnumOrDefault(SnapshotPriority.Snapshot);
 
-            var success = await collectionService.RecoverCollectionFromUrlAsync(
-                request.NodeUrl,
+            var (success, errorMessage) = await snapshotService.RecoverFromUrlAsync(
                 request.CollectionName,
+                request.NodeUrl,
                 request.SnapshotUrl,
                 request.SnapshotChecksum,
-                request.WaitForResult,
                 snapshotPriority,
+                request.WaitForResult,
                 cancellationToken);
 
             var response = new V1RecoverFromSnapshotResponse
@@ -530,7 +476,7 @@ public class SnapshotsController(
                 Message = success
                     ? $"Collection '{request.CollectionName}' {MetricConstants.RecoverySuccessMessage} from URL '{request.SnapshotUrl}' on {request.NodeUrl}"
                     : $"Failed to recover collection '{request.CollectionName}' from URL '{request.SnapshotUrl}' on {request.NodeUrl}",
-                Error = success ? null : "Recovery failed"
+                Error = success ? null : (string.IsNullOrWhiteSpace(errorMessage) ? "Recovery failed" : errorMessage)
             };
 
             return success ? Ok(response) : StatusCode(500, response);

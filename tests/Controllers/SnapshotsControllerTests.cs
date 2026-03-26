@@ -18,7 +18,6 @@ public class SnapshotsControllerTests
 {
     private ISnapshotService _snapshotService = null!;
     private IS3SnapshotService _s3SnapshotService = null!;
-    private ICollectionService _collectionService = null!;
     private IClusterManager _clusterManager = null!;
     private ILogger<SnapshotsController> _logger = null!;
     private SnapshotsController _controller = null!;
@@ -28,12 +27,11 @@ public class SnapshotsControllerTests
     {
         _snapshotService = Substitute.For<ISnapshotService>();
         _s3SnapshotService = Substitute.For<IS3SnapshotService>();
-        _collectionService = Substitute.For<ICollectionService>();
         _clusterManager = Substitute.For<IClusterManager>();
         _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())
             .Returns(new ClusterState { Nodes = new List<NodeInfo>() });
         _logger = Substitute.For<ILogger<SnapshotsController>>();
-        _controller = new SnapshotsController(_snapshotService, _s3SnapshotService, _collectionService, _clusterManager, _logger);
+        _controller = new SnapshotsController(_snapshotService, _s3SnapshotService, _clusterManager, _logger);
     }
 
     #region GetSnapshotsInfo Tests
@@ -551,25 +549,32 @@ public class SnapshotsControllerTests
             TargetNodeUrl = "http://node1:6333"
         };
 
-        _collectionService.RecoverCollectionFromSnapshotAsync(
-            request.TargetNodeUrl,
-            request.CollectionName,
-            request.SnapshotName,
-            Arg.Any<CancellationToken>())
-            .Returns(true);
+        _snapshotService.RequestRecoverFromSnapshotAsync(
+                request.CollectionName,
+                request.SnapshotName,
+                request.TargetNodeUrl,
+                SnapshotSource.KubernetesStorage,
+                request.SourceCollectionName,
+                Arg.Any<SnapshotPriority>(),
+                request.WaitForResult,
+                Arg.Any<CancellationToken>())
+            .Returns(new SnapshotRecoveryStartResult(
+                ApiError: false,
+                AlreadyInProgress: false,
+                Message: "Recovery started"));
 
         // Act
         var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
 
         // Assert
         Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
-        var okResult = (OkObjectResult)result.Result!;
-        var response = okResult.Value as V1RecoverFromSnapshotResponse;
+        var ok = (OkObjectResult)result.Result!;
+        var response = ok.Value as V1RecoverFromSnapshotResponse;
         Assert.That(response!.Success, Is.True);
     }
 
     [Test]
-    public async Task RecoverFromSnapshot_WhenFailed_Returns500()
+    public async Task RecoverFromSnapshot_WhenAlreadyInProgress_Returns409()
     {
         // Arrange
         var request = new V1RecoverFromSnapshotRequest
@@ -580,12 +585,19 @@ public class SnapshotsControllerTests
             TargetNodeUrl = "http://node1:6333"
         };
 
-        _collectionService.RecoverCollectionFromSnapshotAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>())
-            .Returns(false);
+        _snapshotService.RequestRecoverFromSnapshotAsync(
+                request.CollectionName,
+                request.SnapshotName,
+                request.TargetNodeUrl,
+                SnapshotSource.KubernetesStorage,
+                request.SourceCollectionName,
+                Arg.Any<SnapshotPriority>(),
+                request.WaitForResult,
+                Arg.Any<CancellationToken>())
+            .Returns(new SnapshotRecoveryStartResult(
+                ApiError: false,
+                AlreadyInProgress: true,
+                Message: "Already running"));
 
         // Act
         var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
@@ -593,7 +605,7 @@ public class SnapshotsControllerTests
         // Assert
         Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        Assert.That(objectResult.StatusCode, Is.EqualTo(409));
     }
 
     [Test]
@@ -609,25 +621,19 @@ public class SnapshotsControllerTests
             SourceCollectionName = "original_collection"
         };
 
-        var presignedUrl = "https://s3.example.com/bucket/snapshots/original_collection/snapshot.snapshot?signature=xxx";
-        
-        _s3SnapshotService.GetPresignedDownloadUrlAsync(
-            "original_collection",  // Should use SourceCollectionName
-            request.SnapshotName,
-            Arg.Any<TimeSpan>(),
-            Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
-            .Returns(presignedUrl);
-
-        _collectionService.RecoverCollectionFromUrlAsync(
+        _snapshotService.RequestRecoverFromSnapshotAsync(
+                request.CollectionName,
+                request.SnapshotName,
                 request.TargetNodeUrl,
-                "new_collection",
-                presignedUrl,
-                Arg.Any<string?>(),
-                true,
+                SnapshotSource.S3Storage,
+                request.SourceCollectionName,
                 Arg.Any<SnapshotPriority>(),
+                request.WaitForResult,
                 Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns(new SnapshotRecoveryStartResult(
+                ApiError: false,
+                AlreadyInProgress: false,
+                Message: "Recovery started"));
 
         // Act
         var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
@@ -635,22 +641,14 @@ public class SnapshotsControllerTests
         // Assert
         Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
         
-        // Verify S3 service was called with SourceCollectionName
-        await _s3SnapshotService.Received(1).GetPresignedDownloadUrlAsync(
-            "original_collection",
+        await _snapshotService.Received(1).RequestRecoverFromSnapshotAsync(
+            request.CollectionName,
             request.SnapshotName,
-            Arg.Any<TimeSpan>(),
-            Arg.Any<string?>(),
-            Arg.Any<CancellationToken>());
-        
-        // Verify collection service was called with target CollectionName
-        await _collectionService.Received(1).RecoverCollectionFromUrlAsync(
             request.TargetNodeUrl,
-            "new_collection",
-            presignedUrl,
-            Arg.Any<string?>(),
-            true,
+            SnapshotSource.S3Storage,
+            request.SourceCollectionName,
             Arg.Any<SnapshotPriority>(),
+            request.WaitForResult,
             Arg.Any<CancellationToken>());
     }
 
@@ -667,25 +665,19 @@ public class SnapshotsControllerTests
             // SourceCollectionName not provided
         };
 
-        var presignedUrl = "https://s3.example.com/bucket/snapshots/test_collection/snapshot.snapshot?signature=xxx";
-        
-        _s3SnapshotService.GetPresignedDownloadUrlAsync(
-            "test_collection",  // Should fallback to CollectionName
-            request.SnapshotName,
-            Arg.Any<TimeSpan>(),
-            Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
-            .Returns(presignedUrl);
-
-        _collectionService.RecoverCollectionFromUrlAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<string?>(),
-            Arg.Any<bool>(),
-            Arg.Any<SnapshotPriority>(),
-            Arg.Any<CancellationToken>())
-            .Returns(true);
+        _snapshotService.RequestRecoverFromSnapshotAsync(
+                request.CollectionName,
+                request.SnapshotName,
+                request.TargetNodeUrl,
+                SnapshotSource.S3Storage,
+                request.SourceCollectionName,
+                Arg.Any<SnapshotPriority>(),
+                request.WaitForResult,
+                Arg.Any<CancellationToken>())
+            .Returns(new SnapshotRecoveryStartResult(
+                ApiError: false,
+                AlreadyInProgress: false,
+                Message: "Recovery started"));
 
         // Act
         var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
@@ -693,12 +685,14 @@ public class SnapshotsControllerTests
         // Assert
         Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
         
-        // Verify S3 service was called with CollectionName as fallback
-        await _s3SnapshotService.Received(1).GetPresignedDownloadUrlAsync(
-            "test_collection",
+        await _snapshotService.Received(1).RequestRecoverFromSnapshotAsync(
+            request.CollectionName,
             request.SnapshotName,
-            Arg.Any<TimeSpan>(),
-            Arg.Any<string?>(),
+            request.TargetNodeUrl,
+            SnapshotSource.S3Storage,
+            request.SourceCollectionName,
+            Arg.Any<SnapshotPriority>(),
+            request.WaitForResult,
             Arg.Any<CancellationToken>());
     }
 
@@ -827,15 +821,15 @@ public class SnapshotsControllerTests
             WaitForResult = true
         };
 
-        _collectionService.RecoverCollectionFromUrlAsync(
-            request.NodeUrl,
-            request.CollectionName,
-            request.SnapshotUrl,
-            request.SnapshotChecksum,
-            request.WaitForResult,
-            Arg.Any<SnapshotPriority>(),
-            Arg.Any<CancellationToken>())
-            .Returns(true);
+        _snapshotService.RecoverFromUrlAsync(
+                request.CollectionName,
+                request.NodeUrl,
+                request.SnapshotUrl,
+                request.SnapshotChecksum,
+                Arg.Any<SnapshotPriority>(),
+                request.WaitForResult,
+                Arg.Any<CancellationToken>())
+            .Returns((true, null));
 
         // Act
         var result = await _controller.RecoverFromUrl(request, CancellationToken.None);
@@ -859,15 +853,15 @@ public class SnapshotsControllerTests
             SnapshotUrl = "https://s3.amazonaws.com/bucket/snapshot.snapshot"
         };
 
-        _collectionService.RecoverCollectionFromUrlAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<string?>(),
-            Arg.Any<bool>(),
-            Arg.Any<SnapshotPriority>(),
-            Arg.Any<CancellationToken>())
-            .Returns(false);
+        _snapshotService.RecoverFromUrlAsync(
+                request.CollectionName,
+                request.NodeUrl,
+                request.SnapshotUrl,
+                request.SnapshotChecksum,
+                Arg.Any<SnapshotPriority>(),
+                request.WaitForResult,
+                Arg.Any<CancellationToken>())
+            .Returns((false, "Recovery failed"));
 
         // Act
         var result = await _controller.RecoverFromUrl(request, CancellationToken.None);

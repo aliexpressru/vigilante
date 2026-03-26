@@ -288,8 +288,8 @@ public class CollectionServiceTests
 
         // Assert
         Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].Metrics["sizeBytes"], Is.EqualTo(1073741824L));
-        Assert.That(result[0].Metrics["prettySize"], Is.EqualTo("1 GB"));
+        Assert.That(result[0].Metrics.SizeBytes, Is.EqualTo(1073741824L));
+        Assert.That(result[0].Metrics.PrettySize, Is.EqualTo("1 GB"));
     }
 
     [Test]
@@ -381,8 +381,8 @@ public class CollectionServiceTests
 
         // Assert
         Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].Metrics["prettySize"], Is.EqualTo("N/A")); // Not enriched
-        Assert.That(result[0].Metrics["sizeBytes"], Is.EqualTo(0L)); // Not enriched
+        Assert.That(result[0].Metrics.PrettySize, Is.EqualTo("N/A")); // Not enriched
+        Assert.That(result[0].Metrics.SizeBytes, Is.EqualTo(0L)); // Not enriched
     }
 
     [Test]
@@ -775,19 +775,19 @@ public class CollectionServiceTests
 
         // Node 1 should have shard 0
         Assert.That(node1Collection.Metrics.ContainsKey("shards"), Is.True, "Node 1 should have shards");
-        var node1Shards = (List<ShardDetails>)node1Collection.Metrics["shards"];
+        var node1Shards = node1Collection.Metrics.Shards!;
         Assert.That(node1Shards, Has.Count.EqualTo(1), "Node 1 should have 1 shard");
         Assert.That(node1Shards[0].ShardId, Is.EqualTo(0), "Node 1 should have shard 0");
 
         // Node 2 should have shard 1
         Assert.That(node2Collection.Metrics.ContainsKey("shards"), Is.True, "Node 2 should have shards");
-        var node2Shards = (List<ShardDetails>)node2Collection.Metrics["shards"];
+        var node2Shards = node2Collection.Metrics.Shards!;
         Assert.That(node2Shards, Has.Count.EqualTo(1), "Node 2 should have 1 shard");
         Assert.That(node2Shards[0].ShardId, Is.EqualTo(1), "Node 2 should have shard 1");
 
         // Node 3 should have shard 2
         Assert.That(node3Collection.Metrics.ContainsKey("shards"), Is.True, "Node 3 should have shards");
-        var node3Shards = (List<ShardDetails>)node3Collection.Metrics["shards"];
+        var node3Shards = node3Collection.Metrics.Shards!;
         Assert.That(node3Shards, Has.Count.EqualTo(1), "Node 3 should have 1 shard");
         Assert.That(node3Shards[0].ShardId, Is.EqualTo(2), "Node 3 should have shard 2");
 
@@ -991,8 +991,8 @@ public class CollectionServiceTests
         Assert.That(collection.Metrics.ContainsKey("shards"), Is.True);
         Assert.That(collection.Metrics.ContainsKey("shardStates"), Is.True);
 
-        var shards = (List<ShardDetails>)collection.Metrics["shards"];
-        var shardStates = (Dictionary<string, string>)collection.Metrics["shardStates"];
+        var shards = collection.Metrics.Shards!;
+        var shardStates = collection.Metrics.ShardStates!;
 
         Assert.That(shards, Has.Count.EqualTo(3));
         Assert.That(shardStates, Has.Count.EqualTo(3));
@@ -1846,7 +1846,7 @@ public class CollectionServiceTests
         Assert.That(collection.CollectionName, Is.EqualTo("test_collection"));
         Assert.That(collection.Metrics.ContainsKey("shards"), Is.True);
         
-        var shards = (List<ShardDetails>)collection.Metrics["shards"];
+        var shards = collection.Metrics.Shards!;
         Assert.That(shards, Has.Count.EqualTo(3));
         
         // Verify shard 0
@@ -1954,7 +1954,7 @@ public class CollectionServiceTests
         var collection = result[0];
         Assert.That(collection.Metrics.ContainsKey("shards"), Is.True);
         
-        var shards = (List<ShardDetails>)collection.Metrics["shards"];
+        var shards = collection.Metrics.Shards!;
         Assert.That(shards, Has.Count.EqualTo(2));
         
         // Shards should have size but no state (since no clustering info)
@@ -2102,7 +2102,7 @@ public class CollectionServiceTests
         var collection = result[0];
         Assert.That(collection.Metrics.ContainsKey("shards"), Is.True);
 
-        var shards = (List<ShardDetails>)collection.Metrics["shards"];
+        var shards = collection.Metrics.Shards!;
         Assert.That(shards, Has.Count.EqualTo(1));
         Assert.That(shards[0].ShardId, Is.EqualTo(0));
         Assert.That(shards[0].SizeBytes, Is.EqualTo(500_000));
@@ -2186,7 +2186,7 @@ public class CollectionServiceTests
 
         // Assert: flow completes, shards exist but telemetry fields are null
         Assert.That(result, Has.Count.EqualTo(1));
-        var shards = (List<ShardDetails>)result[0].Metrics["shards"];
+        var shards = result[0].Metrics.Shards!;
         Assert.That(shards, Has.Count.EqualTo(1));
         Assert.That(shards[0].SizeBytes, Is.EqualTo(200));
         Assert.That(shards[0].VectorsSizeBytes, Is.Null);
@@ -2263,7 +2263,7 @@ public class CollectionServiceTests
 
         // Assert: flow completes, shards have no telemetry
         Assert.That(result, Has.Count.EqualTo(1));
-        var shards = (List<ShardDetails>)result[0].Metrics["shards"];
+        var shards = result[0].Metrics.Shards!;
         Assert.That(shards[0].VectorsSizeBytes, Is.Null);
         Assert.That(shards[0].PayloadsSizeBytes, Is.Null);
     }
