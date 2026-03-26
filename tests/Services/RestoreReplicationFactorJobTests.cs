@@ -1,6 +1,11 @@
+using System.Reflection;
+using Aer.QdrantClient.Http.Abstractions;
+using Aer.QdrantClient.Http.Infrastructure.Replication;
 using Aer.QdrantClient.Http.Models.Responses;
 using Aer.QdrantClient.Http.Models.Shared;
+using NSubstitute;
 using NUnit.Framework;
+using Vigilante.Constants;
 using Vigilante.Services.Jobs;
 
 namespace Aer.Vigilante.Tests.Services;
@@ -108,6 +113,102 @@ public class RestoreReplicationFactorJobTests
             itemFailurePrefix: "Replication failed");
 
         Assert.That(failure, Is.Null);
+    }
+
+    [Test]
+    public async Task MetadataReplicationPlan_WhenJobAdvances_KeepsFirstStep()
+    {
+        var plan = new List<ScheduledShardReplication>
+        {
+            new(
+                10,
+                100,
+                "http://node1:6333",
+                200,
+                "http://node2:6333",
+                ScheduledShardReplication.ReplicatorAction.MoveReplica,
+                1),
+            new(
+                11,
+                101,
+                "http://node1:6333",
+                201,
+                "http://node3:6333",
+                ScheduledShardReplication.ReplicatorAction.AddReplica,
+                1)
+        };
+
+        var successResponse = new ReplicateShardsToPeerResponse
+        {
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+            Result = new ReplicateShardsToPeerResponse.ReplicateShardsToPeerResponseUnit(
+                ReplicatedShards:
+                [
+                    new ReplicateShardsToPeerResponse.ReplicateShardToPeerResult(
+                        IsSuccess: true,
+                        ShardId: 10,
+                        SourcePeerId: 100,
+                        TargetPeerId: 200,
+                        CollectionName: "col1")
+                ],
+                AlreadyReplicatedShards: new Dictionary<string, Dictionary<ulong, HashSet<uint>>>())
+        };
+
+        await using var enumerator = new TestReplicateEnumerator(successResponse);
+        var client = Substitute.For<IQdrantHttpClient>();
+        var job = CreateJobForTest(client, "col1", enumerator, plan, waitingForReady: false);
+
+        var advance = await job.AdvanceAsync(CancellationToken.None);
+        Assert.That(advance.Success, Is.True);
+        Assert.That(advance.HasMore, Is.True);
+
+        var metadata = job.GetMetadata();
+        Assert.That(metadata, Is.Not.Null);
+        Assert.That(metadata!.ContainsKey(JobMetadataKeys.ReplicationPlan), Is.True);
+        Assert.That(metadata[JobMetadataKeys.ReplicationPlan], Is.SameAs(plan));
+    }
+
+    private static RestoreReplicationFactorJob CreateJobForTest(
+        IQdrantHttpClient client,
+        string collectionName,
+        IAsyncEnumerator<ReplicateShardsToPeerResponse> enumerator,
+        IReadOnlyList<ScheduledShardReplication> replicationPlanSnapshot,
+        bool waitingForReady)
+    {
+        var ctor = typeof(RestoreReplicationFactorJob).GetConstructor(
+            BindingFlags.NonPublic | BindingFlags.Instance,
+            binder: null,
+            [
+                typeof(IQdrantHttpClient),
+                typeof(string),
+                typeof(IAsyncEnumerator<ReplicateShardsToPeerResponse>),
+                typeof(IReadOnlyList<ScheduledShardReplication>),
+                typeof(bool)
+            ],
+            modifiers: null);
+
+        Assert.That(ctor, Is.Not.Null, "Private constructor signature changed.");
+        return (RestoreReplicationFactorJob)ctor!.Invoke([client, collectionName, enumerator, replicationPlanSnapshot, waitingForReady]);
+    }
+
+    private sealed class TestReplicateEnumerator(params ReplicateShardsToPeerResponse[] responses)
+        : IAsyncEnumerator<ReplicateShardsToPeerResponse>
+    {
+        private int _index = -1;
+
+        public ReplicateShardsToPeerResponse Current { get; private set; } = null!;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        public ValueTask<bool> MoveNextAsync()
+        {
+            _index++;
+            if (_index >= responses.Length)
+                return ValueTask.FromResult(false);
+
+            Current = responses[_index];
+            return ValueTask.FromResult(true);
+        }
     }
 }
 

@@ -27,16 +27,14 @@ internal sealed class RestoreReplicationFactorJob : IJob
         IQdrantHttpClient client,
         string collectionName,
         IAsyncEnumerator<ReplicateShardsToPeerResponse> enumerator,
-        ShardReplicator? replicator,
+        IReadOnlyList<ScheduledShardReplication> replicationPlanSnapshot,
         bool waitingForReady)
     {
         _client = client;
         _collectionName = collectionName;
         _enumerator = enumerator;
         _startedAtUtc = DateTime.UtcNow;
-        _replicationPlanSnapshot = replicator?.ReplicationPlan
-            .OrderBy(p => p.StepNumber)
-            .ToList() ?? [];
+        _replicationPlanSnapshot = replicationPlanSnapshot;
         _waitingForReady = waitingForReady;
     }
 
@@ -76,6 +74,10 @@ internal sealed class RestoreReplicationFactorJob : IJob
             return (null, null);
 
         var replicator = response.Result;
+        // Snapshot the full plan BEFORE the first MoveNextAsync() call, because MoveNext dequeues step #1.
+        var replicationPlanSnapshot = replicator.ReplicationPlan
+            .OrderBy(p => p.StepNumber)
+            .ToList();
         var enumerator = replicator.ExecuteReplications(cancellationToken, transferMethod, timeout).GetAsyncEnumerator(cancellationToken);
 
         if (!await enumerator.MoveNextAsync())
@@ -93,7 +95,7 @@ internal sealed class RestoreReplicationFactorJob : IJob
         if (step1Failure is not null)
             return (null, step1Failure);
 
-        var job = new RestoreReplicationFactorJob(client, collectionName, enumerator, replicator, waitingForReady: true);
+        var job = new RestoreReplicationFactorJob(client, collectionName, enumerator, replicationPlanSnapshot, waitingForReady: true);
         return (job, null);
     }
 
