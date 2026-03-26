@@ -72,29 +72,6 @@ public interface ICollectionService
     /// </summary>
 
     /// <summary>
-    /// Recovers a collection from a snapshot on a specific node
-    /// </summary>
-    Task<bool> RecoverCollectionFromSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotName,
-        CancellationToken cancellationToken,
-        SnapshotPriority snapshotPriority = SnapshotPriority.Snapshot,
-        bool waitForResult = true);
-
-    /// <summary>
-    /// Recovers a collection from a snapshot URL (e.g., S3 URL) on a specific node
-    /// </summary>
-    Task<bool> RecoverCollectionFromUrlAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotUrl,
-        string? snapshotChecksum,
-        bool waitForResult,
-        SnapshotPriority snapshotPriority,
-        CancellationToken cancellationToken);
-
-    /// <summary>
     /// Gets collections list from a Qdrant node directly (fallback when Kubernetes is not available)
     /// </summary>
     /// <param name="clearCache">If true, clears the cache and fetches fresh data</param>

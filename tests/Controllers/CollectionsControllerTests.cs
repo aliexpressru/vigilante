@@ -44,7 +44,7 @@ public class CollectionsControllerTests
                 PeerId = "peer1",
                 CollectionName = "collection1",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             },
             new()
@@ -54,7 +54,7 @@ public class CollectionsControllerTests
                 PeerId = "peer2",
                 CollectionName = "collection1",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             },
             new()
@@ -64,7 +64,7 @@ public class CollectionsControllerTests
                 PeerId = "peer1",
                 CollectionName = "collection2",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             }
         };
@@ -106,7 +106,7 @@ public class CollectionsControllerTests
                 PeerId = "peer1",
                 CollectionName = $"collection{i}",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             });
         }
@@ -147,7 +147,7 @@ public class CollectionsControllerTests
                 PeerId = "peer1",
                 CollectionName = "test_collection_1",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             },
             new()
@@ -157,7 +157,7 @@ public class CollectionsControllerTests
                 PeerId = "peer1",
                 CollectionName = "other_collection",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             },
             new()
@@ -167,7 +167,7 @@ public class CollectionsControllerTests
                 PeerId = "peer1",
                 CollectionName = "test_collection_2",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             }
         };
@@ -205,7 +205,7 @@ public class CollectionsControllerTests
                 PeerId = "peer1",
                 CollectionName = "collection1",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string> { "Issue 1", "Issue 2" }
             }
         };
@@ -238,7 +238,7 @@ public class CollectionsControllerTests
                 PeerId = "peer1",
                 CollectionName = "collection1",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             }
         };
@@ -271,7 +271,7 @@ public class CollectionsControllerTests
                 PeerId = "peer1",
                 CollectionName = "collection1",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             },
             new()
@@ -281,7 +281,7 @@ public class CollectionsControllerTests
                 PeerId = "peer2",
                 CollectionName = "collection1",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             },
             new()
@@ -291,7 +291,7 @@ public class CollectionsControllerTests
                 PeerId = "peer3",
                 CollectionName = "collection1",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             }
         };
@@ -561,7 +561,7 @@ public class CollectionsControllerTests
                 PeerId = "peer1",
                 CollectionName = "collection1",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             }
         };
@@ -595,7 +595,7 @@ public class CollectionsControllerTests
                 PeerId = "peer1",
                 CollectionName = "collection1",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             }
         };
@@ -629,7 +629,7 @@ public class CollectionsControllerTests
                 PeerId = "peer1",
                 CollectionName = "collection1",
                 PodNamespace = "default",
-                Metrics = new Dictionary<string, object>(),
+                Metrics = new CollectionMetrics(),
                 Issues = new List<string>()
             }
         };

@@ -143,4 +143,39 @@ public interface ISnapshotService
     /// Clears the in-memory snapshot cache.
     /// </summary>
     void InvalidateCache();
+
+    /// <summary>
+    /// Recovers collection from snapshot source.
+    /// </summary>
+    Task<(bool Success, string? ErrorMessage)> RecoverFromSnapshotAsync(
+        string collectionName,
+        string snapshotName,
+        string targetNodeUrl,
+        SnapshotSource source,
+        string? sourceCollectionName,
+        Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
+        bool waitForResult = true,
+        CancellationToken cancellationToken = default);
+
+    Task<SnapshotRecoveryStartResult> RequestRecoverFromSnapshotAsync(
+        string collectionName,
+        string snapshotName,
+        string targetNodeUrl,
+        SnapshotSource source,
+        string? sourceCollectionName,
+        Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
+        bool waitForResult,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Recovers collection from a snapshot URL.
+    /// </summary>
+    Task<(bool Success, string? ErrorMessage)> RecoverFromUrlAsync(
+        string collectionName,
+        string nodeUrl,
+        string snapshotUrl,
+        string? snapshotChecksum,
+        Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
+        bool waitForResult = true,
+        CancellationToken cancellationToken = default);
 }
