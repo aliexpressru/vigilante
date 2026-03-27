@@ -57,12 +57,15 @@ class VigilanteDashboard {
         this.jobs = []; // Background jobs from GET /api/v1/jobs/status
         this.pendingJobCancellations = new Set();
         this._configCollectionNames = []; // For config modal override row pickers
+        this.themeStorageKey = 'vigilante-theme';
+        this.themeMediaQuery = null;
         this.init();
         this.setupRefreshControls();
         this.setupCollectionControls();
         this.setupSnapshotControls();
         this.setupLogsControls();
         this.setupConfigControls();
+        this.setupThemeToggle();
         this.setupStickyActionsMenu();
     }
 
@@ -113,6 +116,49 @@ class VigilanteDashboard {
         
         // Setup recovery modal after DOM is ready
         this.setupRecoveryModal();
+    }
+
+    setupThemeToggle() {
+        const themeToggleButton = document.getElementById('themeToggleButton');
+        const savedTheme = localStorage.getItem(this.themeStorageKey);
+        this.themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+        // Respect explicit user choice; otherwise follow OS preference.
+        const initialTheme = savedTheme === 'dark' || savedTheme === 'light'
+            ? savedTheme
+            : (this.themeMediaQuery.matches ? 'dark' : 'light');
+
+        this.applyTheme(initialTheme);
+
+        themeToggleButton?.addEventListener('click', () => {
+            const currentTheme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+            const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            localStorage.setItem(this.themeStorageKey, nextTheme);
+            this.applyTheme(nextTheme);
+        });
+
+        this.themeMediaQuery.addEventListener('change', (event) => {
+            // Auto-sync with OS theme only when user has not set explicit preference.
+            if (localStorage.getItem(this.themeStorageKey)) {
+                return;
+            }
+
+            this.applyTheme(event.matches ? 'dark' : 'light');
+        });
+    }
+
+    applyTheme(theme) {
+        const normalizedTheme = theme === 'dark' ? 'dark' : 'light';
+        const themeToggleButton = document.getElementById('themeToggleButton');
+        const themeToggleIcon = document.getElementById('themeToggleIcon');
+
+        document.documentElement.dataset.theme = normalizedTheme;
+        themeToggleButton?.setAttribute('aria-label', `Switch to ${normalizedTheme === 'dark' ? 'light' : 'dark'} mode`);
+        themeToggleButton?.setAttribute('title', `Switch to ${normalizedTheme === 'dark' ? 'light' : 'dark'} mode`);
+
+        if (themeToggleIcon) {
+            themeToggleIcon.className = normalizedTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+        }
     }
 
     setupRefreshControls() {
@@ -1221,7 +1267,7 @@ class VigilanteDashboard {
                 const sizeDisplay = (() => {
                     if (hasTelemetry) {
                         const barHtml = `<span class="shard-size-bar" title="Vectors vs Payload"><span class="shard-size-bar-vectors" style="width:${vectorsPct}%"></span><span class="shard-size-bar-payload" style="width:${payloadPct}%"></span></span>`;
-                        const legend = `${prettyVectorsSize} vectors  ${prettyPayloadsSize} payload`;
+                        const legend = `<span class="shard-size-legend-line">${prettyVectorsSize} vectors</span><span class="shard-size-legend-line">${prettyPayloadsSize} payload</span>`;
                         const diskPart = prettySize != null ? ` <span class="shard-size-disk">${prettySize} on disk</span>` : '';
                         return `<span class="shard-size shard-size-with-breakdown">${barHtml}<span class="shard-size-legend">${legend}</span>${diskPart}</span>`;
                     }
@@ -2082,11 +2128,6 @@ class VigilanteDashboard {
                 // Add collection-level action buttons at the bottom
                 const actionsFooter = document.createElement('div');
                 actionsFooter.className = 'collection-actions-footer';
-                actionsFooter.style.padding = '16px';
-                actionsFooter.style.backgroundColor = '#f5f5f5';
-                actionsFooter.style.borderTop = '2px solid #ddd';
-                actionsFooter.style.display = 'flex';
-                actionsFooter.style.gap = '8px';
                 actionsFooter.style.justifyContent = 'space-between';
                 actionsFooter.style.alignItems = 'center';
                 
@@ -3769,6 +3810,7 @@ class VigilanteDashboard {
         `;
 
         const modalContent = document.createElement('div');
+        modalContent.className = 'node-selection-modal-content';
         modalContent.style.cssText = `
             background: white;
             padding: 24px;
@@ -3793,10 +3835,12 @@ class VigilanteDashboard {
         title.style.cssText = 'margin-top: 0; word-wrap: break-word; overflow-wrap: break-word;';
         
         const description = document.createElement('p');
+        description.className = 'node-selection-description';
         description.textContent = `Select the nodes where you want to ${action === 'createSnapshot' ? 'create snapshot' : 'delete collection'} for "${collection.name}":`;
         description.style.cssText = 'color: #666; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%;';
 
         const nodesList = document.createElement('div');
+        nodesList.className = 'node-selection-list';
         nodesList.style.cssText = 'margin: 16px 0; max-height: 400px; overflow-y: auto;';
 
         // Get nodes from collection (already an array)
@@ -3817,12 +3861,14 @@ class VigilanteDashboard {
 
         // Add "Select All" checkbox
         const selectAllContainer = document.createElement('div');
+        selectAllContainer.className = 'node-selection-select-all';
         selectAllContainer.style.cssText = 'margin-bottom: 12px; padding-bottom: 12px; border-bottom: 2px solid #eee;';
         const selectAllCheckbox = document.createElement('input');
         selectAllCheckbox.type = 'checkbox';
         selectAllCheckbox.checked = true;
         selectAllCheckbox.id = 'select-all-nodes';
         const selectAllLabel = document.createElement('label');
+        selectAllLabel.className = 'node-selection-label';
         selectAllLabel.htmlFor = 'select-all-nodes';
         selectAllLabel.textContent = ' Select All Nodes';
         selectAllLabel.style.cssText = 'font-weight: bold; cursor: pointer; user-select: none;';
@@ -3833,6 +3879,7 @@ class VigilanteDashboard {
         // Add node checkboxes
         availableNodes.forEach((node, index) => {
             const nodeContainer = document.createElement('div');
+            nodeContainer.className = 'node-selection-node';
             nodeContainer.style.cssText = 'margin: 8px 0; padding: 8px; background: #f5f5f5; border-radius: 4px;';
             
             const checkbox = document.createElement('input');
@@ -3843,6 +3890,7 @@ class VigilanteDashboard {
             checkbox.className = 'node-checkbox';
             
             const label = document.createElement('label');
+            label.className = 'node-selection-label';
             label.htmlFor = `node-${index}`;
             const displayName = node.podName && node.podName !== 'unknown' ? node.podName : node.nodeUrl;
             label.textContent = ` ${displayName}`;
