@@ -1494,6 +1494,16 @@ html[data-theme="dark"] .job-status-running {
     color: #bfdbfe;
 }
 
+html[data-theme="dark"] .job-status-idle {
+    background: rgba(107, 114, 128, 0.3);
+    color: #d1d5db;
+}
+
+html[data-theme="dark"] .job-status-error {
+    background: rgba(127, 29, 29, 0.35);
+    color: #fecaca;
+}
+
 html[data-theme="dark"] .job-cancel-btn {
     background: rgba(127, 29, 29, 0.35);
     border-color: #b91c1c;
@@ -1548,6 +1558,47 @@ html[data-theme="dark"] .operation-type-btn.active {
     border-color: #6366f1;
     background: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
     color: #f3f4f6;
+}
+
+html[data-theme="dark"] .issue-item {
+    background: #1f2937;
+    color: #d1d5db;
+}
+
+html[data-theme="dark"] .issue-item:hover {
+    background: #374151;
+}
+
+html[data-theme="dark"] .issue-item.cluster-issue,
+html[data-theme="dark"] .issue-item.node-issue {
+    border-left-color: #ef4444;
+    background: rgba(127, 29, 29, 0.28);
+}
+
+html[data-theme="dark"] .issue-item.collection-issue {
+    border-left-color: #f59e0b;
+    background: rgba(120, 53, 15, 0.28);
+}
+
+html[data-theme="dark"] .warning-item,
+html[data-theme="dark"] .warning-item.cluster-warning,
+html[data-theme="dark"] .warning-item.node-warning {
+    background: #1f2937;
+    color: #d1d5db;
+}
+
+html[data-theme="dark"] .warning-item.cluster-warning {
+    border-left-color: #60a5fa;
+    background: rgba(30, 64, 175, 0.2);
+}
+
+html[data-theme="dark"] .warning-item.node-warning {
+    border-left-color: #f59e0b;
+    background: rgba(120, 53, 15, 0.25);
+}
+
+html[data-theme="dark"] .warning-item:hover {
+    background: #374151;
 }
 
 /* Remove bright divider under shards block in dark theme */

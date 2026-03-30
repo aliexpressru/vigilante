@@ -1,3 +1,5 @@
+using Vigilante.Models;
+
 namespace Vigilante.Models.Responses;
 
 public class V1GetCollectionsInfoPaginatedResponse
@@ -23,6 +25,10 @@ public class V1GetCollectionsInfoPaginatedResponse
         public Dictionary<string, object> Metrics { get; set; } = new();
         
         public List<string> Issues { get; set; } = new();
+
+        public List<string> Warnings { get; set; } = new();
+
+        public List<CollectionOptimizationInfo> RunningOptimizations { get; set; } = new();
         
         public List<string> Aliases { get; set; } = new();
         

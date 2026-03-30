@@ -1430,8 +1430,17 @@ class VigilanteDashboard {
                     name: info.collectionName,
                     aliases: info.aliases || [],
                     status: info.status, // Save collection status (Green/Yellow/Red)
+                    warnings: [],
                     nodes: [] // Use array to preserve backend order
                 };
+            }
+
+            if (Array.isArray(info.warnings) && info.warnings.length > 0) {
+                info.warnings.forEach(warning => {
+                    if (warning && !acc[info.collectionName].warnings.includes(warning)) {
+                        acc[info.collectionName].warnings.push(warning);
+                    }
+                });
             }
 
             // Use podName if available and not 'unknown', otherwise use peerId (match backend logic)
@@ -1661,36 +1670,10 @@ class VigilanteDashboard {
                 topRow.style.alignItems = 'center';
                 topRow.style.gap = '8px';
 
-                // Check if collection has non-Active shards or active transfers (show warning icon)
-                let hasNonActiveShards = false;
-                let hasActiveTransfers = false;
-                for (const nodeInfo of collection.nodes) {
-                    const m = nodeInfo.metrics || {};
-                    if (m.outgoingTransfers && Array.isArray(m.outgoingTransfers) && m.outgoingTransfers.length > 0) {
-                        hasActiveTransfers = true;
-                    }
-                    if (m.shards && Array.isArray(m.shards)) {
-                        for (const shard of m.shards) {
-                            let state = '';
-                            if (typeof shard === 'object' && shard !== null && shard.state != null) {
-                                state = String(shard.state);
-                            } else if (m.shardStates && typeof shard !== 'object') {
-                                state = m.shardStates[String(shard)] || '';
-                            }
-                            if (state && state.toLowerCase() !== 'active') {
-                                hasNonActiveShards = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (hasNonActiveShards && hasActiveTransfers) break;
-                }
-                const showWarningIcon = hasNonActiveShards || hasActiveTransfers;
+                // Backend provides collection warnings text.
+                const showWarningIcon = Array.isArray(collection.warnings) && collection.warnings.length > 0;
                 if (showWarningIcon) {
-                    const reasons = [];
-                    if (hasNonActiveShards) reasons.push('Shards not in Active state');
-                    if (hasActiveTransfers) reasons.push('Active shard transfers in progress');
-                    const tooltipText = reasons.join('; ');
+                    const tooltipText = collection.warnings.join('; ');
                     const warningIcon = document.createElement('span');
                     warningIcon.className = 'collection-status-warning-icon';
                     warningIcon.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
