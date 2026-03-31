@@ -57,6 +57,8 @@ public class CollectionsController(
                             PodNamespace = size.PodNamespace,
                             Metrics = size.Metrics,
                             Issues = size.Issues,
+                            Warnings = size.Warnings,
+                            RunningOptimizations = size.RunningOptimizations,
                             Aliases = size.Aliases,
                             Status = size.Status?.ToString()
                         };

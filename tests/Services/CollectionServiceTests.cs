@@ -386,6 +386,84 @@ public class CollectionServiceTests
     }
 
     [Test]
+    public async Task GetEnrichedCollectionsInfoAsync_WithRunningOptimizations_AddsWarningToWarnings()
+    {
+        // Arrange
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
+            .Returns(mockClient);
+
+        var collectionsResponse = new ListCollectionsResponse
+        {
+            Result = new ListCollectionsResponse.CollectionNamesUnit
+            {
+                Collections = new[]
+                {
+                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
+                }
+            },
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+        };
+
+        mockClient.ListCollections(Arg.Any<CancellationToken>())
+            .Returns(collectionsResponse);
+
+        SetupGetCollectionInfoMock(mockClient);
+
+        mockClient.GetCollectionOptimizationProgress(
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<OptimizationProgressOptionalInfoFields>(),
+                Arg.Any<int>())
+            .Returns(new GetCollectionOptimizationProgressResponse
+            {
+                Result = new GetCollectionOptimizationProgressResponse.CollectionOptimizationProgress
+                {
+                    Running =
+                    [
+                        new GetCollectionOptimizationProgressResponse.CollectionOptimizationProgress.OptimisationInfoUnit
+                        {
+                            Optimizer = "merge_optimizer",
+                            Segments =
+                            [
+                                new GetCollectionOptimizationProgressResponse.CollectionOptimizationProgress.SegmentInfoUint
+                                {
+                                    Uuid = "seg-1",
+                                    PointsCount = 100
+                                }
+                            ],
+                            Progress = new GetCollectionOptimizationProgressResponse.CollectionOptimizationProgress.OptimiserProgressUnit
+                            {
+                                Done = 25,
+                                Total = 100
+                            }
+                        }
+                    ]
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            });
+
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
+
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = null }
+        };
+
+        var peerToPodMap = new Dictionary<string, string>();
+
+        // Act
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].Warnings, Has.Count.EqualTo(1));
+        Assert.That(result[0].Warnings[0], Does.Contain("Running optimizations (1):"));
+        Assert.That(result[0].Warnings[0], Does.Contain("merge_optimizer"));
+        Assert.That(result[0].Warnings[0], Does.Contain("25/100"));
+    }
+
+    [Test]
     public async Task GetEnrichedCollectionsInfoAsync_WithAliases_PopulatesAliasesField()
     {
         // Arrange

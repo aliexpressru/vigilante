@@ -17,6 +17,10 @@ public class CollectionInfo
     public CollectionMetrics Metrics { get; set; } = new();
     
     public List<string> Issues { get; set; } = new();
+
+    public List<string> Warnings { get; set; } = new();
+
+    public List<CollectionOptimizationInfo> RunningOptimizations { get; set; } = new();
     
     public List<string> Aliases { get; set; } = new();
     

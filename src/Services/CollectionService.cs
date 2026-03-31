@@ -1,6 +1,7 @@
 using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Requests;
 using Aer.QdrantClient.Http.Models.Requests.Public;
+using Aer.QdrantClient.Http.Models.Responses;
 using Aer.QdrantClient.Http.Models.Shared;
 using k8s;
 using Microsoft.Extensions.Options;
@@ -464,7 +465,28 @@ public class CollectionService : ICollectionService
                         ? aliasList
                         : new List<string>();
 
-                    return new CollectionInfo
+                    List<CollectionOptimizationInfo> runningOptimizations = [];
+                    try
+                    {
+                        var optimizationProgressResponse = await qdrantClient.GetCollectionOptimizationProgress(
+                            collection.Name,
+                            cancellationToken);
+
+                        if (optimizationProgressResponse?.Status?.IsSuccess == true)
+                        {
+                            runningOptimizations = BuildRunningOptimizations(optimizationProgressResponse);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(
+                            ex,
+                            "Failed to get optimization progress for collection {CollectionName} from node {NodeUrl}",
+                            collection.Name,
+                            node.Url);
+                    }
+
+                    var collectionInfo = new CollectionInfo
                     {
                         CollectionName = collection.Name,
                         NodeUrl = node.Url,
@@ -478,8 +500,11 @@ public class CollectionService : ICollectionService
                         },
                         Aliases = aliases,
                         Status = collectionInfoResponse.Result?.Status,
-                        HnswM = collectionInfoResponse.Result?.Config?.HnswConfig?.M
+                        HnswM = collectionInfoResponse.Result?.Config?.HnswConfig?.M,
+                        RunningOptimizations = runningOptimizations
                     };
+
+                    return collectionInfo;
                 }
                 catch (Exception ex)
                 {
@@ -539,6 +564,8 @@ public class CollectionService : ICollectionService
 
         // Enrich shards with vectors/payload sizes from cluster telemetry
         await EnrichCollectionsWithTelemetryAsync(healthyNodes, collections, cancellationToken);
+
+        PopulateCollectionWarnings(collections);
 
         // Sort collection shards by node within each collection:
         // Group by collection name, sort nodes within each group, then flatten back
@@ -780,6 +807,95 @@ public class CollectionService : ICollectionService
     private static int GetUniqueCollectionCount(IEnumerable<CollectionInfo> collections)
     {
         return collections.Select(c => c.CollectionName).Distinct().Count();
+    }
+
+    private static List<CollectionOptimizationInfo> BuildRunningOptimizations(GetCollectionOptimizationProgressResponse response)
+    {
+        var running = response.Result?.Running;
+        if (running == null || running.Length == 0)
+        {
+            return [];
+        }
+
+        return running
+            .Select(r =>
+            {
+                return new CollectionOptimizationInfo
+                {
+                    Optimizer = r.Optimizer,
+                    SegmentsCount = r.Segments?.Length ?? 0,
+                    Done = r.Progress?.Done,
+                    Total = r.Progress?.Total
+                };
+            })
+            .ToList();
+    }
+
+    private static void PopulateCollectionWarnings(List<CollectionInfo> collections)
+    {
+        foreach (var collectionGroup in collections.GroupBy(c => c.CollectionName))
+        {
+            var warnings = new List<string>();
+
+            var hasNonActiveShards = collectionGroup.Any(nodeCollection =>
+                nodeCollection.Metrics.Shards?.Any(shard =>
+                    !shard.IsActive) == true);
+
+            if (hasNonActiveShards)
+            {
+                warnings.Add(CollectionWarningConstants.NonActiveShardsWarning);
+            }
+
+            var hasActiveTransfers = collectionGroup.Any(nodeCollection =>
+                nodeCollection.Metrics.OutgoingTransfers?.Count > 0);
+
+            if (hasActiveTransfers)
+            {
+                warnings.Add(CollectionWarningConstants.ActiveTransfersWarning);
+            }
+
+            var runningOptimizations = collectionGroup
+                .SelectMany(nodeCollection => nodeCollection.RunningOptimizations)
+                .DistinctBy(optimization =>
+                    $"{optimization.Optimizer}|{optimization.SegmentsCount}|{optimization.Done}|{optimization.Total}")
+                .ToList();
+
+            if (runningOptimizations.Count != 0)
+            {
+                var formattedOptimizations = runningOptimizations
+                    .Select(optimization =>
+                    {
+                        if (optimization.Done.HasValue && optimization.Total.HasValue)
+                        {
+                            return string.Format(
+                                CollectionWarningConstants.OptimizerWithSegmentsAndProgressFormat,
+                                optimization.Optimizer,
+                                optimization.SegmentsCount,
+                                optimization.Done.Value,
+                                optimization.Total.Value);
+                        }
+
+                        return string.Format(
+                            CollectionWarningConstants.OptimizerWithSegmentsFormat,
+                            optimization.Optimizer,
+                            optimization.SegmentsCount);
+                    })
+                    .ToList();
+
+                warnings.Add(
+                    $"{CollectionWarningConstants.RunningOptimizationsPrefix} ({runningOptimizations.Count}): " +
+                    string.Join("; ", formattedOptimizations));
+            }
+
+            var finalWarnings = warnings.Count == 0
+                ? new List<string>()
+                : new List<string> { string.Join("; ", warnings) };
+
+            foreach (var nodeCollection in collectionGroup)
+            {
+                nodeCollection.Warnings = finalWarnings;
+            }
+        }
     }
 
     private async Task EnrichWithClusteringInfoAsync(
