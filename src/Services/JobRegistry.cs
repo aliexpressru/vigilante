@@ -62,18 +62,23 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
 
     public async Task<bool> CancelJobAsync(string key, CancellationToken cancellationToken = default)
     {
-        if (!_jobs.TryRemove(key, out var entry))
-            return false;
-        try
+        if (_jobs.TryRemove(key, out var entry))
         {
-            entry.Cts.Cancel();
-            await entry.Job.DisposeAsync();
+            try
+            {
+                entry.Cts.Cancel();
+                await entry.Job.DisposeAsync();
+            }
+            finally
+            {
+                entry.Cts.Dispose();
+            }
+
+            return true;
         }
-        finally
-        {
-            entry.Cts.Dispose();
-        }
-        return await Task.FromResult(true);
+
+        // Allow removing completed failed jobs from UI (Error rows are stored in _jobErrors).
+        return _jobErrors.TryRemove(key, out _);
     }
 
     private readonly ConcurrentDictionary<string, (string Message, DateTime RecordedAt)> _jobErrors = new();

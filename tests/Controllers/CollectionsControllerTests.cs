@@ -846,32 +846,6 @@ public class CollectionsControllerTests
         Assert.That(objectResult.StatusCode, Is.EqualTo(500));
     }
 
-    [Test]
-    public async Task CancelRestoreReplicationFactor_WhenCancelled_Returns200WithMessage()
-    {
-        _restoreReplicationFactorJobService.CancelJobAsync("col1", Arg.Any<CancellationToken>()).Returns(true);
-
-        var request = new V1RestoreReplicationFactorCancelRequest { CollectionName = "col1" };
-
-        var result = await _controller.CancelRestoreReplicationFactor(request, CancellationToken.None);
-
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
-        var ok = (OkObjectResult)result!;
-        Assert.That(ok.Value, Is.Not.Null);
-    }
-
-    [Test]
-    public async Task CancelRestoreReplicationFactor_WhenNoJob_Returns200WithNoRunningMessage()
-    {
-        _restoreReplicationFactorJobService.CancelJobAsync("col1", Arg.Any<CancellationToken>()).Returns(false);
-
-        var request = new V1RestoreReplicationFactorCancelRequest { CollectionName = "col1" };
-
-        var result = await _controller.CancelRestoreReplicationFactor(request, CancellationToken.None);
-
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
-    }
-
     #endregion
 }
 

@@ -8,9 +8,9 @@ using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 using Vigilante.Constants;
+using Vigilante.Models;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Models;
 
 namespace Aer.Vigilante.Tests.Services;
 

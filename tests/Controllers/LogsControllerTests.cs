@@ -4,10 +4,10 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Vigilante.Controllers;
+using Vigilante.Models;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Models;
 
 namespace Aer.Vigilante.Tests.Controllers;
 

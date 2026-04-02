@@ -1,8 +1,15 @@
 using Aer.QdrantClient.Http.Models.Shared;
+using Aer.QdrantClient.Http.Abstractions;
+using Aer.QdrantClient.Http.Models.Responses;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using NUnit.Framework;
+using Vigilante.Extensions;
+using Vigilante.Configuration;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
+using Vigilante.Services;
 using Vigilante.Services.Interfaces;
 using Vigilante.Services.Jobs;
 
@@ -14,28 +21,16 @@ public class RecoverFromSnapshotJobTests
     [Test]
     public async Task AdvanceAsync_WhenStartSucceeds_StartsWaitingForReady()
     {
-        var serviceProvider = Substitute.For<IServiceProvider>();
-        var snapshotService = Substitute.For<ISnapshotService>();
-        snapshotService.RecoverFromSnapshotAsync(
-                "col1",
-                "snap1",
-                "http://node1:6333",
-                SnapshotSource.S3Storage,
-                "source-col",
-                SnapshotPriority.NoSync,
-                false,
-                Arg.Any<CancellationToken>())
-            .Returns((true, null));
+        var (serviceProvider, _, _, _) = CreateServiceProviderWithSnapshotService(success: true);
 
         var job = new RecoverFromSnapshotJob(
             serviceProvider,
-            snapshotService,
             "col1",
-            "snap1",
             "http://node1:6333",
-            SnapshotSource.S3Storage,
-            "source-col",
-            SnapshotPriority.NoSync);
+            SnapshotPriority.NoSync,
+            SnapshotSource.QdrantApi,
+            "snap1",
+            "source-col");
 
         var result = await job.AdvanceAsync(CancellationToken.None);
 
@@ -48,51 +43,37 @@ public class RecoverFromSnapshotJobTests
     [Test]
     public async Task AdvanceAsync_WhenStartFails_ReturnsError()
     {
-        var serviceProvider = Substitute.For<IServiceProvider>();
-        var snapshotService = Substitute.For<ISnapshotService>();
-        snapshotService.RecoverFromSnapshotAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<SnapshotSource>(),
-                Arg.Any<string?>(),
-                Arg.Any<SnapshotPriority>(),
-                Arg.Any<bool>(),
-                Arg.Any<CancellationToken>())
-            .Returns((false, "failed to start recovery"));
+        var (serviceProvider, _, _, _) = CreateServiceProviderWithSnapshotService(success: false);
 
         var job = new RecoverFromSnapshotJob(
             serviceProvider,
-            snapshotService,
             "col1",
-            "snap1",
             "http://node1:6333",
-            SnapshotSource.S3Storage,
-            "source-col",
-            SnapshotPriority.NoSync);
+            SnapshotPriority.NoSync,
+            SnapshotSource.QdrantApi,
+            "snap1",
+            "source-col");
 
         var result = await job.AdvanceAsync(CancellationToken.None);
 
         Assert.That(result.HasMore, Is.False);
         Assert.That(result.Success, Is.False);
-        Assert.That(result.ErrorMessage, Is.EqualTo("failed to start recovery"));
+        Assert.That(result.ErrorMessage, Is.EqualTo("Failed to recover collection 'col1' from snapshot 'snap1' on http://node1:6333"));
         Assert.That(job.IsWaitingForReady, Is.False);
     }
 
     [Test]
     public async Task CheckReadyAsync_WhenNotWaiting_ReturnsNull()
     {
-        var serviceProvider = Substitute.For<IServiceProvider>();
-        var snapshotService = Substitute.For<ISnapshotService>();
+        var (serviceProvider, _, _, _) = CreateServiceProviderWithSnapshotService(success: true);
         var job = new RecoverFromSnapshotJob(
             serviceProvider,
-            snapshotService,
             "col1",
-            "snap1",
             "http://node1:6333",
-            SnapshotSource.S3Storage,
-            "source-col",
-            SnapshotPriority.NoSync);
+            SnapshotPriority.NoSync,
+            SnapshotSource.QdrantApi,
+            "snap1",
+            "source-col");
 
         var ready = await job.CheckReadyAsync(CancellationToken.None);
 
@@ -291,24 +272,35 @@ public class RecoverFromSnapshotJobTests
         Assert.That(result.ErrorMessage, Is.EqualTo("Recovery did not complete within timeout"));
     }
 
-    private static async Task<(RecoverFromSnapshotJob Job, IClusterManager ClusterManager, ISnapshotService SnapshotService)> CreateStartedJobAsync(
+    [Test]
+    public async Task AdvanceAsync_WhenUrlRecoveryStartSucceeds_StartsWaitingForReady()
+    {
+        var (serviceProvider, _, _, _) = CreateServiceProviderWithSnapshotService(success: true, urlRecovery: true);
+
+        var job = new RecoverFromSnapshotJob(
+            serviceProvider,
+            "col1",
+            "http://node1:6333",
+            SnapshotPriority.NoSync,
+            source: null,
+            snapshotName: null,
+            sourceCollectionName: null,
+            snapshotUrl: "https://s3.example.com/bucket/snap1.snapshot",
+            snapshotChecksum: "abc123");
+
+        var result = await job.AdvanceAsync(CancellationToken.None);
+
+        Assert.That(result.HasMore, Is.True);
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.ErrorMessage, Is.Null);
+        Assert.That(job.IsWaitingForReady, Is.True);
+    }
+
+    private static async Task<(RecoverFromSnapshotJob Job, IClusterManager ClusterManager, SnapshotService SnapshotService)> CreateStartedJobAsync(
         CollectionMetrics collectionMetrics)
     {
-        var clusterManager = Substitute.For<IClusterManager>();
-        var serviceProvider = Substitute.For<IServiceProvider>();
-        serviceProvider.GetService(typeof(IClusterManager)).Returns(clusterManager);
-
-        var snapshotService = Substitute.For<ISnapshotService>();
-        snapshotService.RecoverFromSnapshotAsync(
-                "col1",
-                "snap1",
-                "http://node1:6333",
-                SnapshotSource.S3Storage,
-                "source-col",
-                SnapshotPriority.NoSync,
-                false,
-                Arg.Any<CancellationToken>())
-            .Returns((true, null));
+        var (serviceProvider, snapshotService, _, _) = CreateServiceProviderWithSnapshotService(success: true);
+        var clusterManager = (IClusterManager)serviceProvider.GetService(typeof(IClusterManager))!;
 
         clusterManager.GetCollectionsInfoAsync(true, Arg.Any<CancellationToken>())
             .Returns(
@@ -323,13 +315,12 @@ public class RecoverFromSnapshotJobTests
 
         var job = new RecoverFromSnapshotJob(
             serviceProvider,
-            snapshotService,
             "col1",
-            "snap1",
             "http://node1:6333",
-            SnapshotSource.S3Storage,
-            "source-col",
-            SnapshotPriority.NoSync);
+            SnapshotPriority.NoSync,
+            SnapshotSource.QdrantApi,
+            "snap1",
+            "source-col");
 
         var start = await job.AdvanceAsync(CancellationToken.None);
         Assert.That(start.Success, Is.True);
@@ -337,5 +328,65 @@ public class RecoverFromSnapshotJobTests
         Assert.That(job.IsWaitingForReady, Is.True);
 
         return (job, clusterManager, snapshotService);
+    }
+
+    private static (IServiceProvider ServiceProvider, SnapshotService SnapshotService, IQdrantHttpClient QdrantClient, IClusterManager ClusterManager)
+        CreateServiceProviderWithSnapshotService(bool success, bool urlRecovery = false)
+    {
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        var clusterManager = Substitute.For<IClusterManager>();
+        serviceProvider.GetService(typeof(IClusterManager)).Returns(clusterManager);
+
+        var nodesProvider = Substitute.For<IQdrantNodesProvider>();
+        var clientFactory = Substitute.For<IQdrantClientFactory>();
+        var qdrantClient = Substitute.For<IQdrantHttpClient>();
+        var s3SnapshotService = Substitute.For<IS3SnapshotService>();
+        var dynamicConfigService = Substitute.For<IDynamicConfigService>();
+        var jobRegistry = Substitute.For<IJobRegistry>();
+        var logger = Substitute.For<ILogger<SnapshotService>>();
+        var options = Substitute.For<IOptions<QdrantOptions>>();
+        options.Value.Returns(new QdrantOptions { ApiKey = "test", HttpTimeoutSeconds = 5 });
+
+        clientFactory.CreateClientFromUrl("http://node1:6333", "test").Returns(qdrantClient);
+        var response = Task.FromResult(new DefaultOperationResponse
+        {
+            Result = success,
+            Status = new QdrantStatus(success ? QdrantOperationStatusType.Ok : QdrantOperationStatusType.Error)
+        });
+        if (urlRecovery)
+        {
+            qdrantClient.RecoverCollectionFromSnapshot(
+                    "col1",
+                    Arg.Any<Uri>(),
+                    Arg.Any<CancellationToken>(),
+                    false,
+                    SnapshotPriority.NoSync,
+                    "abc123")
+                .Returns(response);
+        }
+        else
+        {
+            qdrantClient.RecoverCollectionFromSnapshot(
+                    "col1",
+                    "snap1",
+                    Arg.Any<CancellationToken>(),
+                    false,
+                    SnapshotPriority.NoSync)
+                .Returns(response);
+        }
+
+        var snapshotService = new SnapshotService(
+            nodesProvider,
+            clientFactory,
+            s3SnapshotService,
+            commandExecutor: null,
+            options,
+            dynamicConfigService,
+            jobRegistry,
+            serviceProvider,
+            logger);
+
+        serviceProvider.GetService(typeof(ISnapshotService)).Returns(snapshotService);
+        return (serviceProvider, snapshotService, qdrantClient, clusterManager);
     }
 }

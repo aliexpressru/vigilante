@@ -64,48 +64,4 @@ public class RestoreReplicationFactorJobServiceTests
         Assert.That(result.Message, Does.Contain("No healthy node"));
     }
 
-    [Test]
-    public async Task CancelJobAsync_DelegatesToRegistry()
-    {
-        _jobRegistry.CancelJobAsync("col1", Arg.Any<CancellationToken>()).Returns(true);
-
-        var options = Substitute.For<IOptions<QdrantOptions>>();
-        options.Value.Returns(new QdrantOptions());
-        var clientFactory = Substitute.For<Aer.QdrantClient.Http.Abstractions.IQdrantClientFactory>();
-
-        var service = new RestoreReplicationFactorJobService(
-            _clusterManager,
-            _jobRegistry,
-            clientFactory,
-            options,
-            _serviceProvider,
-            _logger);
-
-        var cancelled = await service.CancelJobAsync("col1", CancellationToken.None);
-
-        Assert.That(cancelled, Is.True);
-        await _jobRegistry.Received(1).CancelJobAsync("col1", Arg.Any<CancellationToken>());
-    }
-
-    [Test]
-    public async Task CancelJobAsync_WhenRegistryReturnsFalse_ReturnsFalse()
-    {
-        _jobRegistry.CancelJobAsync("col1", Arg.Any<CancellationToken>()).Returns(false);
-
-        var options = Substitute.For<IOptions<QdrantOptions>>();
-        options.Value.Returns(new QdrantOptions());
-        var clientFactory = Substitute.For<Aer.QdrantClient.Http.Abstractions.IQdrantClientFactory>();
-
-        var service = new RestoreReplicationFactorJobService(
-            _clusterManager,
-            _jobRegistry,
-            clientFactory,
-            options,
-            _serviceProvider,
-            _logger);
-
-        var cancelled = await service.CancelJobAsync("col1", CancellationToken.None);
-
-        Assert.That(cancelled, Is.False);
-    }
 }

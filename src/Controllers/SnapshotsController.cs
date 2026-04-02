@@ -326,34 +326,32 @@ public class SnapshotsController(
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<V1RecoverFromSnapshotResponse>> RecoverFromSnapshot(
-        [FromBody] V1RecoverFromSnapshotRequest request,
+        [FromBody] V1RecoverRequest request,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            // Parse source from request
-            if (!Enum.TryParse<SnapshotSource>(request.Source, out var source))
-            {
-                return BadRequest(new V1RecoverFromSnapshotResponse
-                {
-                    Success = false,
-                    Message = "Invalid Source value. Must be 'KubernetesStorage', 'QdrantApi', or 'S3Storage'",
-                    Error = "Invalid source"
-                });
-            }
-
             var snapshotPriority = Enum.TryParse<SnapshotPriority>(request.SnapshotPriority, out var parsedPriority)
                 ? parsedPriority
                 : SnapshotPriority.Snapshot;
+            var isUrlRecovery = !string.IsNullOrWhiteSpace(request.SnapshotUrl);
+            SnapshotSource? source = null;
+            if (!isUrlRecovery)
+            {
+                Enum.TryParse<SnapshotSource>(request.Source, out var parsedSource);
+                source = parsedSource;
+            }
 
-            var result = await snapshotService.RequestRecoverFromSnapshotAsync(
+            var result = await snapshotService.RequestRecoverAsync(
                 request.CollectionName,
-                request.SnapshotName,
                 request.TargetNodeUrl,
-                source,
-                request.SourceCollectionName,
                 snapshotPriority,
                 request.WaitForResult,
+                source: source,
+                snapshotName: request.SnapshotName,
+                sourceCollectionName: request.SourceCollectionName,
+                snapshotUrl: request.SnapshotUrl,
+                snapshotChecksum: request.SnapshotChecksum,
                 cancellationToken);
 
             if (result.AlreadyInProgress)
@@ -371,7 +369,9 @@ public class SnapshotsController(
                 return StatusCode(500, new V1RecoverFromSnapshotResponse
                 {
                     Success = false,
-                    Message = result.Message,
+                    Message = isUrlRecovery
+                        ? $"Failed to recover collection '{request.CollectionName}' from URL '{request.SnapshotUrl}' on {request.TargetNodeUrl}"
+                        : result.Message,
                     Error = "Recovery failed"
                 });
             }
@@ -381,7 +381,9 @@ public class SnapshotsController(
                 return Ok(new V1RecoverFromSnapshotResponse
                 {
                     Success = true,
-                    Message = result.Message
+                    Message = isUrlRecovery
+                        ? $"Collection '{request.CollectionName}' {MetricConstants.RecoverySuccessMessage} from URL '{request.SnapshotUrl}' on {request.TargetNodeUrl}"
+                        : result.Message
                 });
             }
 
@@ -393,11 +395,11 @@ public class SnapshotsController(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error during snapshot recovery");
+            logger.LogError(ex, "Error during unified snapshot recovery");
             return StatusCode(500, new V1RecoverFromSnapshotResponse
             {
                 Success = false,
-                Message = "Internal server error during snapshot recovery",
+                Message = "Internal server error during recovery",
                 Error = ex.Message
             });
         }
@@ -448,49 +450,5 @@ public class SnapshotsController(
         }
     }
 
-    [HttpPost("recover-from-url")]
-    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<V1RecoverFromSnapshotResponse>> RecoverFromUrl(
-        [FromBody] V1RecoverFromUrlRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            // Parse SnapshotPriority, default to Snapshot if not provided
-            var snapshotPriority = request.SnapshotPriority.ParseEnumOrDefault(SnapshotPriority.Snapshot);
-
-            var (success, errorMessage) = await snapshotService.RecoverFromUrlAsync(
-                request.CollectionName,
-                request.NodeUrl,
-                request.SnapshotUrl,
-                request.SnapshotChecksum,
-                snapshotPriority,
-                request.WaitForResult,
-                cancellationToken);
-
-            var response = new V1RecoverFromSnapshotResponse
-            {
-                Success = success,
-                Message = success
-                    ? $"Collection '{request.CollectionName}' {MetricConstants.RecoverySuccessMessage} from URL '{request.SnapshotUrl}' on {request.NodeUrl}"
-                    : $"Failed to recover collection '{request.CollectionName}' from URL '{request.SnapshotUrl}' on {request.NodeUrl}",
-                Error = success ? null : (string.IsNullOrWhiteSpace(errorMessage) ? "Recovery failed" : errorMessage)
-            };
-
-            return success ? Ok(response) : StatusCode(500, response);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error during snapshot recovery from URL");
-            return StatusCode(500, new V1RecoverFromSnapshotResponse
-            {
-                Success = false,
-                Message = "Internal server error during snapshot recovery from URL",
-                Error = ex.Message
-            });
-        }
-    }
 }
 

@@ -10,7 +10,7 @@ using Vigilante.Services.Jobs;
 namespace Vigilante.Services;
 
 /// <summary>
-/// Entry point for starting/cancelling restore replication factor jobs. Uses cluster state and job registry; all job infra is at monitor level.
+/// Entry point for starting restore replication factor jobs. Uses cluster state and job registry; all job infra is at monitor level.
 /// </summary>
 public sealed class RestoreReplicationFactorJobService(
     IClusterManager clusterManager,
@@ -79,11 +79,4 @@ public sealed class RestoreReplicationFactorJobService(
             Message: $"Restore replication factor process started for collection {collectionName}");
     }
 
-    public async Task<bool> CancelJobAsync(string key, CancellationToken cancellationToken = default)
-    {
-        var cancelled = await jobRegistry.CancelJobAsync(key, cancellationToken);
-        if (cancelled)
-            logger.LogInformation("Cancelled job for key {Key}", key);
-        return cancelled;
-    }
 }

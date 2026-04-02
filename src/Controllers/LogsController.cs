@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
+using Vigilante.Models;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Models;
 
 namespace Vigilante.Controllers;
 

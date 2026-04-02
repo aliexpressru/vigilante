@@ -9,15 +9,6 @@ namespace Vigilante.Services.Interfaces;
 public interface ISnapshotService
 {
     /// <summary>
-    /// Creates a snapshot of a collection on a specific node
-    /// </summary>
-    Task<string?> CreateCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken,
-        bool waitForResult = false);
-
-    /// <summary>
     /// Creates a snapshot for a collection on specified nodes
     /// </summary>
     /// <param name="retainLastNAfterVisible">When set, <see cref="EnforceRetentionAsync"/> runs from <c>snapshot-create-*</c> job after new snapshots show up (use with <c>waitForResult: false</c>).</param>
@@ -144,38 +135,28 @@ public interface ISnapshotService
     /// </summary>
     void InvalidateCache();
 
-    /// <summary>
-    /// Recovers collection from snapshot source.
-    /// </summary>
-    Task<(bool Success, string? ErrorMessage)> RecoverFromSnapshotAsync(
+    Task<SnapshotRecoveryStartResult> RequestRecoverAsync(
         string collectionName,
-        string snapshotName,
         string targetNodeUrl,
-        SnapshotSource source,
-        string? sourceCollectionName,
-        Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
-        bool waitForResult = true,
-        CancellationToken cancellationToken = default);
-
-    Task<SnapshotRecoveryStartResult> RequestRecoverFromSnapshotAsync(
-        string collectionName,
-        string snapshotName,
-        string targetNodeUrl,
-        SnapshotSource source,
-        string? sourceCollectionName,
         Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
         bool waitForResult,
+        SnapshotSource? source = null,
+        string? snapshotName = null,
+        string? sourceCollectionName = null,
+        string? snapshotUrl = null,
+        string? snapshotChecksum = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Recovers collection from a snapshot URL.
-    /// </summary>
-    Task<(bool Success, string? ErrorMessage)> RecoverFromUrlAsync(
+    Task<(bool Success, string? ErrorMessage)> ExecuteRecoverAsync(
         string collectionName,
-        string nodeUrl,
-        string snapshotUrl,
-        string? snapshotChecksum,
+        string targetNodeUrl,
         Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
-        bool waitForResult = true,
+        bool waitForResult,
+        SnapshotSource? source = null,
+        string? snapshotName = null,
+        string? sourceCollectionName = null,
+        string? snapshotUrl = null,
+        string? snapshotChecksum = null,
         CancellationToken cancellationToken = default);
+
 }

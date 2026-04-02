@@ -47,6 +47,7 @@ public class JobsController(
 
     /// <summary>
     /// Cancels a running job by key and removes it from registry.
+    /// If the job is already completed but has an Error row, removes that row.
     /// </summary>
     [HttpPost("cancel")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
@@ -64,7 +65,7 @@ public class JobsController(
             if (!cancelled)
                 return NotFound(new { error = $"Job with key '{request.Key}' was not found" });
 
-            return Ok(new { success = true, message = $"Job '{request.Key}' was cancelled" });
+            return Ok(new { success = true, message = $"Job '{request.Key}' was removed" });
         }
         catch (Exception ex)
         {

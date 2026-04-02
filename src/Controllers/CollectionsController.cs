@@ -397,23 +397,5 @@ public class CollectionsController(
         }
     }
 
-    [HttpPost("restore-replication-factor/cancel")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> CancelRestoreReplicationFactor(
-        [FromBody] V1RestoreReplicationFactorCancelRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var cancelled = await restoreReplicationFactorJobService.CancelJobAsync(request.CollectionName, cancellationToken);
-            return Ok(new { message = cancelled ? "Cancellation requested for " + request.CollectionName : "No running operation found for " + request.CollectionName });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error cancelling restore replication factor for collection {CollectionName}", request.CollectionName);
-            return StatusCode(500, new { error = ex.Message });
-        }
-    }
 }
 

@@ -18,7 +18,6 @@ class VigilanteDashboard {
         this.removePeerEndpoint = '/api/v1/cluster/remove-peer';
         this.manageStatefulSetEndpoint = '/api/v1/kubernetes/manage-statefulset';
         this.restoreReplicationFactorEndpoint = '/api/v1/collections/restore-replication-factor';
-        this.restoreReplicationFactorCancelEndpoint = '/api/v1/collections/restore-replication-factor/cancel';
         this.jobsStatusEndpoint = '/api/v1/jobs/status';
         this.jobsCancelEndpoint = '/api/v1/jobs/cancel';
         this.qdrantLogsEndpoint = '/api/v1/logs/qdrant';
@@ -1058,6 +1057,7 @@ class VigilanteDashboard {
             const statusClass = error ? 'job-status-error' : (phase === 'idle' ? 'job-status-idle' : 'job-status-running');
             const statusText = error ? 'Error' : (phase === 'idle' ? 'Idle' : 'Running');
             const canCancel = !error && phase !== 'idle';
+            const canDeleteError = !!error;
             const isCancelling = this.pendingJobCancellations.has(String(key));
             const lastLine = !error && meta.LastCompletedUtc
                 ? `<div class="job-meta">${meta.LastRunSuccess === false ? 'Last run: failed' : 'Last run: OK'} · ${new Date(meta.LastCompletedUtc).toLocaleString()}</div>`
@@ -1072,9 +1072,11 @@ class VigilanteDashboard {
                 ? `<div class="job-last-run-summary"><span class="job-last-run-label">Last run:</span> ${this.escapeHtml(lastRunSummary)}</div>`
                 : '';
             const metaBlock = metaStr ? `<div class="job-meta">${this.escapeHtml(metaStr)}</div>` : '';
-            const cancelButtonBlock = canCancel
-                ? `<button type="button" class="job-cancel-btn" data-job-key="${encodeURIComponent(String(key))}" ${isCancelling ? 'disabled' : ''}>${isCancelling ? 'Cancelling...' : 'Cancel'}</button>`
-                : '';
+            const actionButtonBlock = canCancel
+                ? `<button type="button" class="job-cancel-btn" data-job-key="${encodeURIComponent(String(key))}" data-job-action="cancel" ${isCancelling ? 'disabled' : ''}>${isCancelling ? 'Cancelling...' : 'Cancel'}</button>`
+                : (canDeleteError
+                    ? `<button type="button" class="job-cancel-btn" data-job-key="${encodeURIComponent(String(key))}" data-job-action="delete" ${isCancelling ? 'disabled' : ''}>${isCancelling ? 'Deleting...' : 'Delete'}</button>`
+                    : '');
 
             return `
                 <div class="job-item">
@@ -1082,7 +1084,7 @@ class VigilanteDashboard {
                         <span class="job-key">${this.escapeHtml(key)}</span>
                         <div class="job-header-actions">
                             <span class="job-status ${statusClass}">${statusText}</span>
-                            ${cancelButtonBlock}
+                            ${actionButtonBlock}
                         </div>
                     </div>
                     ${lastLine}
@@ -1103,8 +1105,11 @@ class VigilanteDashboard {
                 const encodedKey = button.getAttribute('data-job-key');
                 if (!encodedKey) return;
                 const key = decodeURIComponent(encodedKey);
+                const action = button.getAttribute('data-job-action') || 'cancel';
                 if (this.pendingJobCancellations.has(key)) return;
-                const confirmed = window.confirm(`Cancel job '${key}'?`);
+                const confirmed = action === 'delete'
+                    ? window.confirm(`Delete error job '${key}' from list?`)
+                    : window.confirm(`Cancel job '${key}'?`);
                 if (!confirmed) return;
                 await this.cancelJobByKey(key);
             });
@@ -1818,20 +1823,6 @@ class VigilanteDashboard {
                 });
                 collectionActionsDropdown.appendChild(restoreRfAction);
 
-                // Cancel restore replication factor action
-                const cancelRrfAction = document.createElement('button');
-                cancelRrfAction.className = 'collection-action-item';
-                cancelRrfAction.innerHTML = '<i class="fas fa-stop-circle"></i> Cancel RRF';
-                cancelRrfAction.title = 'Cancel running restore replication factor job for this collection';
-                cancelRrfAction.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    collectionActionsDropdown.classList.remove('show');
-                    collectionActionsMenuButton.classList.remove('active');
-                    this.openCollectionMenus.delete(collection.name);
-                    await this.cancelRestoreReplicationFactor(collection.name);
-                });
-                collectionActionsDropdown.appendChild(cancelRrfAction);
-                
                 collectionActionsMenuContainer.appendChild(collectionActionsMenuButton);
                 collectionActionsMenuContainer.appendChild(collectionActionsDropdown);
                 
@@ -3109,7 +3100,7 @@ class VigilanteDashboard {
         
         try {
             const requestBody = {
-                NodeUrl: nodeUrl,
+                TargetNodeUrl: nodeUrl,
                 CollectionName: collectionName,
                 SnapshotUrl: snapshotUrl,
                 WaitForResult: waitForResult
@@ -3127,7 +3118,7 @@ class VigilanteDashboard {
 
             console.log('Recover from URL request:', requestBody);
 
-            const response = await fetch('/api/v1/snapshots/recover-from-url', {
+            const response = await fetch(this.recoverFromSnapshotEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
@@ -4811,33 +4802,6 @@ class VigilanteDashboard {
         } catch (error) {
             this.removeToast(toastId);
             this.showToast(`Error: ${this.getErrorMessage(error)}`, 'error', 'Restore Replication Factor', 10000);
-        }
-    }
-
-    async cancelRestoreReplicationFactor(collectionName) {
-        const toastId = this.showToast(
-            `Cancelling restore replication factor for '${collectionName}'...`,
-            'info',
-            'Cancel RRF',
-            0,
-            true
-        );
-        try {
-            const response = await fetch(this.restoreReplicationFactorCancelEndpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ collectionName })
-            });
-            const data = await response.json();
-            if (response.ok) {
-                this.updateToast(toastId, data.message || 'Cancellation requested.', 'success', 'Cancel RRF');
-                this.loadJobs();
-            } else {
-                this.updateToast(toastId, data.error || data.message || `HTTP ${response.status}`, 'error', 'Cancel RRF');
-            }
-        } catch (error) {
-            this.removeToast(toastId);
-            this.showToast(`Error: ${this.getErrorMessage(error)}`, 'error', 'Cancel RRF', 10000);
         }
     }
 

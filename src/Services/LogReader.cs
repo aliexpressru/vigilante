@@ -2,8 +2,8 @@ using System.Globalization;
 using System.Text;
 using k8s;
 using Vigilante.Constants;
+using Vigilante.Models;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Models;
 
 namespace Vigilante.Services;
 

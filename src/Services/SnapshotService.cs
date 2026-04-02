@@ -33,36 +33,34 @@ public class SnapshotService(
     /// <summary>Excludes overlapping multi-node creates until the pending job is registered (same collection, case-insensitive).</summary>
     private readonly ConcurrentDictionary<string, byte> _snapshotCreateInFlight = new(StringComparer.OrdinalIgnoreCase);
 
-    public Task<SnapshotRecoveryStartResult> RequestRecoverFromSnapshotAsync(
+    public Task<SnapshotRecoveryStartResult> RequestRecoverAsync(
         string collectionName,
-        string snapshotName,
         string targetNodeUrl,
-        SnapshotSource source,
-        string? sourceCollectionName,
         Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
         bool waitForResult,
+        SnapshotSource? source = null,
+        string? snapshotName = null,
+        string? sourceCollectionName = null,
+        string? snapshotUrl = null,
+        string? snapshotChecksum = null,
         CancellationToken cancellationToken = default)
     {
         if (waitForResult)
-            return RunRecoverForegroundAsync(
-                collectionName,
-                snapshotName,
-                targetNodeUrl,
-                source,
-                sourceCollectionName,
-                snapshotPriority,
-                cancellationToken);
+        {
+            return ExecuteRecoverStartAsync(cancellationToken);
+        }
 
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var job = new RecoverFromSnapshotJob(
+        IJob job = new RecoverFromSnapshotJob(
             serviceProvider,
-            this,
             collectionName,
-            snapshotName,
             targetNodeUrl,
+            snapshotPriority,
             source,
-            sourceCollectionName,
-            snapshotPriority);
+            snapshotName: snapshotName,
+            sourceCollectionName: sourceCollectionName,
+            snapshotUrl: snapshotUrl,
+            snapshotChecksum: snapshotChecksum);
 
         if (!jobRegistry.TryAddJob(job, cts))
         {
@@ -77,186 +75,121 @@ public class SnapshotService(
             ApiError: false,
             AlreadyInProgress: false,
             Message: $"Recovery started for collection '{collectionName}'"));
+
+        async Task<SnapshotRecoveryStartResult> ExecuteRecoverStartAsync(CancellationToken token)
+        {
+            var (success, error) = await ExecuteRecoverAsync(
+                collectionName,
+                targetNodeUrl,
+                snapshotPriority,
+                waitForResult: true,
+                source,
+                snapshotName,
+                sourceCollectionName,
+                snapshotUrl,
+                snapshotChecksum,
+                token);
+            return success
+                ? new SnapshotRecoveryStartResult(false, false, $"Collection '{collectionName}' recovered successfully")
+                : new SnapshotRecoveryStartResult(true, false, error ?? "Recovery failed");
+        }
     }
 
-    private async Task<SnapshotRecoveryStartResult> RunRecoverForegroundAsync(
+    public async Task<(bool Success, string? ErrorMessage)> ExecuteRecoverAsync(
         string collectionName,
-        string snapshotName,
         string targetNodeUrl,
-        SnapshotSource source,
-        string? sourceCollectionName,
         Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
-        CancellationToken cancellationToken)
-    {
-        var (success, error) = await RecoverFromSnapshotAsync(
-            collectionName,
-            snapshotName,
-            targetNodeUrl,
-            source,
-            sourceCollectionName,
-            snapshotPriority,
-            waitForResult: true,
-            cancellationToken);
-
-        return success
-            ? new SnapshotRecoveryStartResult(false, false, $"Collection '{collectionName}' recovered successfully")
-            : new SnapshotRecoveryStartResult(true, false, error ?? "Recovery failed");
-    }
-
-    public async Task<(bool Success, string? ErrorMessage)> RecoverFromSnapshotAsync(
-        string collectionName,
-        string snapshotName,
-        string targetNodeUrl,
-        SnapshotSource source,
-        string? sourceCollectionName,
-        Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
-        bool waitForResult = true,
+        bool waitForResult,
+        SnapshotSource? source = null,
+        string? snapshotName = null,
+        string? sourceCollectionName = null,
+        string? snapshotUrl = null,
+        string? snapshotChecksum = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            if (source == SnapshotSource.S3Storage)
+            var useUrlRecovery = !string.IsNullOrWhiteSpace(snapshotUrl);
+            if (useUrlRecovery)
             {
-                var sourceCollection = !string.IsNullOrWhiteSpace(sourceCollectionName)
-                    ? sourceCollectionName
-                    : collectionName;
-
-                var presignedUrl = await s3SnapshotService.GetPresignedDownloadUrlAsync(
-                    sourceCollection!,
-                    snapshotName,
-                    TimeSpan.FromHours(1),
-                    null,
-                    cancellationToken);
-
-                if (string.IsNullOrWhiteSpace(presignedUrl))
-                    return (false, $"Failed to generate S3 download URL for snapshot '{snapshotName}'");
-
-                var successFromUrl = await RecoverCollectionFromUrlAsync(
-                    targetNodeUrl,
+                var qdrantClient = clientFactory.CreateClientFromUrl(targetNodeUrl, _options.ApiKey);
+                var snapshotLocationUri = new Uri(snapshotUrl!);
+                var urlResult = await qdrantClient.RecoverCollectionFromSnapshot(
                     collectionName,
-                    presignedUrl,
-                    snapshotChecksum: null,
-                    waitForResult,
-                    snapshotPriority,
-                    cancellationToken);
-
-                return successFromUrl
+                    snapshotLocationUri,
+                    cancellationToken,
+                    isWaitForResult: waitForResult,
+                    snapshotPriority: snapshotPriority,
+                    snapshotChecksum: snapshotChecksum);
+                return urlResult.IsAcceptedOrSuccess()
                     ? (true, null)
-                    : (false, $"Failed to recover collection '{collectionName}' from snapshot '{snapshotName}' on {targetNodeUrl}");
+                    : (false, $"Failed to recover collection '{collectionName}' from URL '{snapshotUrl}' on {targetNodeUrl}");
             }
 
-            if (source == SnapshotSource.KubernetesStorage
-                && !string.IsNullOrWhiteSpace(sourceCollectionName)
-                && !string.Equals(sourceCollectionName, collectionName, StringComparison.Ordinal))
+            switch (source)
             {
-                var snapshotPath = $"file:///qdrant/snapshots/{sourceCollectionName}/{snapshotName}";
-                var successFromPath = await RecoverCollectionFromUrlAsync(
-                    targetNodeUrl,
-                    collectionName,
-                    snapshotPath,
-                    snapshotChecksum: null,
-                    waitForResult,
-                    snapshotPriority,
-                    cancellationToken);
+                case SnapshotSource.S3Storage:
+                {
+                    var sourceCollection = !string.IsNullOrWhiteSpace(sourceCollectionName)
+                        ? sourceCollectionName
+                        : collectionName;
+                    var presignedUrl = await s3SnapshotService.GetPresignedDownloadUrlAsync(
+                        sourceCollection!,
+                        snapshotName!,
+                        TimeSpan.FromHours(1),
+                        null,
+                        cancellationToken);
+                    if (string.IsNullOrWhiteSpace(presignedUrl))
+                        return (false, $"Failed to generate S3 download URL for snapshot '{snapshotName}'");
 
-                return successFromPath
-                    ? (true, null)
-                    : (false, $"Failed to recover collection '{collectionName}' from snapshot '{snapshotName}' on {targetNodeUrl}");
+                    var qdrantClient = clientFactory.CreateClientFromUrl(targetNodeUrl, _options.ApiKey);
+                    var presignedUri = new Uri(presignedUrl);
+                    var s3Result = await qdrantClient.RecoverCollectionFromSnapshot(
+                        collectionName,
+                        presignedUri,
+                        cancellationToken,
+                        isWaitForResult: waitForResult,
+                        snapshotPriority: snapshotPriority,
+                        snapshotChecksum: null);
+                    return s3Result.IsAcceptedOrSuccess()
+                        ? (true, null)
+                        : (false, $"Failed to recover collection '{collectionName}' from snapshot '{snapshotName}' on {targetNodeUrl}");
+                }
+                case SnapshotSource.KubernetesStorage
+                    when !string.IsNullOrWhiteSpace(sourceCollectionName)
+                         && !string.Equals(sourceCollectionName, collectionName, StringComparison.Ordinal):
+                {
+                    var snapshotPath = $"file:///qdrant/snapshots/{sourceCollectionName}/{snapshotName}";
+                    var qdrantClient = clientFactory.CreateClientFromUrl(targetNodeUrl, _options.ApiKey);
+                    var snapshotPathUri = new Uri(snapshotPath);
+                    var pathResult = await qdrantClient.RecoverCollectionFromSnapshot(
+                        collectionName,
+                        snapshotPathUri,
+                        cancellationToken,
+                        isWaitForResult: waitForResult,
+                        snapshotPriority: snapshotPriority,
+                        snapshotChecksum: null);
+                    return pathResult.IsAcceptedOrSuccess()
+                        ? (true, null)
+                        : (false, $"Failed to recover collection '{collectionName}' from snapshot '{snapshotName}' on {targetNodeUrl}");
+                }
             }
 
-            var success = await RecoverCollectionFromSnapshotAsync(
-                targetNodeUrl,
+            var regularClient = clientFactory.CreateClientFromUrl(targetNodeUrl, _options.ApiKey);
+            var regularResult = await regularClient.RecoverCollectionFromSnapshot(
                 collectionName,
-                snapshotName,
-                snapshotPriority,
-                waitForResult,
-                cancellationToken);
-
-            return success
+                snapshotName!,
+                cancellationToken,
+                isWaitForResult: waitForResult,
+                snapshotPriority: snapshotPriority);
+            return regularResult.IsAcceptedOrSuccess()
                 ? (true, null)
                 : (false, $"Failed to recover collection '{collectionName}' from snapshot '{snapshotName}' on {targetNodeUrl}");
         }
         catch (Exception ex)
         {
-            logger.LogError(ex,
-                "Error during snapshot recovery for collection {CollectionName} from snapshot {SnapshotName}",
-                collectionName, snapshotName);
+            logger.LogError(ex, "Error during recovery for collection {CollectionName}", collectionName);
             return (false, ex.Message);
-        }
-    }
-
-    public async Task<(bool Success, string? ErrorMessage)> RecoverFromUrlAsync(
-        string collectionName,
-        string nodeUrl,
-        string snapshotUrl,
-        string? snapshotChecksum,
-        Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
-        bool waitForResult = true,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var success = await RecoverCollectionFromUrlAsync(
-                nodeUrl,
-                collectionName,
-                snapshotUrl,
-                snapshotChecksum,
-                waitForResult,
-                snapshotPriority,
-                cancellationToken);
-
-            return success
-                ? (true, null)
-                : (false, $"Failed to recover collection '{collectionName}' from URL '{snapshotUrl}' on {nodeUrl}");
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex,
-                "Error during snapshot recovery from URL for collection {CollectionName}",
-                collectionName);
-            return (false, ex.Message);
-        }
-    }
-
-    /// <summary>
-    /// Creates a snapshot of a collection on a specific node
-    /// </summary>
-    public async Task<string?> CreateCollectionSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        CancellationToken cancellationToken,
-        bool waitForResult = false)
-    {
-        try
-        {
-            logger.LogInformation("Creating snapshot for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            
-            var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            var result = await qdrantClient.CreateCollectionSnapshot(
-                collectionName, 
-                cancellationToken,
-                isWaitForResult: waitForResult);
-            
-            if (result.IsAcceptedOrSuccess())
-            {
-                var snapshotName = result.Result?.Name ?? $"{collectionName}-snapshot-{DateTime.UtcNow:yyyyMMddHHmmss}";
-                var statusText = result.IsAccepted() ? QdrantConstants.SnapshotAcceptedStatus : QdrantConstants.SnapshotCreatedStatus;
-                
-                logger.LogInformation("Snapshot {StatusText} for collection {CollectionName} on node {NodeUrl}", 
-                    statusText, collectionName, nodeUrl);
-                return snapshotName;
-            }
-
-            logger.LogError("Failed to create snapshot for collection {CollectionName} on node {NodeUrl}: {Error}",
-                collectionName, nodeUrl, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
-            return null;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to create snapshot for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
-            return null;
         }
     }
 
@@ -307,13 +240,37 @@ public class SnapshotService(
 
             var createTasks = nodeUrlsList.Select(async nodeUrl =>
             {
-                var snapshotName = await CreateCollectionSnapshotAsync(
-                    nodeUrl,
-                    collectionName,
-                    cancellationToken,
-                    waitForResult);
+                try
+                {
+                    logger.LogInformation("Creating snapshot for collection {CollectionName} on node {NodeUrl}",
+                        collectionName, nodeUrl);
 
-                return (NodeUrl: nodeUrl, SnapshotName: snapshotName);
+                    var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
+                    var result = await qdrantClient.CreateCollectionSnapshot(
+                        collectionName,
+                        cancellationToken,
+                        isWaitForResult: waitForResult);
+
+                    if (!result.IsAcceptedOrSuccess())
+                    {
+                        logger.LogError("Failed to create snapshot for collection {CollectionName} on node {NodeUrl}: {Error}",
+                            collectionName, nodeUrl, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+                        return (NodeUrl: nodeUrl, SnapshotName: (string?)null);
+                    }
+
+                    var snapshotName = result.Result?.Name ?? $"{collectionName}-snapshot-{DateTime.UtcNow:yyyyMMddHHmmss}";
+                    var statusText = result.IsAccepted() ? QdrantConstants.SnapshotAcceptedStatus : QdrantConstants.SnapshotCreatedStatus;
+                    logger.LogInformation("Snapshot {StatusText} for collection {CollectionName} on node {NodeUrl}",
+                        statusText, collectionName, nodeUrl);
+
+                    return (NodeUrl: nodeUrl, SnapshotName: snapshotName);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to create snapshot for collection {CollectionName} on node {NodeUrl}",
+                        collectionName, nodeUrl);
+                    return (NodeUrl: nodeUrl, SnapshotName: (string?)null);
+                }
             });
 
             var createResults = await Task.WhenAll(createTasks);
@@ -1412,44 +1369,4 @@ public class SnapshotService(
         return new SnapshotParsedInfo(collectionName, peerId, createdAt);
     }
 
-    private async Task<bool> RecoverCollectionFromSnapshotAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotName,
-        Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
-        bool waitForResult,
-        CancellationToken cancellationToken)
-    {
-        var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-        var result = await qdrantClient.RecoverCollectionFromSnapshot(
-            collectionName,
-            snapshotName,
-            cancellationToken,
-            isWaitForResult: waitForResult,
-            snapshotPriority: snapshotPriority);
-
-        return result.IsAcceptedOrSuccess();
-    }
-
-    private async Task<bool> RecoverCollectionFromUrlAsync(
-        string nodeUrl,
-        string collectionName,
-        string snapshotUrl,
-        string? snapshotChecksum,
-        bool waitForResult,
-        Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
-        CancellationToken cancellationToken)
-    {
-        var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-        var snapshotLocationUri = new Uri(snapshotUrl);
-        var result = await qdrantClient.RecoverCollectionFromSnapshot(
-            collectionName,
-            snapshotLocationUri,
-            cancellationToken,
-            isWaitForResult: waitForResult,
-            snapshotPriority: snapshotPriority,
-            snapshotChecksum: snapshotChecksum);
-
-        return result.IsAcceptedOrSuccess();
-    }
 }
