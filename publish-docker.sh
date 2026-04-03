@@ -21,12 +21,28 @@ echo "   Image Name: $IMAGE_NAME"
 echo "   Version Tag: $VERSION_TAG"
 echo ""
 
-# Build Docker image
-echo "📦 Building Docker image: $IMAGE_NAME"
-if docker build -t $IMAGE_NAME .; then
-    echo "✅ Docker image built successfully"
+# Multi-arch target platforms
+PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
+echo "   Platforms: $PLATFORMS"
+echo ""
+
+# Ensure buildx is available
+if ! docker buildx version >/dev/null 2>&1; then
+    echo "❌ Docker Buildx is required for multi-arch publishing"
+    echo "💡 Update Docker Desktop or install buildx plugin"
+    exit 1
+fi
+
+# Build and push multi-arch image in a single step
+echo "📦 Building and pushing multi-arch image: $IMAGE_NAME"
+if docker buildx build \
+    --platform "$PLATFORMS" \
+    --tag "$IMAGE_NAME" \
+    --push \
+    .; then
+    echo "✅ Multi-arch Docker image built and pushed successfully"
 else
-    echo "❌ Failed to build Docker image"
+    echo "❌ Failed to build/push multi-arch Docker image"
     exit 1
 fi
 
@@ -39,20 +55,8 @@ echo "   2. Make sure the repository '$DOCKER_HUB_USERNAME/vigilante' exists on 
 echo "   3. Or create it automatically by pushing (if you have the rights)"
 echo ""
 
-# Push to Docker Hub
-echo "📤 Pushing image to Docker Hub: $IMAGE_NAME"
-if docker push $IMAGE_NAME; then
-    echo "✅ Image pushed successfully to Docker Hub!"
-    echo "🌐 Image URL: https://hub.docker.com/r/$DOCKER_HUB_USERNAME/vigilante"
-    echo "📋 To use this image: docker pull $IMAGE_NAME"
-else
-    echo "❌ Failed to push image to Docker Hub"
-    echo "💡 Common solutions:"
-    echo "   1. Login to Docker Hub: docker login"
-    echo "   2. Create the repository on Docker Hub: https://hub.docker.com/repository/create"
-    echo "   3. Check your username is correct: $DOCKER_HUB_USERNAME"
-    exit 1
-fi
+echo "🌐 Image URL: https://hub.docker.com/r/$DOCKER_HUB_USERNAME/vigilante"
+echo "📋 To use this image: docker pull $IMAGE_NAME"
 
 echo ""
 echo "🎉 Docker image publication completed successfully!"
