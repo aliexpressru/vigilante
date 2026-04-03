@@ -127,8 +127,7 @@ public class DynamicConfigService : IDynamicConfigService
                 KubernetesConstants.DynamicConfigMapKey,
                 configJson,
                 cancellationToken: cancellationToken);
-            
-            _logger.LogInformation("Dynamic config saved to Kubernetes ConfigMap");
+            // Success is logged by KubernetesManager when the patch runs; when not in-cluster it returns without throwing.
         }
         catch (Exception ex)
         {

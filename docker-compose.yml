@@ -1,0 +1,23 @@
+# Standalone: place this file and an optional `.env` in one folder, then `docker-compose pull && docker-compose up -d`.
+# Repository clone is not required.
+
+services:
+  vigilante:
+    container_name: vigilante
+    image: aercis/vigilante:latest
+    # Apple Silicon: force native arm64. Without this, Docker may run the amd64 layer via qemu (see "qemu:" in logs → crash).
+    # Linux/Intel: export VIGILANTE_PLATFORM=linux/amd64
+    platform: ${VIGILANTE_PLATFORM:-linux/arm64}
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:6360
+      Qdrant__ApiKey: test
+      # Overrides appsettings Nodes; inside the container localhost is wrong — use host machine (macOS/Win Docker Desktop).
+      QDRANT_NODES: "host.docker.internal:6343;host.docker.internal:6353"
+      # S3 secrets: use `.env` next to this file, or replace the ${...} lines with quoted literals (do not commit secrets).
+      S3__EndpointUrl: ${S3__EndpointUrl:-}
+      S3__AccessKey: ${S3__AccessKey:-}
+      S3__SecretKey: ${S3__SecretKey:-}
+    ports:
+      - "6360:6360"
+    restart: unless-stopped

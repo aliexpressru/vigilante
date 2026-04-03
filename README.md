@@ -29,6 +29,76 @@ docker run -p 8080:8080 \
   vigilante:latest
 ```
 
+### Local Docker Deployment (recommended)
+
+You only need **`docker-compose.yml`**, **`docker-compose pull` / `docker-compose up`**, and optionally **`.env`** in the **same directory** as the compose file. Cloning the repository is optional (for example you can copy `docker-compose.yml` from GitHub into an empty folder and run compose there).
+
+Compose defaults to `platform: linux/arm64` on Apple Silicon so the container does not run the amd64 image under qemu (that shows as `qemu:` in logs and often crashes .NET).
+
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+On **Intel / Linux amd64**, run:
+
+```bash
+export VIGILANTE_PLATFORM=linux/amd64
+docker-compose pull
+docker-compose up -d
+```
+
+If logs still contain `qemu:` after a fresh pull, remove the cached image and pull again:
+
+```bash
+docker-compose down
+docker rmi aercis/vigilante:latest
+docker-compose pull
+docker-compose up -d
+```
+
+Verify the registry manifest includes both architectures (CI uses QEMU so `linux/arm64` is actually built and pushed):
+
+```bash
+docker buildx imagetools inspect aercis/vigilante:latest
+```
+
+If `linux/arm64` is missing, push a new image (or tag) after the workflow fix, then `pull` again. Until then, build locally and run compose (uses the local tag, no registry pull):
+
+```bash
+DOCKER_BUILDKIT=0 docker build -t aercis/vigilante:latest .
+docker-compose up -d
+```
+
+Useful commands:
+
+```bash
+docker-compose logs -f --tail=200
+docker-compose restart
+docker-compose down
+```
+
+Open:
+- Dashboard: http://localhost:6360
+- Swagger: http://localhost:6360/swagger
+
+Compose sets `QDRANT_NODES` to `host.docker.internal` so the app reaches Qdrant on your machine. `localhost` inside the container is not the host. Adjust ports in `docker-compose.yml` to match your local Qdrant listeners.
+
+**Local `.env` for Docker (optional):** Create a file named `.env` next to `docker-compose.yml` (same folder you run `docker-compose` from). Docker Compose loads it automatically and substitutes `${S3__...}` into the compose file. If you maintain a copy of this project in git, keep `.env` out of version control.
+
+Example `.env` for S3-compatible storage (fill in your endpoint and keys):
+
+```bash
+# S3 secrets — required for S3 snapshot listing from object storage
+S3__EndpointUrl=https://your-s3-endpoint.example
+S3__AccessKey=your-access-key
+S3__SecretKey=your-secret-key
+```
+
+The published image does not include S3 credentials. Without these variables you will see `S3 configuration is incomplete` in logs and Vigilante falls back to Qdrant API for snapshots. **Bucket name** and **region** are configured in **dynamic config** (dashboard or API), not in `.env`.
+
+Alternatively, you can set `S3__EndpointUrl`, `S3__AccessKey`, and `S3__SecretKey` to literal strings under `environment:` in `docker-compose.yml` instead of using `${...}` and `.env`. That works the same; avoid committing or sharing that file if it contains real secrets.
+
 ### Kubernetes
 
 See [k8s/README.md](k8s/README.md) for deployment instructions.
