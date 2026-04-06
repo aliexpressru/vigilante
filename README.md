@@ -82,7 +82,7 @@ docker buildx imagetools inspect aercis/vigilante:latest
 
 **Published port:** host `6360` maps to the app (`ASPNETCORE_URLS=http://+:6360`). Dashboard and Swagger: `http://localhost:6360` and `http://localhost:6360/swagger`.
 
-**Qdrant on the host:** the sample compose sets `QDRANT_NODES` to `host.docker.internal` with example ports. Inside the container, `localhost` is not the host; adjust ports to match your Qdrant listeners.
+**Qdrant in the same Compose file:** the sample compose starts a 3-node cluster (`qdrant-1`, `qdrant-2`, `qdrant-3`) and sets `QDRANT_NODES="qdrant-1:6333;qdrant-2:6333;qdrant-3:6333"` for Vigilante. Service names are resolved by Docker DNS on the default network.
 
 **S3 (optional):** the registry image does not ship credentials. Set `S3__EndpointUrl`, `S3__AccessKey`, and `S3__SecretKey` via a `.env` file next to `docker-compose.yml` (Compose substitutes `${S3__...}`), or replace those entries with quoted literals in `environment:` (do not commit secrets). Bucket name and region are configured through **dynamic config** (dashboard or `PUT /api/v1/config`), not only via `.env`.
 
