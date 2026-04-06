@@ -1765,7 +1765,6 @@ class VigilanteDashboard {
                     this.openCollectionMenus.delete(collection.name);
                     await this.showNodeSelectionDialog(collection, 'deleteApi');
                 });
-                collectionActionsDropdown.appendChild(deleteApiAction);
                 
                 // Delete (Disk) action
                 const deleteDiskAction = document.createElement('button');
@@ -1779,7 +1778,6 @@ class VigilanteDashboard {
                     this.openCollectionMenus.delete(collection.name);
                     await this.showNodeSelectionDialog(collection, 'deleteDisk');
                 });
-                collectionActionsDropdown.appendChild(deleteDiskAction);
                 
                 // Create Snapshot action
                 const createSnapshotAction = document.createElement('button');
@@ -1822,6 +1820,10 @@ class VigilanteDashboard {
                     await this.startRestoreReplicationFactor(collection.name);
                 });
                 collectionActionsDropdown.appendChild(restoreRfAction);
+
+                // Delete actions should go last in menu
+                collectionActionsDropdown.appendChild(deleteApiAction);
+                collectionActionsDropdown.appendChild(deleteDiskAction);
 
                 collectionActionsMenuContainer.appendChild(collectionActionsMenuButton);
                 collectionActionsMenuContainer.appendChild(collectionActionsDropdown);

@@ -1601,6 +1601,33 @@ html[data-theme="dark"] .warning-item:hover {
     background: #374151;
 }
 
+html[data-theme="dark"] .collection-action-item-danger {
+    color: #f87171;
+}
+
+html[data-theme="dark"] .collection-action-item-danger:hover {
+    background: rgba(127, 29, 29, 0.35);
+    color: #fca5a5;
+}
+
+html[data-theme="dark"] .collection-action-item-danger:active {
+    background: rgba(153, 27, 27, 0.45);
+    color: #fecaca;
+}
+
+/* Keep action windows separated from background in dark theme */
+html[data-theme="dark"] .sticky-actions-dropdown,
+html[data-theme="dark"] .node-actions-dropdown,
+html[data-theme="dark"] .collection-actions-dropdown,
+html[data-theme="dark"] .snapshot-collection-dropdown,
+html[data-theme="dark"] .snapshot-actions-dropdown {
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="dark"] .modal-overlay > div {
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5) !important;
+}
+
 /* Remove bright divider under shards block in dark theme */
 html[data-theme="dark"] .action-controls {
     border-top: none;
