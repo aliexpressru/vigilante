@@ -23,6 +23,57 @@ Web service and dashboard for monitoring and operating Qdrant clusters: health, 
 | `Dockerfile` | Multi-stage build, .NET 10 SDK/runtime |
 | `docker-compose.yml` | Local run against registry image `aercis/vigilante` |
 
+## Quick Start
+
+### Option A: Full local stack via docker-compose (Vigilante + Qdrant cluster)
+
+This starts:
+- `qdrant-1`, `qdrant-2`, `qdrant-3`
+- `vigilante`
+
+Run:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Open:
+- Dashboard: `http://localhost:6360`
+- Swagger: `http://localhost:6360/swagger`
+
+Qdrant ports on host:
+- `6343` -> `qdrant-1:6333`
+- `6353` -> `qdrant-2:6333`
+- `6363` -> `qdrant-3:6333`
+
+Stop:
+
+```bash
+docker compose down
+```
+
+### Option B: Use Vigilante with an existing Qdrant cluster
+
+If Qdrant is already running elsewhere, start only `vigilante` and point it to your nodes via `QDRANT_NODES`.
+
+1. Edit `docker-compose.yml`:
+   - set `QDRANT_NODES` to your endpoints, for example:
+     - in same Docker network: `qdrant-1:6333;qdrant-2:6333`
+     - on host machine from container: `host.docker.internal:6343;host.docker.internal:6353`
+2. If S3 is needed, provide `S3__EndpointUrl`, `S3__AccessKey`, `S3__SecretKey` (via `.env` or literal env values).
+3. Start only Vigilante:
+
+```bash
+docker compose up -d vigilante
+```
+
+4. Verify logs:
+
+```bash
+docker compose logs -f vigilante
+```
+
 ## Configuration model
 
 **Static configuration** (`appsettings.json`, or `Qdrant` section from Kubernetes ConfigMap `vigilante-config`):
