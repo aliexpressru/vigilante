@@ -6,13 +6,14 @@ namespace Vigilante.Services.Jobs;
 
 public sealed class RecoverFromSnapshotJob(
     IServiceProvider serviceProvider,
-    ISnapshotService snapshotService,
     string collectionName,
-    string snapshotName,
     string targetNodeUrl,
-    SnapshotSource source,
-    string? sourceCollectionName,
-    Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority) : IJob
+    Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
+    SnapshotSource? source = null,
+    string? snapshotName = null,
+    string? sourceCollectionName = null,
+    string? snapshotUrl = null,
+    string? snapshotChecksum = null) : IJob
 {
     public string Key => $"snapshot-recovery-{collectionName}";
     public bool IsWaitingForReady => _waitingForReady;
@@ -87,14 +88,17 @@ public sealed class RecoverFromSnapshotJob(
         if (!_started)
         {
             _started = true;
-            var (success, error) = await snapshotService.RecoverFromSnapshotAsync(
+            var snapshotService = serviceProvider.GetRequiredService<ISnapshotService>();
+            var (success, error) = await snapshotService.ExecuteRecoverAsync(
                 collectionName,
-                snapshotName,
                 targetNodeUrl,
-                source,
-                sourceCollectionName,
                 snapshotPriority,
                 waitForResult: false,
+                source,
+                snapshotName,
+                sourceCollectionName,
+                snapshotUrl,
+                snapshotChecksum,
                 cancellationToken);
 
             if (!success)
@@ -112,9 +116,13 @@ public sealed class RecoverFromSnapshotJob(
 
     public IReadOnlyDictionary<string, object?>? GetMetadata()
     {
+        var action = !string.IsNullOrWhiteSpace(snapshotUrl)
+            ? $"Recovering '{collectionName}' from URL"
+            : $"Recovering '{collectionName}' from '{snapshotName}'";
+
         return new Dictionary<string, object?>
         {
-            [JobMetadataKeys.CurrentAction] = $"Recovering '{collectionName}' from '{snapshotName}'",
+            [JobMetadataKeys.CurrentAction] = action,
             [JobMetadataKeys.StartedAtUtc] = _startedAtUtc
         };
     }

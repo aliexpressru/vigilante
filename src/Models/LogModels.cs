@@ -1,4 +1,4 @@
-namespace Vigilante.Services.Models;
+namespace Vigilante.Models;
 
 /// <summary>
 /// Query parameters for log retrieval at service level.

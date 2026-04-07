@@ -4,7 +4,7 @@ using Vigilante.Models;
 namespace Vigilante.Services.Interfaces;
 
 /// <summary>
-/// Handles starting and cancelling restore replication factor jobs. Uses cluster state (via IClusterManager) and IJobRegistry.
+/// Handles starting restore replication factor jobs. Uses cluster state (via IClusterManager) and IJobRegistry.
 /// All job orchestration lives at the monitor layer; this service is the entry point for API/ClusterManager to request a job.
 /// </summary>
 public interface IRestoreReplicationFactorJobService
@@ -18,8 +18,4 @@ public interface IRestoreReplicationFactorJobService
         TimeSpan? timeout,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Cancels the job for the given key (e.g. collection name).
-    /// </summary>
-    Task<bool> CancelJobAsync(string key, CancellationToken cancellationToken = default);
 }

@@ -1,0 +1,86 @@
+# Standalone: place this file in one folder, then `docker-compose pull && docker-compose up -d`.
+# Repository clone is not required.
+
+services:
+  qdrant-1:
+    container_name: qdrant-1
+    image: qdrant/qdrant:latest
+    environment:
+      QDRANT__SERVICE__API_KEY: test
+      QDRANT__CLUSTER__ENABLED: "true"
+      QDRANT_URI: "http://qdrant-1:6335"
+      # Local mode: snapshots are stored on local volume only.
+      QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE: local
+    ports:
+      - "6343:6333"
+      - "6345:6335"
+    volumes:
+      - qdrant-storage-1:/qdrant/storage
+      - qdrant-snapshots-1:/qdrant/snapshots
+    restart: unless-stopped
+
+  qdrant-2:
+    container_name: qdrant-2
+    image: qdrant/qdrant:latest
+    depends_on:
+      - qdrant-1
+    environment:
+      QDRANT__SERVICE__API_KEY: test
+      QDRANT__CLUSTER__ENABLED: "true"
+      QDRANT_URI: "http://qdrant-2:6335"
+      QDRANT_BOOTSTRAP: "http://qdrant-1:6335"
+      QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE: local
+    ports:
+      - "6353:6333"
+      - "6355:6335"
+    volumes:
+      - qdrant-storage-2:/qdrant/storage
+      - qdrant-snapshots-2:/qdrant/snapshots
+    restart: unless-stopped
+
+  qdrant-3:
+    container_name: qdrant-3
+    image: qdrant/qdrant:latest
+    depends_on:
+      - qdrant-1
+    environment:
+      QDRANT__SERVICE__API_KEY: test
+      QDRANT__CLUSTER__ENABLED: "true"
+      QDRANT_URI: "http://qdrant-3:6335"
+      QDRANT_BOOTSTRAP: "http://qdrant-1:6335"
+      QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE: local
+    ports:
+      - "6363:6333"
+      - "6365:6335"
+    volumes:
+      - qdrant-storage-3:/qdrant/storage
+      - qdrant-snapshots-3:/qdrant/snapshots
+    restart: unless-stopped
+
+  vigilante:
+    container_name: vigilante
+    image: aercis/vigilante:latest
+    # Apple Silicon: force native arm64. Without this, Docker may run the amd64 layer via qemu (see "qemu:" in logs → crash).
+    # Linux/Intel: export VIGILANTE_PLATFORM=linux/amd64
+    platform: ${VIGILANTE_PLATFORM:-linux/arm64}
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:6360
+      Qdrant__ApiKey: test
+      # Overrides appsettings Nodes; inside the container localhost is wrong — use host machine (macOS/Win Docker Desktop).
+      QDRANT_NODES: "qdrant-1:6333;qdrant-2:6333;qdrant-3:6333"
+    ports:
+      - "6360:6360"
+    restart: unless-stopped
+    depends_on:
+      - qdrant-1
+      - qdrant-2
+      - qdrant-3
+
+volumes:
+  qdrant-storage-1:
+  qdrant-storage-2:
+  qdrant-storage-3:
+  qdrant-snapshots-1:
+  qdrant-snapshots-2:
+  qdrant-snapshots-3:

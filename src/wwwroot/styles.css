@@ -1601,6 +1601,33 @@ html[data-theme="dark"] .warning-item:hover {
     background: #374151;
 }
 
+html[data-theme="dark"] .collection-action-item-danger {
+    color: #f87171;
+}
+
+html[data-theme="dark"] .collection-action-item-danger:hover {
+    background: rgba(127, 29, 29, 0.35);
+    color: #fca5a5;
+}
+
+html[data-theme="dark"] .collection-action-item-danger:active {
+    background: rgba(153, 27, 27, 0.45);
+    color: #fecaca;
+}
+
+/* Keep action windows separated from background in dark theme */
+html[data-theme="dark"] .sticky-actions-dropdown,
+html[data-theme="dark"] .node-actions-dropdown,
+html[data-theme="dark"] .collection-actions-dropdown,
+html[data-theme="dark"] .snapshot-collection-dropdown,
+html[data-theme="dark"] .snapshot-actions-dropdown {
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="dark"] .modal-overlay > div {
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5) !important;
+}
+
 /* Remove bright divider under shards block in dark theme */
 html[data-theme="dark"] .action-controls {
     border-top: none;
@@ -2835,42 +2862,6 @@ html[data-theme="dark"] #leaderNode {
 }
 
 .dashboard-button i {
-    font-size: 0.9rem;
-}
-
-/* Recover from URL button */
-.recover-from-url-button {
-    width: 100%;
-    padding: 8px 16px;
-    background: linear-gradient(135deg, #00897b, #00695c);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-size: 0.85rem;
-    font-weight: 500;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    margin-top: 8px;
-}
-
-.recover-from-url-button:hover {
-    background: linear-gradient(135deg, #00796b, #004d40);
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    transform: translateY(-1px);
-}
-
-.recover-from-url-button:active {
-    background: linear-gradient(135deg, #00695c, #003d33);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-    transform: translateY(0);
-}
-
-.recover-from-url-button i {
     font-size: 0.9rem;
 }
 

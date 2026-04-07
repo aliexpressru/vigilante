@@ -1,4 +1,4 @@
-using Vigilante.Services.Models;
+using Vigilante.Models;
 
 namespace Vigilante.Services.Interfaces;
 

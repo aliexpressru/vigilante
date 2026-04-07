@@ -140,7 +140,10 @@ public partial class Startup(IConfiguration configuration)
             await next();
         });
 
-        app.UseHttpsRedirection();
+        if (ShouldUseHttpsRedirection(app.Configuration))
+        {
+            app.UseHttpsRedirection();
+        }
 
         var webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
         var dashboardAssetVersion = ComputeDashboardAssetVersion(webRoot);
@@ -234,6 +237,22 @@ public partial class Startup(IConfiguration configuration)
             app.Logger.LogInformation("Vigilante is shutting down gracefully..."));
         lifetime.ApplicationStopped.Register(() => 
             app.Logger.LogInformation("Vigilante has stopped. Cluster is no longer monitored."));
+    }
+
+    /// <summary>
+    /// Enables HTTPS redirection only when the app is configured with an HTTPS URL or HTTPS port
+    /// (avoids "Failed to determine the https port" on HTTP-only runs e.g. local Docker).
+    /// </summary>
+    private static bool ShouldUseHttpsRedirection(IConfiguration configuration)
+    {
+        var urls = configuration["ASPNETCORE_URLS"] ?? configuration["urls"] ?? "";
+        if (urls.Contains("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var httpsPorts = configuration["HTTPS_PORTS"] ?? configuration["ASPNETCORE_HTTPS_PORTS"] ?? "";
+        return !string.IsNullOrWhiteSpace(httpsPorts);
     }
 
     private static string ComputeDashboardAssetVersion(string webRoot)

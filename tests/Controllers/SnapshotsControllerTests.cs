@@ -541,7 +541,7 @@ public class SnapshotsControllerTests
     public async Task RecoverFromSnapshot_WhenSuccessful_ReturnsOk()
     {
         // Arrange
-        var request = new V1RecoverFromSnapshotRequest
+        var request = new V1RecoverRequest
         {
             CollectionName = "test_collection",
             SnapshotName = "snapshot.snapshot",
@@ -549,14 +549,16 @@ public class SnapshotsControllerTests
             TargetNodeUrl = "http://node1:6333"
         };
 
-        _snapshotService.RequestRecoverFromSnapshotAsync(
+        _snapshotService.RequestRecoverAsync(
                 request.CollectionName,
-                request.SnapshotName,
                 request.TargetNodeUrl,
-                SnapshotSource.KubernetesStorage,
-                request.SourceCollectionName,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                SnapshotSource.KubernetesStorage,
+                request.SnapshotName,
+                request.SourceCollectionName,
+                null,
+                null,
                 Arg.Any<CancellationToken>())
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
@@ -577,7 +579,7 @@ public class SnapshotsControllerTests
     public async Task RecoverFromSnapshot_WhenAlreadyInProgress_Returns409()
     {
         // Arrange
-        var request = new V1RecoverFromSnapshotRequest
+        var request = new V1RecoverRequest
         {
             CollectionName = "test_collection",
             SnapshotName = "snapshot.snapshot",
@@ -585,14 +587,16 @@ public class SnapshotsControllerTests
             TargetNodeUrl = "http://node1:6333"
         };
 
-        _snapshotService.RequestRecoverFromSnapshotAsync(
+        _snapshotService.RequestRecoverAsync(
                 request.CollectionName,
-                request.SnapshotName,
                 request.TargetNodeUrl,
-                SnapshotSource.KubernetesStorage,
-                request.SourceCollectionName,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                SnapshotSource.KubernetesStorage,
+                request.SnapshotName,
+                request.SourceCollectionName,
+                null,
+                null,
                 Arg.Any<CancellationToken>())
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
@@ -612,7 +616,7 @@ public class SnapshotsControllerTests
     public async Task RecoverFromSnapshot_WithS3Storage_GeneratesPresignedUrl()
     {
         // Arrange
-        var request = new V1RecoverFromSnapshotRequest
+        var request = new V1RecoverRequest
         {
             CollectionName = "new_collection",
             SnapshotName = "snapshot.snapshot",
@@ -621,14 +625,16 @@ public class SnapshotsControllerTests
             SourceCollectionName = "original_collection"
         };
 
-        _snapshotService.RequestRecoverFromSnapshotAsync(
+        _snapshotService.RequestRecoverAsync(
                 request.CollectionName,
-                request.SnapshotName,
                 request.TargetNodeUrl,
-                SnapshotSource.S3Storage,
-                request.SourceCollectionName,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                SnapshotSource.S3Storage,
+                request.SnapshotName,
+                request.SourceCollectionName,
+                null,
+                null,
                 Arg.Any<CancellationToken>())
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
@@ -641,14 +647,16 @@ public class SnapshotsControllerTests
         // Assert
         Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
         
-        await _snapshotService.Received(1).RequestRecoverFromSnapshotAsync(
+        await _snapshotService.Received(1).RequestRecoverAsync(
             request.CollectionName,
-            request.SnapshotName,
             request.TargetNodeUrl,
-            SnapshotSource.S3Storage,
-            request.SourceCollectionName,
             Arg.Any<SnapshotPriority>(),
             request.WaitForResult,
+            SnapshotSource.S3Storage,
+            request.SnapshotName,
+            request.SourceCollectionName,
+            null,
+            null,
             Arg.Any<CancellationToken>());
     }
 
@@ -656,7 +664,7 @@ public class SnapshotsControllerTests
     public async Task RecoverFromSnapshot_WithS3Storage_NoSourceCollectionName_UsesCollectionName()
     {
         // Arrange
-        var request = new V1RecoverFromSnapshotRequest
+        var request = new V1RecoverRequest
         {
             CollectionName = "test_collection",
             SnapshotName = "snapshot.snapshot",
@@ -665,14 +673,16 @@ public class SnapshotsControllerTests
             // SourceCollectionName not provided
         };
 
-        _snapshotService.RequestRecoverFromSnapshotAsync(
+        _snapshotService.RequestRecoverAsync(
                 request.CollectionName,
-                request.SnapshotName,
                 request.TargetNodeUrl,
-                SnapshotSource.S3Storage,
-                request.SourceCollectionName,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                SnapshotSource.S3Storage,
+                request.SnapshotName,
+                request.SourceCollectionName,
+                null,
+                null,
                 Arg.Any<CancellationToken>())
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
@@ -685,15 +695,53 @@ public class SnapshotsControllerTests
         // Assert
         Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
         
-        await _snapshotService.Received(1).RequestRecoverFromSnapshotAsync(
+        await _snapshotService.Received(1).RequestRecoverAsync(
             request.CollectionName,
-            request.SnapshotName,
             request.TargetNodeUrl,
-            SnapshotSource.S3Storage,
-            request.SourceCollectionName,
             Arg.Any<SnapshotPriority>(),
             request.WaitForResult,
+            SnapshotSource.S3Storage,
+            request.SnapshotName,
+            request.SourceCollectionName,
+            null,
+            null,
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RecoverFromSnapshot_WhenWaitForResultFalse_ReturnsAccepted()
+    {
+        // Arrange
+        var request = new V1RecoverRequest
+        {
+            CollectionName = "test_collection",
+            SnapshotName = "snapshot.snapshot",
+            Source = "KubernetesStorage",
+            TargetNodeUrl = "http://node1:6333",
+            WaitForResult = false
+        };
+
+        _snapshotService.RequestRecoverAsync(
+                request.CollectionName,
+                request.TargetNodeUrl,
+                Arg.Any<SnapshotPriority>(),
+                request.WaitForResult,
+                SnapshotSource.KubernetesStorage,
+                request.SnapshotName,
+                request.SourceCollectionName,
+                null,
+                null,
+                Arg.Any<CancellationToken>())
+            .Returns(new SnapshotRecoveryStartResult(
+                ApiError: false,
+                AlreadyInProgress: false,
+                Message: "Recovery started"));
+
+        // Act
+        var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result.Result, Is.InstanceOf<AcceptedResult>());
     }
 
     #endregion
@@ -812,27 +860,33 @@ public class SnapshotsControllerTests
     public async Task RecoverFromUrl_WhenSuccessful_ReturnsOk()
     {
         // Arrange
-        var request = new V1RecoverFromUrlRequest
+        var request = new V1RecoverRequest
         {
-            NodeUrl = "http://node1:6333",
+            TargetNodeUrl = "http://node1:6333",
             CollectionName = "test_collection",
             SnapshotUrl = "https://s3.amazonaws.com/bucket/snapshot.snapshot",
             SnapshotChecksum = "abc123",
             WaitForResult = true
         };
 
-        _snapshotService.RecoverFromUrlAsync(
+        _snapshotService.RequestRecoverAsync(
                 request.CollectionName,
-                request.NodeUrl,
-                request.SnapshotUrl,
-                request.SnapshotChecksum,
+                request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                null,
+                null,
+                null,
+                request.SnapshotUrl,
+                request.SnapshotChecksum,
                 Arg.Any<CancellationToken>())
-            .Returns((true, null));
+            .Returns(new SnapshotRecoveryStartResult(
+                ApiError: false,
+                AlreadyInProgress: false,
+                Message: "Recovery started"));
 
         // Act
-        var result = await _controller.RecoverFromUrl(request, CancellationToken.None);
+        var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
 
         // Assert
         Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
@@ -846,30 +900,71 @@ public class SnapshotsControllerTests
     public async Task RecoverFromUrl_WhenFailed_Returns500()
     {
         // Arrange
-        var request = new V1RecoverFromUrlRequest
+        var request = new V1RecoverRequest
         {
-            NodeUrl = "http://node1:6333",
+            TargetNodeUrl = "http://node1:6333",
             CollectionName = "test_collection",
             SnapshotUrl = "https://s3.amazonaws.com/bucket/snapshot.snapshot"
         };
 
-        _snapshotService.RecoverFromUrlAsync(
+        _snapshotService.RequestRecoverAsync(
                 request.CollectionName,
-                request.NodeUrl,
-                request.SnapshotUrl,
-                request.SnapshotChecksum,
+                request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                null,
+                null,
+                null,
+                request.SnapshotUrl,
+                request.SnapshotChecksum,
                 Arg.Any<CancellationToken>())
-            .Returns((false, "Recovery failed"));
+            .Returns(new SnapshotRecoveryStartResult(
+                ApiError: true,
+                AlreadyInProgress: false,
+                Message: "Recovery failed"));
 
         // Act
-        var result = await _controller.RecoverFromUrl(request, CancellationToken.None);
+        var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
 
         // Assert
         Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
         var objectResult = (ObjectResult)result.Result!;
         Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+    }
+
+    [Test]
+    public async Task RecoverFromUrl_WhenWaitForResultFalse_ReturnsAccepted()
+    {
+        // Arrange
+        var request = new V1RecoverRequest
+        {
+            TargetNodeUrl = "http://node1:6333",
+            CollectionName = "test_collection",
+            SnapshotUrl = "https://s3.amazonaws.com/bucket/snapshot.snapshot",
+            WaitForResult = false
+        };
+
+        _snapshotService.RequestRecoverAsync(
+                request.CollectionName,
+                request.TargetNodeUrl,
+                Arg.Any<SnapshotPriority>(),
+                request.WaitForResult,
+                null,
+                null,
+                null,
+                request.SnapshotUrl,
+                request.SnapshotChecksum,
+                Arg.Any<CancellationToken>())
+            .Returns(new SnapshotRecoveryStartResult(
+                ApiError: false,
+                AlreadyInProgress: false,
+                Message: "Recovery started"));
+
+        // Act
+        var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(result.Result, Is.InstanceOf<AcceptedResult>());
     }
 
     #endregion
