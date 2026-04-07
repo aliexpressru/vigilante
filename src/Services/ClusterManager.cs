@@ -9,6 +9,7 @@ using Vigilante.Services.Interfaces;
 using Vigilante.Services.Jobs;
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Aer.QdrantClient.Http.Models.Shared;
 using ClusterInfoResult = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.ClusterInfo;
 using MessageSendFailureUnit = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.MessageSendFailureUnit;
@@ -28,6 +29,9 @@ public class ClusterManager(
     IMeterService meterService,
     IKubernetesManager? kubernetesManager) : IClusterManager
 {
+    private static readonly Regex LocalDockerQdrantHostRegex =
+        new("^qdrant-(\\d+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly QdrantOptions _options = options.Value;
     private readonly ClusterPeerState _clusterState = new();
     private readonly ConcurrentDictionary<string, (DateTime Time, string Message)> _externalIssues = new();
@@ -428,6 +432,7 @@ public class ClusterManager(
     {
         // Get basic node info (URL, peer ID, pod name, etc.) from the nodes provider
         var nodeInfo = await nodesProvider.GetBasicNodeInfoAsync(node, cancellationToken);
+        nodeInfo.BrowserUrl = BuildBrowserUrl(nodeInfo.Url);
 
         // Enrich with additional cluster information
         try
@@ -459,6 +464,34 @@ public class ClusterManager(
         }
 
         return nodeInfo;
+    }
+
+    private static string BuildBrowserUrl(string rawNodeUrl)
+    {
+        if (!Uri.TryCreate(rawNodeUrl, UriKind.Absolute, out var uri))
+        {
+            return rawNodeUrl;
+        }
+
+        var match = LocalDockerQdrantHostRegex.Match(uri.Host);
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var nodeNumber))
+        {
+            return rawNodeUrl;
+        }
+
+        // Docker compose convention: qdrant-N:6333 is published as localhost:(6333 + N*10)
+        if (uri.Port != 6333)
+        {
+            return rawNodeUrl;
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            Host = "localhost",
+            Port = 6333 + (nodeNumber * 10)
+        };
+
+        return builder.Uri.ToString();
     }
 
     private async Task ProcessClusterInfoResultAsync(

@@ -3442,7 +3442,8 @@ class VigilanteDashboard {
         dashboardAction.innerHTML = '<i class="fas fa-chart-line"></i> Open Dashboard';
         dashboardAction.addEventListener('click', (e) => {
             e.stopPropagation();
-            const dashboardUrl = new URL(node.url);
+            const browserNodeUrl = node.browserUrl || node.url;
+            const dashboardUrl = new URL(browserNodeUrl);
             dashboardUrl.pathname = '/dashboard';
             window.open(dashboardUrl.toString(), '_blank');
             actionsDropdown.classList.remove('show');

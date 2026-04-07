@@ -7,6 +7,11 @@ public class NodeInfo
     public string PeerId { get; set; } = string.Empty;
 
     public string Url { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Browser-reachable URL for this node (used by frontend links/buttons).
+    /// </summary>
+    public string BrowserUrl { get; set; } = string.Empty;
     
     public string? Namespace { get; set; }
 
