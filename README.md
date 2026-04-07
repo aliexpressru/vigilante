@@ -61,7 +61,7 @@ If Qdrant is already running elsewhere, start only `vigilante` and point it to y
    - set `QDRANT_NODES` to your endpoints, for example:
      - in same Docker network: `qdrant-1:6333;qdrant-2:6333`
      - on host machine from container: `host.docker.internal:6343;host.docker.internal:6353`
-2. If S3 is needed, provide `S3__EndpointUrl`, `S3__AccessKey`, `S3__SecretKey` (via `.env` or literal env values).
+2. Local compose uses Qdrant snapshot storage in `local` mode only.
 3. Start only Vigilante:
 
 ```bash
@@ -92,7 +92,8 @@ docker compose logs -f vigilante
 
 **S3 credentials for the app** (used together with dynamic S3 flags):
 
-- Environment variables `S3__EndpointUrl`, `S3__AccessKey`, `S3__SecretKey` (Kubernetes Secret in production; `.env` or compose `environment` locally).
+- In Kubernetes/other deployments, Vigilante reads `S3__EndpointUrl`, `S3__AccessKey`, `S3__SecretKey`.
+- Local Docker Compose in this repository intentionally runs snapshots in local-storage mode.
 
 ## Local development (without Docker)
 
@@ -108,7 +109,7 @@ Default HTTP URL is defined in `src/Properties/launchSettings.json` (profile `ht
 
 ## Docker Compose (recommended for local runs)
 
-You only need `docker-compose.yml` and optionally a `.env` file in the **same directory**. Cloning the repository is not required; you can copy `docker-compose.yml` from the default branch and run Compose from that folder.
+You only need `docker-compose.yml` in the **same directory**. Cloning the repository is not required; you can copy `docker-compose.yml` from the default branch and run Compose from that folder.
 
 ```bash
 docker compose pull
@@ -135,7 +136,7 @@ docker buildx imagetools inspect aercis/vigilante:latest
 
 **Qdrant in the same Compose file:** the sample compose starts a 3-node cluster (`qdrant-1`, `qdrant-2`, `qdrant-3`) and sets `QDRANT_NODES="qdrant-1:6333;qdrant-2:6333;qdrant-3:6333"` for Vigilante. Service names are resolved by Docker DNS on the default network.
 
-**S3 (optional):** the registry image does not ship credentials. Set `S3__EndpointUrl`, `S3__AccessKey`, and `S3__SecretKey` via a `.env` file next to `docker-compose.yml` (Compose substitutes `${S3__...}`), or replace those entries with quoted literals in `environment:` (do not commit secrets). Bucket name and region are configured through **dynamic config** (dashboard or `PUT /api/v1/config`), not only via `.env`.
+**Qdrant snapshot storage mode in local compose:** fixed to `local`. S3 snapshot storage for Qdrant is intentionally disabled in this local setup.
 
 **Build image locally** (e.g. when the registry manifest lacks your architecture):
 

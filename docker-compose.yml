@@ -1,4 +1,4 @@
-# Standalone: place this file and an optional `.env` in one folder, then `docker-compose pull && docker-compose up -d`.
+# Standalone: place this file in one folder, then `docker-compose pull && docker-compose up -d`.
 # Repository clone is not required.
 
 services:
@@ -9,6 +9,8 @@ services:
       QDRANT__SERVICE__API_KEY: test
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT_URI: "http://qdrant-1:6335"
+      # Local mode: snapshots are stored on local volume only.
+      QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE: local
     ports:
       - "6343:6333"
       - "6345:6335"
@@ -27,6 +29,7 @@ services:
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT_URI: "http://qdrant-2:6335"
       QDRANT_BOOTSTRAP: "http://qdrant-1:6335"
+      QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE: local
     ports:
       - "6353:6333"
       - "6355:6335"
@@ -45,6 +48,7 @@ services:
       QDRANT__CLUSTER__ENABLED: "true"
       QDRANT_URI: "http://qdrant-3:6335"
       QDRANT_BOOTSTRAP: "http://qdrant-1:6335"
+      QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE: local
     ports:
       - "6363:6333"
       - "6365:6335"
@@ -65,10 +69,6 @@ services:
       Qdrant__ApiKey: test
       # Overrides appsettings Nodes; inside the container localhost is wrong — use host machine (macOS/Win Docker Desktop).
       QDRANT_NODES: "qdrant-1:6333;qdrant-2:6333;qdrant-3:6333"
-      # S3 secrets: use `.env` next to this file, or replace the ${...} lines with quoted literals (do not commit secrets).
-      S3__EndpointUrl: ${S3__EndpointUrl:-}
-      S3__AccessKey: ${S3__AccessKey:-}
-      S3__SecretKey: ${S3__SecretKey:-}
     ports:
       - "6360:6360"
     restart: unless-stopped
