@@ -2807,31 +2807,35 @@ class VigilanteDashboard {
             const requestBody = {
                 CollectionName: snapshot.collectionName,
                 SnapshotName: snapshot.snapshotName,
-                SingleNode: true,
                 Source: snapshot.source
             };
 
-            // For S3Storage, we don't need NodeUrl, PodName, or PodNamespace
-            // For other sources, add optional fields only if they have valid values
-            if (snapshot.source !== 'S3Storage') {
+            // API contract:
+            // - QdrantApi => NodeUrls: string[]
+            // - KubernetesStorage => Pods: [{ PodName, PodNamespace }]
+            // - S3Storage => no extra fields
+            if (snapshot.source === 'QdrantApi') {
                 if (snapshot.nodeUrl && snapshot.nodeUrl.trim() !== '' && snapshot.nodeUrl !== 'S3') {
-                    requestBody.NodeUrl = snapshot.nodeUrl;
-                    console.log('Added NodeUrl to request:', snapshot.nodeUrl);
+                    requestBody.NodeUrls = [snapshot.nodeUrl];
+                    console.log('Added NodeUrls to request:', requestBody.NodeUrls);
                 } else {
-                    console.log('NodeUrl NOT added - value:', snapshot.nodeUrl);
+                    console.log('NodeUrls NOT added - nodeUrl value:', snapshot.nodeUrl);
                 }
-                
-                if (snapshot.podName && snapshot.podName.trim() !== '' && snapshot.podName !== 'S3') {
-                    requestBody.PodName = snapshot.podName;
-                    console.log('Added PodName to request:', snapshot.podName);
-                }
-                
-                if (snapshot.podNamespace && snapshot.podNamespace.trim() !== '' && snapshot.podNamespace !== 'S3') {
-                    requestBody.PodNamespace = snapshot.podNamespace;
-                    console.log('Added PodNamespace to request:', snapshot.podNamespace);
+            } else if (snapshot.source === 'KubernetesStorage') {
+                if (
+                    snapshot.podName && snapshot.podName.trim() !== '' && snapshot.podName !== 'S3' && snapshot.podName !== 'unknown' &&
+                    snapshot.podNamespace && snapshot.podNamespace.trim() !== '' && snapshot.podNamespace !== 'S3'
+                ) {
+                    requestBody.Pods = [{
+                        PodName: snapshot.podName,
+                        PodNamespace: snapshot.podNamespace
+                    }];
+                    console.log('Added Pods to request:', requestBody.Pods);
+                } else {
+                    console.log('Pods NOT added - pod values:', snapshot.podName, snapshot.podNamespace);
                 }
             } else {
-                console.log('S3Storage snapshot - skipping NodeUrl, PodName, PodNamespace');
+                console.log('S3Storage snapshot - no NodeUrls/Pods required');
             }
 
             console.log('Delete snapshot request:', requestBody);
@@ -2872,21 +2876,22 @@ class VigilanteDashboard {
                 const requestBody = {
                     CollectionName: collection.collectionName,
                     SnapshotName: snapshot.snapshotName,
-                    SingleNode: true,
                     Source: snapshot.source
                 };
 
-                // For S3Storage, we don't need NodeUrl, PodName, or PodNamespace
-                // For other sources, add optional fields only if they have valid values
-                if (snapshot.source !== 'S3Storage') {
+                if (snapshot.source === 'QdrantApi') {
                     if (snapshot.nodeUrl && snapshot.nodeUrl.trim() !== '' && snapshot.nodeUrl !== 'S3') {
-                        requestBody.NodeUrl = snapshot.nodeUrl;
+                        requestBody.NodeUrls = [snapshot.nodeUrl];
                     }
-                    if (snapshot.podName && snapshot.podName.trim() !== '' && snapshot.podName !== 'S3') {
-                        requestBody.PodName = snapshot.podName;
-                    }
-                    if (snapshot.podNamespace && snapshot.podNamespace.trim() !== '' && snapshot.podNamespace !== 'S3') {
-                        requestBody.PodNamespace = snapshot.podNamespace;
+                } else if (snapshot.source === 'KubernetesStorage') {
+                    if (
+                        snapshot.podName && snapshot.podName.trim() !== '' && snapshot.podName !== 'S3' && snapshot.podName !== 'unknown' &&
+                        snapshot.podNamespace && snapshot.podNamespace.trim() !== '' && snapshot.podNamespace !== 'S3'
+                    ) {
+                        requestBody.Pods = [{
+                            PodName: snapshot.podName,
+                            PodNamespace: snapshot.podNamespace
+                        }];
                     }
                 }
 
