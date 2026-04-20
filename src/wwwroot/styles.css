@@ -1628,6 +1628,58 @@ html[data-theme="dark"] .modal-overlay > div {
     box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5) !important;
 }
 
+/* Sync Shards modal */
+html[data-theme="dark"] .sync-shards-modal-content {
+    background: #111827 !important;
+    color: #e5e7eb !important;
+    border: 1px solid #374151;
+}
+
+html[data-theme="dark"] .sync-shards-info-card {
+    background: #1f2937 !important;
+    border-left-color: #6366f1 !important;
+}
+
+html[data-theme="dark"] .sync-shards-info-label {
+    color: #9ca3af !important;
+}
+
+html[data-theme="dark"] .sync-shards-info-value {
+    background: #111827 !important;
+    color: #d1d5db !important;
+    border: 1px solid #374151;
+}
+
+html[data-theme="dark"] .sync-shards-move-section {
+    background: rgba(120, 53, 15, 0.35) !important;
+    border-color: #f59e0b !important;
+}
+
+html[data-theme="dark"] .sync-shards-move-title,
+html[data-theme="dark"] .sync-shards-move-description {
+    color: #fde68a !important;
+}
+
+html[data-theme="dark"] .sync-shards-footer {
+    background: #1f2937 !important;
+    border-top-color: #374151 !important;
+}
+
+html[data-theme="dark"] .sync-shards-cancel-button {
+    background: #1f2937 !important;
+    border-color: #4b5563 !important;
+    color: #d1d5db !important;
+}
+
+html[data-theme="dark"] .sync-shards-cancel-button:hover {
+    background: #374151 !important;
+    color: #f3f4f6 !important;
+}
+
+html[data-theme="dark"] .sync-shards-confirm-button {
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35) !important;
+}
+
 /* Remove bright divider under shards block in dark theme */
 html[data-theme="dark"] .action-controls {
     border-top: none;
@@ -4345,6 +4397,10 @@ html[data-theme="dark"] #leaderNode {
     justify-content: space-between;
     align-items: center;
     gap: 10px;
+}
+
+.pod-details-container .node-detail {
+    width: 100%;
 }
 
 .kubectl-exec-button {

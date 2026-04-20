@@ -3994,6 +3994,7 @@ class VigilanteDashboard {
         `;
 
         const modalContent = document.createElement('div');
+        modalContent.className = 'sync-shards-modal-content';
         modalContent.style.cssText = `
             background: white;
             padding: 0;
@@ -4022,6 +4023,7 @@ class VigilanteDashboard {
         
         // Content area
         const contentArea = document.createElement('div');
+        contentArea.className = 'sync-shards-content-area';
         contentArea.style.cssText = 'padding: 16px 24px; overflow-y: auto; max-height: calc(85vh - 160px);';
         
         const sourceDisplay = sourceNodeInfo.podName && sourceNodeInfo.podName !== 'unknown' 
@@ -4030,6 +4032,7 @@ class VigilanteDashboard {
         
         // Info card
         const infoCard = document.createElement('div');
+        infoCard.className = 'sync-shards-info-card';
         infoCard.style.cssText = `
             background: #f8f9fa;
             border-left: 4px solid #667eea;
@@ -4041,16 +4044,16 @@ class VigilanteDashboard {
         infoCard.innerHTML = `
             <div style="display: flex; flex-direction: column; gap: 5px;">
                 <div style="display: flex; align-items: flex-start; gap: 8px;">
-                    <span style="font-weight: 600; color: #495057; min-width: 95px; flex-shrink: 0; font-size: 12px;">Collection:</span>
-                    <span style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${collection.name}</span>
+                    <span class="sync-shards-info-label" style="font-weight: 600; color: #495057; min-width: 95px; flex-shrink: 0; font-size: 12px;">Collection:</span>
+                    <span class="sync-shards-info-value" style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${collection.name}</span>
                 </div>
                 <div style="display: flex; align-items: flex-start; gap: 8px;">
-                    <span style="font-weight: 600; color: #495057; min-width: 95px; flex-shrink: 0; font-size: 12px;">Source node:</span>
-                    <span style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${sourceDisplay}</span>
+                    <span class="sync-shards-info-label" style="font-weight: 600; color: #495057; min-width: 95px; flex-shrink: 0; font-size: 12px;">Source node:</span>
+                    <span class="sync-shards-info-value" style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${sourceDisplay}</span>
                 </div>
                 <div style="display: flex; align-items: flex-start; gap: 8px;">
-                    <span style="font-weight: 600; color: #495057; min-width: 95px; flex-shrink: 0; font-size: 12px;">Shards:</span>
-                    <span style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${selectedShards.join(', ')}</span>
+                    <span class="sync-shards-info-label" style="font-weight: 600; color: #495057; min-width: 95px; flex-shrink: 0; font-size: 12px;">Shards:</span>
+                    <span class="sync-shards-info-value" style="color: #212529; font-family: monospace; background: white; padding: 2px 6px; border-radius: 4px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; font-size: 12px;">${selectedShards.join(', ')}</span>
                 </div>
             </div>
         `;
@@ -4181,6 +4184,7 @@ class VigilanteDashboard {
 
         // Move checkbox
         const moveSection = document.createElement('div');
+        moveSection.className = 'sync-shards-move-section';
         moveSection.style.cssText = `
             background: #fff3cd;
             border: 2px solid #ffc107;
@@ -4205,10 +4209,12 @@ class VigilanteDashboard {
         
         const moveTextContainer = document.createElement('div');
         const moveTitle = document.createElement('div');
+        moveTitle.className = 'sync-shards-move-title';
         moveTitle.textContent = '⚠️ Move shards';
         moveTitle.style.cssText = 'font-weight: 600; color: #856404; margin-bottom: 1px; font-size: 13px;';
         
         const moveDescription = document.createElement('div');
+        moveDescription.className = 'sync-shards-move-description';
         moveDescription.textContent = 'Remove shards from source node after sync';
         moveDescription.style.cssText = 'font-size: 11px; color: #856404; line-height: 1.2;';
         
@@ -4222,6 +4228,7 @@ class VigilanteDashboard {
 
         // Footer with buttons
         const footer = document.createElement('div');
+        footer.className = 'sync-shards-footer';
         footer.style.cssText = `
             padding: 14px 24px;
             background: #f8f9fa;
@@ -4232,6 +4239,7 @@ class VigilanteDashboard {
         `;
 
         const cancelButton = document.createElement('button');
+        cancelButton.className = 'sync-shards-cancel-button';
         cancelButton.textContent = 'Cancel';
         cancelButton.style.cssText = `
             padding: 10px 24px;
@@ -4252,6 +4260,7 @@ class VigilanteDashboard {
         };
 
         const confirmButton = document.createElement('button');
+        confirmButton.className = 'sync-shards-confirm-button';
         confirmButton.textContent = '🔄 Sync Shards';
         confirmButton.style.cssText = `
             padding: 10px 24px;
