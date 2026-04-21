@@ -18,6 +18,7 @@ namespace Aer.Vigilante.Tests.Services;
 public class SnapshotAutomationJobTests
 {
     private ISnapshotService _snapshotService = null!;
+    private IS3SnapshotService _s3SnapshotService = null!;
     private IClusterManager _clusterManager = null!;
     private ICollectionService _collectionService = null!;
     private IDynamicConfigService _dynamicConfigService = null!;
@@ -29,6 +30,7 @@ public class SnapshotAutomationJobTests
     public void SetUp()
     {
         _snapshotService = Substitute.For<ISnapshotService>();
+        _s3SnapshotService = Substitute.For<IS3SnapshotService>();
         _clusterManager = Substitute.For<IClusterManager>();
         _collectionService = Substitute.For<ICollectionService>();
         _dynamicConfigService = Substitute.For<IDynamicConfigService>();
@@ -42,6 +44,7 @@ public class SnapshotAutomationJobTests
             .Returns(Task.FromResult((new List<CollectionInfo>(), false, (string?)null)));
         _serviceProvider = new ServiceCollection()
             .AddSingleton(_snapshotService)
+            .AddSingleton(_s3SnapshotService)
             .AddSingleton(_clusterManager)
             .AddSingleton(_collectionService)
             .AddSingleton(_dynamicConfigService)
@@ -91,17 +94,49 @@ public class SnapshotAutomationJobTests
         };
 
     [Test]
-    public async Task AdvanceAsync_ScheduleDisabled_DoesNotFetchSnapshots()
+    public async Task AdvanceAsync_ScheduleDisabled_FetchesSnapshotsForMultipartCleanup()
     {
         var config = new DynamicConfig(); // Schedule.Enabled = false
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(GreenHnswCollection("col1"));
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns(new List<SnapshotInfo>());
+        _s3SnapshotService
+            .CleanupIncompleteMultipartUploadsAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult((Found: 0, Aborted: 0, Failed: 0)));
 
         var job = CreateJob(config: config);
 
         await job.AdvanceAsync(CancellationToken.None);
 
-        await _snapshotService.DidNotReceive().GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
+    }
+
+    [Test]
+    public async Task AdvanceAsync_MultipartCleanupEnabled_CleansStaleMultipartUploads()
+    {
+        var config = new DynamicConfig
+        {
+            Snapshot = new SnapshotConfiguration
+            {
+                Schedule = new Schedule { Enabled = true }
+            }
+        };
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<CollectionInfo>());
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns(new List<SnapshotInfo>());
+        _s3SnapshotService
+            .CleanupIncompleteMultipartUploadsAsync(1440, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult((Found: 2, Aborted: 2, Failed: 0)));
+
+        var job = CreateJob(config: config);
+        var (hasMore, success, _) = await job.AdvanceAsync(CancellationToken.None);
+
+        Assert.That(hasMore, Is.False);
+        Assert.That(success, Is.True);
+        await _s3SnapshotService.Received(1)
+            .CleanupIncompleteMultipartUploadsAsync(1440, Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

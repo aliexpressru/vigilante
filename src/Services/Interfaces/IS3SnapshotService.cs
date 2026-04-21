@@ -57,5 +57,13 @@ public interface IS3SnapshotService
         TimeSpan expiration,
         string? namespaceParameter = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists in-progress multipart uploads in snapshots prefix and aborts stale uploads.
+    /// </summary>
+    Task<(int Found, int Aborted, int Failed)> CleanupIncompleteMultipartUploadsAsync(
+        int olderThanMinutes,
+        string? namespaceParameter = null,
+        CancellationToken cancellationToken = default);
 }
 

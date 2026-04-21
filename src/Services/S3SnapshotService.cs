@@ -450,6 +450,194 @@ public class S3SnapshotService(
         }
     }
 
+    public async Task<(int Found, int Aborted, int Failed)> CleanupIncompleteMultipartUploadsAsync(
+        int olderThanMinutes,
+        string? namespaceParameter = null,
+        CancellationToken cancellationToken = default)
+    {
+        var cleanupStartedAt = DateTime.UtcNow;
+        var client = await GetOrCreateS3ClientAsync(namespaceParameter, cancellationToken);
+        if (client == null)
+        {
+            logger.LogWarning("S3 client is not available, cannot cleanup multipart uploads");
+            return (0, 0, 0);
+        }
+
+        if (olderThanMinutes <= 0)
+        {
+            logger.LogWarning(
+                "Invalid multipart cleanup threshold {OlderThanMinutes}; expected > 0 minutes",
+                olderThanMinutes);
+            return (0, 0, 0);
+        }
+
+        var thresholdUtc = DateTime.UtcNow.AddMinutes(-olderThanMinutes);
+        var found = 0;
+        var aborted = 0;
+        var failed = 0;
+        var cancelled = false;
+        var scannedPages = 0;
+        var scannedUploads = 0;
+        var hasMorePages = false;
+        var fullyCounted = false;
+        var staleCandidates = new List<(string Key, string UploadId)>();
+
+        string? keyMarker = null;
+        string? uploadIdMarker = null;
+        var page = 0;
+        const int maxPages = 1000;
+        var requestTimeout = TimeSpan.FromSeconds(20);
+
+        do
+        {
+            page++;
+            scannedPages++;
+            if (page > maxPages)
+            {
+                logger.LogWarning(
+                    "Stopping multipart cleanup pagination after {MaxPages} pages to avoid infinite loop",
+                    maxPages);
+                break;
+            }
+
+            var requestKeyMarker = keyMarker;
+            var requestUploadIdMarker = uploadIdMarker;
+            var listRequest = new ListMultipartUploadsRequest
+            {
+                BucketName = _currentConfig!.BucketName,
+                Prefix = $"{S3Constants.SnapshotsFolder}/",
+                KeyMarker = requestKeyMarker,
+                UploadIdMarker = requestUploadIdMarker
+            };
+
+            ListMultipartUploadsResponse listResponse;
+            using (var listCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                listCts.CancelAfter(requestTimeout);
+                try
+                {
+                    listResponse = await client.ListMultipartUploadsAsync(listRequest, listCts.Token);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    logger.LogWarning(
+                        "Timed out listing multipart uploads after {TimeoutSeconds}s on page {Page}; finishing cleanup with partial results",
+                        requestTimeout.TotalSeconds,
+                        page);
+                    break;
+                }
+            }
+            var staleUploads = (listResponse.MultipartUploads ?? [])
+                .Where(u => u.Initiated.HasValue && u.Initiated.Value.ToUniversalTime() <= thresholdUtc)
+                .ToList();
+            scannedUploads += listResponse.MultipartUploads?.Count ?? 0;
+            hasMorePages = listResponse.IsTruncated == true;
+
+            logger.LogDebug(
+                "Multipart cleanup page {Page}: uploads={UploadsCount}, stale={StaleCount}, truncated={IsTruncated}",
+                page,
+                listResponse.MultipartUploads?.Count ?? 0,
+                staleUploads.Count,
+                listResponse.IsTruncated == true);
+
+            found += staleUploads.Count;
+            foreach (var upload in staleUploads)
+            {
+                if (!string.IsNullOrEmpty(upload.Key) && !string.IsNullOrEmpty(upload.UploadId))
+                    staleCandidates.Add((upload.Key, upload.UploadId));
+            }
+
+            if (cancelled)
+                break;
+
+            keyMarker = listResponse.NextKeyMarker;
+            uploadIdMarker = listResponse.NextUploadIdMarker;
+            if (listResponse.IsTruncated == true
+                && string.Equals(requestKeyMarker, keyMarker, StringComparison.Ordinal)
+                && string.Equals(requestUploadIdMarker, uploadIdMarker, StringComparison.Ordinal))
+            {
+                logger.LogWarning(
+                    "Stopping multipart cleanup pagination because markers did not advance (keyMarker={KeyMarker}, uploadIdMarker={UploadIdMarker})",
+                    keyMarker,
+                    uploadIdMarker);
+                break;
+            }
+
+            if (listResponse.IsTruncated != true)
+                break;
+        } while (true);
+        fullyCounted = !hasMorePages && !cancelled;
+
+        foreach (var (key, uploadId) in staleCandidates)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                cancelled = true;
+                break;
+            }
+
+            try
+            {
+                var abortRequest = new AbortMultipartUploadRequest
+                {
+                    BucketName = _currentConfig.BucketName,
+                    Key = key,
+                    UploadId = uploadId
+                };
+
+                using var abortCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                abortCts.CancelAfter(requestTimeout);
+                await client.AbortMultipartUploadAsync(abortRequest, abortCts.Token);
+                aborted++;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                failed++;
+                logger.LogWarning(
+                    "Timed out aborting multipart upload for key {Key} (uploadId: {UploadId}) after {TimeoutSeconds}s",
+                    key,
+                    uploadId,
+                    requestTimeout.TotalSeconds);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                cancelled = true;
+                break;
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                logger.LogWarning(
+                    ex,
+                    "Failed to abort multipart upload for key {Key} (uploadId: {UploadId})",
+                    key,
+                    uploadId);
+            }
+        }
+
+        logger.LogInformation(
+            "Multipart cleanup in S3 finished: scannedPages={ScannedPages}, scannedUploads={ScannedUploads}, foundStaleInScannedPages={Found}, aborted={Aborted}, failed={Failed}, cancelled={Cancelled}, hasMorePages={HasMorePages}, fullyCounted={FullyCounted}, elapsedMs={ElapsedMs}",
+            scannedPages,
+            scannedUploads,
+            found,
+            aborted,
+            failed,
+            cancelled,
+            hasMorePages,
+            fullyCounted,
+            (int)(DateTime.UtcNow - cleanupStartedAt).TotalMilliseconds);
+        if (hasMorePages || cancelled)
+        {
+            logger.LogInformation(
+                "Multipart cleanup was partial for this run: totalMultipartAtLeast={ScannedUploads}, staleFoundInScannedPages={Found}, aborted={Aborted}, remaining uploads likely still exist",
+                scannedUploads,
+                found,
+                aborted);
+        }
+
+        return (found, aborted, failed);
+    }
+
     private async Task<IAmazonS3?> GetOrCreateS3ClientAsync(
         string? namespaceParameter,
         CancellationToken cancellationToken)

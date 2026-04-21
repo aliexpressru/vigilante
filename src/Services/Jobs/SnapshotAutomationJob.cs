@@ -16,12 +16,15 @@ namespace Vigilante.Services.Jobs;
 public sealed class SnapshotAutomationJob : IJob
 {
     public const string JobKey = "snapshot-automation";
+    private const int AbortMultipartUploadsOlderThanMinutes = 24 * 60;
+    private static readonly TimeSpan MultipartCleanupTimeout = TimeSpan.FromSeconds(30);
 
     public static class Actions
     {
         public const string LoadingCollections = "Loading collections...";
         public const string LoadingSnapshots = "Loading snapshots...";
         public const string DeletingOrphanedSnapshotsPrefix = "Deleting orphaned snapshots: ";
+        public const string CleaningMultipartUploads = "Cleaning multipart uploads...";
 
         public static string CreatingSnapshot(string collection, int nodeCount) =>
             $"Creating snapshot «{collection}» on {nodeCount} node(s)...";
@@ -60,11 +63,13 @@ public sealed class SnapshotAutomationJob : IJob
         var logger = _serviceProvider.GetRequiredService<ILogger<SnapshotAutomationJob>>();
 
         var snapshotCfg = _config.Snapshot;
-
         var anyScheduleEnabled = snapshotCfg.Schedule.Enabled
             || snapshotCfg.CollectionOverrides?.Values.Any(s => s.Enabled) == true;
+        var multipartCleanupEnabled = AbortMultipartUploadsOlderThanMinutes > 0;
 
-        if (!anyScheduleEnabled && !snapshotCfg.DeleteOrphanedAfterMinutes.HasValue)
+        if (!anyScheduleEnabled
+            && !snapshotCfg.DeleteOrphanedAfterMinutes.HasValue
+            && !multipartCleanupEnabled)
             return (false, true, null);
 
         var automationStatus = _serviceProvider.GetRequiredService<ISnapshotAutomationStatus>();
@@ -163,6 +168,11 @@ public sealed class SnapshotAutomationJob : IJob
         {
             await ProcessOrphanedCollectionsAsync(snapshotService, orphanedState, logger, automationStatus, currentNames, snapshotsByCollection, snapshotCfg.DeleteOrphanedAfterMinutes.Value, cancellationToken);
         }
+
+        await CleanupIncompleteMultipartUploadsAsync(
+            logger,
+            automationStatus,
+            cancellationToken);
 
             SetCurrentAction(null);
             automationStatus.EndRun(true);
@@ -332,6 +342,70 @@ public sealed class SnapshotAutomationJob : IJob
             logger.LogError(ex, "Failed to create auto-snapshot for collection {CollectionName}", collectionName);
             clusterManager.ReportIssue(IssueKeyConstants.Snapshot(collectionName), ex.Message);
             automationStatus.AppendRunNote($"Snapshot «{collectionName}»: error — {ex.Message}");
+        }
+    }
+
+    private async Task CleanupIncompleteMultipartUploadsAsync(
+        ILogger<SnapshotAutomationJob> logger,
+        ISnapshotAutomationStatus automationStatus,
+        CancellationToken token)
+    {
+        var s3SnapshotService = _serviceProvider.GetService<IS3SnapshotService>();
+        if (s3SnapshotService is null)
+            return;
+
+        SetCurrentAction(Actions.CleaningMultipartUploads);
+        var ns = _nodes.FirstOrDefault()?.Namespace;
+        logger.LogInformation(
+            "Starting multipart cleanup (olderThanMinutes={OlderThanMinutes}, timeoutSeconds={TimeoutSeconds})",
+            AbortMultipartUploadsOlderThanMinutes,
+            MultipartCleanupTimeout.TotalSeconds);
+
+        (int found, int aborted, int failed) cleanupResult;
+        try
+        {
+            using var cleanupCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            cleanupCts.CancelAfter(MultipartCleanupTimeout);
+            cleanupResult = await s3SnapshotService
+                .CleanupIncompleteMultipartUploadsAsync(
+                    AbortMultipartUploadsOlderThanMinutes,
+                    ns,
+                    cleanupCts.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                "Multipart cleanup exceeded timeout of {TimeoutSeconds}s and was skipped for this run",
+                MultipartCleanupTimeout.TotalSeconds);
+            automationStatus.AppendRunNote(
+                $"Multipart uploads: skipped (timeout after {(int)MultipartCleanupTimeout.TotalSeconds}s)");
+            return;
+        }
+
+        var (found, aborted, failed) = cleanupResult;
+
+        if (found > 0 || failed > 0)
+        {
+            var note = $"Multipart uploads: found={found}, aborted={aborted}, failed={failed}";
+            automationStatus.AppendRunNote(note);
+        }
+
+        if (failed > 0)
+        {
+            logger.LogWarning(
+                "Multipart cleanup completed with errors: found={Found}, aborted={Aborted}, failed={Failed}",
+                found,
+                aborted,
+                failed);
+        }
+        else
+        {
+            logger.LogInformation(
+                "Multipart cleanup completed: found={Found}, aborted={Aborted}, failed={Failed}",
+                found,
+                aborted,
+                failed);
         }
     }
 
