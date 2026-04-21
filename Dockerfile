@@ -11,7 +11,12 @@ ENV DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
 
 # Copy csproj and restore dependencies separately to leverage Docker layer caching
 COPY src/Aer.Vigilante.csproj ./src/
-RUN dotnet restore src/Aer.Vigilante.csproj --verbosity minimal
+RUN for attempt in 1 2 3 4 5; do \
+      dotnet nuget locals all --clear && \
+      dotnet restore src/Aer.Vigilante.csproj --verbosity minimal --no-cache && break; \
+      echo "Restore failed (attempt ${attempt}/5), retrying in 15s..."; \
+      sleep 15; \
+    done
 
 # Copy source code and build
 COPY . .
