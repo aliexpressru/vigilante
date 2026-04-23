@@ -347,6 +347,21 @@ public class QdrantMonitorServiceTests
     }
 
     [Test]
+    public void TrackClusterStatusChange_HealthyWithDiskUsageIssue_ShouldSetNeedsAttentionToTrue()
+    {
+        // Arrange
+        var state = CreateHealthyState();
+        state.Nodes[0].Issues.Add("Disk usage is 94.44% (threshold: 80.00%)");
+        state.InvalidateCache();
+
+        // Act
+        _monitorService.TrackClusterStatusChange(state);
+
+        // Assert
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
+    }
+
+    [Test]
     public void TrackClusterStatusChange_DegradedWithIssues_ShouldPrioritizeIssuesReason()
     {
         // Arrange

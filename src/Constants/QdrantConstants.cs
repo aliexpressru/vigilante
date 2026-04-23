@@ -13,6 +13,11 @@ public static class QdrantConstants
     /// <summary>
     /// Base path to Qdrant storage directory in containers
     /// </summary>
+    public const string StorageRootPath = "/qdrant/storage";
+
+    /// <summary>
+    /// Base path to Qdrant collections storage directory in containers
+    /// </summary>
     public const string StoragePath = "/qdrant/storage/collections";
 
     /// <summary>

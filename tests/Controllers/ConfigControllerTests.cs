@@ -71,7 +71,7 @@ public class ConfigControllerTests
     public async Task UpdateConfig_WithValidValue_UpdatesAndReturnsConfig()
     {
         // Arrange
-        var request = new UpdateConfigRequest { MonitoringIntervalSeconds = 90 };
+        var request = new UpdateConfigRequest { MonitoringIntervalSeconds = 90, DiskUsageAlertThresholdPercent = 85m };
 
         // Act
         var result = await _controller.UpdateConfig(request, CancellationToken.None);
@@ -83,9 +83,10 @@ public class ConfigControllerTests
         
         Assert.That(returnedConfig, Is.Not.Null);
         Assert.That(returnedConfig!.MonitoringIntervalSeconds, Is.EqualTo(90));
+        Assert.That(returnedConfig.DiskUsageAlertThresholdPercent, Is.EqualTo(85m));
 
         await _dynamicConfigService.Received(1).UpdateConfigAsync(
-            Arg.Is<DynamicConfig>(c => c.MonitoringIntervalSeconds == 90),
+            Arg.Is<DynamicConfig>(c => c.MonitoringIntervalSeconds == 90 && c.DiskUsageAlertThresholdPercent == 85m),
             Arg.Any<CancellationToken>());
     }
 
@@ -118,6 +119,23 @@ public class ConfigControllerTests
         // Assert
         Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
         
+        await _dynamicConfigService.DidNotReceive().UpdateConfigAsync(
+            Arg.Any<DynamicConfig>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UpdateConfig_WithDiskThresholdOutOfRange_ReturnsBadRequest()
+    {
+        var request = new UpdateConfigRequest
+        {
+            MonitoringIntervalSeconds = 60,
+            DiskUsageAlertThresholdPercent = 101m
+        };
+
+        var result = await _controller.UpdateConfig(request, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
         await _dynamicConfigService.DidNotReceive().UpdateConfigAsync(
             Arg.Any<DynamicConfig>(),
             Arg.Any<CancellationToken>());

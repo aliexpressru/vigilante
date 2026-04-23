@@ -1,6 +1,7 @@
 using k8s;
 using k8s.Models;
 using Vigilante.Constants;
+using Vigilante.Models;
 using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services;
@@ -8,9 +9,11 @@ namespace Vigilante.Services;
 /// <summary>
 /// Manages Kubernetes resources (pods, StatefulSets) for Qdrant cluster
 /// </summary>
-public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManager> logger) : IKubernetesManager
+public class KubernetesManager(
+    IKubernetes? kubernetes,
+    IPodCommandExecutor podCommandExecutor,
+    ILogger<KubernetesManager> logger) : IKubernetesManager
 {
-
     public async Task<bool> DeletePodAsync(string podName, string? namespaceParameter = null, CancellationToken cancellationToken = default)
     {
         if (kubernetes == null)
@@ -229,6 +232,147 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
         logger.LogInformation("Successfully updated ConfigMap {Name} key {Key}", configMapName, key);
     }
 
+    public async Task<QdrantStorageUsageInfo?> GetQdrantStorageUsageAsync(
+        string? podName,
+        string? namespaceParameter,
+        string storagePath,
+        string? nodeUrl,
+        CancellationToken cancellationToken)
+    {
+        var ns = namespaceParameter ?? GetCurrentNamespace();
+        var normalizedStoragePath = storagePath.TrimEnd('/');
+
+        if (kubernetes == null)
+        {
+            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
+            return null;
+        }
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(podName))
+            {
+                var pods = await kubernetes.CoreV1.ListNamespacedPodAsync(
+                    namespaceParameter: ns,
+                    labelSelector: KubernetesConstants.QdrantAppLabelSelector,
+                    cancellationToken: cancellationToken);
+
+                var runningPods = pods.Items
+                    .Where(p => p.Status?.Phase == KubernetesConstants.PodPhaseRunning)
+                    .ToList();
+
+                var nodeHost = TryExtractHost(nodeUrl);
+                podName = runningPods
+                    .Where(p => string.IsNullOrWhiteSpace(nodeHost) || string.Equals(p.Status?.PodIP, nodeHost, StringComparison.OrdinalIgnoreCase))
+                    .Select(p => p.Metadata?.Name)
+                    .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))
+                    ?? runningPods
+                        .Select(p => p.Metadata?.Name)
+                        .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+
+                if (string.IsNullOrWhiteSpace(podName))
+                {
+                    logger.LogWarning(
+                        "No running qdrant pod found in namespace {Namespace} for storage usage calculation",
+                        ns);
+                    return null;
+                }
+            }
+
+            var baseDirectory = Path.GetDirectoryName(normalizedStoragePath)?.Replace("\\", "/");
+            var itemName = Path.GetFileName(normalizedStoragePath);
+            if (string.IsNullOrWhiteSpace(baseDirectory) || string.IsNullOrWhiteSpace(itemName))
+            {
+                logger.LogWarning("Invalid storage path provided: {StoragePath}", storagePath);
+                return null;
+            }
+
+            var usedBytes = await podCommandExecutor.GetSizeAsync(
+                podName,
+                ns,
+                baseDirectory,
+                itemName,
+                cancellationToken);
+
+            if (!usedBytes.HasValue)
+            {
+                logger.LogWarning(
+                    "Could not calculate disk usage for path {Path} in pod {PodName}",
+                    normalizedStoragePath,
+                    podName);
+                return null;
+            }
+
+            var pod = await kubernetes.CoreV1.ReadNamespacedPodAsync(
+                name: podName,
+                namespaceParameter: ns,
+                cancellationToken: cancellationToken);
+
+            var pvcNames = GetStoragePvcNamesFromPod(pod);
+            if (pvcNames.Count == 0)
+            {
+                logger.LogWarning(
+                    "No PVCs mounted for Qdrant storage were found in pod {PodName}",
+                    podName);
+                return null;
+            }
+
+            var capacityBytes = 0L;
+            foreach (var pvcName in pvcNames)
+            {
+                var pvc = await kubernetes.CoreV1.ReadNamespacedPersistentVolumeClaimAsync(
+                    name: pvcName,
+                    namespaceParameter: ns,
+                    cancellationToken: cancellationToken);
+
+                var storageCapacity = pvc.Status?.Capacity?.TryGetValue("storage", out var quantity) == true
+                    ? ParseKubernetesQuantityToBytes(quantity?.ToString())
+                    : null;
+
+                if (!storageCapacity.HasValue)
+                {
+                    logger.LogWarning(
+                        "PVC {PvcName} in namespace {Namespace} has no parseable storage capacity",
+                        pvcName,
+                        ns);
+                    continue;
+                }
+
+                capacityBytes += storageCapacity.Value;
+            }
+
+            if (capacityBytes <= 0)
+            {
+                logger.LogWarning(
+                    "Total PVC capacity is zero for pod {PodName} in namespace {Namespace}",
+                    podName,
+                    ns);
+                return null;
+            }
+
+            var usagePercent = Math.Round((decimal)usedBytes.Value / capacityBytes * 100m, 2, MidpointRounding.AwayFromZero);
+
+            return new QdrantStorageUsageInfo
+            {
+                PodName = podName,
+                Namespace = ns,
+                StoragePath = normalizedStoragePath,
+                UsedBytes = usedBytes.Value,
+                PvcCapacityBytes = capacityBytes,
+                UsagePercent = usagePercent,
+                PvcNames = pvcNames
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Failed to calculate Qdrant storage usage for pod {PodName} in namespace {Namespace}",
+                podName ?? "<auto>",
+                ns);
+            return null;
+        }
+    }
+
     private async Task<bool> UpdateStatefulSetAsync(
         string statefulSetName,
         string? namespaceParameter,
@@ -303,6 +447,95 @@ public class KubernetesManager(IKubernetes? kubernetes, ILogger<KubernetesManage
 
         return string.Format(KubernetesConstants.EventWarningFormat,
             timestampStr, involvedObject, eventReason, eventMessage);
+    }
+
+    private static List<string> GetStoragePvcNamesFromPod(V1Pod pod)
+    {
+        var qdrantContainer = pod.Spec?.Containers?
+            .FirstOrDefault(c => string.Equals(c.Name, QdrantConstants.ContainerName, StringComparison.OrdinalIgnoreCase))
+            ?? pod.Spec?.Containers?.FirstOrDefault();
+
+        var storageVolumeNames = qdrantContainer?.VolumeMounts?
+            .Where(m =>
+                !string.IsNullOrWhiteSpace(m.Name) &&
+                !string.IsNullOrWhiteSpace(m.MountPath) &&
+                m.MountPath.StartsWith("/qdrant", StringComparison.Ordinal))
+            .Select(m => m.Name)
+            .ToHashSet(StringComparer.Ordinal)
+            ?? [];
+
+        var volumes = pod.Spec?.Volumes ?? [];
+
+        var matchingClaims = volumes
+            .Where(v =>
+                v.PersistentVolumeClaim != null &&
+                !string.IsNullOrWhiteSpace(v.PersistentVolumeClaim.ClaimName) &&
+                (storageVolumeNames.Count == 0 || storageVolumeNames.Contains(v.Name)))
+            .Select(v => v.PersistentVolumeClaim!.ClaimName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        return matchingClaims;
+    }
+
+    private static long? ParseKubernetesQuantityToBytes(string? quantity)
+    {
+        if (string.IsNullOrWhiteSpace(quantity))
+        {
+            return null;
+        }
+
+        var trimmed = quantity.Trim();
+        if (long.TryParse(trimmed, out var plainBytes))
+        {
+            return plainBytes;
+        }
+
+        if (TryParseBinaryQuantity(trimmed, "Ki", 1L << 10, out var kibibytes))
+            return kibibytes;
+        if (TryParseBinaryQuantity(trimmed, "Mi", 1L << 20, out var mebibytes))
+            return mebibytes;
+        if (TryParseBinaryQuantity(trimmed, "Gi", 1L << 30, out var gibibytes))
+            return gibibytes;
+        if (TryParseBinaryQuantity(trimmed, "Ti", 1L << 40, out var tebibytes))
+            return tebibytes;
+        if (TryParseBinaryQuantity(trimmed, "Pi", 1L << 50, out var pebibytes))
+            return pebibytes;
+
+        return null;
+    }
+
+    private static bool TryParseBinaryQuantity(string valueWithUnit, string unit, long multiplier, out long? result)
+    {
+        result = null;
+        if (!valueWithUnit.EndsWith(unit, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var numberPart = valueWithUnit[..^unit.Length];
+        if (!long.TryParse(numberPart, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var value))
+        {
+            return true;
+        }
+
+        result = value * multiplier;
+        return true;
+    }
+
+    private static string? TryExtractHost(string? nodeUrl)
+    {
+        if (string.IsNullOrWhiteSpace(nodeUrl))
+        {
+            return null;
+        }
+
+        if (Uri.TryCreate(nodeUrl, UriKind.Absolute, out var uri))
+        {
+            return uri.Host;
+        }
+
+        return nodeUrl;
     }
 }
 

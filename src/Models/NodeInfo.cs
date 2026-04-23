@@ -48,4 +48,9 @@ public class NodeInfo
     /// Qdrant version running on this node
     /// </summary>
     public string? Version { get; set; }
+
+    /// <summary>
+    /// Qdrant storage usage and PVC capacity data for this node.
+    /// </summary>
+    public NodeStorageInfo Storage { get; set; } = new();
 }
