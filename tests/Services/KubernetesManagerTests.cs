@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Vigilante.Services;
+using Vigilante.Services.Interfaces;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -12,6 +13,7 @@ namespace Aer.Vigilante.Tests.Services;
 public class KubernetesManagerTests
 {
     private IKubernetes _kubernetes = null!;
+    private IPodCommandExecutor _podCommandExecutor = null!;
     private ILogger<KubernetesManager> _logger = null!;
     private KubernetesManager _manager = null!;
 
@@ -19,8 +21,9 @@ public class KubernetesManagerTests
     public void Setup()
     {
         _kubernetes = Substitute.For<IKubernetes>();
+        _podCommandExecutor = Substitute.For<IPodCommandExecutor>();
         _logger = Substitute.For<ILogger<KubernetesManager>>();
-        _manager = new KubernetesManager(_kubernetes, _logger);
+        _manager = new KubernetesManager(_kubernetes, _podCommandExecutor, _logger);
     }
 
     [TearDown]
@@ -35,7 +38,7 @@ public class KubernetesManagerTests
     public async Task DeletePodAsync_WithNullKubernetes_ShouldReturnFalse()
     {
         // Arrange
-        var manager = new KubernetesManager(null, _logger);
+        var manager = new KubernetesManager(null, _podCommandExecutor, _logger);
         var podName = "qdrant-0";
 
         // Act
@@ -66,7 +69,7 @@ public class KubernetesManagerTests
     public async Task RolloutRestartStatefulSetAsync_WithNullKubernetes_ShouldReturnFalse()
     {
         // Arrange
-        var manager = new KubernetesManager(null, _logger);
+        var manager = new KubernetesManager(null, _podCommandExecutor, _logger);
 
         // Act
         var result = await manager.RolloutRestartStatefulSetAsync("qdrant", "qdrant");
@@ -96,7 +99,7 @@ public class KubernetesManagerTests
     public async Task ScaleStatefulSetAsync_WithNullKubernetes_ShouldReturnFalse()
     {
         // Arrange
-        var manager = new KubernetesManager(null, _logger);
+        var manager = new KubernetesManager(null, _podCommandExecutor, _logger);
 
         // Act
         var result = await manager.ScaleStatefulSetAsync("qdrant", 3, "qdrant");
@@ -127,7 +130,7 @@ public class KubernetesManagerTests
     public async Task GetWarningEventsAsync_WithNullKubernetes_ShouldReturnEmptyList()
     {
         // Arrange
-        var manager = new KubernetesManager(null, _logger);
+        var manager = new KubernetesManager(null, _podCommandExecutor, _logger);
 
         // Act
         var result = await manager.GetWarningEventsAsync("qdrant");

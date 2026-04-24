@@ -1,5 +1,7 @@
 namespace Vigilante.Services.Interfaces;
 
+using Vigilante.Models;
+
 /// <summary>
 /// Interface for managing Kubernetes resources (pods, StatefulSets)
 /// </summary>
@@ -39,4 +41,14 @@ public interface IKubernetesManager
         string value,
         string? namespaceParameter = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets Qdrant storage usage from pod disk and allocated PVC capacity.
+    /// </summary>
+    Task<QdrantStorageUsageInfo?> GetQdrantStorageUsageAsync(
+        string? podName,
+        string? namespaceParameter,
+        string storagePath,
+        string? nodeUrl,
+        CancellationToken cancellationToken);
 }

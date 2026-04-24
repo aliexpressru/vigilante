@@ -3316,6 +3316,7 @@ class VigilanteDashboard {
         // Note: loadCollectionSizes is called separately in refresh() to avoid duplicate calls
     }
 
+
     createNodeCard(node) {
         const card = document.createElement('div');
         card.className = `node-card ${node.isHealthy ? 'healthy' : 'unhealthy'}`;
@@ -3377,6 +3378,26 @@ class VigilanteDashboard {
         if (node.namespace) {
             const namespaceDetail = this.createNodeDetail('Namespace', node.namespace);
             details.appendChild(namespaceDetail);
+        }
+
+        const usedBytes = node?.storage?.usedBytes;
+        const capacityBytes = node?.storage?.capacityBytes;
+        const usagePercentRaw = node?.storage?.usagePercent;
+        if (typeof usedBytes === 'number' && typeof capacityBytes === 'number' && typeof usagePercentRaw === 'number') {
+            const usagePercent = Math.max(0, Math.min(100, usagePercentRaw));
+            const usageBar = document.createElement('div');
+            usageBar.className = 'node-disk-usage';
+            usageBar.innerHTML = `
+                <div class="node-disk-usage-header">
+                    <span class="node-disk-usage-label">Disk usage</span>
+                    <span class="node-disk-usage-value">${usagePercent.toFixed(2)}%</span>
+                </div>
+                <div class="node-disk-progress">
+                    <div class="node-disk-progress-fill" style="width: ${usagePercent.toFixed(2)}%"></div>
+                </div>
+                <div class="node-disk-usage-capacity">${this.formatSize(usedBytes)} / ${this.formatSize(capacityBytes)}</div>
+            `;
+            details.appendChild(usageBar);
         }
 
         // Create dropdown menu (attached to the header button)
@@ -5805,6 +5826,7 @@ class VigilanteDashboard {
 
             // Monitoring
             document.getElementById('monitoringInterval').value = config.monitoringIntervalSeconds || 120;
+            document.getElementById('diskUsageAlertThresholdPercent').value = config.diskUsageAlertThresholdPercent ?? 90;
 
             // DeleteWithCollection (default true)
             document.getElementById('snapshotPendingCreateTimeoutSeconds').value = snap.pendingCreateTimeoutSeconds ?? 1800;
@@ -5858,6 +5880,12 @@ class VigilanteDashboard {
         const monitoringInterval = parseInt(document.getElementById('monitoringInterval').value);
         if (isNaN(monitoringInterval) || monitoringInterval < 1 || monitoringInterval > 3600) {
             this.showToast('Monitoring interval must be between 1 and 3600 seconds', 'error');
+            return;
+        }
+
+        const diskUsageAlertThresholdPercent = parseFloat(document.getElementById('diskUsageAlertThresholdPercent').value);
+        if (isNaN(diskUsageAlertThresholdPercent) || diskUsageAlertThresholdPercent < 1 || diskUsageAlertThresholdPercent > 100) {
+            this.showToast('Disk usage alert threshold must be between 1 and 100%', 'error');
             return;
         }
 
@@ -5933,6 +5961,7 @@ class VigilanteDashboard {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     monitoringIntervalSeconds: monitoringInterval,
+                    diskUsageAlertThresholdPercent: diskUsageAlertThresholdPercent,
                     snapshot: {
                         pendingCreateTimeoutSeconds: pendingTimeoutSeconds,
                         deleteWithCollection: document.getElementById('snapshotDeleteWithCollection').checked,

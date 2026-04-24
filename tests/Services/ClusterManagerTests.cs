@@ -108,8 +108,6 @@ public class ClusterManagerTests
                 });
             });
         
-        var kubernetesManager = Substitute.For<IKubernetesManager>();
-        
         _clusterManager = new ClusterManager(
             _nodesProvider,
             _clientFactory,
@@ -3701,6 +3699,155 @@ public class ClusterManagerTests
         // Assert
         Assert.That(state.Health.Issues, Has.Some.Contains("[snapshot:col1] error on col1"));
         Assert.That(state.Health.Issues, Has.Some.Contains("[snapshot:col2] error on col2"));
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WhenStorageUsageReturned_PopulatesNodeStorage()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "qdrant", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+        var node1Client = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        node1Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        _kubernetesManager.GetQdrantStorageUsageAsync(
+                "pod1",
+                "qdrant",
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new QdrantStorageUsageInfo
+            {
+                PodName = "pod1",
+                Namespace = "qdrant",
+                StoragePath = "/qdrant/storage",
+                UsedBytes = 90,
+                PvcCapacityBytes = 180,
+                UsagePercent = 50
+            });
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        var node = state.Nodes.Single();
+        Assert.That(node.Storage.UsedBytes, Is.EqualTo(90));
+        Assert.That(node.Storage.CapacityBytes, Is.EqualTo(180));
+        Assert.That(node.Storage.UsagePercent, Is.EqualTo(50));
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WhenStorageUsageIsNull_LeavesNodeStorageEmpty()
+    {
+        // Arrange
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "qdrant", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        var pod1Id = 1001UL;
+        var node1Client = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        node1Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        _kubernetesManager.GetQdrantStorageUsageAsync(
+                "pod1",
+                "qdrant",
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns((QdrantStorageUsageInfo?)null);
+
+        // Act
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        // Assert
+        var node = state.Nodes.Single();
+        Assert.That(node.Storage.UsedBytes, Is.Null);
+        Assert.That(node.Storage.CapacityBytes, Is.Null);
+        Assert.That(node.Storage.UsagePercent, Is.Null);
+    }
+
+    [Test]
+    public async Task GetClusterStateAsync_WhenStorageUsageExceedsThreshold_AddsDiskIssue()
+    {
+        var nodes = new[]
+        {
+            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "qdrant", PodName = "pod1" }
+        };
+
+        _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
+
+        _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new DynamicConfig
+            {
+                MonitoringIntervalSeconds = 120,
+                DiskUsageAlertThresholdPercent = 80m
+            });
+
+        var pod1Id = 1001UL;
+        var node1Client = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+        node1Client.GetClusterInfo(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new GetClusterInfoResponse
+            {
+                Result = new GetClusterInfoResponse.ClusterInfo
+                {
+                    PeerId = pod1Id,
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        _kubernetesManager.GetQdrantStorageUsageAsync(
+                "pod1",
+                "qdrant",
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new QdrantStorageUsageInfo
+            {
+                PodName = "pod1",
+                Namespace = "qdrant",
+                StoragePath = "/qdrant/storage",
+                UsedBytes = 170,
+                PvcCapacityBytes = 180,
+                UsagePercent = 94.44m
+            });
+
+        var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
+
+        Assert.That(state.Nodes.Single().Issues.Any(i => i.Contains("Disk usage is 94.44%")), Is.True);
     }
 
     #endregion

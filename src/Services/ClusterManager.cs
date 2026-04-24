@@ -11,6 +11,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Aer.QdrantClient.Http.Models.Shared;
+using System.Globalization;
 using ClusterInfoResult = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.ClusterInfo;
 using MessageSendFailureUnit = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.MessageSendFailureUnit;
 
@@ -44,6 +45,7 @@ public class ClusterManager(
         var nodes = await nodesProvider.GetNodesAsync(cancellationToken);
         var tasks = nodes.Select(node => GetNodeInfoAsync(node, cancellationToken));
         var nodeStatuses = await Task.WhenAll(tasks);
+        var collectStorageTask = CollectNodesStorageUsageAsync(nodeStatuses, cancellationToken);
 
         DetectClusterSplits(nodeStatuses);
 
@@ -76,6 +78,11 @@ public class ClusterManager(
             StatefulSetName = await nodesProvider.GetStatefulSetNameAsync(cancellationToken)
         };
 
+        var storageByNodeUrl = await collectStorageTask;
+        ApplyStorageUsage(nodeStatuses, storageByNodeUrl);
+
+        await AddStorageUsageIssuesIfNeededAsync(state.Nodes, cancellationToken);
+
         meterService.UpdateAliveNodes(state.Nodes.Count(n => n.IsHealthy));
         await AddKubernetesWarningsIfNeededAsync(state, cancellationToken);
 
@@ -99,6 +106,77 @@ public class ClusterManager(
         }
 
         return state;
+    }
+
+    private async Task<Dictionary<string, NodeStorageInfo>> CollectNodesStorageUsageAsync(
+        IReadOnlyList<NodeInfo> nodes,
+        CancellationToken cancellationToken)
+    {
+        var storageByNodeUrl = new Dictionary<string, NodeStorageInfo>(StringComparer.Ordinal);
+
+        if (kubernetesManager == null)
+        {
+            return storageByNodeUrl;
+        }
+
+        var tasks = nodes
+            .Select(async node =>
+            {
+                try
+                {
+                    var usage = await kubernetesManager.GetQdrantStorageUsageAsync(
+                        podName: node.PodName,
+                        namespaceParameter: node.Namespace,
+                        storagePath: QdrantConstants.StorageRootPath,
+                        nodeUrl: node.Url,
+                        cancellationToken: cancellationToken);
+
+                    if (usage == null)
+                    {
+                        return (NodeUrl: node.Url, Storage: (NodeStorageInfo?)null);
+                    }
+                    
+                    return (
+                        NodeUrl: node.Url,
+                        Storage: new NodeStorageInfo
+                        {
+                            UsedBytes = usage.UsedBytes,
+                            CapacityBytes = usage.PvcCapacityBytes,
+                            UsagePercent = usage.UsagePercent
+                        });
+                }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "Failed to enrich node {NodeUrl} with storage usage", node.Url);
+                    return (NodeUrl: node.Url, Storage: (NodeStorageInfo?)null);
+                }
+            });
+
+        var collected = await Task.WhenAll(tasks);
+        foreach (var item in collected)
+        {
+            if (item.Storage != null)
+            {
+                storageByNodeUrl[item.NodeUrl] = item.Storage;
+            }
+        }
+
+        return storageByNodeUrl;
+    }
+
+    private static void ApplyStorageUsage(
+        IEnumerable<NodeInfo> nodes,
+        IReadOnlyDictionary<string, NodeStorageInfo> storageByNodeUrl)
+    {
+        foreach (var node in nodes)
+        {
+            if (!storageByNodeUrl.TryGetValue(node.Url, out var storage))
+            {
+                continue;
+            }
+
+            node.Storage = storage;
+        }
     }
 
     public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(bool clearCache = false,
@@ -842,6 +920,28 @@ public class ClusterManager(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to fetch Kubernetes warning events");
+        }
+    }
+
+    private async Task AddStorageUsageIssuesIfNeededAsync(
+        IEnumerable<NodeInfo> nodes,
+        CancellationToken cancellationToken)
+    {
+        var config = await dynamicConfigService.GetConfigAsync(cancellationToken);
+        var thresholdPercent = config.DiskUsageAlertThresholdPercent;
+
+        foreach (var node in nodes)
+        {
+            var usagePercent = node.Storage.UsagePercent;
+            if (!usagePercent.HasValue || usagePercent.Value < thresholdPercent)
+            {
+                continue;
+            }
+
+            var usageText = usagePercent.Value.ToString("F2", CultureInfo.InvariantCulture);
+            var thresholdText = thresholdPercent.ToString("F2", CultureInfo.InvariantCulture);
+            node.Issues.Add(
+                $"Disk usage is {usageText}% (threshold: {thresholdText}%)");
         }
     }
 

@@ -84,6 +84,11 @@ public class ConfigController : ControllerBase
             return BadRequest(new { error = "MonitoringIntervalSeconds cannot exceed 3600 (1 hour)" });
         }
 
+        if (request.DiskUsageAlertThresholdPercent is < 1 or > 100)
+        {
+            return BadRequest(new { error = "DiskUsageAlertThresholdPercent must be between 1 and 100" });
+        }
+
         if (request.Snapshot?.PendingCreateTimeoutSeconds is < 1 or > 86400)
         {
             return BadRequest(new { error = "Snapshot.PendingCreateTimeoutSeconds must be between 1 and 86400" });
@@ -96,6 +101,7 @@ public class ConfigController : ControllerBase
             var config = new DynamicConfig
             {
                 MonitoringIntervalSeconds = request.MonitoringIntervalSeconds,
+                DiskUsageAlertThresholdPercent = request.DiskUsageAlertThresholdPercent,
                 Snapshot = request.Snapshot ?? new SnapshotConfiguration(),
                 S3 = request.S3 ?? new S3DynamicConfig()
             };
@@ -126,6 +132,7 @@ public class ConfigController : ControllerBase
 public record UpdateConfigRequest
 {
     public int MonitoringIntervalSeconds { get; init; } = 120;
+    public decimal DiskUsageAlertThresholdPercent { get; init; } = 90m;
     public SnapshotConfiguration? Snapshot { get; init; }
     public S3DynamicConfig? S3 { get; init; }
 }
