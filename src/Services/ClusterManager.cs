@@ -46,6 +46,7 @@ public class ClusterManager(
         var tasks = nodes.Select(node => GetNodeInfoAsync(node, cancellationToken));
         var nodeStatuses = await Task.WhenAll(tasks);
         var collectStorageTask = CollectNodesStorageUsageAsync(nodeStatuses, cancellationToken);
+        var collectMemoryTask = CollectNodesMemoryUsageAsync(nodeStatuses, cancellationToken);
 
         DetectClusterSplits(nodeStatuses);
 
@@ -79,9 +80,13 @@ public class ClusterManager(
         };
 
         var storageByNodeUrl = await collectStorageTask;
+        var memoryByNodeUrl = await collectMemoryTask;
         ApplyStorageUsage(nodeStatuses, storageByNodeUrl);
+        ApplyMemoryUsage(nodeStatuses, memoryByNodeUrl);
 
-        await AddStorageUsageIssuesIfNeededAsync(state.Nodes, cancellationToken);
+        var dynamicConfig = await dynamicConfigService.GetConfigAsync(cancellationToken);
+        AddStorageUsageIssuesIfNeeded(state.Nodes, dynamicConfig.DiskUsageAlertThresholdPercent);
+        AddMemoryUsageIssuesIfNeeded(state.Nodes, dynamicConfig.RamUsageAlertThresholdPercent);
 
         meterService.UpdateAliveNodes(state.Nodes.Count(n => n.IsHealthy));
         await AddKubernetesWarningsIfNeededAsync(state, cancellationToken);
@@ -133,7 +138,7 @@ public class ClusterManager(
 
                     if (usage == null)
                     {
-                        return (NodeUrl: node.Url, Storage: (NodeStorageInfo?)null);
+                        return (NodeUrl: node.Url, Storage: null);
                     }
                     
                     return (
@@ -176,6 +181,77 @@ public class ClusterManager(
             }
 
             node.Storage = storage;
+        }
+    }
+
+    private async Task<Dictionary<string, NodeMemoryInfo>> CollectNodesMemoryUsageAsync(
+        IReadOnlyList<NodeInfo> nodes,
+        CancellationToken cancellationToken)
+    {
+        var memoryByNodeUrl = new Dictionary<string, NodeMemoryInfo>(StringComparer.Ordinal);
+
+        if (kubernetesManager == null)
+        {
+            return memoryByNodeUrl;
+        }
+
+        var tasks = nodes
+            .Select(async node =>
+            {
+                try
+                {
+                    var usage = await kubernetesManager.GetQdrantMemoryUsageAsync(
+                        podName: node.PodName,
+                        namespaceParameter: node.Namespace,
+                        nodeUrl: node.Url,
+                        cancellationToken: cancellationToken);
+
+                    if (usage == null)
+                    {
+                        return (NodeUrl: node.Url, Memory: (NodeMemoryInfo?)null);
+                    }
+
+                    return (
+                        NodeUrl: node.Url,
+                        Memory: new NodeMemoryInfo
+                        {
+                            UsedBytes = usage.UsedBytes,
+                            RequestBytes = usage.RequestBytes,
+                            LimitBytes = usage.LimitBytes,
+                            UsagePercent = usage.UsagePercent
+                        });
+                }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "Failed to enrich node {NodeUrl} with memory usage", node.Url);
+                    return (NodeUrl: node.Url, Memory: (NodeMemoryInfo?)null);
+                }
+            });
+
+        var collected = await Task.WhenAll(tasks);
+        foreach (var item in collected)
+        {
+            if (item.Memory != null)
+            {
+                memoryByNodeUrl[item.NodeUrl] = item.Memory;
+            }
+        }
+
+        return memoryByNodeUrl;
+    }
+
+    private static void ApplyMemoryUsage(
+        IEnumerable<NodeInfo> nodes,
+        IReadOnlyDictionary<string, NodeMemoryInfo> memoryByNodeUrl)
+    {
+        foreach (var node in nodes)
+        {
+            if (!memoryByNodeUrl.TryGetValue(node.Url, out var memory))
+            {
+                continue;
+            }
+
+            node.Memory = memory;
         }
     }
 
@@ -923,13 +999,10 @@ public class ClusterManager(
         }
     }
 
-    private async Task AddStorageUsageIssuesIfNeededAsync(
+    private static void AddStorageUsageIssuesIfNeeded(
         IEnumerable<NodeInfo> nodes,
-        CancellationToken cancellationToken)
+        decimal thresholdPercent)
     {
-        var config = await dynamicConfigService.GetConfigAsync(cancellationToken);
-        var thresholdPercent = config.DiskUsageAlertThresholdPercent;
-
         foreach (var node in nodes)
         {
             var usagePercent = node.Storage.UsagePercent;
@@ -942,6 +1015,25 @@ public class ClusterManager(
             var thresholdText = thresholdPercent.ToString("F2", CultureInfo.InvariantCulture);
             node.Issues.Add(
                 $"Disk usage is {usageText}% (threshold: {thresholdText}%)");
+        }
+    }
+
+    private static void AddMemoryUsageIssuesIfNeeded(
+        IEnumerable<NodeInfo> nodes,
+        decimal thresholdPercent)
+    {
+        foreach (var node in nodes)
+        {
+            var usagePercent = node.Memory.UsagePercent;
+            if (!usagePercent.HasValue || usagePercent.Value < thresholdPercent)
+            {
+                continue;
+            }
+
+            var usageText = usagePercent.Value.ToString("F2", CultureInfo.InvariantCulture);
+            var thresholdText = thresholdPercent.ToString("F2", CultureInfo.InvariantCulture);
+            node.Issues.Add(
+                $"RAM usage is {usageText}% (threshold: {thresholdText}%)");
         }
     }
 

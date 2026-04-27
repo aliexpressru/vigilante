@@ -3400,6 +3400,37 @@ class VigilanteDashboard {
             details.appendChild(usageBar);
         }
 
+        const memoryUsedBytes = node?.memory?.usedBytes;
+        const memoryRequestBytes = node?.memory?.requestBytes;
+        const memoryLimitBytes = node?.memory?.limitBytes;
+        const memoryUsagePercentRaw = node?.memory?.usagePercent;
+        if (typeof memoryUsedBytes === 'number' && typeof memoryUsagePercentRaw === 'number') {
+            const memoryUsagePercent = Math.max(0, Math.min(100, memoryUsagePercentRaw));
+            const memoryDenominator = typeof memoryRequestBytes === 'number'
+                ? memoryRequestBytes
+                : (typeof memoryLimitBytes === 'number' ? memoryLimitBytes : null);
+            const denominatorLabel = typeof memoryRequestBytes === 'number'
+                ? 'request'
+                : (typeof memoryLimitBytes === 'number' ? 'limit' : null);
+            const memoryCapacityText = memoryDenominator
+                ? `${this.formatSize(memoryUsedBytes)} / ${this.formatSize(memoryDenominator)}${denominatorLabel ? ` (${denominatorLabel})` : ''}`
+                : this.formatSize(memoryUsedBytes);
+
+            const memoryBar = document.createElement('div');
+            memoryBar.className = 'node-memory-usage';
+            memoryBar.innerHTML = `
+                <div class="node-memory-usage-header">
+                    <span class="node-memory-usage-label">RAM usage</span>
+                    <span class="node-memory-usage-value">${memoryUsagePercent.toFixed(2)}%</span>
+                </div>
+                <div class="node-memory-progress">
+                    <div class="node-memory-progress-fill" style="width: ${memoryUsagePercent.toFixed(2)}%"></div>
+                </div>
+                <div class="node-memory-usage-capacity">${memoryCapacityText}</div>
+            `;
+            details.appendChild(memoryBar);
+        }
+
         // Create dropdown menu (attached to the header button)
         const actionsDropdown = document.createElement('div');
         actionsDropdown.className = 'node-actions-dropdown';
@@ -5827,6 +5858,7 @@ class VigilanteDashboard {
             // Monitoring
             document.getElementById('monitoringInterval').value = config.monitoringIntervalSeconds || 120;
             document.getElementById('diskUsageAlertThresholdPercent').value = config.diskUsageAlertThresholdPercent ?? 90;
+            document.getElementById('ramUsageAlertThresholdPercent').value = config.ramUsageAlertThresholdPercent ?? 90;
 
             // DeleteWithCollection (default true)
             document.getElementById('snapshotPendingCreateTimeoutSeconds').value = snap.pendingCreateTimeoutSeconds ?? 1800;
@@ -5886,6 +5918,12 @@ class VigilanteDashboard {
         const diskUsageAlertThresholdPercent = parseFloat(document.getElementById('diskUsageAlertThresholdPercent').value);
         if (isNaN(diskUsageAlertThresholdPercent) || diskUsageAlertThresholdPercent < 1 || diskUsageAlertThresholdPercent > 100) {
             this.showToast('Disk usage alert threshold must be between 1 and 100%', 'error');
+            return;
+        }
+
+        const ramUsageAlertThresholdPercent = parseFloat(document.getElementById('ramUsageAlertThresholdPercent').value);
+        if (isNaN(ramUsageAlertThresholdPercent) || ramUsageAlertThresholdPercent < 1 || ramUsageAlertThresholdPercent > 100) {
+            this.showToast('RAM usage alert threshold must be between 1 and 100%', 'error');
             return;
         }
 
@@ -5962,6 +6000,7 @@ class VigilanteDashboard {
                 body: JSON.stringify({
                     monitoringIntervalSeconds: monitoringInterval,
                     diskUsageAlertThresholdPercent: diskUsageAlertThresholdPercent,
+                    ramUsageAlertThresholdPercent: ramUsageAlertThresholdPercent,
                     snapshot: {
                         pendingCreateTimeoutSeconds: pendingTimeoutSeconds,
                         deleteWithCollection: document.getElementById('snapshotDeleteWithCollection').checked,
