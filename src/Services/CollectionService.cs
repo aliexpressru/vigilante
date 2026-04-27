@@ -363,14 +363,7 @@ public class CollectionService : ICollectionService
                     // If cache contains all requested nodes, return cached data
                     if (requestedNodeUrls.All(url => cachedNodeUrls.Contains(url)))
                     {
-                        _logger.LogInformation("Returning cached {UniqueCollectionCount} collections from {NodeCount} nodes", 
-                            GetUniqueCollectionCount(_cachedCollections), requestedNodeUrls.Count);
                         return (_cachedCollections, true, null);
-                    }
-                    else
-                    {
-                        _logger.LogInformation("Cache doesn't contain all requested nodes. Requested: {Requested}, Cached: {Cached}. Fetching fresh data.",
-                            string.Join(", ", requestedNodeUrls), string.Join(", ", cachedNodeUrls));
                     }
                 }
             }
@@ -405,8 +398,6 @@ public class CollectionService : ICollectionService
             lock (_cacheLock)
             {
                 _cachedCollections = result;
-                _logger.LogInformation("Cached {UniqueCollectionCount} collections from {NodeCount} nodes", 
-                    GetUniqueCollectionCount(result), nodesList.Count);
             }
         }
 
@@ -575,14 +566,6 @@ public class CollectionService : ICollectionService
             .ToList();
 
         // Log summary with unique collection names
-        var uniqueCollectionCount = GetUniqueCollectionCount(collections);
-        var uniqueCollectionNames = collections.Select(c => c.CollectionName).Distinct().OrderBy(n => n).ToList();
-        _logger.LogInformation(
-            "Retrieved {UniqueCount} collections from {NodeCount} nodes: {CollectionNames}",
-            uniqueCollectionCount,
-            healthyNodes.Count,
-            string.Join(", ", uniqueCollectionNames));
-
         return collections;
     }
 

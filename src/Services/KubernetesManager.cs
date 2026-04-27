@@ -19,7 +19,6 @@ public class KubernetesManager(
     {
         if (kubernetes == null)
         {
-            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             return false;
         }
         
@@ -85,7 +84,6 @@ public class KubernetesManager(
     {
         if (kubernetes == null)
         {
-            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             return new List<string>();
         }
 
@@ -207,7 +205,6 @@ public class KubernetesManager(
     {
         if (kubernetes == null)
         {
-            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             return;
         }
 
@@ -245,7 +242,6 @@ public class KubernetesManager(
 
         if (kubernetes == null)
         {
-            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             return null;
         }
 
@@ -361,7 +357,6 @@ public class KubernetesManager(
 
         if (kubernetes == null)
         {
-            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             return null;
         }
 
@@ -435,7 +430,6 @@ public class KubernetesManager(
     {
         if (kubernetes == null)
         {
-            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             return false;
         }
         

@@ -58,6 +58,7 @@ public sealed class SnapshotAutomationJob : IJob
     public async Task<(bool HasMore, bool Success, string? ErrorMessage)> AdvanceAsync(CancellationToken cancellationToken)
     {
         var clusterManager = _serviceProvider.GetRequiredService<IClusterManager>();
+        var jobRegistry = _serviceProvider.GetRequiredService<IJobRegistry>();
         var snapshotService = _serviceProvider.GetRequiredService<ISnapshotService>();
         var orphanedState = _serviceProvider.GetRequiredService<SnapshotOrphanedState>();
         var logger = _serviceProvider.GetRequiredService<ILogger<SnapshotAutomationJob>>();
@@ -100,13 +101,53 @@ public sealed class SnapshotAutomationJob : IJob
             .GroupBy(s => s.CollectionName)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        var snapshotCreatePrefix = PendingSnapshotCreationJob.KeyPrefix;
+        var startedSnapshotForAnyCollection = false;
         foreach (var (collectionName, infos) in byCollection)
         {
+            var hasPendingSnapshotCreate = jobRegistry
+                .GetPendingJobs()
+                .Any(p =>
+                    p.Job.Key.Length > snapshotCreatePrefix.Length
+                    && p.Job.Key.StartsWith(snapshotCreatePrefix, StringComparison.Ordinal));
+            if (hasPendingSnapshotCreate)
+            {
+                logger.LogInformation(
+                    "Skipping auto-snapshot for {CollectionName}: another collection snapshot create is already pending",
+                    collectionName);
+                continue;
+            }
+
             var schedule = snapshotCfg.GetEffectiveSchedule(collectionName);
             if (!schedule.Enabled)
+            {
+                logger.LogDebug(
+                    "Skipping auto-snapshot for {CollectionName}: schedule is disabled",
+                    collectionName);
                 continue;
+            }
 
             var isReadyForSnapshot = IsCollectionReadyForSnapshot(infos);
+            if (!isReadyForSnapshot)
+            {
+                var statusSummary = string.Join(", ", infos
+                    .Select(i => i.Status?.ToString() ?? "null")
+                    .Distinct());
+                var minHnsw = infos.Min(i => i.HnswM ?? 0UL);
+                var hasActiveTransfers = infos.Any(c =>
+                    c.Warnings.Any(w => w.Contains(CollectionWarningConstants.ActiveTransfersWarning, StringComparison.OrdinalIgnoreCase)));
+                var hasRunningOptimizations = infos.Any(c =>
+                    c.RunningOptimizations.Count > 0
+                    || c.Warnings.Any(w => w.Contains(CollectionWarningConstants.RunningOptimizationsPrefix, StringComparison.OrdinalIgnoreCase)));
+
+                logger.LogInformation(
+                    "Skipping auto-snapshot for {CollectionName}: not ready (statuses={Statuses}, minHnswM={MinHnswM}, activeTransfers={HasActiveTransfers}, runningOptimizations={HasRunningOptimizations})",
+                    collectionName,
+                    statusSummary,
+                    minHnsw,
+                    hasActiveTransfers,
+                    hasRunningOptimizations);
+            }
 
             if (schedule.IntervalMinutes is null)
             {
@@ -129,7 +170,7 @@ public sealed class SnapshotAutomationJob : IJob
                         logger.LogInformation(
                             "Collection {CollectionName} is Green with HNSW; taking auto-snapshot on {MissingCount}/{TotalCount} nodes missing a snapshot",
                             collectionName, missingNodeUrls.Count, healthyNodeUrls.Count);
-                        await TakeAutoSnapshotAsync(snapshotService, clusterManager, logger, automationStatus, collectionName, missingNodeUrls, schedule, cancellationToken);
+                        startedSnapshotForAnyCollection = await TakeAutoSnapshotAsync(snapshotService, clusterManager, logger, automationStatus, collectionName, missingNodeUrls, schedule, cancellationToken);
                     }
                 }
             }
@@ -159,9 +200,12 @@ public sealed class SnapshotAutomationJob : IJob
                     logger.LogInformation(
                         "Interval snapshot due for collection {CollectionName} on {DueCount}/{TotalCount} nodes (every {Minutes} min)",
                         collectionName, dueNodeUrls.Count, healthyNodeUrls.Count, schedule.IntervalMinutes.Value);
-                    await TakeAutoSnapshotAsync(snapshotService, clusterManager, logger, automationStatus, collectionName, dueNodeUrls, schedule, cancellationToken);
+                    startedSnapshotForAnyCollection = await TakeAutoSnapshotAsync(snapshotService, clusterManager, logger, automationStatus, collectionName, dueNodeUrls, schedule, cancellationToken);
                 }
             }
+
+            if (startedSnapshotForAnyCollection)
+                break;
         }
 
         if (snapshotCfg.DeleteOrphanedAfterMinutes.HasValue)
@@ -264,7 +308,7 @@ public sealed class SnapshotAutomationJob : IJob
         }
     }
 
-    private async Task TakeAutoSnapshotAsync(
+    private async Task<bool> TakeAutoSnapshotAsync(
         ISnapshotService snapshotService,
         IClusterManager clusterManager,
         ILogger<SnapshotAutomationJob> logger,
@@ -277,7 +321,7 @@ public sealed class SnapshotAutomationJob : IJob
         if (nodeUrls.Count == 0)
         {
             logger.LogWarning("No healthy nodes available to create auto-snapshot for collection {CollectionName}", collectionName);
-            return;
+            return false;
         }
 
         try
@@ -304,7 +348,7 @@ public sealed class SnapshotAutomationJob : IJob
                 automationStatus.AppendRunNote(
                     $"Snapshot «{collectionName}»: skipped — previous snapshot create still in progress");
                 SetCurrentAction($"Snapshot «{collectionName}»: skipped (create already in progress)");
-                return;
+                return false;
             }
 
             var results = batch.Results;
@@ -333,15 +377,18 @@ public sealed class SnapshotAutomationJob : IJob
                 automationStatus.AppendRunNote(
                     $"Snapshot «{collectionName}»: started on {succeededCount}/{results.Count} node(s) (appears when ready)");
                 SetCurrentAction($"Snapshot «{collectionName}» started ({succeededCount} node(s)); waiting for files…");
+                return true;
             }
             else if (failedCount == results.Count && results.Count > 0)
                 SetCurrentAction($"Snapshot «{collectionName}» failed on all nodes");
+            return false;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to create auto-snapshot for collection {CollectionName}", collectionName);
             clusterManager.ReportIssue(IssueKeyConstants.Snapshot(collectionName), ex.Message);
             automationStatus.AppendRunNote($"Snapshot «{collectionName}»: error — {ex.Message}");
+            return false;
         }
     }
 

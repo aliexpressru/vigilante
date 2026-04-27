@@ -19,6 +19,7 @@ public class SnapshotAutomationJobTests
 {
     private ISnapshotService _snapshotService = null!;
     private IS3SnapshotService _s3SnapshotService = null!;
+    private IJobRegistry _jobRegistry = null!;
     private IClusterManager _clusterManager = null!;
     private ICollectionService _collectionService = null!;
     private IDynamicConfigService _dynamicConfigService = null!;
@@ -31,6 +32,7 @@ public class SnapshotAutomationJobTests
     {
         _snapshotService = Substitute.For<ISnapshotService>();
         _s3SnapshotService = Substitute.For<IS3SnapshotService>();
+        _jobRegistry = Substitute.For<IJobRegistry>();
         _clusterManager = Substitute.For<IClusterManager>();
         _collectionService = Substitute.For<ICollectionService>();
         _dynamicConfigService = Substitute.For<IDynamicConfigService>();
@@ -42,9 +44,11 @@ public class SnapshotAutomationJobTests
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(Task.FromResult((new List<CollectionInfo>(), false, (string?)null)));
+        _jobRegistry.GetPendingJobs().Returns(new List<PendingJob>());
         _serviceProvider = new ServiceCollection()
             .AddSingleton(_snapshotService)
             .AddSingleton(_s3SnapshotService)
+            .AddSingleton(_jobRegistry)
             .AddSingleton(_clusterManager)
             .AddSingleton(_collectionService)
             .AddSingleton(_dynamicConfigService)
@@ -203,8 +207,8 @@ public class SnapshotAutomationJobTests
 
         await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
             "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), false, null, Arg.Any<IReadOnlySet<string>>());
-        await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
-            "col2", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), false, null, Arg.Any<IReadOnlySet<string>>());
+        await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
+            "col2", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>());
     }
 
     [Test]
@@ -388,6 +392,7 @@ public class SnapshotAutomationJobTests
 
         await using var sp = new ServiceCollection()
             .AddSingleton(_snapshotService)
+            .AddSingleton(_jobRegistry)
             .AddSingleton(_clusterManager)
             .AddSingleton(_orphanedState)
             .AddSingleton(_logger)
@@ -447,6 +452,7 @@ public class SnapshotAutomationJobTests
 
         await using var sp = new ServiceCollection()
             .AddSingleton(_snapshotService)
+            .AddSingleton(_jobRegistry)
             .AddSingleton(_clusterManager)
             .AddSingleton(_orphanedState)
             .AddSingleton(_logger)
