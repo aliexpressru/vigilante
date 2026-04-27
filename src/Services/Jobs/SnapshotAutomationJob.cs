@@ -106,11 +106,11 @@ public sealed class SnapshotAutomationJob : IJob
             if (!schedule.Enabled)
                 continue;
 
-            var isGreen = IsCollectionGreen(infos);
+            var isReadyForSnapshot = IsCollectionReadyForSnapshot(infos);
 
             if (schedule.IntervalMinutes is null)
             {
-                if (isGreen)
+                if (isReadyForSnapshot)
                 {
                     var existingSnaps = snapshotsByCollection.GetValueOrDefault(collectionName) ?? [];
                     var missingNodeUrls = healthyNodeUrls
@@ -133,7 +133,7 @@ public sealed class SnapshotAutomationJob : IJob
                     }
                 }
             }
-            else if (isGreen)
+            else if (isReadyForSnapshot)
             {
                 var now = DateTime.UtcNow;
                 var existingSnaps = snapshotsByCollection.GetValueOrDefault(collectionName) ?? [];
@@ -464,11 +464,19 @@ public sealed class SnapshotAutomationJob : IJob
             string.Join(", ", stale));
     }
 
-    private static bool IsCollectionGreen(IReadOnlyList<CollectionInfo> infos)
+    private static bool IsCollectionReadyForSnapshot(IReadOnlyList<CollectionInfo> infos)
     {
+        var hasActiveTransfers = infos.Any(c =>
+            c.Warnings.Any(w => w.Contains(CollectionWarningConstants.ActiveTransfersWarning, StringComparison.OrdinalIgnoreCase)));
+        var hasRunningOptimizations = infos.Any(c =>
+            c.RunningOptimizations.Count > 0
+            || c.Warnings.Any(w => w.Contains(CollectionWarningConstants.RunningOptimizationsPrefix, StringComparison.OrdinalIgnoreCase)));
+
         return infos.Count > 0
             && infos.All(c => c.Status == QdrantCollectionStatus.Green)
-            && infos.All(c => c.HnswM > 0);
+            && infos.All(c => c.HnswM > 0)
+            && !hasActiveTransfers
+            && !hasRunningOptimizations;
     }
 
     internal static bool IsIntervalSnapshotDue(
