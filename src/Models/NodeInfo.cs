@@ -53,4 +53,9 @@ public class NodeInfo
     /// Qdrant storage usage and PVC capacity data for this node.
     /// </summary>
     public NodeStorageInfo Storage { get; set; } = new();
+
+    /// <summary>
+    /// Qdrant memory usage and pod memory resources for this node.
+    /// </summary>
+    public NodeMemoryInfo Memory { get; set; } = new();
 }

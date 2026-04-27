@@ -51,4 +51,13 @@ public interface IKubernetesManager
         string storagePath,
         string? nodeUrl,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gets Qdrant memory usage from metrics.k8s.io and pod resources.
+    /// </summary>
+    Task<QdrantMemoryUsageInfo?> GetQdrantMemoryUsageAsync(
+        string? podName,
+        string? namespaceParameter,
+        string? nodeUrl,
+        CancellationToken cancellationToken);
 }

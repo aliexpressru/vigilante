@@ -142,6 +142,24 @@ public class ConfigControllerTests
     }
 
     [Test]
+    public async Task UpdateConfig_WithRamThresholdOutOfRange_ReturnsBadRequest()
+    {
+        var request = new UpdateConfigRequest
+        {
+            MonitoringIntervalSeconds = 60,
+            DiskUsageAlertThresholdPercent = 90m,
+            RamUsageAlertThresholdPercent = 0m
+        };
+
+        var result = await _controller.UpdateConfig(request, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
+        await _dynamicConfigService.DidNotReceive().UpdateConfigAsync(
+            Arg.Any<DynamicConfig>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     [TestCase(1)]
     [TestCase(60)]
     [TestCase(120)]

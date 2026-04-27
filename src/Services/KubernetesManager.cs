@@ -1,5 +1,6 @@
 using k8s;
 using k8s.Models;
+using System.Text.Json;
 using Vigilante.Constants;
 using Vigilante.Models;
 using Vigilante.Services.Interfaces;
@@ -250,33 +251,10 @@ public class KubernetesManager(
 
         try
         {
+            podName = await ResolveQdrantPodNameAsync(podName, nodeUrl, ns, cancellationToken);
             if (string.IsNullOrWhiteSpace(podName))
             {
-                var pods = await kubernetes.CoreV1.ListNamespacedPodAsync(
-                    namespaceParameter: ns,
-                    labelSelector: KubernetesConstants.QdrantAppLabelSelector,
-                    cancellationToken: cancellationToken);
-
-                var runningPods = pods.Items
-                    .Where(p => p.Status?.Phase == KubernetesConstants.PodPhaseRunning)
-                    .ToList();
-
-                var nodeHost = TryExtractHost(nodeUrl);
-                podName = runningPods
-                    .Where(p => string.IsNullOrWhiteSpace(nodeHost) || string.Equals(p.Status?.PodIP, nodeHost, StringComparison.OrdinalIgnoreCase))
-                    .Select(p => p.Metadata?.Name)
-                    .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))
-                    ?? runningPods
-                        .Select(p => p.Metadata?.Name)
-                        .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
-
-                if (string.IsNullOrWhiteSpace(podName))
-                {
-                    logger.LogWarning(
-                        "No running qdrant pod found in namespace {Namespace} for storage usage calculation",
-                        ns);
-                    return null;
-                }
+                return null;
             }
 
             var baseDirectory = Path.GetDirectoryName(normalizedStoragePath)?.Replace("\\", "/");
@@ -369,6 +347,81 @@ public class KubernetesManager(
                 "Failed to calculate Qdrant storage usage for pod {PodName} in namespace {Namespace}",
                 podName ?? "<auto>",
                 ns);
+            return null;
+        }
+    }
+
+    public async Task<QdrantMemoryUsageInfo?> GetQdrantMemoryUsageAsync(
+        string? podName,
+        string? namespaceParameter,
+        string? nodeUrl,
+        CancellationToken cancellationToken)
+    {
+        var ns = namespaceParameter ?? GetCurrentNamespace();
+
+        if (kubernetes == null)
+        {
+            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
+            return null;
+        }
+
+        try
+        {
+            podName = await ResolveQdrantPodNameAsync(podName, nodeUrl, ns, cancellationToken);
+            if (string.IsNullOrWhiteSpace(podName))
+            {
+                return null;
+            }
+
+            var pod = await kubernetes.CoreV1.ReadNamespacedPodAsync(
+                name: podName,
+                namespaceParameter: ns,
+                cancellationToken: cancellationToken);
+
+            var qdrantContainer = pod.Spec?.Containers?
+                .FirstOrDefault(c => string.Equals(c.Name, QdrantConstants.ContainerName, StringComparison.OrdinalIgnoreCase))
+                ?? pod.Spec?.Containers?.FirstOrDefault();
+
+            var requestBytes = qdrantContainer?.Resources?.Requests?.TryGetValue("memory", out var requestQuantity) == true
+                ? ParseKubernetesQuantityToBytes(requestQuantity?.ToString())
+                : null;
+            var limitBytes = qdrantContainer?.Resources?.Limits?.TryGetValue("memory", out var limitQuantity) == true
+                ? ParseKubernetesQuantityToBytes(limitQuantity?.ToString())
+                : null;
+
+            var metricsPayload = await kubernetes.CustomObjects.ListNamespacedCustomObjectAsync(
+                group: "metrics.k8s.io",
+                version: "v1beta1",
+                namespaceParameter: ns,
+                plural: "pods",
+                cancellationToken: cancellationToken);
+
+            var usedBytes = TryExtractPodMemoryUsageBytes(metricsPayload, podName);
+            if (!usedBytes.HasValue)
+            {
+                logger.LogWarning("Could not find memory usage in metrics.k8s.io for pod {PodName}", podName);
+                return null;
+            }
+
+            var denominator = requestBytes ?? limitBytes;
+            var usagePercent = denominator.HasValue && denominator.Value > 0
+                ? (decimal?)Math.Round((decimal)usedBytes.Value / denominator.Value * 100m, 2, MidpointRounding.AwayFromZero)
+                : null;
+
+            return new QdrantMemoryUsageInfo
+            {
+                PodName = podName,
+                Namespace = ns,
+                UsedBytes = usedBytes.Value,
+                RequestBytes = requestBytes,
+                LimitBytes = limitBytes,
+                UsagePercent = usagePercent
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to calculate Qdrant memory usage for pod {PodName} in namespace {Namespace}",
+                podName ?? "<auto>", ns);
             return null;
         }
     }
@@ -478,6 +531,43 @@ public class KubernetesManager(
         return matchingClaims;
     }
 
+    private async Task<string?> ResolveQdrantPodNameAsync(
+        string? podName,
+        string? nodeUrl,
+        string ns,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(podName))
+        {
+            return podName;
+        }
+
+        var pods = await kubernetes!.CoreV1.ListNamespacedPodAsync(
+            namespaceParameter: ns,
+            labelSelector: KubernetesConstants.QdrantAppLabelSelector,
+            cancellationToken: cancellationToken);
+
+        var runningPods = pods.Items
+            .Where(p => p.Status?.Phase == KubernetesConstants.PodPhaseRunning)
+            .ToList();
+
+        var nodeHost = TryExtractHost(nodeUrl);
+        var resolvedPodName = runningPods
+            .Where(p => string.IsNullOrWhiteSpace(nodeHost) || string.Equals(p.Status?.PodIP, nodeHost, StringComparison.OrdinalIgnoreCase))
+            .Select(p => p.Metadata?.Name)
+            .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))
+            ?? runningPods
+                .Select(p => p.Metadata?.Name)
+                .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+
+        if (string.IsNullOrWhiteSpace(resolvedPodName))
+        {
+            logger.LogWarning("No running qdrant pod found in namespace {Namespace}", ns);
+        }
+
+        return resolvedPodName;
+    }
+
     private static long? ParseKubernetesQuantityToBytes(string? quantity)
     {
         if (string.IsNullOrWhiteSpace(quantity))
@@ -521,6 +611,61 @@ public class KubernetesManager(
 
         result = value * multiplier;
         return true;
+    }
+
+    private static long? TryExtractPodMemoryUsageBytes(object metricsPayload, string podName)
+    {
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(metricsPayload));
+        if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var item in items.EnumerateArray())
+        {
+            var currentPodName = item.TryGetProperty("metadata", out var metadata) &&
+                                 metadata.TryGetProperty("name", out var nameElement)
+                ? nameElement.GetString()
+                : null;
+
+            if (!string.Equals(currentPodName, podName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!item.TryGetProperty("containers", out var containers) || containers.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            foreach (var container in containers.EnumerateArray())
+            {
+                var containerName = container.TryGetProperty("name", out var containerNameElement)
+                    ? containerNameElement.GetString()
+                    : null;
+
+                if (!string.Equals(containerName, QdrantConstants.ContainerName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (container.TryGetProperty("usage", out var usage) &&
+                    usage.TryGetProperty("memory", out var memoryElement))
+                {
+                    return ParseKubernetesQuantityToBytes(memoryElement.GetString());
+                }
+            }
+
+            var firstContainer = containers.EnumerateArray().FirstOrDefault();
+            if (firstContainer.ValueKind == JsonValueKind.Object &&
+                firstContainer.TryGetProperty("usage", out var firstUsage) &&
+                firstUsage.TryGetProperty("memory", out var firstMemoryElement))
+            {
+                return ParseKubernetesQuantityToBytes(firstMemoryElement.GetString());
+            }
+        }
+
+        return null;
     }
 
     private static string? TryExtractHost(string? nodeUrl)
