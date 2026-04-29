@@ -139,52 +139,34 @@ public class QdrantMonitorService(
     {
         var currentStatus = state.Status;
         var hasIssues = state.Health.Issues.Any();
+        var needsAttention = hasIssues || currentStatus is ClusterStatus.Degraded or ClusterStatus.Unavailable;
 
-        if (hasIssues)
+        if (!_previousStatus.HasValue)
         {
-            meterService.UpdateClusterNeedsAttention(true);
-            _previousStatus = currentStatus;
-            return;
-        }
-
-        if (_previousStatus.HasValue && _previousStatus.Value != currentStatus)
-        {
-            switch (_previousStatus.Value)
-            {
-                case ClusterStatus.Healthy when
-                    (currentStatus == ClusterStatus.Degraded || currentStatus == ClusterStatus.Unavailable):
-                    logger.LogWarning("Cluster status changed from {PreviousStatus} to {CurrentStatus} - NEEDS ATTENTION",
-                        _previousStatus.Value, currentStatus);
-                    meterService.UpdateClusterNeedsAttention(true);
-                    break;
-
-                case ClusterStatus.Degraded or ClusterStatus.Unavailable
-                    when currentStatus == ClusterStatus.Healthy:
-                    logger.LogInformation("Cluster status changed from {PreviousStatus} to {CurrentStatus} - recovered!",
-                        _previousStatus.Value, currentStatus);
-                    meterService.UpdateClusterNeedsAttention(false);
-                    break;
-
-                default:
-                    logger.LogInformation("Cluster status changed from {PreviousStatus} to {CurrentStatus}",
-                        _previousStatus.Value, currentStatus);
-                    break;
-            }
-        }
-        else if (!_previousStatus.HasValue)
-        {
-            if (currentStatus == ClusterStatus.Degraded || currentStatus == ClusterStatus.Unavailable)
+            if (needsAttention)
             {
                 logger.LogWarning("Initial cluster status is {Status} - NEEDS ATTENTION", currentStatus);
-                meterService.UpdateClusterNeedsAttention(true);
             }
             else
             {
                 logger.LogInformation("Initial cluster status is {Status}", currentStatus);
-                meterService.UpdateClusterNeedsAttention(false);
+            }
+        }
+        else if (_previousStatus.Value != currentStatus)
+        {
+            if (needsAttention)
+            {
+                logger.LogWarning("Cluster status changed from {PreviousStatus} to {CurrentStatus} - NEEDS ATTENTION",
+                    _previousStatus.Value, currentStatus);
+            }
+            else
+            {
+                logger.LogInformation("Cluster status changed from {PreviousStatus} to {CurrentStatus} - recovered!",
+                    _previousStatus.Value, currentStatus);
             }
         }
 
+        meterService.UpdateClusterNeedsAttention(needsAttention);
         _previousStatus = currentStatus;
     }
 }

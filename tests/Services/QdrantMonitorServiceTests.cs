@@ -236,7 +236,7 @@ public class QdrantMonitorServiceTests
     #region Status Changes Between Degraded/Unavailable Tests
 
     [Test]
-    public void TrackClusterStatusChange_DegradedToUnavailable_ShouldNotUpdateNeedsAttention()
+    public void TrackClusterStatusChange_DegradedToUnavailable_ShouldKeepNeedsAttentionTrue()
     {
         // Arrange
         _monitorService.TrackClusterStatusChange(CreateDegradedState());
@@ -245,12 +245,12 @@ public class QdrantMonitorServiceTests
         // Act
         _monitorService.TrackClusterStatusChange(CreateUnavailableState());
 
-        // Assert - should not update metric, already needs attention
-        _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
+        // Assert - metric reflects current state on every iteration
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     [Test]
-    public void TrackClusterStatusChange_UnavailableToDegraded_ShouldNotUpdateNeedsAttention()
+    public void TrackClusterStatusChange_UnavailableToDegraded_ShouldKeepNeedsAttentionTrue()
     {
         // Arrange
         _monitorService.TrackClusterStatusChange(CreateUnavailableState());
@@ -259,8 +259,8 @@ public class QdrantMonitorServiceTests
         // Act
         _monitorService.TrackClusterStatusChange(CreateDegradedState());
 
-        // Assert - should not update metric, already needs attention
-        _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
+        // Assert - metric reflects current state on every iteration
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
     }
 
     #endregion
@@ -268,7 +268,7 @@ public class QdrantMonitorServiceTests
     #region Same Status Tests
 
     [Test]
-    public void TrackClusterStatusChange_SameStatus_ShouldNotUpdateMetric()
+    public void TrackClusterStatusChange_SameStatus_ShouldUpdateMetricWithCurrentState()
     {
         // Arrange
         _monitorService.TrackClusterStatusChange(CreateHealthyState());
@@ -278,7 +278,7 @@ public class QdrantMonitorServiceTests
         _monitorService.TrackClusterStatusChange(CreateHealthyState());
 
         // Assert
-        _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
+        _meterService.Received(1).UpdateClusterNeedsAttention(false);
     }
 
     #endregion
@@ -298,9 +298,9 @@ public class QdrantMonitorServiceTests
         _meterService.Received(1).UpdateClusterNeedsAttention(true);
         _meterService.ClearReceivedCalls();
 
-        // Unavailable -> still needs attention (no new call)
+        // Unavailable -> still needs attention
         _monitorService.TrackClusterStatusChange(CreateUnavailableState());
-        _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
 
         // Healthy -> attention cleared
         _monitorService.TrackClusterStatusChange(CreateHealthyState());
@@ -454,8 +454,8 @@ public class QdrantMonitorServiceTests
         // Act - full recovery: no issues, healthy status
         _monitorService.TrackClusterStatusChange(CreateHealthyState(hasIssues: false));
 
-        // Assert - should not update since status is same and both are healthy
-        _meterService.DidNotReceive().UpdateClusterNeedsAttention(Arg.Any<bool>());
+        // Assert - should clear sticky attention state from previous issues
+        _meterService.Received(1).UpdateClusterNeedsAttention(false);
     }
 
     #endregion
