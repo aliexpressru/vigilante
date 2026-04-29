@@ -16,7 +16,7 @@ public class QdrantMonitorService(
     : BackgroundService
 {
     internal DynamicConfig DynamicConfig = new();
-    private ClusterStatus? _previousStatus;
+    private bool? _previousNeedsAttention;
     private CancellationTokenSource? _delayCts;
     private readonly object _configLock = new();
 
@@ -140,33 +140,19 @@ public class QdrantMonitorService(
         var currentStatus = state.Status;
         var hasIssues = state.Health.Issues.Any();
         var needsAttention = hasIssues || currentStatus is ClusterStatus.Degraded or ClusterStatus.Unavailable;
+        var reason = hasIssues ? "active issues" : currentStatus.ToString();
 
-        if (!_previousStatus.HasValue)
+        if (!_previousNeedsAttention.HasValue || _previousNeedsAttention.Value != needsAttention)
         {
-            if (needsAttention)
-            {
-                logger.LogWarning("Initial cluster status is {Status} - NEEDS ATTENTION", currentStatus);
-            }
-            else
-            {
-                logger.LogInformation("Initial cluster status is {Status}", currentStatus);
-            }
-        }
-        else if (_previousStatus.Value != currentStatus)
-        {
-            if (needsAttention)
-            {
-                logger.LogWarning("Cluster status changed from {PreviousStatus} to {CurrentStatus} - NEEDS ATTENTION",
-                    _previousStatus.Value, currentStatus);
-            }
-            else
-            {
-                logger.LogInformation("Cluster status changed from {PreviousStatus} to {CurrentStatus} - recovered!",
-                    _previousStatus.Value, currentStatus);
-            }
+            logger.LogInformation(
+                "Cluster needs-attention metric changed to {NeedsAttention} (status: {Status}, issues: {HasIssues}, reason: {Reason})",
+                needsAttention ? 1 : 0,
+                currentStatus,
+                hasIssues,
+                reason);
         }
 
         meterService.UpdateClusterNeedsAttention(needsAttention);
-        _previousStatus = currentStatus;
+        _previousNeedsAttention = needsAttention;
     }
 }

@@ -363,6 +363,31 @@ public class QdrantMonitorServiceTests
     }
 
     [Test]
+    public void TrackClusterStatusChange_RamThresholdLoweredThenRaised_ShouldSetThenClearNeedsAttention()
+    {
+        // Arrange: threshold lowered to 30% -> RAM issue appears
+        var stateWithRamIssue = CreateHealthyState();
+        stateWithRamIssue.Nodes[0].Issues.Add("RAM usage is 35.00% (threshold: 30.00%)");
+        stateWithRamIssue.InvalidateCache();
+
+        // Act 1
+        _monitorService.TrackClusterStatusChange(stateWithRamIssue);
+
+        // Assert 1
+        _meterService.Received(1).UpdateClusterNeedsAttention(true);
+        _meterService.ClearReceivedCalls();
+
+        // Arrange: threshold raised to 90% -> issue disappears
+        var recoveredState = CreateHealthyState(hasIssues: false);
+
+        // Act 2
+        _monitorService.TrackClusterStatusChange(recoveredState);
+
+        // Assert 2
+        _meterService.Received(1).UpdateClusterNeedsAttention(false);
+    }
+
+    [Test]
     public void TrackClusterStatusChange_DegradedWithIssues_ShouldPrioritizeIssuesReason()
     {
         // Arrange
@@ -522,6 +547,48 @@ public class QdrantMonitorServiceTests
         Assert.That(errors, Has.Count.EqualTo(1));
         Assert.That(errors[0].Key, Is.EqualTo("snapshot-automation"));
         Assert.That(errors[0].Message, Is.EqualTo("collections failed"));
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WhenIssuesDisappear_ShouldSetNeedsAttentionFromTrueToFalse()
+    {
+        var stateWithIssues = CreateHealthyState(hasIssues: true);
+        stateWithIssues.Nodes[0].Url = "http://node1:6333";
+
+        var healthyState = CreateHealthyState(hasIssues: false);
+        healthyState.Nodes[0].Url = "http://node1:6333";
+
+        var callCount = 0;
+        _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                return callCount == 1 ? stateWithIssues : healthyState;
+            });
+
+        _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new DynamicConfig { MonitoringIntervalSeconds = 1 }));
+
+        using var cts = new CancellationTokenSource();
+        _ = _monitorService.StartAsync(cts.Token);
+
+        await Task.Delay(2600, CancellationToken.None);
+        cts.Cancel();
+        await Task.Delay(300, CancellationToken.None);
+
+        var attentionCalls = _meterService.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IMeterService.UpdateClusterNeedsAttention))
+            .Select(call => (bool)call.GetArguments()[0]!)
+            .ToList();
+
+        Assert.That(attentionCalls, Is.Not.Empty);
+        Assert.That(attentionCalls, Has.Some.EqualTo(true));
+        Assert.That(attentionCalls, Has.Some.EqualTo(false));
+
+        var firstTrueIndex = attentionCalls.IndexOf(true);
+        var firstFalseIndex = attentionCalls.IndexOf(false);
+        Assert.That(firstTrueIndex, Is.GreaterThanOrEqualTo(0));
+        Assert.That(firstFalseIndex, Is.GreaterThan(firstTrueIndex));
     }
 
     #endregion
