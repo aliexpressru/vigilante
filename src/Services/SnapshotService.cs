@@ -1222,8 +1222,6 @@ public class SnapshotService(
     {
         try
         {
-            logger.LogInformation("Fetching snapshots from Qdrant API for node {NodeUrl}", node.Url);
-
             var qdrantClient = clientFactory.CreateClientFromUrl(node.Url, _options.ApiKey);
             var collectionsResponse = await qdrantClient.ListCollections(cancellationToken);
 
@@ -1235,8 +1233,6 @@ public class SnapshotService(
             }
 
             var collections = collectionsResponse.Result.Collections;
-            logger.LogInformation("Found {CollectionCount} collections on node {NodeUrl}", collections.Length, node.Url);
-
             var collectionTasks = collections.Select(async collection =>
             {
                 var collectionName = collection.Name;
@@ -1249,9 +1245,6 @@ public class SnapshotService(
                         node.Url,
                         collectionName,
                         cancellationToken);
-
-                    logger.LogInformation("Found {SnapshotCount} snapshots for collection {CollectionName} on node {NodeUrl}",
-                        snapshotsWithSize.Count, collectionName, node.Url);
 
                     var infos = new List<SnapshotInfo>();
                     foreach (var (name, size) in snapshotsWithSize)
@@ -1277,12 +1270,6 @@ public class SnapshotService(
                             Source = SnapshotSource.QdrantApi,
                             CreatedAt = ParseSnapshotName(name, collectionName).CreatedAt
                         });
-                    }
-
-                    if (infos.Count < snapshotsWithSize.Count)
-                    {
-                        logger.LogInformation("Filtered {FilteredCount} out of {TotalCount} snapshots for collection {CollectionName} on node {NodeUrl} (matched by PeerId: {MatchedCount})",
-                            snapshotsWithSize.Count - infos.Count, snapshotsWithSize.Count, collectionName, node.Url, infos.Count);
                     }
 
                     return infos;

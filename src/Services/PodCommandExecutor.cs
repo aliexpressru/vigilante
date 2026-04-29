@@ -223,7 +223,6 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
     {
         if (kubernetes == null)
         {
-            logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
             throw new InvalidOperationException("Kubernetes client is not available");
         }
         
@@ -396,7 +395,6 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
             
             if (kubernetes == null)
             {
-                logger.LogWarning(KubernetesConstants.KubernetesClientNotAvailableMessage);
                 throw new InvalidOperationException("Kubernetes client is not available");
             }
             

@@ -35,6 +35,7 @@ public class QdrantMonitorServiceTests
         var snapshotJobLogger = Substitute.For<ILogger<SnapshotAutomationJob>>();
         _serviceProvider = new ServiceCollection()
             .AddSingleton(_clusterManager)
+            .AddSingleton(_jobRegistry)
             .AddSingleton(snapshotService)
             .AddSingleton(snapshotOrphanedState)
             .AddSingleton(snapshotJobLogger)

@@ -57,7 +57,6 @@ public class QdrantNodesProvider(
         var nodesFromConfig = configuration.GetSection(QdrantConstants.NodesConfigurationPath).Get<List<QdrantNodeConfig>>();
         if (nodesFromConfig != null && nodesFromConfig.Any())
         {
-            logger.LogInformation("Using configuration: found {Count} nodes", nodesFromConfig.Count);
             return nodesFromConfig;
         }
         

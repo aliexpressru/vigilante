@@ -60,13 +60,6 @@ public class S3ConfigurationProvider(
 
         if (!config.IsConfigured())
         {
-            logger.LogWarning(
-                "S3 configuration is incomplete — EndpointUrl: {HasEndpoint}, AccessKey: {HasAccessKey}, " +
-                "SecretKey: {HasSecretKey}, BucketName: {HasBucket}",
-                !string.IsNullOrEmpty(config.EndpointUrl),
-                !string.IsNullOrEmpty(config.AccessKey),
-                !string.IsNullOrEmpty(config.SecretKey),
-                !string.IsNullOrEmpty(config.BucketName));
             return null;
         }
 

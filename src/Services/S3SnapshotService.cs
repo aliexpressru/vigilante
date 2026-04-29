@@ -74,10 +74,6 @@ public class S3SnapshotService(
             
             logger.LogInformation("S3Objects count: {Count}", response.S3Objects.Count);
             
-            // Log first few keys to understand the structure
-            var firstKeys = response.S3Objects.Take(3).Select(o => o.Key).ToArray();
-            logger.LogInformation("First few S3 keys: {Keys}", string.Join(", ", firstKeys));
-            
             var snapshots = new List<(string, string, long, DateTime)>();
             
             foreach (var obj in response.S3Objects)
@@ -646,7 +642,6 @@ public class S3SnapshotService(
 
         if (s3Options == null || !s3Options.IsConfigured())
         {
-            logger.LogInformation("S3 not configured or incomplete configuration");
             return null;
         }
 
@@ -666,7 +661,6 @@ public class S3SnapshotService(
             var currentOptions = await configProvider.GetS3ConfigurationAsync(namespaceParameter, cancellationToken);
             if (currentOptions == null || !currentOptions.IsConfigured())
             {
-                logger.LogInformation("S3 not configured or incomplete configuration");
                 return null;
             }
 
