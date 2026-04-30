@@ -43,6 +43,7 @@ class VigilanteDashboard {
         this.logsRefreshInterval = 0;
         this.logsRefreshTimer = null;
         this.currentLogContext = null; // { type: 'qdrant' | 'vigilante', podName?: string, namespace?: string }
+        this.logsSearchDebounceTimer = null;
         // Pagination state for collections
         this.currentPage = 1;
         this.pageSize = 10;
@@ -5470,6 +5471,32 @@ class VigilanteDashboard {
                 }
             });
         }
+
+        const levelFilters = document.querySelectorAll('.logs-level-filter');
+        levelFilters.forEach(levelFilter => {
+            levelFilter.addEventListener('change', () => {
+                if (this.currentLogContext) {
+                    this.refreshLogs();
+                }
+            });
+        });
+
+        const searchInput = document.getElementById('logsSearchText');
+        if (searchInput) {
+            searchInput.addEventListener('input', () => {
+                if (!this.currentLogContext) {
+                    return;
+                }
+
+                if (this.logsSearchDebounceTimer) {
+                    clearTimeout(this.logsSearchDebounceTimer);
+                }
+
+                this.logsSearchDebounceTimer = setTimeout(() => {
+                    this.refreshLogs();
+                }, 300);
+            });
+        }
     }
 
     openQdrantLogs(podName, namespace, nodeUrl) {
@@ -5554,6 +5581,10 @@ class VigilanteDashboard {
         if (panel) {
             panel.classList.remove('open');
         }
+        if (this.logsSearchDebounceTimer) {
+            clearTimeout(this.logsSearchDebounceTimer);
+            this.logsSearchDebounceTimer = null;
+        }
         this.stopLogsAutoRefresh();
         this.currentLogContext = null;
     }
@@ -5566,7 +5597,9 @@ class VigilanteDashboard {
             let response;
             const requestBody = {
                 namespace: this.currentLogContext.namespace,
-                limit: 200
+                limit: 200,
+                levels: this.getSelectedLogLevelsMask(),
+                searchText: (document.getElementById('logsSearchText')?.value || '').trim() || null
             };
 
             if (this.currentLogContext.type === 'qdrant') {
@@ -5679,6 +5712,23 @@ class VigilanteDashboard {
             clearInterval(this.logsRefreshTimer);
             this.logsRefreshTimer = null;
         }
+    }
+
+    getSelectedLogLevelsMask() {
+        const levelBitMap = {
+            TRACE: 1,
+            DEBUG: 2,
+            INFO: 4,
+            WARN: 8,
+            ERROR: 16,
+            FATAL: 32
+        };
+        let selectedMask = 0;
+        const levelFilters = document.querySelectorAll('.logs-level-filter:checked');
+        levelFilters.forEach(levelFilter => {
+            selectedMask |= levelBitMap[levelFilter.value] || 0;
+        });
+        return selectedMask;
     }
 
     // Configuration Management

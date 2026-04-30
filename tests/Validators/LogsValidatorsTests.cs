@@ -1,5 +1,6 @@
 using FluentValidation.TestHelper;
 using NUnit.Framework;
+using Vigilante.Models;
 using Vigilante.Models.Requests;
 using Vigilante.Validators;
 
@@ -98,5 +99,46 @@ public class LogsValidatorsTests
         var result = _vigilanteValidator.TestValidate(request);
 
         result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Test]
+    public void Qdrant_Should_fail_when_search_text_too_long()
+    {
+        var request = new V1GetQdrantLogsRequest
+        {
+            PodName = "pod",
+            SearchText = new string('a', 513)
+        };
+
+        var result = _qdrantValidator.TestValidate(request);
+
+        result.ShouldHaveValidationErrorFor(r => r.SearchText);
+    }
+
+    [Test]
+    public void Vigilante_Should_fail_when_search_text_too_long()
+    {
+        var request = new V1GetVigilanteLogsRequest
+        {
+            SearchText = new string('a', 513)
+        };
+
+        var result = _vigilanteValidator.TestValidate(request);
+
+        result.ShouldHaveValidationErrorFor(r => r.SearchText);
+    }
+
+    [Test]
+    public void Qdrant_Should_fail_when_levels_has_unsupported_flags()
+    {
+        var request = new V1GetQdrantLogsRequest
+        {
+            PodName = "pod",
+            Levels = (LogLevelFilter)1024
+        };
+
+        var result = _qdrantValidator.TestValidate(request);
+
+        result.ShouldHaveValidationErrorFor(r => r.Levels);
     }
 }

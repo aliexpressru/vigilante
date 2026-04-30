@@ -71,6 +71,99 @@ public class LogReaderTests
     }
 
     [Test]
+    public async Task GetQdrantPodLogsAsync_FiltersByLevel_UsingQdrantFormat()
+    {
+        var (reader, _, core) = CreateReaderWithKube();
+        core.ReadNamespacedPodLogWithHttpMessagesAsync(
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<int?>(),
+                Arg.Any<string?>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<string>>>(),
+                Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(ci => StubLogResponse("2025-01-01T00:00:00Z  INFO keep\n2025-01-01T00:00:01Z  ERROR skip"));
+
+        var page = await reader.GetQdrantPodLogsAsync(
+            "pod-1",
+            new LogQuery("custom-ns", 10, Levels: LogLevelFilter.Info),
+            CancellationToken.None);
+
+        Assert.That(page.Success, Is.True);
+        Assert.That(page.Logs.Count, Is.EqualTo(1));
+        Assert.That(page.Logs[0].Message, Does.Contain("INFO keep"));
+    }
+
+    [Test]
+    public async Task GetQdrantPodLogsAsync_FiltersByLevel_UsingVigilanteFormatAbbreviations()
+    {
+        var (reader, _, core) = CreateReaderWithKube();
+        core.ReadNamespacedPodLogWithHttpMessagesAsync(
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<int?>(),
+                Arg.Any<string?>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<string>>>(),
+                Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(ci => StubLogResponse("2025-01-01T00:00:00Z [09:49:33 INF] keep\n2025-01-01T00:00:01Z [09:49:33 ERR] drop"));
+
+        var page = await reader.GetQdrantPodLogsAsync(
+            "pod-1",
+            new LogQuery("custom-ns", 10, Levels: LogLevelFilter.Error),
+            CancellationToken.None);
+
+        Assert.That(page.Success, Is.True);
+        Assert.That(page.Logs.Count, Is.EqualTo(1));
+        Assert.That(page.Logs[0].Message, Does.Contain("[09:49:33 ERR]"));
+    }
+
+    [Test]
+    public async Task GetQdrantPodLogsAsync_FiltersBySearchText_CaseInsensitive()
+    {
+        var (reader, _, core) = CreateReaderWithKube();
+        core.ReadNamespacedPodLogWithHttpMessagesAsync(
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<int?>(),
+                Arg.Any<string?>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<string>>>(),
+                Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(ci => StubLogResponse("2025-01-01T00:00:00Z first line\n2025-01-01T00:00:01Z second line"));
+
+        var page = await reader.GetQdrantPodLogsAsync(
+            "pod-1",
+            new LogQuery("custom-ns", 10, SearchText: "SECOND"),
+            CancellationToken.None);
+
+        Assert.That(page.Success, Is.True);
+        Assert.That(page.Logs.Count, Is.EqualTo(1));
+        Assert.That(page.Logs[0].Message, Is.EqualTo("second line"));
+    }
+
+    [Test]
     public async Task GetQdrantPodLogsAsync_AppliesContinuation_AndTruncates()
     {
         var log = "2025-01-01T00:00:00Z old\n2025-01-01T00:00:01Z new\n2025-01-01T00:00:02Z newer";

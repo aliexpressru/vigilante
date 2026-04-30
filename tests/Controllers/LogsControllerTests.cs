@@ -68,6 +68,39 @@ public class LogsControllerTests
     }
 
     [Test]
+    public async Task GetQdrantLogs_MapsFiltersToQuery()
+    {
+        var logReader = Substitute.For<ILogReader>();
+        var logger = Substitute.For<ILogger<LogsController>>();
+        var controller = new LogsController(logReader, logger);
+        var request = new V1GetQdrantLogsRequest
+        {
+            PodName = "pod-1",
+            Namespace = "ns",
+            Limit = 50,
+            Continuation = "tok",
+            Levels = LogLevelFilter.Info | LogLevelFilter.Error,
+            SearchText = "cluster"
+        };
+        var page = new LogPage(true, null, Array.Empty<LogEntry>(), null, false);
+        LogQuery? capturedQuery = null;
+        logReader.GetQdrantPodLogsAsync("pod-1", Arg.Do<LogQuery>(q => capturedQuery = q), Arg.Any<CancellationToken>())
+            .Returns(page);
+
+        await controller.GetQdrantLogs(request, CancellationToken.None);
+
+        Assert.That(capturedQuery, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(capturedQuery!.Namespace, Is.EqualTo("ns"));
+            Assert.That(capturedQuery.Limit, Is.EqualTo(50));
+            Assert.That(capturedQuery.Continuation, Is.EqualTo("tok"));
+            Assert.That(capturedQuery.Levels, Is.EqualTo(LogLevelFilter.Info | LogLevelFilter.Error));
+            Assert.That(capturedQuery.SearchText, Is.EqualTo("cluster"));
+        });
+    }
+
+    [Test]
     public async Task GetQdrantLogs_Exception_Returns500()
     {
         var logReader = Substitute.For<ILogReader>();

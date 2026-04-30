@@ -233,6 +233,25 @@
                 <i class="fas fa-sync-alt"></i> Refresh
             </button>
         </div>
+        <div class="logs-filter-controls">
+            <div class="logs-level-filters">
+                <span>Levels:</span>
+                <label><input type="checkbox" class="logs-level-filter" value="INFO" checked> INFO</label>
+                <label><input type="checkbox" class="logs-level-filter" value="WARN" checked> WARN</label>
+                <label><input type="checkbox" class="logs-level-filter" value="ERROR" checked> ERROR</label>
+                <label><input type="checkbox" class="logs-level-filter" value="DEBUG" checked> DEBUG</label>
+                <label><input type="checkbox" class="logs-level-filter" value="TRACE" checked> TRACE</label>
+                <label><input type="checkbox" class="logs-level-filter" value="FATAL" checked> FATAL</label>
+            </div>
+            <div class="logs-search-box">
+                <input
+                    id="logsSearchText"
+                    type="text"
+                    class="logs-search-input"
+                    placeholder="Search text in line"
+                    maxlength="512">
+            </div>
+        </div>
         <div class="logs-panel-content" id="logsPanelContent">
             <div class="logs-loading">Loading logs...</div>
         </div>

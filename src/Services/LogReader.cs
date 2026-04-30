@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using k8s;
 using Vigilante.Constants;
 using Vigilante.Models;
@@ -18,6 +19,8 @@ public class LogReader(
 {
     private const int DefaultLimit = 200;
     private const string ContinuationSeparator = "|";
+    private static readonly Regex VigilanteLevelRegex = new(@"^\[[^\]]+\s+([A-Z]{3,5})\]", RegexOptions.Compiled);
+    private static readonly Regex GenericLeadingLevelRegex = new(@"^\s*([A-Z]{3,5})\b", RegexOptions.Compiled);
 
     public async Task<LogPage> GetQdrantPodLogsAsync(string podName, LogQuery query, CancellationToken cancellationToken)
     {
@@ -102,6 +105,7 @@ public class LogReader(
             {
                 entries = entries.Where(e => e.Timestamp > cursor.Value).ToList();
             }
+            entries = ApplyFilters(entries, query);
 
             var pageEntries = entries.Take(limit).ToList();
             var truncated = entries.Count > limit;
@@ -136,6 +140,7 @@ public class LogReader(
             {
                 parsed = parsed.Where(e => e.Timestamp > cursor.Value).ToList();
             }
+            parsed = ApplyFilters(parsed, query);
 
             var ordered = parsed.OrderBy(e => e.Timestamp).ToList();
             var entries = ordered.TakeLast(limit + 1).ToList();
@@ -192,6 +197,75 @@ public class LogReader(
 
 
     private static LogPage Failed(string message) => new(false, message, Array.Empty<LogEntry>(), null, false);
+
+    private static List<LogEntry> ApplyFilters(List<LogEntry> entries, LogQuery query)
+    {
+        if (entries.Count == 0)
+        {
+            return entries;
+        }
+
+        IEnumerable<LogEntry> filtered = entries;
+
+        if (query.Levels is not null)
+        {
+            filtered = filtered.Where(entry =>
+            {
+                var level = TryExtractLevel(entry.Message);
+                return level is not null && query.Levels.Value.HasFlag(level.Value);
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            var searchText = query.SearchText.Trim();
+            filtered = filtered.Where(entry => entry.Message.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return filtered.ToList();
+    }
+
+    private static LogLevelFilter? TryExtractLevel(string message)
+    {
+        var vigilanteMatch = VigilanteLevelRegex.Match(message);
+        if (vigilanteMatch.Success)
+        {
+            return NormalizeLevel(vigilanteMatch.Groups[1].Value);
+        }
+
+        var qdrantMatch = GenericLeadingLevelRegex.Match(message);
+        if (qdrantMatch.Success)
+        {
+            return NormalizeLevel(qdrantMatch.Groups[1].Value);
+        }
+
+        return null;
+    }
+
+    private static LogLevelFilter? NormalizeLevel(string? level)
+    {
+        if (string.IsNullOrWhiteSpace(level))
+        {
+            return null;
+        }
+
+        return level.Trim().ToUpperInvariant() switch
+        {
+            "TRC" => LogLevelFilter.Trace,
+            "TRACE" => LogLevelFilter.Trace,
+            "DBG" => LogLevelFilter.Debug,
+            "DEBUG" => LogLevelFilter.Debug,
+            "INF" => LogLevelFilter.Info,
+            "INFO" => LogLevelFilter.Info,
+            "WRN" => LogLevelFilter.Warn,
+            "WARN" => LogLevelFilter.Warn,
+            "ERR" => LogLevelFilter.Error,
+            "ERROR" => LogLevelFilter.Error,
+            "FTL" => LogLevelFilter.Fatal,
+            "FATAL" => LogLevelFilter.Fatal,
+            _ => null
+        };
+    }
 
     private List<LogEntry> ParseLogs(string raw, string source)
     {

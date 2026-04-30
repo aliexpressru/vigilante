@@ -1175,6 +1175,7 @@ html[data-theme="dark"] .issues-section-header,
 html[data-theme="dark"] .warnings-section-header,
 html[data-theme="dark"] .log-entry,
 html[data-theme="dark"] .logs-panel-controls,
+html[data-theme="dark"] .logs-filter-controls,
 html[data-theme="dark"] .logs-panel-content,
 html[data-theme="dark"] .modal-footer,
 html[data-theme="dark"] .collection-actions-footer,
@@ -1229,12 +1230,17 @@ html[data-theme="dark"] .snapshot-action-item {
     color: #f3f4f6;
 }
 
+html[data-theme="dark"] .logs-level-filters {
+    color: #d1d5db;
+}
+
 html[data-theme="dark"] .filter-input,
 html[data-theme="dark"] .form-input,
 html[data-theme="dark"] .form-select,
 html[data-theme="dark"] .refresh-select,
 html[data-theme="dark"] .page-size-select,
 html[data-theme="dark"] .logs-refresh-select,
+html[data-theme="dark"] .logs-search-input,
 html[data-theme="dark"] .target-peer-select,
 html[data-theme="dark"] .override-input {
     background: #1f2937;
@@ -4989,6 +4995,51 @@ html[data-theme="dark"] #leaderNode {
     background: #fff;
     font-family: 'Courier New', monospace;
     font-size: 0.85rem;
+}
+
+.logs-filter-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 20px;
+    background: #f5f6fa;
+    border-bottom: 1px solid #dee2e6;
+    font-size: 0.85rem;
+}
+
+.logs-level-filters {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    color: #555;
+}
+
+.logs-level-filters label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.logs-search-box {
+    display: flex;
+}
+
+.logs-search-input {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: #333;
+    background: #fff;
+}
+
+.logs-search-input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
 }
 
 .logs-loading {

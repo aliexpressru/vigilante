@@ -1,3 +1,5 @@
+using Vigilante.Models;
+
 namespace Vigilante.Models.Requests;
 
 /// <summary>
@@ -12,4 +14,8 @@ public class V1GetQdrantLogsRequest
     public int Limit { get; set; } = 200;
 
     public string? Continuation { get; set; }
+
+    public LogLevelFilter? Levels { get; set; }
+
+    public string? SearchText { get; set; }
 }

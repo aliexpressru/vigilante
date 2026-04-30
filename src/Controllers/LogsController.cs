@@ -21,7 +21,12 @@ public class LogsController(ILogReader logReader, ILogger<LogsController> logger
         try
         {
             var podName = request.PodName!;
-            var serviceQuery = new LogQuery(request.Namespace, request.Limit, request.Continuation);
+            var serviceQuery = new LogQuery(
+                request.Namespace,
+                request.Limit,
+                request.Continuation,
+                request.Levels,
+                request.SearchText);
             var page = await logReader.GetQdrantPodLogsAsync(podName, serviceQuery, cancellationToken);
             return Ok(ToResponse(page));
         }
@@ -42,7 +47,12 @@ public class LogsController(ILogReader logReader, ILogger<LogsController> logger
     {
         try
         {
-            var serviceQuery = new LogQuery(request.Namespace, request.Limit, request.Continuation);
+            var serviceQuery = new LogQuery(
+                request.Namespace,
+                request.Limit,
+                request.Continuation,
+                request.Levels,
+                request.SearchText);
             var page = await logReader.GetServiceLogsAsync(serviceQuery, cancellationToken);
             return Ok(ToResponse(page));
         }
