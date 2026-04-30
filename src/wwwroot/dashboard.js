@@ -5475,11 +5475,30 @@ class VigilanteDashboard {
         const levelFilters = document.querySelectorAll('.logs-level-filter');
         levelFilters.forEach(levelFilter => {
             levelFilter.addEventListener('change', () => {
+                this.updateLogsToggleAllLevelsButton();
                 if (this.currentLogContext) {
                     this.refreshLogs();
                 }
             });
         });
+
+        const toggleAllLevelsBtn = document.getElementById('logsToggleAllLevels');
+        if (toggleAllLevelsBtn) {
+            toggleAllLevelsBtn.addEventListener('click', () => {
+                const levelFilters = Array.from(document.querySelectorAll('.logs-level-filter'));
+                const hasUnchecked = levelFilters.some(levelFilter => !levelFilter.checked);
+                levelFilters.forEach(levelFilter => {
+                    levelFilter.checked = hasUnchecked;
+                });
+
+                this.updateLogsToggleAllLevelsButton();
+                if (this.currentLogContext) {
+                    this.refreshLogs();
+                }
+            });
+        }
+
+        this.updateLogsToggleAllLevelsButton();
 
         const searchInput = document.getElementById('logsSearchText');
         if (searchInput) {
@@ -5729,6 +5748,17 @@ class VigilanteDashboard {
             selectedMask |= levelBitMap[levelFilter.value] || 0;
         });
         return selectedMask;
+    }
+
+    updateLogsToggleAllLevelsButton() {
+        const button = document.getElementById('logsToggleAllLevels');
+        if (!button) {
+            return;
+        }
+
+        const levelFilters = Array.from(document.querySelectorAll('.logs-level-filter'));
+        const allChecked = levelFilters.length > 0 && levelFilters.every(levelFilter => levelFilter.checked);
+        button.textContent = allChecked ? 'Clear all' : 'Select all';
     }
 
     // Configuration Management

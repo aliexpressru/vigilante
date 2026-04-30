@@ -207,12 +207,13 @@ public class LogReader(
 
         IEnumerable<LogEntry> filtered = entries;
 
-        if (query.Levels is not null)
+        var levelsFilter = query.Levels;
+        if (levelsFilter is not null && levelsFilter.Value != LogLevelFilter.All && levelsFilter.Value != LogLevelFilter.None)
         {
             filtered = filtered.Where(entry =>
             {
                 var level = TryExtractLevel(entry.Message);
-                return level is not null && query.Levels.Value.HasFlag(level.Value);
+                return level is not null && levelsFilter.Value.HasFlag(level.Value);
             });
         }
 

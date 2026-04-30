@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Vigilante.Models;
 
 namespace Vigilante.Models.Requests;
@@ -15,6 +16,7 @@ public class V1GetQdrantLogsRequest
 
     public string? Continuation { get; set; }
 
+    [JsonConverter(typeof(LogLevelFilterJsonConverter))]
     public LogLevelFilter? Levels { get; set; }
 
     public string? SearchText { get; set; }

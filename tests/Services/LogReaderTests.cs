@@ -164,6 +164,36 @@ public class LogReaderTests
     }
 
     [Test]
+    public async Task GetQdrantPodLogsAsync_DoesNotFilter_WhenLevelsNone()
+    {
+        var (reader, _, core) = CreateReaderWithKube();
+        core.ReadNamespacedPodLogWithHttpMessagesAsync(
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<int?>(),
+                Arg.Any<string?>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool?>(),
+                Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<string>>>(),
+                Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(ci => StubLogResponse("2025-01-01T00:00:00Z  INFO first\n2025-01-01T00:00:01Z  ERROR second"));
+
+        var page = await reader.GetQdrantPodLogsAsync(
+            "pod-1",
+            new LogQuery("custom-ns", 10, Levels: LogLevelFilter.None),
+            CancellationToken.None);
+
+        Assert.That(page.Success, Is.True);
+        Assert.That(page.Logs.Count, Is.EqualTo(2));
+    }
+
+    [Test]
     public async Task GetQdrantPodLogsAsync_AppliesContinuation_AndTruncates()
     {
         var log = "2025-01-01T00:00:00Z old\n2025-01-01T00:00:01Z new\n2025-01-01T00:00:02Z newer";

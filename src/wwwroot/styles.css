@@ -1234,6 +1234,12 @@ html[data-theme="dark"] .logs-level-filters {
     color: #d1d5db;
 }
 
+html[data-theme="dark"] .logs-level-action-button {
+    background: #1f2937;
+    border-color: #4b5563;
+    color: #e5e7eb;
+}
+
 html[data-theme="dark"] .filter-input,
 html[data-theme="dark"] .form-input,
 html[data-theme="dark"] .form-select,
@@ -5020,6 +5026,22 @@ html[data-theme="dark"] #leaderNode {
     align-items: center;
     gap: 4px;
     cursor: pointer;
+}
+
+.logs-level-action-button {
+    padding: 4px 8px;
+    border: 1px solid #d0d5dd;
+    border-radius: 4px;
+    background: #fff;
+    color: #344054;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.logs-level-action-button:hover {
+    border-color: #667eea;
+    color: #4f46e5;
 }
 
 .logs-search-box {
