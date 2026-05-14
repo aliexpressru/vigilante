@@ -137,7 +137,10 @@ public sealed class UndersizedSnapshotCleanupJob : IJob
         s.Source == SnapshotSource.S3Storage
         || string.Equals(s.NodeUrl, S3Constants.StorageIdentifier, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>API snapshot: that node's collection size. S3: sum of per-node collection sizes (cluster total on disk).</summary>
+    /// <summary>
+    /// API snapshot: that peer's collection size (match <see cref="CollectionInfo.NodeUrl"/> first, then <see cref="CollectionInfo.PeerId"/>).
+    /// S3: max per-node collection size — summing replicas/shards overstates on-disk data and caused false undersized deletes.
+    /// </summary>
     private static long? GetReferenceBytesForMinSize(SnapshotInfo s, IReadOnlyList<CollectionInfo> collectionInfosSameName)
     {
         if (collectionInfosSameName.Count == 0)
@@ -145,18 +148,22 @@ public sealed class UndersizedSnapshotCleanupJob : IJob
 
         if (IsS3Snapshot(s))
         {
-            long sum = 0;
+            long max = 0;
             foreach (var c in collectionInfosSameName)
             {
-                if (c.Metrics.SizeBytes is { } sb and > 0)
-                    sum += sb;
+                if (c.Metrics.SizeBytes is { } sb and > 0 && sb > max)
+                    max = sb;
             }
 
-            return sum > 0 ? sum : null;
+            return max > 0 ? max : null;
         }
 
         var row = collectionInfosSameName.FirstOrDefault(ci =>
             string.Equals(ci.NodeUrl, s.NodeUrl, StringComparison.OrdinalIgnoreCase));
+        row ??= string.IsNullOrEmpty(s.PeerId)
+            ? null
+            : collectionInfosSameName.FirstOrDefault(ci =>
+                string.Equals(ci.PeerId, s.PeerId, StringComparison.OrdinalIgnoreCase));
         return row?.Metrics.SizeBytes is { } b and > 0 ? b : null;
     }
 

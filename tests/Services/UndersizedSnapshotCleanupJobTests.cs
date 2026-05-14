@@ -48,24 +48,29 @@ public class UndersizedSnapshotCleanupJobTests
     private UndersizedSnapshotCleanupJob CreateJob(DynamicConfig? config = null) =>
         new(_serviceProvider, TestNodes(), config ?? ConfigWithMinPercent(50m));
 
-    private static CollectionInfo CollectionRow(string collectionName, string nodeUrl, long sizeBytes) =>
+    private static CollectionInfo CollectionRow(string collectionName, string nodeUrl, long sizeBytes, string peerId = "peer") =>
         new()
         {
             CollectionName = collectionName,
             NodeUrl = nodeUrl,
             PodName = "pod",
-            PeerId = "peer",
+            PeerId = peerId,
             PodNamespace = "default",
             Metrics = new CollectionMetrics { SizeBytes = sizeBytes }
         };
 
-    private static SnapshotInfo ApiSnapshot(string collectionName, string nodeUrl, long sizeBytes, string snapshotName = "c.snap") =>
+    private static SnapshotInfo ApiSnapshot(
+        string collectionName,
+        string nodeUrl,
+        long sizeBytes,
+        string snapshotName = "c.snap",
+        string peerId = "peer") =>
         new()
         {
             CollectionName = collectionName,
             NodeUrl = nodeUrl,
             PodName = "pod",
-            PeerId = "peer",
+            PeerId = peerId,
             SnapshotName = snapshotName,
             SizeBytes = sizeBytes,
             PodNamespace = "default",
@@ -252,7 +257,7 @@ public class UndersizedSnapshotCleanupJobTests
     }
 
     [Test]
-    public async Task AdvanceAsync_WhenS3SnapshotUndersizedVsSumOfNodeSizes_Deletes()
+    public async Task AdvanceAsync_WhenS3SnapshotUndersizedVsMaxOfNodeSizes_Deletes()
     {
         _clusterManager
             .GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
@@ -280,6 +285,66 @@ public class UndersizedSnapshotCleanupJobTests
             SnapshotSource.S3Storage,
             nodeUrl: S3Constants.StorageIdentifier,
             podName: S3Constants.StorageIdentifier,
+            podNamespace: "default",
+            cancellationToken: Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Replicated cluster: two nodes report similar on-disk size; sum would double-count and mark a valid single-file S3 backup undersized.
+    /// </summary>
+    [Test]
+    public async Task AdvanceAsync_WhenS3SnapshotMeetsHalfOfMaxNodeSize_DoesNotDelete()
+    {
+        _clusterManager
+            .GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                CollectionRow("rep", "http://n1:6333", 500L),
+                CollectionRow("rep", "http://n2:6333", 500L)
+            ]);
+        _snapshotService
+            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns([S3SnapshotRow("rep", 300L, "ok-s3.snap")]);
+
+        var nodes = new List<NodeInfo>
+        {
+            new() { Url = "http://n1:6333", IsHealthy = true, PodName = "p1", PeerId = "a", Namespace = "qdrant" },
+            new() { Url = "http://n2:6333", IsHealthy = true, PodName = "p2", PeerId = "b", Namespace = "qdrant" }
+        };
+        var job = new UndersizedSnapshotCleanupJob(_serviceProvider, nodes, ConfigWithMinPercent(50m));
+
+        await job.AdvanceAsync(CancellationToken.None);
+
+        await _snapshotService.DidNotReceive().DeleteSnapshotAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<SnapshotSource>(),
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AdvanceAsync_WhenApiSnapshotNodeUrlDiffersButPeerIdMatches_DeletesIfUndersized()
+    {
+        _clusterManager
+            .GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns([CollectionRow("my-col", "http://n1:6333", 1000L, peerId: "peer-a")]);
+        _snapshotService
+            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns([ApiSnapshot("my-col", "http://other-host:6333", 100L, "small.snap", peerId: "peer-a")]);
+
+        var job = CreateJob(ConfigWithMinPercent(50m));
+
+        await job.AdvanceAsync(CancellationToken.None);
+
+        await _snapshotService.Received(1).DeleteSnapshotAsync(
+            "my-col",
+            "small.snap",
+            SnapshotSource.QdrantApi,
+            nodeUrl: "http://other-host:6333",
+            podName: "pod",
             podNamespace: "default",
             cancellationToken: Arg.Any<CancellationToken>());
     }
