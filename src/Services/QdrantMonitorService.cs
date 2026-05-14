@@ -61,9 +61,14 @@ public class QdrantMonitorService(
 
                     if (state.Health.IsHealthy)
                     {
+                        var ctsUndersized = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                        var undersizedJob = new UndersizedSnapshotCleanupJob(serviceProvider, state.Nodes, DynamicConfig);
+                        jobRegistry.TryAddJob(undersizedJob, ctsUndersized);
+                        await jobRegistry.ProcessPendingJobsAsync(stoppingToken);
+
+                        var ctsSnapshot = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
                         var snapshotJob = new SnapshotAutomationJob(serviceProvider, state.Nodes, DynamicConfig);
-                        var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                        jobRegistry.TryAddJob(snapshotJob, cts);
+                        jobRegistry.TryAddJob(snapshotJob, ctsSnapshot);
                         await jobRegistry.ProcessPendingJobsAsync(stoppingToken);
                     }
                 }

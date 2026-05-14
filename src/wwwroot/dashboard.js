@@ -5862,6 +5862,8 @@ class VigilanteDashboard {
 
             // DeleteWithCollection (default true)
             document.getElementById('snapshotPendingCreateTimeoutSeconds').value = snap.pendingCreateTimeoutSeconds ?? 1800;
+            document.getElementById('snapshotMinSizePercentOfCollection').value = snap.minSnapshotSizePercentOfCollection ?? 50;
+
             document.getElementById('snapshotDeleteWithCollection').checked = snap.deleteWithCollection !== false;
 
             // Orphaned
@@ -5934,6 +5936,12 @@ class VigilanteDashboard {
             return;
         }
 
+        const minSnapPct = parseFloat(document.getElementById('snapshotMinSizePercentOfCollection').value);
+        if (isNaN(minSnapPct) || minSnapPct < 1 || minSnapPct > 100) {
+            this.showToast('Min snapshot size percent must be between 1 and 100', 'error');
+            return;
+        }
+
         const orphanEnabled = document.getElementById('snapshotOrphanedEnabled').checked;
         const orphanMinutesRaw = document.getElementById('snapshotOrphanedAfterMinutes').value;
         const orphanMinutes = orphanEnabled && orphanMinutesRaw ? parseInt(orphanMinutesRaw) : null;
@@ -6003,6 +6011,7 @@ class VigilanteDashboard {
                     ramUsageAlertThresholdPercent: ramUsageAlertThresholdPercent,
                     snapshot: {
                         pendingCreateTimeoutSeconds: pendingTimeoutSeconds,
+                        minSnapshotSizePercentOfCollection: minSnapPct,
                         deleteWithCollection: document.getElementById('snapshotDeleteWithCollection').checked,
                         deleteOrphanedAfterMinutes: orphanMinutes,
                         schedule: {

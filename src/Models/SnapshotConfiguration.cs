@@ -27,6 +27,13 @@ public class SnapshotConfiguration
     public Schedule Schedule { get; set; } = new();
 
     /// <summary>
+    /// Minimum snapshot file size as a percentage of collection on-disk size (1–100). Default 50.
+    /// Per-node for API snapshots; sum of per-node sizes for S3. Undersized snapshots are deleted by <c>UndersizedSnapshotCleanupJob</c>.
+    /// Values outside 1–100 are ignored by that job (no cleanup for that setting).
+    /// </summary>
+    public decimal MinSnapshotSizePercentOfCollection { get; set; } = 50m;
+
+    /// <summary>
     /// Per-collection schedule overrides. Key = collection name.
     /// When present for a collection, replaces the global Schedule entirely.
     /// </summary>

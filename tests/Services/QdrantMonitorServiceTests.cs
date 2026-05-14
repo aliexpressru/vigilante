@@ -33,12 +33,14 @@ public class QdrantMonitorServiceTests
         var snapshotService = Substitute.For<ISnapshotService>();
         var snapshotOrphanedState = new SnapshotOrphanedState();
         var snapshotJobLogger = Substitute.For<ILogger<SnapshotAutomationJob>>();
+        var undersizedCleanupLogger = Substitute.For<ILogger<UndersizedSnapshotCleanupJob>>();
         _serviceProvider = new ServiceCollection()
             .AddSingleton(_clusterManager)
             .AddSingleton(_jobRegistry)
             .AddSingleton(snapshotService)
             .AddSingleton(snapshotOrphanedState)
             .AddSingleton(snapshotJobLogger)
+            .AddSingleton(undersizedCleanupLogger)
             .AddSingleton<ISnapshotAutomationStatus, SnapshotAutomationStatus>()
             .BuildServiceProvider();
 
@@ -506,6 +508,7 @@ public class QdrantMonitorServiceTests
         cts.Cancel();
         await Task.Delay(500, CancellationToken.None);
 
+        _jobRegistry.Received(1).TryAddJob(Arg.Is<UndersizedSnapshotCleanupJob>(j => j.Key == UndersizedSnapshotCleanupJob.JobKey), Arg.Any<CancellationTokenSource>());
         _jobRegistry.Received(1).TryAddJob(Arg.Is<SnapshotAutomationJob>(j => j.Key == SnapshotAutomationJob.JobKey), Arg.Any<CancellationTokenSource>());
     }
 
@@ -544,9 +547,10 @@ public class QdrantMonitorServiceTests
         await Task.Delay(500, CancellationToken.None);
 
         var errors = realJobRegistry.GetActiveErrorsAndPruneExpired(DateTime.UtcNow, TimeSpan.FromMinutes(5));
-        Assert.That(errors, Has.Count.EqualTo(1));
-        Assert.That(errors[0].Key, Is.EqualTo("snapshot-automation"));
-        Assert.That(errors[0].Message, Is.EqualTo("collections failed"));
+        Assert.That(errors, Has.Count.EqualTo(2));
+        var byKey = errors.ToDictionary(e => e.Key, e => e.Message);
+        Assert.That(byKey[UndersizedSnapshotCleanupJob.JobKey], Is.EqualTo("collections failed"));
+        Assert.That(byKey[SnapshotAutomationJob.JobKey], Is.EqualTo("collections failed"));
     }
 
     [Test]

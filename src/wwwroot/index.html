@@ -323,6 +323,15 @@
                         <small class="form-hint">Valid range: 1-86400 seconds</small>
                     </div>
 
+                    <div class="form-group">
+                        <label for="snapshotMinSizePercentOfCollection">
+                            Min snapshot size (% of collection on disk)
+                            <span class="config-label-hint">Undersized snapshots are deleted each healthy tick (API: per node; S3: vs sum of node sizes). Range 1–100.</span>
+                        </label>
+                        <input type="number" id="snapshotMinSizePercentOfCollection" class="form-input" min="1" max="100" step="1" placeholder="50">
+                        <small class="form-hint">Default 50%. Use 1–100; other values disable undersized cleanup in the background job.</small>
+                    </div>
+
                     <div class="config-toggle-row">
                         <input type="checkbox" id="snapshotDeleteWithCollection">
                         <label for="snapshotDeleteWithCollection">Delete snapshots when collection is deleted via Vigilante</label>

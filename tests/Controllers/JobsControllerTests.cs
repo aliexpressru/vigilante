@@ -46,7 +46,10 @@ public class JobsControllerTests
         Assert.That(list!, Is.Empty);
         await _jobRegistry.Received(1).ProcessPendingJobsAsync(
             Arg.Any<CancellationToken>(),
-            Arg.Is<IReadOnlySet<string>?>(s => s != null && s.Contains(SnapshotAutomationJob.JobKey)));
+            Arg.Is<IReadOnlySet<string>?>(s =>
+                s != null
+                && s.Contains(SnapshotAutomationJob.JobKey)
+                && s.Contains(UndersizedSnapshotCleanupJob.JobKey)));
     }
 
     [Test]
@@ -72,7 +75,10 @@ public class JobsControllerTests
         Assert.That(list[1].ErrorMessage, Is.EqualTo("error"));
         await _jobRegistry.Received(1).ProcessPendingJobsAsync(
             Arg.Any<CancellationToken>(),
-            Arg.Is<IReadOnlySet<string>?>(s => s != null && s.Contains(SnapshotAutomationJob.JobKey)));
+            Arg.Is<IReadOnlySet<string>?>(s =>
+                s != null
+                && s.Contains(SnapshotAutomationJob.JobKey)
+                && s.Contains(UndersizedSnapshotCleanupJob.JobKey)));
     }
 
     [Test]

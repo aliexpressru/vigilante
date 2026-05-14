@@ -16,7 +16,7 @@ public class JobsController(
 {
     /// <summary>Do not drain snapshot-automation on status poll — otherwise the HTTP call blocks until the run ends and the UI only ever sees idle.</summary>
     private static readonly IReadOnlySet<string> ExcludeSnapshotAutomationOnStatusPoll =
-        new HashSet<string> { SnapshotAutomationJob.JobKey };
+        new HashSet<string> { SnapshotAutomationJob.JobKey, UndersizedSnapshotCleanupJob.JobKey };
 
     /// <summary>
     /// Returns current background jobs with metadata (e.g. ReplicationPlan for restore replication factor) and any errors.
