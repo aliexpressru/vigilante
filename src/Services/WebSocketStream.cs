@@ -83,22 +83,12 @@ internal class WebSocketStream : Stream
 
                 if (result.Count == 0)
                 {
-                    // Empty message, continue reading
-                    _logger.LogDebug("Received empty WebSocket message, continuing...");
                     continue;
                 }
 
                 // First byte is the channel
                 var channel = tempBuffer[0];
-                
-                // Log VERY FIRST WebSocket message BEFORE any counting
-                if (_stdoutMessages == 0 && _stderrMessages == 0 && _otherMessages == 0)
-                {
-                    var first20Bytes = string.Join(" ", tempBuffer.Take(Math.Min(21, result.Count)).Select(b => b.ToString("X2")));
-                    _logger.LogInformation("VERY FIRST WebSocket message (before processing): Channel={Channel}, Count={Count}, First20BytesWithChannel=[{Bytes}]",
-                        channel, result.Count, first20Bytes);
-                }
-                
+
                 // Track message types
                 if (channel == 1)
                     _stdoutMessages++;
@@ -106,14 +96,7 @@ internal class WebSocketStream : Stream
                     _stderrMessages++;
                 else
                     _otherMessages++;
-                
-                // Log received message details for debugging
-                if (_totalBytesRead < 1024 * 1024) // Log details only for first MB
-                {
-                    _logger.LogDebug("Received WebSocket message: Channel={Channel}, Count={Count}, MessageType={MessageType}, EndOfMessage={EndOfMessage}",
-                        channel, result.Count, result.MessageType, result.EndOfMessage);
-                }
-                
+
                 // Skip messages from non-stdout channels (like stderr)
                 if (channel != 1)
                 {
@@ -135,23 +118,7 @@ internal class WebSocketStream : Stream
 
                 var dataLength = result.Count - 1; // Exclude channel byte
                 var bytesToCopy = Math.Min(dataLength, count);
-                
-                // Log first stdout message for debugging data corruption
-                if (_stdoutMessages == 1)
-                {
-                    var first20Bytes = string.Join(" ", tempBuffer.Skip(1).Take(Math.Min(20, dataLength)).Select(b => b.ToString("X2")));
-                    _logger.LogInformation("FIRST stdout message #1: Channel={Channel}, Count={Count}, DataLength={DataLength}, First20Bytes=[{Bytes}]",
-                        channel, result.Count, dataLength, first20Bytes);
-                }
-                
-                // Also log second message to see pattern
-                if (_stdoutMessages == 2)
-                {
-                    var first10Bytes = string.Join(" ", tempBuffer.Skip(1).Take(Math.Min(10, dataLength)).Select(b => b.ToString("X2")));
-                    _logger.LogInformation("SECOND stdout message #2: Count={Count}, DataLength={DataLength}, First10Bytes=[{Bytes}]",
-                        result.Count, dataLength, first10Bytes);
-                }
-                
+
                 // Copy data (excluding channel byte) to output buffer
                 Array.Copy(tempBuffer, 1, buffer, offset, bytesToCopy);
                 
@@ -165,21 +132,12 @@ internal class WebSocketStream : Stream
                     Array.Copy(tempBuffer, 1 + bytesToCopy, _leftoverBuffer, 0, leftoverSize);
                     _leftoverOffset = 0;
                     _leftoverCount = leftoverSize;
-                    
-                    _logger.LogDebug("Stored {LeftoverBytes} bytes in leftover buffer", leftoverSize);
                 }
-                
-                if (_totalBytesRead % (1024 * 1024) == 0 || _totalBytesRead < 1024) // Log every 1MB or first KB
-                {
-                    _logger.LogDebug("Downloaded {TotalBytes} bytes from {FilePath}", _totalBytesRead, _filePath);
-                }
-                
+
                 return bytesToCopy;
             }
             catch (WebSocketException ex) when (ex.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely)
             {
-                _logger.LogDebug("WebSocket connection closed prematurely for {FilePath}. Total bytes read: {TotalBytes}",
-                    _filePath, _totalBytesRead);
                 return 0;
             }
             catch (Exception ex)

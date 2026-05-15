@@ -63,10 +63,6 @@ public class S3ConfigurationProvider(
             return null;
         }
 
-        logger.LogDebug(
-            "S3 configuration resolved — EndpointUrl: {EndpointUrl}, BucketName: {BucketName}, Region: {Region}",
-            config.EndpointUrl, config.BucketName, config.Region);
-
         return config;
     }
 

@@ -140,8 +140,6 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
                 .Replace("\r", "")
                 .Replace("\0", "");
             
-            logger.LogDebug("Received size data for {Item}: '{Output}'", itemName, output);
-
             var cleanedOutput = new string(output.Where(char.IsDigit).ToArray());
             if (!string.IsNullOrEmpty(cleanedOutput) && long.TryParse(cleanedOutput, out var sizeBytes))
             {
@@ -349,14 +347,11 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
     {
         try
         {
-            logger.LogDebug("Reading file content from {FilePath} on pod {PodName}", filePath, podName);
-            
             var command = string.Format(GetFileContentCommand, filePath);
             var content = await ExecuteCommandAsync(podName, podNamespace, command, cancellationToken);
             
             if (string.IsNullOrWhiteSpace(content))
             {
-                logger.LogDebug("File not found or empty at {FilePath}", filePath);
                 return null;
             }
             

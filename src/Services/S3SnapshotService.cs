@@ -51,10 +51,7 @@ public class S3SnapshotService(
             // List all objects in the bucket with the configured snapshots folder prefix
             // Objects are stored under '{SnapshotsFolder}/' prefix in the bucket
             var prefix = $"{S3Constants.SnapshotsFolder}/";
-            
-            logger.LogInformation("Listing ALL S3 objects with prefix: {Prefix} in bucket: {BucketName}", 
-                prefix, _currentConfig!.BucketName);
-            
+
             var request = new ListObjectsV2Request
             {
                 BucketName = _currentConfig!.BucketName,
@@ -62,28 +59,19 @@ public class S3SnapshotService(
             };
 
             var response = await client.ListObjectsV2Async(request, cancellationToken);
-            
-            logger.LogInformation("S3 ListObjects response: KeyCount={KeyCount}, IsTruncated={IsTruncated}", 
-                response.KeyCount, response.IsTruncated);
-            
+
             if (response.S3Objects == null || response.KeyCount == 0)
             {
-                logger.LogInformation("No objects found in S3 snapshots bucket");
                 return new List<(string, string, long, DateTime)>();
             }
-            
-            logger.LogInformation("S3Objects count: {Count}", response.S3Objects.Count);
-            
+
             var snapshots = new List<(string, string, long, DateTime)>();
-            
+
             foreach (var obj in response.S3Objects)
             {
                 // Skip folder markers (objects ending with /)
                 if (obj.Key.EndsWith("/"))
                     continue;
-
-                // Debug: Log the actual key
-                logger.LogDebug("S3 Object Key: {Key}", obj.Key);
 
                 // Parse key: {SnapshotsFolder}/{collection-name}/{snapshot-filename}
                 var parts = obj.Key.Split('/');
@@ -149,10 +137,7 @@ public class S3SnapshotService(
             var encodedCollectionName = Uri.EscapeDataString(collectionName).Replace("~", "%7E");
             
             var prefix = $"{S3Constants.SnapshotsFolder}/{encodedCollectionName}";
-            
-            logger.LogInformation("Listing S3 objects with prefix: {Prefix} (collection: {CollectionName}) in bucket: {BucketName}", 
-                prefix, collectionName, _currentConfig!.BucketName);
-            
+
             var request = new ListObjectsV2Request
             {
                 BucketName = _currentConfig!.BucketName,
@@ -160,19 +145,12 @@ public class S3SnapshotService(
             };
 
             var response = await client.ListObjectsV2Async(request, cancellationToken);
-            
-            logger.LogInformation("S3 ListObjects response: KeyCount={KeyCount}, IsTruncated={IsTruncated}", 
-                response.KeyCount, response.IsTruncated);
-            
-            // S3Objects can be null if prefix doesn't exist or bucket is empty
+
             if (response.S3Objects == null || response.KeyCount == 0)
             {
-                logger.LogInformation("No objects found for collection {CollectionName} in S3", collectionName);
                 return new List<(string, long)>();
             }
-            
-            logger.LogInformation("S3Objects count: {Count}", response.S3Objects.Count);
-            
+
             // Extract snapshot name and size from S3 objects
             var snapshots = response.S3Objects
                 .Select(obj => (
@@ -217,9 +195,7 @@ public class S3SnapshotService(
             var encodedCollectionName = Uri.EscapeDataString(collectionName).Replace("~", "%7E");
             var encodedSnapshotName = Uri.EscapeDataString(snapshotName).Replace("~", "%7E");
             var key = $"{S3Constants.SnapshotsFolder}/{encodedCollectionName}/{encodedSnapshotName}";
-            
-            logger.LogDebug("Downloading snapshot from S3: {Key} in bucket: {BucketName}", key, _currentConfig!.BucketName);
-            
+
             var request = new GetObjectRequest
             {
                 BucketName = _currentConfig!.BucketName,
@@ -270,9 +246,7 @@ public class S3SnapshotService(
             var encodedCollectionName = Uri.EscapeDataString(collectionName).Replace("~", "%7E");
             var encodedSnapshotName = Uri.EscapeDataString(snapshotName).Replace("~", "%7E");
             var key = $"{S3Constants.SnapshotsFolder}/{encodedCollectionName}/{encodedSnapshotName}";
-            
-            logger.LogDebug("Deleting snapshot from S3: {Key} in bucket: {BucketName}", key, _currentConfig!.BucketName);
-            
+
             var request = new DeleteObjectRequest
             {
                 BucketName = _currentConfig!.BucketName,
@@ -331,12 +305,7 @@ public class S3SnapshotService(
             // First, decode inputs in case they're already encoded
             var decodedCollectionName = Uri.UnescapeDataString(collectionName);
             var decodedSnapshotName = Uri.UnescapeDataString(snapshotName);
-            
-            logger.LogDebug("GetPresignedDownloadUrlAsync - Input collection: '{CollectionName}', decoded: '{DecodedCollection}'", 
-                collectionName, decodedCollectionName);
-            logger.LogDebug("GetPresignedDownloadUrlAsync - Input snapshot: '{SnapshotName}', decoded: '{DecodedSnapshot}'", 
-                snapshotName, decodedSnapshotName);
-            
+
             // List objects to find the actual key in S3
             var client = await GetOrCreateS3ClientAsync(namespaceParameter, cancellationToken);
             if (client == null)
@@ -350,10 +319,7 @@ public class S3SnapshotService(
             // But S3 stores them as %7E, so we need to manually encode them
             var encodedCollectionName = Uri.EscapeDataString(decodedCollectionName).Replace("~", "%7E");
             var searchPrefix = $"{S3Constants.SnapshotsFolder}/{encodedCollectionName}/";
-            
-            logger.LogInformation("Searching for S3 object - Decoded collection: '{DecodedCollection}', Encoded: '{EncodedCollection}', Search prefix: '{Prefix}'", 
-                decodedCollectionName, encodedCollectionName, searchPrefix);
-            
+
             var listRequest = new ListObjectsV2Request
             {
                 BucketName = s3Options.BucketName,
@@ -362,19 +328,7 @@ public class S3SnapshotService(
             };
             
             var listResponse = await client.ListObjectsV2Async(listRequest, cancellationToken);
-            
-            logger.LogInformation("ListObjects returned {Count} objects for prefix {Prefix}", 
-                listResponse.S3Objects?.Count ?? 0, searchPrefix);
-            
-            // Log all keys found
-            if (listResponse.S3Objects != null && listResponse.S3Objects.Count > 0)
-            {
-                foreach (var obj in listResponse.S3Objects)
-                {
-                    logger.LogDebug("Found S3 object: {Key}", obj.Key);
-                }
-            }
-            
+
             // Find the actual key in S3 - it should have the encoded collection name
             string? actualKey = null;
             foreach (var obj in listResponse.S3Objects ?? new List<S3Object>())
@@ -385,14 +339,10 @@ public class S3SnapshotService(
                 // 1. Decode both the S3 filename and the requested snapshot name
                 // 2. Compare the decoded versions
                 var fileNameDecoded = Uri.UnescapeDataString(fileName);
-                
-                logger.LogDebug("Comparing S3 file '{FileName}' (decoded: '{FileNameDecoded}') with requested '{SnapshotName}'", 
-                    fileName, fileNameDecoded, decodedSnapshotName);
-                
+
                 if (fileNameDecoded == decodedSnapshotName)
                 {
                     actualKey = obj.Key;
-                    logger.LogInformation("Found matching S3 object: {Key}", actualKey);
                     break;
                 }
             }
@@ -414,9 +364,7 @@ public class S3SnapshotService(
                     string.Join(", ", availableFiles));
                 return null;
             }
-            
-            logger.LogDebug("Found S3 object key: {Key}", actualKey);
-            
+
             // The actualKey is like: "snapshots/collection%7E%7Eversion/file.snapshot"
             // For the presigned URL, we need to pass the full key including "snapshots/"
             // The AwsSignatureV4 utility will URL-encode it properly (so %7E becomes %257E)
@@ -432,10 +380,9 @@ public class S3SnapshotService(
                 s3Options.Region ?? S3Constants.DefaultRegion,
                 (int)expiration.TotalSeconds);
             
-            logger.LogInformation("Generated presigned URL for snapshot {SnapshotName} in collection {CollectionName}, expires in {Expiration}", 
+            logger.LogInformation("Generated presigned URL for snapshot {SnapshotName} in collection {CollectionName}, expires in {Expiration}",
                 decodedSnapshotName, decodedCollectionName, expiration);
-            logger.LogDebug("Generated presigned URL: {Url}", url);
-            
+
             return url;
         }
         catch (Exception ex)
@@ -528,13 +475,6 @@ public class S3SnapshotService(
                 .ToList();
             scannedUploads += listResponse.MultipartUploads?.Count ?? 0;
             hasMorePages = listResponse.IsTruncated == true;
-
-            logger.LogDebug(
-                "Multipart cleanup page {Page}: uploads={UploadsCount}, stale={StaleCount}, truncated={IsTruncated}",
-                page,
-                listResponse.MultipartUploads?.Count ?? 0,
-                staleUploads.Count,
-                listResponse.IsTruncated == true);
 
             found += staleUploads.Count;
             foreach (var upload in staleUploads)
@@ -683,13 +623,6 @@ public class S3SnapshotService(
             }
 
             _currentConfig = s3Options;
-
-            // Log credential info (first 4 characters only for security)
-            logger.LogDebug("Creating S3 client with AccessKey: {AccessKeyPrefix}*** (length: {AccessKeyLength}), SecretKey: {SecretKeyPrefix}*** (length: {SecretKeyLength})", 
-                s3Options.AccessKey?.Length > 4 ? s3Options.AccessKey.Substring(0, 4) : "???",
-                s3Options.AccessKey?.Length ?? 0,
-                s3Options.SecretKey?.Length > 4 ? s3Options.SecretKey.Substring(0, 4) : "???",
-                s3Options.SecretKey?.Length ?? 0);
 
             var config = new AmazonS3Config
             {

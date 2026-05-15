@@ -560,12 +560,7 @@ public class SnapshotService(
     {
         try
         {
-            logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}", 
-                snapshotName, collectionName, podName, podNamespace);
-
             var snapshotPath = $"{QdrantConstants.SnapshotsPath}/{collectionName}/{snapshotName}";
-            
-            logger.LogInformation("Starting download: {SnapshotPath} from pod {PodName}", snapshotPath, podName);
 
             if (commandExecutor == null)
             {
@@ -580,12 +575,7 @@ public class SnapshotService(
                 snapshotPath,
                 cancellationToken);
 
-            if (expectedSize.HasValue)
-            {
-                logger.LogInformation("Got expected file size: {Size} bytes ({FormattedSize})", 
-                    expectedSize.Value, expectedSize.Value.ToPrettySize());
-            }
-            else
+            if (!expectedSize.HasValue)
             {
                 logger.LogWarning("Could not get file size from pod - will download without size limit!");
             }
@@ -597,11 +587,6 @@ public class SnapshotService(
                 podNamespace,
                 checksumPath,
                 cancellationToken);
-
-            if (!string.IsNullOrEmpty(expectedChecksum))
-            {
-                logger.LogInformation("Expected checksum: {Checksum}", expectedChecksum);
-            }
 
             // Download file using cat command
             var snapshotStream = await commandExecutor.DownloadFileAsync(
@@ -617,9 +602,6 @@ public class SnapshotService(
                     snapshotName, podName);
                 return null;
             }
-
-            logger.LogInformation("Snapshot {SnapshotName} download stream started successfully from disk on pod {PodName} in namespace {Namespace}", 
-                snapshotName, podName, podNamespace);
 
             return snapshotStream;
         }
@@ -649,7 +631,6 @@ public class SnapshotService(
         {
             try
             {
-                logger.LogDebug("Attempting to download snapshot from S3");
                 var s3Stream = await s3SnapshotService.DownloadSnapshotAsync(
                     collectionName,
                     snapshotName,
@@ -658,7 +639,6 @@ public class SnapshotService(
 
                 if (s3Stream != null)
                 {
-                    logger.LogInformation("Successfully downloaded snapshot from S3");
                     return s3Stream;
                 }
 
@@ -673,7 +653,6 @@ public class SnapshotService(
         // Priority 2: Try API
         try
         {
-            logger.LogDebug("Attempting to download snapshot via API from {NodeUrl}", nodeUrl);
             var apiStream = await DownloadCollectionSnapshotAsync(
                 nodeUrl,
                 collectionName,
@@ -682,7 +661,6 @@ public class SnapshotService(
 
             if (apiStream != null)
             {
-                logger.LogInformation("Successfully downloaded snapshot via API");
                 return apiStream;
             }
 
@@ -698,9 +676,6 @@ public class SnapshotService(
         {
             try
             {
-                logger.LogDebug("Attempting to download snapshot from disk: Pod={PodName}, Namespace={Namespace}",
-                    podName, podNamespace);
-
                 var diskStream = await DownloadSnapshotFromDiskAsync(
                     podName,
                     podNamespace,
@@ -710,7 +685,6 @@ public class SnapshotService(
 
                 if (diskStream != null)
                 {
-                    logger.LogInformation("Successfully downloaded snapshot from disk");
                     return diskStream;
                 }
 
@@ -740,36 +714,28 @@ public class SnapshotService(
         CancellationToken cancellationToken = default,
         IReadOnlyList<NodeInfo>? nodesToUse = null)
     {
-        logger.LogInformation("Starting GetSnapshotsInfoAsync (ClearCache: {ClearCache}, NodesFromCaller: {NodesFromCaller})", clearCache, nodesToUse != null);
-
         await _cacheLock.WaitAsync(cancellationToken);
         try
         {
             // Clear cache if requested
             if (clearCache)
             {
-                logger.LogInformation("Clearing snapshots cache");
                 _snapshotsCache = null;
             }
 
-            // Return cached data if available (only when using default nodes - cache key is implicit)
             if (_snapshotsCache != null && nodesToUse == null)
             {
-                logger.LogInformation("Returning {Count} snapshots from cache", _snapshotsCache.Count);
                 return _snapshotsCache;
             }
 
-            // Use provided nodes (e.g. current cluster only) or fetch all from provider
             List<NodeInfo> nodes;
             if (nodesToUse != null)
             {
                 nodes = nodesToUse.ToList();
-                logger.LogInformation("Using {NodesCount} nodes from caller (current cluster)", nodes.Count);
             }
             else
             {
                 nodes = await nodesProvider.BuildNodeInfoListAsync(cancellationToken);
-                logger.LogInformation("Found {NodesCount} nodes to process", nodes.Count);
             }
             
             var result = new List<SnapshotInfo>();
@@ -782,7 +748,6 @@ public class SnapshotService(
                 
             if (isS3Available)
             {
-                logger.LogInformation("S3 storage is available, fetching snapshots from S3");
                 try
                 {
                     await GetSnapshotsFromS3Async(nodes, result, cancellationToken);
@@ -800,21 +765,16 @@ public class SnapshotService(
                 bool hasPodsWithNames = nodes.Any(n => !string.IsNullOrEmpty(n.PodName));
                 if (hasPodsWithNames)
                 {
-                    logger.LogInformation("Fetching snapshots from Kubernetes storage for {NodeCount} nodes", nodes.Count);
-
                     var nodeResults = await Task.WhenAll(
                         nodes.Select(node => ProcessNodeSnapshotsFromKubernetesAsync(node, cancellationToken)));
                     foreach (var list in nodeResults)
                         result.AddRange(list);
-
-                    logger.LogInformation("Finished processing all nodes. Total snapshots collected from k8s storage: {Count}", result.Count);
                 }
             }
             
             // Priority 3: If still no snapshots, try Qdrant API
             if (result.Count == 0 && !hasErrors)
             {
-                logger.LogInformation("Fetching snapshots from Qdrant API");
                 try
                 {
                     await GetSnapshotsFromQdrantApiAsync(nodes, result, cancellationToken);
@@ -830,14 +790,12 @@ public class SnapshotService(
             if (!hasErrors && nodesToUse == null)
             {
                 _snapshotsCache = result;
-                logger.LogInformation("Cached {Count} snapshots", result.Count);
             }
             else if (hasErrors)
             {
                 logger.LogWarning("Not caching snapshots due to errors during fetch");
             }
 
-            logger.LogInformation("GetSnapshotsInfoAsync completed. Total snapshots: {Count}", result.Count);
             return result;
         }
         finally
@@ -856,20 +814,14 @@ public class SnapshotService(
     {
         try
         {
-            logger.LogDebug("Getting snapshots with size info for collection {CollectionName} on node {NodeUrl}", 
-                collectionName, nodeUrl);
             var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             var result = await qdrantClient.ListCollectionSnapshots(collectionName, cancellationToken);
             
             if (result?.Status?.IsSuccess == true && result.Result != null)
             {
-                var snapshots = result.Result
+                return result.Result
                     .Select(s => (s.Name, s.Size))
                     .ToList();
-                
-                logger.LogDebug("Found {Count} snapshots with size info for collection {CollectionName} on node {NodeUrl}", 
-                    snapshots.Count, collectionName, nodeUrl);
-                return snapshots;
             }
             
             logger.LogWarning("Failed to get snapshots for collection {CollectionName}: {Error}",
@@ -891,10 +843,6 @@ public class SnapshotService(
         string peerId,
         CancellationToken cancellationToken)
     {
-        logger.LogInformation(
-            "Starting to get snapshots from disk for pod {PodName} (Node URL {NodeUrl}) in namespace {Namespace}",
-            podName, nodeUrl, podNamespace);
-
         if (commandExecutor == null)
         {
             logger.LogWarning("Kubernetes client not available, cannot get snapshots from disk for pod {PodName}", podName);
@@ -905,9 +853,6 @@ public class SnapshotService(
 
         try
         {
-            logger.LogInformation("Listing collection folders in {SnapshotsPath} on pod {PodName}", 
-                QdrantConstants.SnapshotsPath, podName);
-            
             var collectionFolders = await commandExecutor.ListFilesAsync(
                 podName,
                 podNamespace,
@@ -915,17 +860,11 @@ public class SnapshotService(
                 QdrantConstants.DirectoryPattern,
                 cancellationToken);
 
-            logger.LogInformation("Found {Count} collection folders in snapshots directory on pod {PodName}: {Folders}", 
-                collectionFolders.Count, podName, string.Join(", ", collectionFolders));
-
             // Process each collection folder
             foreach (var collectionName in collectionFolders)
             {
                 try
                 {
-                    logger.LogInformation("Listing snapshot files in {SnapshotsPath}/{CollectionName} on pod {PodName}", 
-                        QdrantConstants.SnapshotsPath, collectionName, podName);
-                    
                     var snapshotFiles = await commandExecutor.ListFilesAsync(
                         podName,
                         podNamespace,
@@ -933,15 +872,8 @@ public class SnapshotService(
                         QdrantConstants.SnapshotFilePattern,
                         cancellationToken);
 
-                    logger.LogInformation("Found {Count} snapshot files for collection {CollectionName} on pod {PodName}: {Files}", 
-                        snapshotFiles.Count, collectionName, podName, string.Join(", ", snapshotFiles));
-
-                    // Process each snapshot file in the collection
                     foreach (var snapshotFile in snapshotFiles.Where(f => f.EndsWith(QdrantConstants.SnapshotFilePattern.TrimStart('*'))))
                     {
-                        logger.LogDebug("Getting size for snapshot {SnapshotFile} in {CollectionName}", 
-                            snapshotFile, collectionName);
-                        
                         var sizeBytes = await commandExecutor.GetSizeAsync(
                             podName,
                             podNamespace,
@@ -964,8 +896,6 @@ public class SnapshotService(
                             };
 
                             snapshots.Add(snapshotInfo);
-                            logger.LogInformation("Added snapshot {SnapshotName} for collection {CollectionName}: {Size} bytes ({PrettySize})", 
-                                snapshotFile, collectionName, sizeBytes.Value, snapshotInfo.PrettySize);
                         }
                         else
                         {
@@ -1045,15 +975,6 @@ public class SnapshotService(
             var snapshotsList = snapshots.ToList();
             foreach (var snapshot in snapshotsList)
                 snapshot.Source = SnapshotSource.KubernetesStorage;
-
-            logger.LogInformation("Retrieved {SnapshotsCount} snapshots from pod {PodName} (Node: {NodeUrl})",
-                snapshotsList.Count, node.PodName, node.Url);
-
-            if (snapshotsList.Count > 0)
-            {
-                logger.LogDebug("Snapshots from pod {PodName}: {SnapshotNames}",
-                    node.PodName, string.Join(", ", snapshotsList.Select(s => s.SnapshotName)));
-            }
 
             return snapshotsList;
         }
@@ -1238,9 +1159,6 @@ public class SnapshotService(
                 var collectionName = collection.Name;
                 try
                 {
-                    logger.LogDebug("Getting snapshots with size info for collection {CollectionName} on node {NodeUrl}",
-                        collectionName, node.Url);
-
                     var snapshotsWithSize = await GetCollectionSnapshotsWithSizeAsync(
                         node.Url,
                         collectionName,
@@ -1253,8 +1171,6 @@ public class SnapshotService(
                                                 name.Contains(node.PeerId, StringComparison.OrdinalIgnoreCase);
                         if (!belongsToThisNode)
                         {
-                            logger.LogTrace("Skipping snapshot {SnapshotName} - does not belong to node {PeerId}",
-                                name, node.PeerId);
                             continue;
                         }
 

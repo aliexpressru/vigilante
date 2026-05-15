@@ -92,8 +92,6 @@ public class KubernetesManager(
 
         try
         {
-            logger.LogInformation("Fetching warning events for namespace {Namespace}", ns);
-
             // Try events.k8s.io/v1 API first (newer Kubernetes versions)
             try
             {
@@ -105,9 +103,6 @@ public class KubernetesManager(
 
                 if (eventsListV1?.Items != null && eventsListV1.Items.Count > 0)
                 {
-                    logger.LogInformation("Found {Count} warning events in namespace {Namespace} using Events v1 API", 
-                        eventsListV1.Items.Count, ns);
-
                     var sortedEvents = eventsListV1.Items
                         .OrderByDescending(e => e.EventTime ?? DateTime.MinValue);
 
@@ -121,13 +116,11 @@ public class KubernetesManager(
                             evt.Note));
                     }
 
-                    logger.LogInformation("Formatted {Count} warning events from namespace {Namespace}", warnings.Count, ns);
                     return warnings;
                 }
             }
-            catch (Exception exV1)
+            catch (Exception)
             {
-                logger.LogDebug(exV1, KubernetesConstants.EventsV1NotAvailableMessage);
             }
 
             // Fallback to CoreV1 Events API (older Kubernetes versions)
@@ -139,12 +132,8 @@ public class KubernetesManager(
 
             if (eventsList?.Items == null || eventsList.Items.Count == 0)
             {
-                logger.LogInformation("No warning events found in namespace {Namespace} (checked both v1 and CoreV1 APIs)", ns);
                 return warnings;
             }
-
-            logger.LogInformation("Found {Count} warning events in namespace {Namespace} using CoreV1 API", 
-                eventsList.Items.Count, ns);
 
             // Sort by last timestamp (most recent first) and format
             var warningEvents = eventsList.Items
@@ -159,8 +148,6 @@ public class KubernetesManager(
                     evt.Reason,
                     evt.Message));
             }
-
-            logger.LogInformation("Formatted {Count} warning events from namespace {Namespace}", warnings.Count, ns);
         }
         catch (Exception ex)
         {
@@ -188,9 +175,8 @@ public class KubernetesManager(
                 return File.ReadAllText(KubernetesConstants.ServiceAccountNamespacePath).Trim();
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            logger.LogDebug(ex, "Failed to read service account namespace");
         }
 
         return KubernetesConstants.DefaultNamespace;

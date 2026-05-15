@@ -468,13 +468,8 @@ public class CollectionService : ICollectionService
                             runningOptimizations = BuildRunningOptimizations(optimizationProgressResponse);
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
-                        _logger.LogDebug(
-                            ex,
-                            "Failed to get optimization progress for collection {CollectionName} from node {NodeUrl}",
-                            collection.Name,
-                            node.Url);
                     }
 
                     var collectionInfo = new CollectionInfo
@@ -1081,10 +1076,6 @@ public class CollectionService : ICollectionService
                             shardDetail.SizeBytes = sizeBytes;
                         }
                     }
-
-                    _logger.LogDebug(
-                        "Updated {ShardCount} shard(s) with size info for collection {CollectionName} on node {NodeUrl}",
-                        existingShardDetails.Count, collection.CollectionName, collection.NodeUrl);
                 }
                 else
                 {
@@ -1097,10 +1088,6 @@ public class CollectionService : ICollectionService
                     }).ToList();
 
                     collection.Metrics.Shards = shardDetails;
-                    
-                    _logger.LogDebug(
-                        "Created {ShardCount} shard(s) info from storage for collection {CollectionName} on node {NodeUrl}",
-                        shardDetails.Count, collection.CollectionName, collection.NodeUrl);
                 }
             }
         }
@@ -1214,10 +1201,6 @@ public class CollectionService : ICollectionService
                         };
 
                         shardSizes.Add(shardSize);
-                        
-                        _logger.LogDebug(
-                            "Shard size calculated: Collection={Collection}, Shard={ShardId}, Pod={PodName}, Size={Size}",
-                            collectionName, shardId, podName, shardSize.PrettySize);
                     }
                 }
                 else

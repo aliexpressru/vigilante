@@ -177,9 +177,8 @@ public class LogReader(
                 return ts;
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            logger.LogDebug(ex, "Failed to parse continuation token");
         }
 
         return null;

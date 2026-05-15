@@ -36,7 +36,6 @@ public class QdrantNodesProvider(
             {
                 var nodes = await GetNodesFromK8sAsync(cancellationToken);
                 // Return K8s nodes even if empty - this is important for scaled-to-0 scenarios
-                logger.LogInformation("Using Kubernetes discovery: found {Count} nodes", nodes.Count);
                 return nodes;
             }
             catch(Exception e)
@@ -49,7 +48,6 @@ public class QdrantNodesProvider(
         var nodesFromEnv = GetNodesFromEnvironment();
         if (nodesFromEnv.Any())
         {
-            logger.LogInformation("Using environment variables: found {Count} nodes", nodesFromEnv.Count);
             return nodesFromEnv;
         }
 
@@ -74,7 +72,6 @@ public class QdrantNodesProvider(
         {
             if (!string.IsNullOrEmpty(_statefulSetName))
             {
-                logger.LogDebug("Using stored StatefulSet name: {StatefulSetName}", _statefulSetName);
                 return _statefulSetName;
             }
         }
@@ -91,7 +88,6 @@ public class QdrantNodesProvider(
             return statefulSetName;
         }
 
-        logger.LogDebug("Could not determine StatefulSet name from memory or discovered nodes");
         return null;
     }
     
@@ -153,8 +149,6 @@ public class QdrantNodesProvider(
     {
         try
         {
-            logger.LogDebug("Getting peer ID for node {NodeUrl}", nodeUrl);
-            
             var client = clientFactory.CreateClient(nodeConfig.Host, nodeConfig.Port, _options.ApiKey);
             
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_options.HttpTimeoutSeconds));
@@ -164,9 +158,7 @@ public class QdrantNodesProvider(
             
             if (clusterInfo.Status.IsSuccess && clusterInfo.Result?.PeerId != null)
             {
-                var peerId = clusterInfo.Result.PeerId.ToString();
-                logger.LogDebug("Got peer ID {PeerId} for node {NodeUrl}", peerId, nodeUrl);
-                return peerId;
+                return clusterInfo.Result.PeerId.ToString();
             }
             
             logger.LogWarning("Failed to get cluster info from node {NodeUrl}: {Error}",
@@ -189,7 +181,6 @@ public class QdrantNodesProvider(
     {
         if (kubernetes == null)
         {
-            logger.LogDebug("Kubernetes client is not available, skipping K8s discovery");
             return [];
         }
         
@@ -232,12 +223,6 @@ public class QdrantNodesProvider(
             })
             .ToList();
 
-        if (nodes.Count > 0)
-        {
-            logger.LogInformation("Discovered {Count} Qdrant nodes from Kubernetes in namespace {Namespace}", 
-                nodes.Count, currentNamespace);
-        }
-
         return nodes;
     }
 
@@ -261,11 +246,6 @@ public class QdrantNodesProvider(
                 };
             })
             .ToList();
-
-        if (nodes.Count > 0)
-        {
-            logger.LogInformation("Discovered {Count} Qdrant nodes from environment variables", nodes.Count);
-        }
 
         return nodes;
     }

@@ -121,9 +121,6 @@ public sealed class SnapshotAutomationJob : IJob
             var schedule = snapshotCfg.GetEffectiveSchedule(collectionName);
             if (!schedule.Enabled)
             {
-                logger.LogDebug(
-                    "Skipping auto-snapshot for {CollectionName}: schedule is disabled",
-                    collectionName);
                 continue;
             }
 
@@ -483,7 +480,6 @@ public sealed class SnapshotAutomationJob : IJob
 
         if (!listingHealthy)
         {
-            logger.LogDebug("Skipping collection override prune: Qdrant listing not fully healthy");
             return;
         }
 
