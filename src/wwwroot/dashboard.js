@@ -5441,11 +5441,24 @@ class VigilanteDashboard {
     // ========== Logs Methods ==========
 
     setupLogsControls() {
-        // Close button
         const closeButton = document.getElementById('closeLogsPanel');
         if (closeButton) {
             closeButton.addEventListener('click', () => {
                 this.closeLogsPanel();
+            });
+        }
+
+        const backdrop = document.getElementById('logsPanelBackdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', () => {
+                this.closeLogsPanel();
+            });
+        }
+
+        const sourceSelect = document.getElementById('logsSourceSelect');
+        if (sourceSelect) {
+            sourceSelect.addEventListener('change', (e) => {
+                this.onLogsSourceChanged(e.target.value);
             });
         }
 
@@ -5519,67 +5532,187 @@ class VigilanteDashboard {
     }
 
     openQdrantLogs(podName, namespace, nodeUrl) {
-        // Open panel first
         this.openLogsPanel();
 
-        // Check if pod name is available
         if (!podName) {
-            this.currentLogContext = null;
-            
-            const title = document.getElementById('logsPanelTitle');
-            if (title) {
-                title.innerHTML = `<i class="fas fa-file-alt"></i> Logs: ${nodeUrl || 'Unknown Node'}`;
-            }
-
-            const content = document.getElementById('logsPanelContent');
-            if (content) {
-                content.innerHTML = `<div class="logs-error">
-                    <i class="fas fa-exclamation-triangle"></i> 
-                    <strong>Cannot view logs</strong><br><br>
-                    Pod information is not available for this node.<br>
-                    This usually means the node is not running in a Kubernetes cluster or pod metadata is missing.
-                </div>`;
-            }
+            this.populateLogsSourceSelector('');
+            this.showLogsUnavailableMessage(
+                nodeUrl || 'Unknown Node',
+                'Pod information is not available for this node. Select another source above or choose a node with a known pod.'
+            );
             return;
         }
 
-        this.currentLogContext = {
+        this.applyLogContext({
             type: 'qdrant',
-            podName: podName,
-            namespace: namespace || 'qdrant'
-        };
-
-        const title = document.getElementById('logsPanelTitle');
-        if (title) {
-            title.innerHTML = `<i class="fas fa-file-alt"></i> Logs: ${podName}`;
-        }
-
-        this.loadLogs();
-
-        // Set default refresh interval to 15 seconds
-        this.logsRefreshInterval = 15000;
-        const intervalSelect = document.getElementById('logsRefreshInterval');
-        if (intervalSelect) {
-            intervalSelect.value = '15000';
-        }
-        this.startLogsAutoRefresh();
+            podName,
+            namespace: namespace || this.getDefaultLogsNamespace()
+        });
+        this.ensureLogsAutoRefreshDefaults();
     }
 
     openVigilanteLogs() {
-        this.currentLogContext = {
+        this.openLogsPanel();
+        this.applyLogContext({
             type: 'vigilante',
-            namespace: 'qdrant' // Default namespace
+            namespace: this.getDefaultLogsNamespace()
+        });
+        this.ensureLogsAutoRefreshDefaults();
+    }
+
+    getDefaultLogsNamespace() {
+        if (this.namespace && this.namespace !== 'Loading...' && this.namespace !== 'Unknown') {
+            return this.namespace;
+        }
+        return 'qdrant';
+    }
+
+    encodeQdrantLogSourceValue(podName, namespace) {
+        return `qdrant|${encodeURIComponent(podName)}|${encodeURIComponent(namespace)}`;
+    }
+
+    decodeQdrantLogSourceValue(value) {
+        const parts = value.split('|');
+        if (parts.length !== 3 || parts[0] !== 'qdrant') {
+            return null;
+        }
+        return {
+            podName: decodeURIComponent(parts[1]),
+            namespace: decodeURIComponent(parts[2])
         };
+    }
+
+    getLogSourceValue(context) {
+        if (!context) {
+            return '';
+        }
+        if (context.type === 'vigilante') {
+            return 'vigilante';
+        }
+        if (context.type === 'qdrant' && context.podName) {
+            return this.encodeQdrantLogSourceValue(
+                context.podName,
+                context.namespace || this.getDefaultLogsNamespace());
+        }
+        return '';
+    }
+
+    populateLogsSourceSelector(selectedValue) {
+        const select = document.getElementById('logsSourceSelect');
+        if (!select) {
+            return;
+        }
+
+        const options = [{ value: 'vigilante', label: 'Vigilante (this service)' }];
+        const nodes = this.clusterNodes || [];
+        const seenPods = new Set();
+
+        nodes.forEach(node => {
+            if (!node.podName || seenPods.has(node.podName)) {
+                return;
+            }
+            seenPods.add(node.podName);
+            const namespace = node.namespace || this.getDefaultLogsNamespace();
+            const value = this.encodeQdrantLogSourceValue(node.podName, namespace);
+            const suffix = node.url ? ` — ${node.url}` : '';
+            options.push({ value, label: `Qdrant: ${node.podName}${suffix}` });
+        });
+
+        nodes.forEach(node => {
+            if (node.podName) {
+                return;
+            }
+            const label = node.url || node.peerId || 'Unknown node';
+            options.push({
+                value: `unavailable|${encodeURIComponent(label)}`,
+                label: `Qdrant: ${label} (no pod)`,
+                disabled: true
+            });
+        });
+
+        select.innerHTML = options.map(option => {
+            const selected = option.value === selectedValue ? ' selected' : '';
+            const disabled = option.disabled ? ' disabled' : '';
+            return `<option value="${option.value}"${selected}${disabled}>${this.escapeHtml(option.label)}</option>`;
+        }).join('');
+
+        if (selectedValue && !options.some(option => option.value === selectedValue)) {
+            select.value = options[0]?.value || '';
+        }
+    }
+
+    onLogsSourceChanged(value) {
+        if (!value || value.startsWith('unavailable|')) {
+            return;
+        }
+
+        if (value === 'vigilante') {
+            this.applyLogContext({
+                type: 'vigilante',
+                namespace: this.getDefaultLogsNamespace()
+            });
+            return;
+        }
+
+        const decoded = this.decodeQdrantLogSourceValue(value);
+        if (decoded) {
+            this.applyLogContext({
+                type: 'qdrant',
+                podName: decoded.podName,
+                namespace: decoded.namespace
+            });
+        }
+    }
+
+    applyLogContext(context) {
+        this.currentLogContext = context;
+        const sourceValue = this.getLogSourceValue(context);
+        this.populateLogsSourceSelector(sourceValue);
+
+        const select = document.getElementById('logsSourceSelect');
+        if (select && sourceValue) {
+            select.value = sourceValue;
+        }
+
+        this.updateLogsPanelTitle(context);
+        this.loadLogs();
+    }
+
+    updateLogsPanelTitle(context) {
+        const title = document.getElementById('logsPanelTitle');
+        if (!title || !context) {
+            return;
+        }
+
+        if (context.type === 'vigilante') {
+            title.innerHTML = '<i class="fas fa-file-alt"></i> Vigilante Logs';
+            return;
+        }
+
+        if (context.type === 'qdrant') {
+            title.innerHTML = `<i class="fas fa-file-alt"></i> Qdrant Logs: ${this.escapeHtml(context.podName)}`;
+        }
+    }
+
+    showLogsUnavailableMessage(nodeLabel, message) {
+        this.currentLogContext = null;
 
         const title = document.getElementById('logsPanelTitle');
         if (title) {
-            title.innerHTML = `<i class="fas fa-file-alt"></i> Vigilante Logs`;
+            title.innerHTML = `<i class="fas fa-file-alt"></i> Logs: ${this.escapeHtml(nodeLabel)}`;
         }
 
-        this.openLogsPanel();
-        this.loadLogs();
+        const content = document.getElementById('logsPanelContent');
+        if (content) {
+            content.innerHTML = `<div class="logs-error">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Cannot view logs</strong><br><br>
+                ${this.escapeHtml(message)}
+            </div>`;
+        }
+    }
 
-        // Set default refresh interval to 15 seconds
+    ensureLogsAutoRefreshDefaults() {
         this.logsRefreshInterval = 15000;
         const intervalSelect = document.getElementById('logsRefreshInterval');
         if (intervalSelect) {
@@ -5590,15 +5723,25 @@ class VigilanteDashboard {
 
     openLogsPanel() {
         const panel = document.getElementById('logsSidePanel');
+        const backdrop = document.getElementById('logsPanelBackdrop');
         if (panel) {
             panel.classList.add('open');
+        }
+        if (backdrop) {
+            backdrop.classList.add('open');
+            backdrop.setAttribute('aria-hidden', 'false');
         }
     }
 
     closeLogsPanel() {
         const panel = document.getElementById('logsSidePanel');
+        const backdrop = document.getElementById('logsPanelBackdrop');
         if (panel) {
             panel.classList.remove('open');
+        }
+        if (backdrop) {
+            backdrop.classList.remove('open');
+            backdrop.setAttribute('aria-hidden', 'true');
         }
         if (this.logsSearchDebounceTimer) {
             clearTimeout(this.logsSearchDebounceTimer);

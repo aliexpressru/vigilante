@@ -212,12 +212,19 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Logs Side Panel -->
+    <div id="logsPanelBackdrop" class="logs-panel-backdrop" aria-hidden="true"></div>
     <div id="logsSidePanel" class="logs-side-panel">
         <div class="logs-panel-header">
             <h3 id="logsPanelTitle"><i class="fas fa-file-alt"></i> Logs</h3>
             <button id="closeLogsPanel" class="logs-close-button" title="Close logs panel">
                 <i class="fas fa-times"></i>
             </button>
+        </div>
+        <div class="logs-source-controls">
+            <label for="logsSourceSelect">Source</label>
+            <select id="logsSourceSelect" class="logs-source-select" title="Log source">
+                <option value="vigilante">Vigilante</option>
+            </select>
         </div>
         <div class="logs-panel-controls">
             <div class="logs-refresh-controls">

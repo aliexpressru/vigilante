@@ -1174,6 +1174,7 @@ html[data-theme="dark"] .job-item,
 html[data-theme="dark"] .issues-section-header,
 html[data-theme="dark"] .warnings-section-header,
 html[data-theme="dark"] .log-entry,
+html[data-theme="dark"] .logs-source-controls,
 html[data-theme="dark"] .logs-panel-controls,
 html[data-theme="dark"] .logs-filter-controls,
 html[data-theme="dark"] .logs-panel-content,
@@ -1230,8 +1231,13 @@ html[data-theme="dark"] .snapshot-action-item {
     color: #f3f4f6;
 }
 
-html[data-theme="dark"] .logs-level-filters {
+html[data-theme="dark"] .logs-level-filters,
+html[data-theme="dark"] .logs-source-controls label {
     color: #d1d5db;
+}
+
+html[data-theme="dark"] .logs-source-controls {
+    background: #1a2234;
 }
 
 html[data-theme="dark"] .logs-level-action-button {
@@ -1245,6 +1251,7 @@ html[data-theme="dark"] .form-input,
 html[data-theme="dark"] .form-select,
 html[data-theme="dark"] .refresh-select,
 html[data-theme="dark"] .page-size-select,
+html[data-theme="dark"] .logs-source-select,
 html[data-theme="dark"] .logs-refresh-select,
 html[data-theme="dark"] .logs-search-input,
 html[data-theme="dark"] .target-peer-select,
@@ -4873,6 +4880,21 @@ html[data-theme="dark"] #leaderNode {
 }
 
 /* Logs Side Panel */
+.logs-panel-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1099;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease-in-out;
+}
+
+.logs-panel-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
 .logs-side-panel {
     position: fixed;
     top: 0;
@@ -4925,6 +4947,44 @@ html[data-theme="dark"] #leaderNode {
 .logs-close-button:hover {
     background: rgba(255, 255, 255, 0.3);
     transform: rotate(90deg);
+}
+
+.logs-source-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    background: #f0f2ff;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.logs-source-controls label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #444;
+    white-space: nowrap;
+}
+
+.logs-source-select {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    background-color: white;
+    font-size: 0.9rem;
+    color: #333;
+    cursor: pointer;
+}
+
+.logs-source-select:hover {
+    border-color: #667eea;
+}
+
+.logs-source-select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
 }
 
 .logs-panel-controls {

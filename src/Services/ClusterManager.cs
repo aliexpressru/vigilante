@@ -150,9 +150,8 @@ public class ClusterManager(
                             UsagePercent = usage.UsagePercent
                         });
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    logger.LogDebug(ex, "Failed to enrich node {NodeUrl} with storage usage", node.Url);
                     return (NodeUrl: node.Url, Storage: (NodeStorageInfo?)null);
                 }
             });
@@ -221,9 +220,8 @@ public class ClusterManager(
                             UsagePercent = usage.UsagePercent
                         });
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    logger.LogDebug(ex, "Failed to enrich node {NodeUrl} with memory usage", node.Url);
                     return (NodeUrl: node.Url, Memory: (NodeMemoryInfo?)null);
                 }
             });
@@ -258,8 +256,6 @@ public class ClusterManager(
     public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(bool clearCache = false,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("Starting GetCollectionsInfoAsync (clearCache={ClearCache})", clearCache);
-
         var state = await GetClusterStateAsync(cancellationToken);
         var peerToPodMap = state.Nodes
             .Where(n => !string.IsNullOrEmpty(n.PeerId) && !string.IsNullOrEmpty(n.PodName))
@@ -284,13 +280,6 @@ public class ClusterManager(
             
             return testDataProvider.GenerateTestCollectionData();
         }
-
-        var collectionsWithIssues = result.Count(c => c.Issues.Count > 0);
-        var uniqueCollectionCount = result.Select(c => c.CollectionName).Distinct().Count();
-        logger.LogInformation(
-            "Completed GetCollectionsInfoAsync: {UniqueCollectionCount} collections, {IssuesCount} with issues",
-            uniqueCollectionCount, collectionsWithIssues);
-
 
         return result;
     }
@@ -707,7 +696,6 @@ public class ClusterManager(
             if (instanceDetails != null)
             {
                 nodeInfo.Version = instanceDetails.Version;
-                logger.LogDebug("Node {NodeUrl} is running Qdrant version {Version}", nodeInfo.Url, nodeInfo.Version);
             }
             else
             {
@@ -901,19 +889,8 @@ public class ClusterManager(
                         if (!string.IsNullOrWhiteSpace(message))
                         {
                             nodeInfo.Issues.Add(message);
-
-                            logger.LogDebug(
-                                "Node {NodeUrl} issue: {IssueId} - {Description}",
-                                nodeInfo.Url,
-                                issueId ?? "unknown",
-                                description ?? "no description");
                         }
                     }
-
-                    logger.LogInformation(
-                        "Node {NodeUrl} reported {Count} Qdrant issues",
-                        nodeInfo.Url,
-                        qdrantIssues.Length);
                 }
             }
         }
@@ -984,10 +961,6 @@ public class ClusterManager(
                         targetNode.Warnings.Add(ClusterConstants.KubernetesEventPrefix + warning);
                     }
 
-                    logger.LogInformation(
-                        "Added {Count} Kubernetes warning events to degraded node {NodeUrl}",
-                        warningEvents.Count, targetNode.Url);
-
                     // Force recalculation of Health to include new warnings
                     state.InvalidateCache();
                 }
@@ -1052,7 +1025,6 @@ public class ClusterManager(
 
             if (ulong.TryParse(n.PeerId, out var peerIdNum) && _excludedPeerIds.ContainsKey(peerIdNum))
             {
-                logger.LogDebug("Excluding peer {PeerId} from cluster state (explicitly removed)", n.PeerId);
                 return false;
             }
 
@@ -1062,7 +1034,6 @@ public class ClusterManager(
                 !ulong.TryParse(n.PeerId, out _) &&
                 !majorityPeerIds.Contains(n.PeerId))
             {
-                logger.LogDebug("Excluding node {PeerId} from cluster state (not in current cluster)", n.PeerId);
                 return false;
             }
 
@@ -1085,8 +1056,6 @@ public class ClusterManager(
 
         if (healthyNodes.Count == 0)
         {
-            logger.LogInformation("No healthy nodes with peer information to analyze for splits");
-
             return;
         }
 
@@ -1108,9 +1077,6 @@ public class ClusterManager(
             return false;
         }
 
-        logger.LogInformation("Established majority cluster state with peer IDs: {PeerIds}",
-            string.Join(", ", _clusterState.MajorityPeerIds));
-
         return true;
     }
 
@@ -1121,11 +1087,6 @@ public class ClusterManager(
             if (!_clusterState.IsNodeConsistentWithMajority(node, out var inconsistencyReason))
             {
                 MarkNodeAsInconsistent(node, inconsistencyReason ?? "Unknown inconsistency");
-            }
-            else
-            {
-                logger.LogDebug("Node {NodeUrl} (PeerId={PeerId}) is consistent with majority cluster state",
-                    node.Url, node.PeerId);
             }
         }
     }

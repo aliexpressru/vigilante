@@ -131,7 +131,6 @@ public class QdrantMonitorService(
         }
         catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
         {
-            logger.LogDebug("Delay interrupted due to configuration change");
         }
     }
 
