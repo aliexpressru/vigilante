@@ -4,9 +4,11 @@ using FluentValidation;
 using FluentValidation.AspNetCore;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.OpenApi;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using Vigilante.Configuration;
+using Vigilante.Middleware;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
 using Vigilante.Validators;
@@ -19,7 +21,9 @@ public partial class Startup(IConfiguration configuration)
     {
         // Configuration
         services.Configure<QdrantOptions>(configuration.GetSection("Qdrant"));
-        
+        services.Configure<VigilanteOptions>(configuration.GetSection("Vigilante"));
+        services.AddDataProtection();
+
         // Kubernetes client - only available when running in cluster
         services.AddSingleton<k8s.IKubernetes>(sp => 
         {
@@ -98,7 +102,26 @@ public partial class Startup(IConfiguration configuration)
 
         // API Documentation
         services.AddEndpointsApiExplorer();
-        services.AddSwaggerGen();
+        var dashboardPassword = configuration["Vigilante:DashboardPassword"];
+        services.AddSwaggerGen(options =>
+        {
+            options.CustomSchemaIds(type =>
+                type.FullName?.Replace("+", ".", StringComparison.Ordinal) ?? type.Name);
+
+            if (!string.IsNullOrWhiteSpace(dashboardPassword))
+            {
+                options.AddSecurityDefinition("basic", new OpenApiSecurityScheme
+                {
+                    Type = SecuritySchemeType.Http,
+                    Scheme = "basic",
+                    Description = "Any username; password is Vigilante:DashboardPassword."
+                });
+                options.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
+                {
+                    [new OpenApiSecuritySchemeReference("basic")] = []
+                });
+            }
+        });
     }
 
     public void Configure(WebApplication app, IWebHostEnvironment env)
@@ -125,12 +148,16 @@ public partial class Startup(IConfiguration configuration)
             });
         }
 
+        app.UseDashboardBasicAuth();
+
         // API Documentation
         app.UseSwagger();
         app.UseSwaggerUI(c =>
         {
             c.SwaggerEndpoint("/swagger/v1/swagger.json", "Vigilante API v1");
             c.DocumentTitle = "Vigilante - Qdrant Cluster Guardian";
+            c.UseRequestInterceptor(
+                "function (request) { request.credentials = 'include'; return request; }");
         });
 
         // Basic security

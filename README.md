@@ -79,6 +79,7 @@ docker compose logs -f vigilante
 **Static configuration** (`appsettings.json`, or `Qdrant` section from Kubernetes ConfigMap `vigilante-config`):
 
 - `Qdrant:HttpTimeoutSeconds`, `Qdrant:ApiKey`, `Qdrant:Nodes`, and optional `Qdrant:S3` secret fallback (endpoint, keys) when not provided via environment.
+- `Vigilante:DashboardPassword` (optional) — when set, the browser UI uses `/login.html` (cookie session after sign-in). REST API and Swagger also accept HTTP Basic auth (any username, configured password). Probes and Prometheus stay open on `/health` and `/metrics`. In Kubernetes, set env `Vigilante__DashboardPassword` from secret `vigilante-dashboard-credentials` / key `password` (see `k8s/deployment.yaml`).
 
 **Dynamic configuration** (in-cluster: ConfigMap `vigilante-dynamic-config` mounted at `/app/config/dynamic-config.json`; runtime updates via `GET`/`PUT /api/v1/config`):
 
@@ -163,6 +164,35 @@ cd k8s/dev   # or stg / prod
 The application listens on **port 8080** inside the cluster (`deployment.yaml`). RBAC, Service, optional Ingress, and monitoring manifests live under `k8s/`. Detailed steps, labels, and troubleshooting: **[k8s/README.md](k8s/README.md)**.
 
 Do not rely on a single `kubectl apply -f k8s/` without following the layout and `deploy.sh` workflow expected by this project.
+
+### Dashboard password (Kubernetes Secret)
+
+`k8s/deployment.yaml` reads `Vigilante__DashboardPassword` from Secret `vigilante-dashboard-credentials`, key `password` (`optional: true` — if the Secret is missing, auth is off; `/health` and `/metrics` stay public).
+
+Create the Secret in the **same namespace** as the Vigilante Deployment (your current kubectl context namespace, often `qdrant`):
+
+```bash
+kubectl create secret generic vigilante-dashboard-credentials \
+  --namespace=<namespace> \
+  --from-literal=password='YOUR_STRONG_PASSWORD'
+```
+
+Update an existing Secret:
+
+```bash
+kubectl create secret generic vigilante-dashboard-credentials \
+  --namespace=<namespace> \
+  --from-literal=password='NEW_PASSWORD' \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Restart the Deployment so pods reload the env var:
+
+```bash
+kubectl rollout restart deployment/vigilante -n <namespace>
+```
+
+Sign in at `/login.html`. For Swagger, use **Authorize** → HTTP Basic (any username, password from the Secret) or sign in via the login page first.
 
 ## HTTP API (overview)
 

@@ -1,3 +1,8 @@
+/** Same-origin fetch; includes cached HTTP Basic credentials after browser login. */
+function apiFetch(url, options) {
+    return fetch(url, { ...options, credentials: 'include' });
+}
+
 class VigilanteDashboard {
     constructor() {
         this.statusApiEndpoint = '/api/v1/cluster/status';
@@ -394,7 +399,7 @@ class VigilanteDashboard {
 
     async loadEnvironment() {
         try {
-            const response = await fetch(this.environmentEndpoint);
+            const response = await apiFetch(this.environmentEndpoint);
             if (response.ok) {
                 const data = await response.json();
                 this.environment = data.environment || 'Unknown';
@@ -490,7 +495,7 @@ class VigilanteDashboard {
         if (isS3) {
             const toastId = this.showToast(`Generating URL for '${snapshotName}'...`, 'info', null, 0, true);
             try {
-                const response = await fetch('/api/v1/snapshots/get-download-url', {
+                const response = await apiFetch('/api/v1/snapshots/get-download-url', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ collectionName, snapshotName, expirationHours: 1 })
@@ -793,7 +798,7 @@ class VigilanteDashboard {
         overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
 
         const apiPost = async (url, body) => {
-            const res = await fetch(url, {
+            const res = await apiFetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
@@ -977,7 +982,7 @@ class VigilanteDashboard {
         
         try {
             this.showRefreshAnimation();
-            const response = await fetch(this.statusApiEndpoint, {
+            const response = await apiFetch(this.statusApiEndpoint, {
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
@@ -1008,7 +1013,7 @@ class VigilanteDashboard {
 
     async loadJobs() {
         try {
-            const response = await fetch(this.jobsStatusEndpoint);
+            const response = await apiFetch(this.jobsStatusEndpoint);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
@@ -1180,7 +1185,7 @@ class VigilanteDashboard {
             }
             
             const url = `${this.sizesPaginatedApiEndpoint}?${params.toString()}`;
-            const response = await fetch(url, {
+            const response = await apiFetch(url, {
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
@@ -2065,7 +2070,7 @@ class VigilanteDashboard {
                                 
                                 console.log('Sending abort transfer request:', requestBody);
                                 
-                                const response = await fetch('/api/v1/cluster/abort-shard-transfer', {
+                                const response = await apiFetch('/api/v1/cluster/abort-shard-transfer', {
                                     method: 'POST',
                                     headers: {
                                         'Content-Type': 'application/json'
@@ -2203,7 +2208,7 @@ class VigilanteDashboard {
                                     isDryRun: false
                                 };
 
-                                const response = await fetch(this.dropShardsEndpoint, {
+                                const response = await apiFetch(this.dropShardsEndpoint, {
                                     method: 'POST',
                                     headers: {
                                         'Content-Type': 'application/json',
@@ -2283,7 +2288,7 @@ class VigilanteDashboard {
                 params.append('nameFilter', this.snapshotNameFilter);
             }
 
-            const response = await fetch(`${this.snapshotsApiEndpoint}?${params}`, {
+            const response = await apiFetch(`${this.snapshotsApiEndpoint}?${params}`, {
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
@@ -2749,7 +2754,7 @@ class VigilanteDashboard {
         console.log('Recovery request body:', requestBody);
         
         try {
-            const response = await fetch(this.recoverFromSnapshotEndpoint, {
+            const response = await apiFetch(this.recoverFromSnapshotEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
@@ -2841,7 +2846,7 @@ class VigilanteDashboard {
 
             console.log('Delete snapshot request:', requestBody);
 
-            const response = await fetch(this.deleteSnapshotEndpoint, {
+            const response = await apiFetch(this.deleteSnapshotEndpoint, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
@@ -2896,7 +2901,7 @@ class VigilanteDashboard {
                     }
                 }
 
-                return fetch(this.deleteSnapshotEndpoint, {
+                return apiFetch(this.deleteSnapshotEndpoint, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody)
@@ -3126,7 +3131,7 @@ class VigilanteDashboard {
 
             console.log('Recover from URL request:', requestBody);
 
-            const response = await fetch(this.recoverFromSnapshotEndpoint, {
+            const response = await apiFetch(this.recoverFromSnapshotEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
@@ -3729,7 +3734,7 @@ class VigilanteDashboard {
 
             console.log('Delete collection request:', requestBody);
 
-            const response = await fetch(this.deleteCollectionEndpoint, {
+            const response = await apiFetch(this.deleteCollectionEndpoint, {
                 method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json',
@@ -4360,7 +4365,7 @@ class VigilanteDashboard {
                     shardTransferMethod: shardTransferMethod
                 };
                 
-                const response = await fetch(this.replicateShardsEndpoint, {
+                const response = await apiFetch(this.replicateShardsEndpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -4621,7 +4626,7 @@ class VigilanteDashboard {
                     peerId: null
                 };
                 
-                const response = await fetch(this.startReshardingEndpoint, {
+                const response = await apiFetch(this.startReshardingEndpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -4694,7 +4699,7 @@ class VigilanteDashboard {
 
             console.log('Delete collection request:', requestBody);
 
-            const response = await fetch(this.deleteCollectionEndpoint, {
+            const response = await apiFetch(this.deleteCollectionEndpoint, {
                 method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json',
@@ -4736,7 +4741,7 @@ class VigilanteDashboard {
 
             console.log('Create snapshot request:', requestBody);
 
-            const response = await fetch(this.createSnapshotEndpoint, {
+            const response = await apiFetch(this.createSnapshotEndpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -4806,7 +4811,7 @@ class VigilanteDashboard {
 
             console.log('Create snapshot request:', requestBody);
 
-            const response = await fetch(this.createSnapshotEndpoint, {
+            const response = await apiFetch(this.createSnapshotEndpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -4854,7 +4859,7 @@ class VigilanteDashboard {
             true
         );
         try {
-            const response = await fetch(this.restoreReplicationFactorEndpoint, {
+            const response = await apiFetch(this.restoreReplicationFactorEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ collectionName })
@@ -4888,7 +4893,7 @@ class VigilanteDashboard {
             true
         );
         try {
-            const response = await fetch(this.jobsCancelEndpoint, {
+            const response = await apiFetch(this.jobsCancelEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ key: jobKey })
@@ -4946,7 +4951,7 @@ class VigilanteDashboard {
 
             console.log('Download snapshot request:', requestBody);
 
-            const response = await fetch(this.downloadSnapshotEndpoint, {
+            const response = await apiFetch(this.downloadSnapshotEndpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -5067,7 +5072,7 @@ class VigilanteDashboard {
                 expirationHours: 1
             };
 
-            const response = await fetch('/api/v1/snapshots/get-download-url', {
+            const response = await apiFetch('/api/v1/snapshots/get-download-url', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -5156,7 +5161,7 @@ class VigilanteDashboard {
         );
 
         try {
-            const response = await fetch(this.deletePodEndpoint, {
+            const response = await apiFetch(this.deletePodEndpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -5238,7 +5243,7 @@ class VigilanteDashboard {
             closeModal();
             const toastId = this.showToast(`Removing peer ${node.peerId} from cluster...`, 'info', 'Remove Peer', 0, true);
             try {
-                const response = await fetch(this.removePeerEndpoint, {
+                const response = await apiFetch(this.removePeerEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ peerId: peerIdNum, isForceDropOperation: force })
@@ -5414,7 +5419,7 @@ class VigilanteDashboard {
                 requestBody.replicas = replicas;
             }
 
-            const response = await fetch(this.manageStatefulSetEndpoint, {
+            const response = await apiFetch(this.manageStatefulSetEndpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -5766,7 +5771,7 @@ class VigilanteDashboard {
 
             if (this.currentLogContext.type === 'qdrant') {
                 requestBody.podName = this.currentLogContext.podName;
-                response = await fetch(this.qdrantLogsEndpoint, {
+                response = await apiFetch(this.qdrantLogsEndpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -5774,7 +5779,7 @@ class VigilanteDashboard {
                     body: JSON.stringify(requestBody)
                 });
             } else if (this.currentLogContext.type === 'vigilante') {
-                response = await fetch(this.vigilanteLogsEndpoint, {
+                response = await apiFetch(this.vigilanteLogsEndpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -6055,7 +6060,7 @@ class VigilanteDashboard {
     async loadConfiguration() {
         this._setConfigModalLoading(true);
         try {
-            const configResponse = await fetch('/api/v1/config');
+            const configResponse = await apiFetch('/api/v1/config');
 
             if (!configResponse.ok) {
                 throw new Error(`HTTP ${configResponse.status}: ${configResponse.statusText}`);
@@ -6064,7 +6069,7 @@ class VigilanteDashboard {
             const config = await configResponse.json();
 
             // Load collections for override row selects in background
-            fetch('/api/v1/collections/info?clearCache=false')
+            apiFetch('/api/v1/collections/info?clearCache=false')
                 .then(r => r.ok ? r.json() : null)
                 .then(data => {
                     if (!data) return;
@@ -6217,7 +6222,7 @@ class VigilanteDashboard {
         saveConfigBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
 
         try {
-            const response = await fetch('/api/v1/config', {
+            const response = await apiFetch('/api/v1/config', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
