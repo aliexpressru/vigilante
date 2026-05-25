@@ -37,6 +37,12 @@ spec:
           value: "Production"
         - name: ASPNETCORE_URLS
           value: "http://+:8080"
+        - name: Vigilante__DashboardPassword
+          valueFrom:
+            secretKeyRef:
+              name: vigilante-dashboard-credentials
+              key: password
+              optional: true
         # S3 credentials from Kubernetes secret
         # These are only used when S3.Enabled=true in ConfigMap
         - name: S3__EndpointUrl

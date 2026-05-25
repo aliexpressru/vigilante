@@ -67,6 +67,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:6360
       Qdrant__ApiKey: test
+      Vigilante__DashboardPassword: test
       # Overrides appsettings Nodes; inside the container localhost is wrong — use host machine (macOS/Win Docker Desktop).
       QDRANT_NODES: "qdrant-1:6333;qdrant-2:6333;qdrant-3:6333"
     ports:
