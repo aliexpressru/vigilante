@@ -6,14 +6,13 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      tag:
+      release_tag:
         description: 'Tag to build and publish (e.g. v1.9.0)'
         required: true
 
 env:
   REGISTRY: docker.io
   IMAGE_NAME: aercis/vigilante
-  VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
   build:
@@ -26,7 +25,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        ref: ${{ env.VERSION }}
+        ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
@@ -47,7 +46,7 @@ jobs:
       with:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: |
-          type=semver,pattern={{version}},value=${{ env.VERSION }}
+          type=semver,pattern={{version}},value=${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           type=raw,value=latest
 
     - name: Build and push Docker image
