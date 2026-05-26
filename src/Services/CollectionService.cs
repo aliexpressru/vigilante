@@ -1085,7 +1085,7 @@ public class CollectionService : ICollectionService
 
             if (response?.Status?.IsSuccess != true || response.Result?.Collections == null)
                 return;
-            
+
             foreach (var (collectionName, collTel) in response.Result.Collections)
             {
                 if (collTel?.Shards == null)

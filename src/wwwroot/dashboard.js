@@ -104,7 +104,6 @@ class VigilanteDashboard {
     }
 
     init() {
-        // Load initial data but don't start auto-refresh by default
         this.loadClusterStatus();
         this.loadCollectionSizes();
         this.loadSnapshots();
@@ -352,8 +351,8 @@ class VigilanteDashboard {
 
     refresh() {
         this.loadClusterStatus();
-        this.loadCollectionSizes(true); // Clear cache on manual/auto refresh
-        this.loadSnapshots(true); // Clear cache on manual/auto refresh
+        this.loadCollectionSizes(true);
+        this.loadSnapshots(true);
         this.loadJobs();
 
         // Restore sticky actions menu state after refresh
@@ -1241,9 +1240,58 @@ class VigilanteDashboard {
         }
     }
 
+    renderShardsMemoryBar(vectorsBytes, payloadsBytes, options = {}) {
+        const vectors = vectorsBytes ?? 0;
+        const payloads = payloadsBytes ?? 0;
+        const total = vectors + payloads;
+        if (total <= 0) {
+            return '';
+        }
+
+        const vectorsPct = Math.round((vectors / total) * 100);
+        const payloadPct = 100 - vectorsPct;
+        const label = options.label ?? 'Shards memory';
+        const extraClass = options.extraClass ?? '';
+        const percentLabel = options.percentLabel;
+        const valueLabel = typeof percentLabel === 'number'
+            ? `${percentLabel.toFixed(2)}% of RAM`
+            : (percentLabel ?? this.formatSize(total));
+
+        return `
+            <div class="node-shards-memory-usage ${extraClass}">
+                <div class="node-shards-memory-header">
+                    <span class="node-shards-memory-label">${label}</span>
+                    <span class="node-shards-memory-value">${valueLabel}</span>
+                </div>
+                <div class="shard-size-bar node-shards-memory-bar" title="Vectors vs payload">
+                    <span class="shard-size-bar-vectors" style="width:${vectorsPct}%"></span>
+                    <span class="shard-size-bar-payload" style="width:${payloadPct}%"></span>
+                </div>
+                <div class="node-shards-memory-capacity">
+                    <span>${this.formatSize(vectors)} vectors</span>
+                    <span>${this.formatSize(payloads)} payload</span>
+                    ${typeof percentLabel === 'number' ? `<span class="node-shards-memory-total">${this.formatSize(total)} total</span>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
     formatMetricValue(key, value, nodeInfo) {
         if (key === 'shards') {
             if (!Array.isArray(value)) return value;
+
+            const shardTotals = value.reduce((acc, shard) => {
+                if (typeof shard === 'object' && shard !== null) {
+                    acc.vectors += shard.vectorsSizeBytes ?? 0;
+                    acc.payloads += shard.payloadsSizeBytes ?? 0;
+                }
+                return acc;
+            }, { vectors: 0, payloads: 0 });
+            const shardsSummaryHtml = this.renderShardsMemoryBar(
+                shardTotals.vectors,
+                shardTotals.payloads,
+                { label: 'All shards', extraClass: 'collection-shards-memory-summary' }
+            );
             
             // Handle both old format (array of numbers) and new format (array of objects)
             const shardsHtml = value.map(shard => {
@@ -1298,6 +1346,7 @@ class VigilanteDashboard {
                 <div class="shards-container">
                     <div class="shards-section">
                         <div class="shards-label">Shards</div>
+                        ${shardsSummaryHtml}
                         <label class="select-all-shards-label">
                             <input type="checkbox" class="select-all-shards-checkbox">
                             Select All
@@ -2191,32 +2240,12 @@ class VigilanteDashboard {
                     detailsContent.appendChild(nodeDetails);
                 });
 
-                // Add collection-level action buttons at the bottom
                 const actionsFooter = document.createElement('div');
                 actionsFooter.className = 'collection-actions-footer';
-                actionsFooter.style.justifyContent = 'space-between';
-                actionsFooter.style.alignItems = 'center';
-                
-                // Left side: Collection info or placeholder (buttons moved to dropdown menu in header)
-                const collectionActionsContainer = document.createElement('div');
-                collectionActionsContainer.style.cssText = `
-                    display: flex;
-                    gap: 8px;
-                    align-items: center;
-                `;
-                
-                // Note: Delete (API), Delete (Disk), and Create Snapshot buttons are now in the dropdown menu
-                
-                // Right side: Shard actions (Sync/Drop) - initially hidden
+
                 const shardActionsContainer = document.createElement('div');
                 shardActionsContainer.className = 'shard-actions-container';
-                shardActionsContainer.style.cssText = `
-                    display: none;
-                    gap: 8px;
-                    align-items: center;
-                `;
-                
-                actionsFooter.appendChild(collectionActionsContainer);
+                shardActionsContainer.hidden = true;
                 actionsFooter.appendChild(shardActionsContainer);
                 
                 // Function to update shard action buttons
@@ -2244,8 +2273,8 @@ class VigilanteDashboard {
                         
                         const shardIds = selectedShards.map(s => s.shardId);
                         
-                        // Show container and recreate buttons
-                        shardActionsContainer.style.display = 'flex';
+                        actionsFooter.classList.add('collection-actions-footer--active');
+                        shardActionsContainer.hidden = false;
                         shardActionsContainer.innerHTML = '';
                         
                         // Add info text
@@ -2315,8 +2344,8 @@ class VigilanteDashboard {
                         shardActionsContainer.appendChild(syncButton);
                         shardActionsContainer.appendChild(dropButton);
                     } else {
-                        // Hide container when no shards selected
-                        shardActionsContainer.style.display = 'none';
+                        actionsFooter.classList.remove('collection-actions-footer--active');
+                        shardActionsContainer.hidden = true;
                         shardActionsContainer.innerHTML = '';
                     }
                 };

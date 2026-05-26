@@ -726,6 +726,54 @@ html[data-theme="dark"] {
     font-weight: 500;
 }
 
+.node-shards-memory-usage {
+    margin-top: 8px;
+    padding: 8px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.node-shards-memory-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 0.85rem;
+}
+
+.node-shards-memory-label {
+    color: #555;
+    font-weight: 600;
+}
+
+.node-shards-memory-value {
+    color: #333;
+    font-weight: 700;
+}
+
+.node-shards-memory-bar {
+    height: 8px;
+    min-width: 100%;
+}
+
+.node-shards-memory-capacity {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    margin-top: 6px;
+    font-size: 0.8rem;
+    color: #555;
+    font-weight: 500;
+}
+
+.node-shards-memory-total {
+    margin-left: auto;
+    color: #666;
+}
+
+.collection-shards-memory-summary {
+    margin: 8px 0 10px;
+}
+
 .leader-badge {
     background: linear-gradient(135deg, #2196f3, #1976d2);
     color: white;
@@ -1184,7 +1232,6 @@ html[data-theme="dark"] .logs-panel-controls,
 html[data-theme="dark"] .logs-filter-controls,
 html[data-theme="dark"] .logs-panel-content,
 html[data-theme="dark"] .modal-footer,
-html[data-theme="dark"] .collection-actions-footer,
 html[data-theme="dark"] .config-sub-section,
 html[data-theme="dark"] .statefulset-info {
     background: #1f2937;
@@ -1345,6 +1392,30 @@ html[data-theme="dark"] .node-card .node-memory-usage-value {
 
 html[data-theme="dark"] .node-card .node-memory-progress {
     background: #374151;
+}
+
+html[data-theme="dark"] .collection-node-info .node-shards-memory-usage {
+    background: rgba(17, 24, 39, 0.45);
+}
+
+html[data-theme="dark"] .collection-node-info .node-shards-memory-label,
+html[data-theme="dark"] .collection-node-info .node-shards-memory-capacity,
+html[data-theme="dark"] .collection-node-info .node-shards-memory-total {
+    color: #d1d5db;
+}
+
+html[data-theme="dark"] .collection-node-info .node-shards-memory-value {
+    color: #f9fafb;
+}
+
+html[data-theme="dark"] .node-shards-memory-bar.shard-size-bar,
+html[data-theme="dark"] .collection-node-info .shard-size-bar,
+html[data-theme="dark"] .shard-item .shard-size-bar {
+    background: #374151;
+}
+
+html[data-theme="dark"] .shard-size-legend-line {
+    color: #9ca3af;
 }
 
 /* Make shard blocks readable in dark theme */
@@ -1651,8 +1722,13 @@ html[data-theme="dark"] .node-selection-label {
 }
 
 html[data-theme="dark"] .nodes-table code {
-    background: #374151;
-    color: #d1d5db;
+    background: transparent;
+    color: #9ca3af;
+    padding: 0;
+}
+
+html[data-theme="dark"] .nodes-table tr:hover {
+    background: #1f2937;
 }
 
 html[data-theme="dark"] .job-status-running {
@@ -2541,16 +2617,32 @@ html[data-theme="dark"] #leaderNode {
     padding: 20px;
 }
 
-/* Footer with action buttons for the whole collection */
+/* Footer for shard action buttons (Sync/Drop); invisible until shards are selected */
 .collection-actions-footer {
-    grid-column: 1 / -1; /* Span full grid width */
-    padding: 16px;
-    background-color: #f5f5f5;
-    border-top: 2px solid #ddd;
+    grid-column: 1 / -1;
     display: flex;
     gap: 8px;
     justify-content: flex-end;
-    margin-top: 8px;
+    align-items: center;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+}
+
+.collection-actions-footer.collection-actions-footer--active {
+    min-height: 36px;
+    padding-top: 6px;
+}
+
+.shard-actions-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+    width: 100%;
 }
 
 .collection-node-info {
