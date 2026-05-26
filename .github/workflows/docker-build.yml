@@ -4,12 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+  # Manual run: Actions → Run workflow → pick tag (e.g. v1.9.0) in "Use workflow from"
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: 'Tag to build and publish (e.g. v1.9.0)'
-        required: true
-        type: string
 
 env:
   REGISTRY: docker.io
@@ -23,21 +19,8 @@ jobs:
       packages: write
 
     steps:
-    - name: Resolve ref and version
-      id: vars
-      run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          echo "ref=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
-          echo "version=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
-        else
-          echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
-          echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-        fi
-
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        ref: ${{ steps.vars.outputs.ref }}
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
@@ -58,12 +41,11 @@ jobs:
       with:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: |
-          type=semver,pattern={{version}},value=${{ steps.vars.outputs.version }}
+          type=semver,pattern={{version}}
           type=raw,value=latest
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
-      continue-on-error: false
       with:
         context: .
         platforms: linux/amd64,linux/arm64
