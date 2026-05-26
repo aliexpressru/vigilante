@@ -1,9 +1,12 @@
-name: Build and Push Docker Image
+name: Build and Push Docker Image (manual)
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag to build (e.g. v1.9.1)'
+        required: true
+        type: string
 
 env:
   REGISTRY: docker.io
@@ -19,6 +22,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.release_tag }}
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
@@ -33,24 +38,17 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=semver,pattern={{version}}
-          type=raw,value=latest
+    - name: Set image tags
+      id: imagetags
+      run: |
+        tag="${{ inputs.release_tag }}"
+        echo "tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${tag},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> "$GITHUB_OUTPUT"
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
-      continue-on-error: false
       with:
         context: .
         platforms: linux/amd64,linux/arm64
         push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
+        tags: ${{ steps.imagetags.outputs.tags }}
         cache-from: type=gha
-        # Temporarily disable cache-to to avoid GitHub Actions cache 502 errors
-        # cache-to: type=gha,mode=max
