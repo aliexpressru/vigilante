@@ -65,6 +65,40 @@ public class CollectionServiceTests
             });
     }
 
+    private static void SetupGetCollectionMemoryReportMock(
+        IQdrantHttpClient mockClient,
+        long diskBytes = 1_073_741_824L,
+        long ramBytes = 536_870_912L)
+    {
+        mockClient.GetCollectionMemoryReport(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new CollectionMemoryReportResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok),
+                Result = new CollectionMemoryReportResponse.CollectionMemoryReport
+                {
+                    Total = new CollectionMemoryReportResponse.MemoryUsage
+                    {
+                        DiskBytes = (ulong)diskBytes,
+                        RamBytes = (ulong)ramBytes
+                    },
+                    Vectors = [],
+                    SparseVectors = [],
+                    Payload = new CollectionMemoryReportResponse.MemoryUsage(),
+                    PayloadIndex = [],
+                    Other = new CollectionMemoryReportResponse.OtherComponentsMemoryReport
+                    {
+                        IdTracker = new CollectionMemoryReportResponse.MemoryUsage()
+                    }
+                }
+            });
+    }
+
+    private void SetupQdrantClientFactory(IQdrantHttpClient mockClient, string nodeUrl = "http://node1:6333")
+    {
+        _clientFactory.CreateClientFromUrl(nodeUrl, Arg.Any<string?>()).Returns(mockClient);
+        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>()).Returns(mockClient);
+    }
+
     #region GetCollectionsSizesForPodAsync Tests
 
     [Test]
@@ -242,12 +276,10 @@ public class CollectionServiceTests
     }
 
     [Test]
-    public async Task GetEnrichedCollectionsInfoAsync_WithStorageData_EnrichesMetrics()
+    public async Task GetEnrichedCollectionsInfoAsync_WithMemoryReport_EnrichesMetrics()
     {
-        // Arrange
         var mockClient = Substitute.For<IQdrantHttpClient>();
-        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
-            .Returns(mockClient);
+        SetupQdrantClientFactory(mockClient);
 
         var collectionsResponse = new ListCollectionsResponse
         {
@@ -258,131 +290,97 @@ public class CollectionServiceTests
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
                 }
             },
-            Status = new QdrantStatus(
-                QdrantOperationStatusType.Ok)
+            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
-        mockClient.ListCollections(Arg.Any<CancellationToken>())
-            .Returns(collectionsResponse);
-        
-        // Setup GetCollectionInfo mock
+        mockClient.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         SetupGetCollectionInfoMock(mockClient);
+        SetupGetCollectionMemoryReportMock(mockClient);
 
-        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "test_collection" });
-        
-        _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), "test_collection", Arg.Any<CancellationToken>())
-            .Returns(1073741824L); // 1 GB
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
 
-        var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
-        
         var nodes = new List<NodeInfo>
         {
             new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1", Namespace = "default" }
         };
-        
+
         var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
 
-        // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
-        // Assert
         Assert.That(result, Has.Count.EqualTo(1));
         Assert.That(result[0].Metrics.SizeBytes, Is.EqualTo(1073741824L));
         Assert.That(result[0].Metrics.PrettySize, Is.EqualTo("1 GB"));
+        Assert.That(result[0].Metrics.RamBytes, Is.EqualTo(536870912L));
+        Assert.That(result[0].Metrics.MemoryReport, Is.Not.Null);
+        Assert.That(result[0].Metrics.MemoryReport!.Total.DiskBytes, Is.EqualTo(1073741824UL));
     }
 
     [Test]
-    public async Task GetEnrichedCollectionsInfoAsync_WhenCollectionNotInStorage_AddsIssue()
+    public async Task GetEnrichedCollectionsInfoAsync_WhenMemoryReportFails_LeavesMetricsUnset()
     {
-        // Arrange
         var mockClient = Substitute.For<IQdrantHttpClient>();
-        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
-            .Returns(mockClient);
-
-        var collectionsResponse = new ListCollectionsResponse
-        {
-            Result = new ListCollectionsResponse.CollectionNamesUnit
-            {
-                Collections = new[]
-                {
-                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
-            },
-            Status = new QdrantStatus(
-                QdrantOperationStatusType.Ok)
-        };
+        SetupQdrantClientFactory(mockClient);
 
         mockClient.ListCollections(Arg.Any<CancellationToken>())
-            .Returns(collectionsResponse);
-        
-        // Setup GetCollectionInfo mock
+            .Returns(new ListCollectionsResponse
+            {
+                Result = new ListCollectionsResponse.CollectionNamesUnit
+                {
+                    Collections = [new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")]
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            });
         SetupGetCollectionInfoMock(mockClient);
+        mockClient.GetCollectionMemoryReport(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CollectionMemoryReportResponse
+            {
+                Status = QdrantStatus.Fail("not found")
+            });
 
-        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new List<string>()); // Empty - no collections in storage
-
-        var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
-        
+        var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
         var nodes = new List<NodeInfo>
         {
             new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1", Namespace = "default" }
         };
-        
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
 
-        // Act
-        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, new Dictionary<string, string>(), CancellationToken.None);
 
-        // Assert
         Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].Issues, Has.Count.EqualTo(1));
-        Assert.That(result[0].Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
+        Assert.That(result[0].Issues, Is.Empty);
+        Assert.That(result[0].Metrics.SizeBytes, Is.Null);
+        Assert.That(result[0].Metrics.RamBytes, Is.Null);
     }
 
     [Test]
-    public async Task GetEnrichedCollectionsInfoAsync_WithoutPodNames_SkipsStorageEnrichment()
+    public async Task GetEnrichedCollectionsInfoAsync_WithoutPodNames_StillEnrichesFromMemoryReport()
     {
-        // Arrange
         var mockClient = Substitute.For<IQdrantHttpClient>();
-        _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
-            .Returns(mockClient);
-
-        var collectionsResponse = new ListCollectionsResponse
-        {
-            Result = new ListCollectionsResponse.CollectionNamesUnit
-            {
-                Collections = new[]
-                {
-                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
-            },
-            Status = new QdrantStatus(
-                QdrantOperationStatusType.Ok)
-        };
+        SetupQdrantClientFactory(mockClient);
 
         mockClient.ListCollections(Arg.Any<CancellationToken>())
-            .Returns(collectionsResponse);
-        
-        // Setup GetCollectionInfo mock
+            .Returns(new ListCollectionsResponse
+            {
+                Result = new ListCollectionsResponse.CollectionNamesUnit
+                {
+                    Collections = [new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")]
+                },
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            });
         SetupGetCollectionInfoMock(mockClient);
+        SetupGetCollectionMemoryReportMock(mockClient);
 
         var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
-        
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = null } // No pod name
+            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = null }
         };
-        
-        var peerToPodMap = new Dictionary<string, string>();
 
-        // Act
-        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, new Dictionary<string, string>(), CancellationToken.None);
 
-        // Assert
         Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].Metrics.PrettySize, Is.EqualTo("N/A")); // Not enriched
-        Assert.That(result[0].Metrics.SizeBytes, Is.EqualTo(0L)); // Not enriched
+        Assert.That(result[0].Metrics.SizeBytes, Is.EqualTo(1073741824L));
+        Assert.That(result[0].Metrics.RamBytes, Is.EqualTo(536870912L));
     }
 
     [Test]
@@ -1820,10 +1818,10 @@ public class CollectionServiceTests
 
     #endregion
 
-    #region EnrichCollectionsWithStorageInfoAsync - Shard Size Enrichment Tests
+    #region Shard enrichment (clustering + telemetry, no per-shard disk)
 
     [Test]
-    public async Task GetEnrichedCollectionsInfoAsync_ShouldEnrichShardsWithSizeInformation()
+    public async Task GetEnrichedCollectionsInfoAsync_ShouldEnrichShardsWithClusteringStates()
     {
         // Arrange
         var nodes = new List<NodeInfo>
@@ -1885,32 +1883,7 @@ public class CollectionServiceTests
 
         mockClient.GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>())
             .Returns(clusteringResponse);
-
-        // Setup storage info - collection size
-        _mockCommandExecutor.ListDirectoriesAsync("qdrant-0", "default", "/qdrant/storage/collections", 
-            Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "test_collection" });
-
-        _mockCommandExecutor.GetSizeAsync("qdrant-0", "default", "/qdrant/storage/collections", 
-            "test_collection", Arg.Any<CancellationToken>())
-            .Returns(1500000000L); // 1.5 GB total
-
-        // Setup shard sizes
-        _mockCommandExecutor.ListDirectoriesAsync("qdrant-0", "default", 
-            "/qdrant/storage/collections/test_collection", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "0", "1", "2" });
-
-        _mockCommandExecutor.GetSizeAsync("qdrant-0", "default", 
-            "/qdrant/storage/collections/test_collection", "0", Arg.Any<CancellationToken>())
-            .Returns(500000000L);
-
-        _mockCommandExecutor.GetSizeAsync("qdrant-0", "default", 
-            "/qdrant/storage/collections/test_collection", "1", Arg.Any<CancellationToken>())
-            .Returns(600000000L);
-
-        _mockCommandExecutor.GetSizeAsync("qdrant-0", "default", 
-            "/qdrant/storage/collections/test_collection", "2", Arg.Any<CancellationToken>())
-            .Returns(400000000L);
+        SetupGetCollectionMemoryReportMock(mockClient);
 
         var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
 
@@ -1927,124 +1900,12 @@ public class CollectionServiceTests
         var shards = collection.Metrics.Shards!;
         Assert.That(shards, Has.Count.EqualTo(3));
         
-        // Verify shard 0
         Assert.That(shards[0].ShardId, Is.EqualTo(0));
         Assert.That(shards[0].State, Is.EqualTo("Active"));
-        Assert.That(shards[0].SizeBytes, Is.EqualTo(500000000));
-        Assert.That(shards[0].PrettySize, Does.Contain("MB")); // Format depends on locale
-        
-        // Verify shard 1
         Assert.That(shards[1].ShardId, Is.EqualTo(1));
         Assert.That(shards[1].State, Is.EqualTo("Partial"));
-        Assert.That(shards[1].SizeBytes, Is.EqualTo(600000000));
-        Assert.That(shards[1].PrettySize, Does.Contain("MB")); // Format depends on locale
-        
-        // Verify shard 2
         Assert.That(shards[2].ShardId, Is.EqualTo(2));
         Assert.That(shards[2].State, Is.EqualTo("Initializing"));
-        Assert.That(shards[2].SizeBytes, Is.EqualTo(400000000));
-        Assert.That(shards[2].PrettySize, Does.Contain("MB")); // Format depends on locale
-    }
-
-    [Test]
-    public async Task GetEnrichedCollectionsInfoAsync_ShouldCreateShardsFromStorage_WhenNoClusteringInfo()
-    {
-        // Arrange - node without clustering info (e.g., standalone mode)
-        var nodes = new List<NodeInfo>
-        {
-            new() { Url = "http://node1:6333", PeerId = "peer1", IsHealthy = true, 
-                    PodName = "qdrant-0", Namespace = "default" }
-        };
-        
-        var peerToPodMap = new Dictionary<string, string> { { "peer1", "qdrant-0" } };
-
-        var mockClient = Substitute.For<IQdrantHttpClient>();
-        _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>())
-            .Returns(mockClient);
-
-        var collectionsResponse = new ListCollectionsResponse
-        {
-            Result = new ListCollectionsResponse.CollectionNamesUnit
-            {
-                Collections = new[]
-                {
-                    new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
-            },
-            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
-        };
-
-        var aliasesResponse = new ListCollectionAliasesResponse
-        {
-            Result = new ListCollectionAliasesResponse.CollectionAliasesResult
-            {
-                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
-            },
-            Status = new QdrantStatus(QdrantOperationStatusType.Ok)
-        };
-
-        mockClient.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
-        mockClient.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
-        SetupGetCollectionInfoMock(mockClient);
-
-        // No clustering info available
-        mockClient.GetCollectionClusteringInfo(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new GetCollectionClusteringInfoResponse
-            {
-                Result = new GetCollectionClusteringInfoResponse.CollectionClusteringInfo
-                {
-                    LocalShards = Array.Empty<GetCollectionClusteringInfoResponse.LocalShardInfo>(),
-                    ShardTransfers = Array.Empty<ShardTransferInfo>()
-                },
-                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
-            });
-
-        // Setup storage info
-        _mockCommandExecutor.ListDirectoriesAsync("qdrant-0", "default", "/qdrant/storage/collections", 
-            Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "test_collection" });
-
-        _mockCommandExecutor.GetSizeAsync("qdrant-0", "default", "/qdrant/storage/collections", 
-            "test_collection", Arg.Any<CancellationToken>())
-            .Returns(900000000L);
-
-        // Setup shard sizes
-        _mockCommandExecutor.ListDirectoriesAsync("qdrant-0", "default", 
-            "/qdrant/storage/collections/test_collection", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "0", "1" });
-
-        _mockCommandExecutor.GetSizeAsync("qdrant-0", "default", 
-            "/qdrant/storage/collections/test_collection", "0", Arg.Any<CancellationToken>())
-            .Returns(400000000L);
-
-        _mockCommandExecutor.GetSizeAsync("qdrant-0", "default", 
-            "/qdrant/storage/collections/test_collection", "1", Arg.Any<CancellationToken>())
-            .Returns(500000000L);
-
-        var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
-
-        // Act
-        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
-
-        // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        
-        var collection = result[0];
-        Assert.That(collection.Metrics.ContainsKey("shards"), Is.True);
-        
-        var shards = collection.Metrics.Shards!;
-        Assert.That(shards, Has.Count.EqualTo(2));
-        
-        // Shards should have size but no state (since no clustering info)
-        Assert.That(shards[0].ShardId, Is.EqualTo(0));
-        Assert.That(shards[0].State, Is.Null);
-        Assert.That(shards[0].SizeBytes, Is.EqualTo(400000000));
-        Assert.That(shards[0].PrettySize, Does.Contain("MB")); // Format depends on locale
-        
-        Assert.That(shards[1].ShardId, Is.EqualTo(1));
-        Assert.That(shards[1].State, Is.Null);
-        Assert.That(shards[1].SizeBytes, Is.EqualTo(500000000));
-        Assert.That(shards[1].PrettySize, Does.Contain("MB")); // Format depends on locale
     }
 
     #endregion
@@ -2152,23 +2013,7 @@ public class CollectionServiceTests
         };
 
         mockClient.GetClusterTelemetry(Arg.Any<CancellationToken>()).Returns(telemetryResponse);
-
-        // Storage: collection and one shard so enrichment runs
-        _mockCommandExecutor.ListDirectoriesAsync("qdrant-0", "default", "/qdrant/storage/collections",
-                Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "test_collection" });
-
-        _mockCommandExecutor.GetSizeAsync("qdrant-0", "default", "/qdrant/storage/collections",
-                "test_collection", Arg.Any<CancellationToken>())
-            .Returns(1000L);
-
-        _mockCommandExecutor.ListDirectoriesAsync("qdrant-0", "default",
-                "/qdrant/storage/collections/test_collection", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "0" });
-
-        _mockCommandExecutor.GetSizeAsync("qdrant-0", "default",
-                "/qdrant/storage/collections/test_collection", "0", Arg.Any<CancellationToken>())
-            .Returns(500_000L);
+        SetupGetCollectionMemoryReportMock(mockClient);
 
         var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
 
@@ -2183,7 +2028,6 @@ public class CollectionServiceTests
         var shards = collection.Metrics.Shards!;
         Assert.That(shards, Has.Count.EqualTo(1));
         Assert.That(shards[0].ShardId, Is.EqualTo(0));
-        Assert.That(shards[0].SizeBytes, Is.EqualTo(500_000));
         Assert.That(shards[0].VectorsSizeBytes, Is.EqualTo(vectorsSize));
         Assert.That(shards[0].PayloadsSizeBytes, Is.EqualTo(payloadsSize));
         Assert.That(shards[0].PrettyVectorsSize, Is.Not.Null.And.Contains("MB"));
@@ -2246,16 +2090,7 @@ public class CollectionServiceTests
 
         mockClient.GetCollectionClusteringInfo("c1", Arg.Any<CancellationToken>()).Returns(clusteringResponse);
         mockClient.GetClusterTelemetry(Arg.Any<CancellationToken>()).Returns((GetClusterTelemetryResponse?)null);
-
-        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), "/qdrant/storage/collections",
-                Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "c1" });
-        _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(), "/qdrant/storage/collections", "c1",
-                Arg.Any<CancellationToken>()).Returns(100L);
-        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(),
-                "/qdrant/storage/collections/c1", Arg.Any<CancellationToken>()).Returns(new List<string> { "0" });
-        _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(),
-                "/qdrant/storage/collections/c1", "0", Arg.Any<CancellationToken>()).Returns(200L);
+        SetupGetCollectionMemoryReportMock(mockClient);
 
         var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
 
@@ -2266,7 +2101,6 @@ public class CollectionServiceTests
         Assert.That(result, Has.Count.EqualTo(1));
         var shards = result[0].Metrics.Shards!;
         Assert.That(shards, Has.Count.EqualTo(1));
-        Assert.That(shards[0].SizeBytes, Is.EqualTo(200));
         Assert.That(shards[0].VectorsSizeBytes, Is.Null);
         Assert.That(shards[0].PayloadsSizeBytes, Is.Null);
     }

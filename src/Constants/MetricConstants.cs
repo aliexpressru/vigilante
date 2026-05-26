@@ -14,6 +14,12 @@ public static class MetricConstants
     /// Metric key for size in bytes (used in ClusterManager, CollectionService, TestDataProvider)
     /// </summary>
     public const string SizeBytesKey = "sizeBytes";
+
+    public const string RamBytesKey = "ramBytes";
+
+    public const string PrettyRamSizeKey = "prettyRamSize";
+
+    public const string MemoryReportKey = "memoryReport";
     
     /// <summary>
     /// Metric key for shards information including ID, state, and size
