@@ -138,6 +138,6 @@ public sealed class RecoverFromSnapshotJob(
             "|",
             shards
                 .OrderBy(s => s.ShardId)
-                .Select(s => $"{s.ShardId}:{s.SizeBytes}:{s.VectorsSizeBytes}:{s.PayloadsSizeBytes}"));
+                .Select(s => $"{s.ShardId}:{s.VectorsSizeBytes}:{s.PayloadsSizeBytes}"));
     }
 }

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
 using Vigilante.Constants;
+using Vigilante.Extensions;
 using Vigilante.Models;
 
 namespace Vigilante.Services;
@@ -59,13 +60,13 @@ public class TestDataProvider
         }
 
         // Define different sizes for different collections to make it more realistic
-        var collectionSizes = new Dictionary<string, (string prettySize, long sizeBytes)>
+        var collectionSizes = new Dictionary<string, (string prettySize, long sizeBytes, long ramBytes)>
         {
-            { "test_collection", ("1.2 GB", 1288490188L) },
-            { "products", ("850.5 MB", 891873484L) },
-            { "embeddings", ("3.7 GB", 3971891200L) },
-            { "super_long_collection_name_with_multiple_underscores_and_segments_to_test_horizontal_overflow_behavior", ("7.3 GB", 7836344320L) },
-            { "analytics_data_warehouse_user_behavior_tracking_embeddings_v2_production_quantized_optimized_2024", ("22.1 GB", 23735685734L) }
+            { "test_collection", ("1.2 GB", 1288490188L, 512000000L) },
+            { "products", ("850.5 MB", 891873484L, 320000000L) },
+            { "embeddings", ("3.7 GB", 3971891200L, 1500000000L) },
+            { "super_long_collection_name_with_multiple_underscores_and_segments_to_test_horizontal_overflow_behavior", ("7.3 GB", 7836344320L, 2800000000L) },
+            { "analytics_data_warehouse_user_behavior_tracking_embeddings_v2_production_quantized_optimized_2024", ("22.1 GB", 23735685734L, 8000000000L) }
         };
 
         // Define test aliases for some collections
@@ -78,7 +79,7 @@ public class TestDataProvider
 
         foreach (var collection in testCollections)
         {
-            var (prettySize, sizeBytes) = collectionSizes.GetValueOrDefault(collection, ("1.0 GB", 1073741824L));
+            var (prettySize, sizeBytes, ramBytes) = collectionSizes.GetValueOrDefault(collection, ("1.0 GB", 1073741824L, 400000000L));
             
             foreach (var (peerId, podName, _) in testPeers)
             {
@@ -89,9 +90,9 @@ public class TestDataProvider
                 // Distribute shards among peers with different states
                 if (peerId == "peer1")
                 {
-                    shards.Add(new ShardDetails { ShardId = 0, State = "Active", SizeBytes = 300000000 });
-                    shards.Add(new ShardDetails { ShardId = 1, State = "Initializing", SizeBytes = 350000000 });
-                    shards.Add(new ShardDetails { ShardId = 2, State = "PartialSnapshot", SizeBytes = 320000000 });
+                    shards.Add(new ShardDetails { ShardId = 0, State = "Active", VectorsSizeBytes = 200000000, PayloadsSizeBytes = 100000000 });
+                    shards.Add(new ShardDetails { ShardId = 1, State = "Initializing", VectorsSizeBytes = 250000000, PayloadsSizeBytes = 100000000 });
+                    shards.Add(new ShardDetails { ShardId = 2, State = "PartialSnapshot", VectorsSizeBytes = 220000000, PayloadsSizeBytes = 100000000 });
                     transfers.Add(new { isSync = true, shardId = 2, to = "pod-2", toPeerId = "peer2", method = "Snapshot" });
                     
                     // States for the first peer
@@ -101,9 +102,9 @@ public class TestDataProvider
                 }
                 else if (peerId == "peer2")
                 {
-                    shards.Add(new ShardDetails { ShardId = 3, State = "Listener", SizeBytes = 280000000 });
-                    shards.Add(new ShardDetails { ShardId = 4, State = "Dead", SizeBytes = 290000000 });
-                    shards.Add(new ShardDetails { ShardId = 5, State = "Recovery", SizeBytes = 310000000 });
+                    shards.Add(new ShardDetails { ShardId = 3, State = "Listener", VectorsSizeBytes = 180000000, PayloadsSizeBytes = 100000000 });
+                    shards.Add(new ShardDetails { ShardId = 4, State = "Dead", VectorsSizeBytes = 190000000, PayloadsSizeBytes = 100000000 });
+                    shards.Add(new ShardDetails { ShardId = 5, State = "Recovery", VectorsSizeBytes = 210000000, PayloadsSizeBytes = 100000000 });
                     
                     // States for the second peer
                     shardStates["3"] = "Listener";        // In listener mode
@@ -112,9 +113,9 @@ public class TestDataProvider
                 }
                 else if (peerId == "peer3")
                 {
-                    shards.Add(new ShardDetails { ShardId = 6, State = "Resharding", SizeBytes = 330000000 });
-                    shards.Add(new ShardDetails { ShardId = 7, State = "ReshardingScaleDown", SizeBytes = 270000000 });
-                    shards.Add(new ShardDetails { ShardId = 8, State = "Partial", SizeBytes = 340000000 });
+                    shards.Add(new ShardDetails { ShardId = 6, State = "Resharding", VectorsSizeBytes = 230000000, PayloadsSizeBytes = 100000000 });
+                    shards.Add(new ShardDetails { ShardId = 7, State = "ReshardingScaleDown", VectorsSizeBytes = 170000000, PayloadsSizeBytes = 100000000 });
+                    shards.Add(new ShardDetails { ShardId = 8, State = "Partial", VectorsSizeBytes = 240000000, PayloadsSizeBytes = 100000000 });
                     transfers.Add(new { isSync = false, shardId = 8, to = "pod-1", toPeerId = "peer1", method = "StreamRecords" });
                     
                     // States for the third peer
@@ -127,6 +128,8 @@ public class TestDataProvider
                 {
                     { MetricConstants.PrettySizeKey, prettySize },
                     { MetricConstants.SizeBytesKey, sizeBytes },
+                    { MetricConstants.RamBytesKey, ramBytes },
+                    { MetricConstants.PrettyRamSizeKey, ramBytes.ToPrettySize() },
                     { MetricConstants.ShardsKey, shards },
                     { MetricConstants.OutgoingTransfersKey, transfers },
                     { MetricConstants.ShardStatesKey, shardStates }

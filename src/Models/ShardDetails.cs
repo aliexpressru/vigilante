@@ -17,11 +17,6 @@ public class ShardDetails
 
     public bool IsActive => ParsedState == ShardState.Active;
 
-    /// <summary>Physical size on disk (from storage).</summary>
-    public long? SizeBytes { get; set; }
-
-    public string? PrettySize => SizeBytes?.ToPrettySize();
-
     /// <summary>Estimated vectors size in bytes (from cluster telemetry).</summary>
     public long? VectorsSizeBytes { get; set; }
 

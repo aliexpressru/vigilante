@@ -27,11 +27,41 @@ public sealed class CollectionMetrics : Dictionary<string, object>
 
     public long? SizeBytes
     {
-        get => GetValue<long>(MetricConstants.SizeBytesKey);
+        get => GetNullableInt64(MetricConstants.SizeBytesKey);
         set
         {
             if (value is null) Remove(MetricConstants.SizeBytesKey);
             else this[MetricConstants.SizeBytesKey] = value.Value;
+        }
+    }
+
+    public string? PrettyRamSize
+    {
+        get => GetValue<string>(MetricConstants.PrettyRamSizeKey);
+        set
+        {
+            if (value is null) Remove(MetricConstants.PrettyRamSizeKey);
+            else this[MetricConstants.PrettyRamSizeKey] = value;
+        }
+    }
+
+    public long? RamBytes
+    {
+        get => GetNullableInt64(MetricConstants.RamBytesKey);
+        set
+        {
+            if (value is null) Remove(MetricConstants.RamBytesKey);
+            else this[MetricConstants.RamBytesKey] = value.Value;
+        }
+    }
+
+    public CollectionMemoryReportInfo? MemoryReport
+    {
+        get => GetValue<CollectionMemoryReportInfo>(MetricConstants.MemoryReportKey);
+        set
+        {
+            if (value is null) Remove(MetricConstants.MemoryReportKey);
+            else this[MetricConstants.MemoryReportKey] = value;
         }
     }
 
@@ -63,6 +93,20 @@ public sealed class CollectionMetrics : Dictionary<string, object>
             if (value is null) Remove(MetricConstants.ShardStatesKey);
             else this[MetricConstants.ShardStatesKey] = value;
         }
+    }
+
+    private long? GetNullableInt64(string key)
+    {
+        if (!TryGetValue(key, out var value) || value is null)
+            return null;
+
+        return value switch
+        {
+            long l => l,
+            int i => i,
+            JsonElement json when json.ValueKind == JsonValueKind.Number => json.GetInt64(),
+            _ => Convert.ToInt64(value)
+        };
     }
 
     private T? GetValue<T>(string key)

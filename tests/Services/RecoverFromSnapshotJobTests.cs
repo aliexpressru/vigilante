@@ -204,8 +204,8 @@ public class RecoverFromSnapshotJobTests
                 OutgoingTransfers = [],
                 Shards =
                 [
-                    new ShardDetails { ShardId = 1, State = ShardState.Active.ToString(), SizeBytes = 100 },
-                    new ShardDetails { ShardId = 2, State = ShardState.Active.ToString(), SizeBytes = 200 }
+                    new ShardDetails { ShardId = 1, State = ShardState.Active.ToString(), VectorsSizeBytes = 100 },
+                    new ShardDetails { ShardId = 2, State = ShardState.Active.ToString(), VectorsSizeBytes = 200 }
                 ]
             });
 
@@ -221,8 +221,8 @@ public class RecoverFromSnapshotJobTests
                         OutgoingTransfers = [],
                         Shards =
                         [
-                            new ShardDetails { ShardId = 1, State = ShardState.Active.ToString(), SizeBytes = 100 },
-                            new ShardDetails { ShardId = 2, State = ShardState.Active.ToString(), SizeBytes = 200 }
+                            new ShardDetails { ShardId = 1, State = ShardState.Active.ToString(), VectorsSizeBytes = 100 },
+                            new ShardDetails { ShardId = 2, State = ShardState.Active.ToString(), VectorsSizeBytes = 200 }
                         ]
                     }
                 }
@@ -237,8 +237,8 @@ public class RecoverFromSnapshotJobTests
                         OutgoingTransfers = [],
                         Shards =
                         [
-                            new ShardDetails { ShardId = 1, State = ShardState.Active.ToString(), SizeBytes = 150 },
-                            new ShardDetails { ShardId = 2, State = ShardState.Active.ToString(), SizeBytes = 250 }
+                            new ShardDetails { ShardId = 1, State = ShardState.Active.ToString(), VectorsSizeBytes = 150 },
+                            new ShardDetails { ShardId = 2, State = ShardState.Active.ToString(), VectorsSizeBytes = 250 }
                         ]
                     }
                 }

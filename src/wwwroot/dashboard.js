@@ -1247,23 +1247,19 @@ class VigilanteDashboard {
             
             // Handle both old format (array of numbers) and new format (array of objects)
             const shardsHtml = value.map(shard => {
-                let shardId, state, prettySize, prettyVectorsSize, prettyPayloadsSize, vectorsSizeBytes, payloadsSizeBytes;
+                let shardId, state, prettyVectorsSize, prettyPayloadsSize, vectorsSizeBytes, payloadsSizeBytes;
                 
-                // Check if it's the new format (object with shardId, state, sizeBytes)
                 if (typeof shard === 'object' && shard !== null && 'shardId' in shard) {
                     shardId = shard.shardId;
                     state = shard.state || 'Unknown';
-                    prettySize = shard.prettySize ?? null;
                     prettyVectorsSize = shard.prettyVectorsSize ?? null;
                     prettyPayloadsSize = shard.prettyPayloadsSize ?? null;
                     vectorsSizeBytes = shard.vectorsSizeBytes ?? 0;
                     payloadsSizeBytes = shard.payloadsSizeBytes ?? 0;
                 } else {
-                    // Old format: just a number
                     shardId = shard;
                     const shardStates = nodeInfo?.metrics?.shardStates || {};
                     state = shardStates[shardId.toString()] || 'Unknown';
-                    prettySize = null;
                     prettyVectorsSize = null;
                     prettyPayloadsSize = null;
                     vectorsSizeBytes = 0;
@@ -1276,16 +1272,10 @@ class VigilanteDashboard {
                 const vectorsPct = totalData > 0 ? Math.round((vectorsSizeBytes / totalData) * 100) : 50;
                 const payloadPct = totalData > 0 ? 100 - vectorsPct : 50;
                 const sizeDisplay = (() => {
-                    if (hasTelemetry) {
-                        const barHtml = `<span class="shard-size-bar" title="Vectors vs Payload"><span class="shard-size-bar-vectors" style="width:${vectorsPct}%"></span><span class="shard-size-bar-payload" style="width:${payloadPct}%"></span></span>`;
-                        const legend = `<span class="shard-size-legend-line">${prettyVectorsSize} vectors</span><span class="shard-size-legend-line">${prettyPayloadsSize} payload</span>`;
-                        const diskPart = prettySize != null ? ` <span class="shard-size-disk">${prettySize} on disk</span>` : '';
-                        return `<span class="shard-size shard-size-with-breakdown">${barHtml}<span class="shard-size-legend">${legend}</span>${diskPart}</span>`;
-                    }
-                    if (prettySize != null) {
-                        return `<span class="shard-size">${prettySize}</span>`;
-                    }
-                    return '';
+                    if (!hasTelemetry) return '';
+                    const barHtml = `<span class="shard-size-bar" title="Vectors vs Payload"><span class="shard-size-bar-vectors" style="width:${vectorsPct}%"></span><span class="shard-size-bar-payload" style="width:${payloadPct}%"></span></span>`;
+                    const legend = `<span class="shard-size-legend-line">${prettyVectorsSize} vectors</span><span class="shard-size-legend-line">${prettyPayloadsSize} payload</span>`;
+                    return `<span class="shard-size shard-size-with-breakdown">${barHtml}<span class="shard-size-legend">${legend}</span></span>`;
                 })();
                 
                 return `
@@ -1342,8 +1332,8 @@ class VigilanteDashboard {
                     </div>`;
             }).join('');
         }
-        // Hide shardStates and sizeBytes from metrics display
-        if (key === 'shardStates' || key === 'shard_states' || key === 'sizeBytes') {
+        if (key === 'shardStates' || key === 'shard_states' || key === 'sizeBytes' || key === 'ramBytes'
+            || key === 'memoryReport' || key === 'prettyRamSize' || key === 'prettySize') {
             return '';
         }
         return value;
@@ -1354,6 +1344,121 @@ class VigilanteDashboard {
         const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
         const i = Math.floor(Math.log(bytes) / Math.log(1024));
         return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+    }
+
+    measureCollectionNameTextWidth(nameText, sizeRem) {
+        if (!this._collectionNameMeasureCtx) {
+            const canvas = document.createElement('canvas');
+            this._collectionNameMeasureCtx = canvas.getContext('2d');
+        }
+        const ctx = this._collectionNameMeasureCtx;
+        const cs = getComputedStyle(nameText);
+        const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+        const fontPx = sizeRem * rootPx;
+        ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${fontPx}px ${cs.fontFamily}`;
+        return ctx.measureText(nameText.textContent || '').width;
+    }
+
+    /** Shrinks collection name font only when it does not fit; most rows keep CSS default size. */
+    fitCollectionNameText(nameLine, nameText, sharedAvailableWidth = 0) {
+        if (!nameLine || !nameText) return;
+
+        const defaultRem = 0.85;
+        const minRem = 0.58;
+        nameText.style.fontSize = '';
+
+        let availableWidth = sharedAvailableWidth > 0 ? sharedAvailableWidth : nameText.clientWidth;
+        if (availableWidth <= 0) {
+            const gap = 8;
+            let reserved = gap;
+            nameLine.querySelectorAll('.collection-name-copy-btn, .collection-name-prefix-icon')
+                .forEach(el => { reserved += el.offsetWidth + gap; });
+            availableWidth = nameLine.clientWidth - reserved;
+        }
+        if (availableWidth <= 0) return;
+
+        if (this.measureCollectionNameTextWidth(nameText, defaultRem) <= availableWidth + 1) {
+            return;
+        }
+
+        let sizeRem = defaultRem;
+        for (let i = 0; i < 40 && sizeRem > minRem; i++) {
+            sizeRem = Math.max(minRem, sizeRem - 0.02);
+            if (this.measureCollectionNameTextWidth(nameText, sizeRem) <= availableWidth + 1) {
+                nameText.style.fontSize = `${sizeRem}rem`;
+                return;
+            }
+        }
+
+        nameText.style.fontSize = `${minRem}rem`;
+    }
+
+    syncCollectionHeaderInfoWidth() {
+        const collectionsTable = document.querySelector('#collectionsTable table');
+        if (!collectionsTable) return;
+
+        let maxWidth = 0;
+        collectionsTable.querySelectorAll('.collection-info-block').forEach(block => {
+            maxWidth = Math.max(maxWidth, block.getBoundingClientRect().width);
+        });
+
+        if (maxWidth > 0) {
+            document.documentElement.style.setProperty(
+                '--collection-header-info-width',
+                `${Math.ceil(maxWidth)}px`);
+        }
+    }
+
+    fitAllCollectionNamesInTable(table) {
+        const isCollections = !!table.closest('#collectionsTable');
+
+        requestAnimationFrame(() => {
+            if (isCollections) {
+                this.syncCollectionHeaderInfoWidth();
+            }
+
+            requestAnimationFrame(() => {
+                const fitTableNames = (targetTable) => {
+                    const lines = [...targetTable.querySelectorAll('.collection-name-line')];
+                    let sharedWidth = 0;
+                    lines.forEach(line => {
+                        const nameText = line.querySelector('.collection-name-text');
+                        if (!nameText) return;
+                        nameText.style.fontSize = '';
+                        sharedWidth = Math.max(sharedWidth, nameText.clientWidth);
+                    });
+                    lines.forEach(line => {
+                        const nameText = line.querySelector('.collection-name-text');
+                        if (nameText) this.fitCollectionNameText(line, nameText, sharedWidth);
+                    });
+                };
+
+                fitTableNames(table);
+
+                if (isCollections) {
+                    const snapshotsTable = document.querySelector('#snapshotsTable table');
+                    if (snapshotsTable) fitTableNames(snapshotsTable);
+                }
+            });
+        });
+    }
+
+    /** Shrinks font size so badge text fits fixed width (see --badge-width in CSS). */
+    fitCollectionHeaderBadge(element) {
+        if (!element) return;
+        const widthPx = element.getBoundingClientRect().width;
+        if (!widthPx) return;
+
+        const maxRem = 0.82;
+        const minRem = 0.66;
+        let sizeRem = maxRem;
+        element.style.fontSize = `${sizeRem}rem`;
+
+        for (let i = 0; i < 32 && sizeRem > minRem; i++) {
+            if (element.scrollWidth <= widthPx + 1) break;
+            sizeRem = Math.max(minRem, sizeRem - 0.02);
+            element.style.fontSize = `${sizeRem}rem`;
+        }
     }
 
     saveShardSelection(stateKey, shardCheckboxes) {
@@ -1400,7 +1505,8 @@ class VigilanteDashboard {
         document.querySelectorAll('.collection-actions-menu-button.active').forEach(btn => {
             const row = btn.closest('.collection-row');
             if (row) {
-                const nameCell = row.querySelector('.collection-name-line');
+                const nameCell = row.querySelector('.collection-name-text')
+                    ?? row.querySelector('.collection-name-line');
                 if (nameCell) {
                     const collectionName = nameCell.textContent?.trim();
                     if (collectionName) {
@@ -1411,18 +1517,24 @@ class VigilanteDashboard {
             }
         });
         
-        // Calculate total size for current page
-        let totalSizeBytes = 0;
+        const seenCollectionsForTotals = new Set();
+        let totalDiskBytes = 0;
+        let totalRamBytes = 0;
         collections.forEach(info => {
-            if (info?.metrics?.sizeBytes) {
-                totalSizeBytes += info.metrics.sizeBytes;
-            }
+            if (!info?.collectionName || seenCollectionsForTotals.has(info.collectionName)) return;
+            seenCollectionsForTotals.add(info.collectionName);
+            if (info.metrics?.sizeBytes) totalDiskBytes += info.metrics.sizeBytes;
+            if (info.metrics?.ramBytes) totalRamBytes += info.metrics.ramBytes;
         });
         
-        // Update total size display (for current page)
         const totalSizeElement = document.getElementById('totalCollectionsSize');
         if (totalSizeElement) {
-            totalSizeElement.textContent = `Total Size: ${this.formatSize(totalSizeBytes)}`;
+            const parts = [];
+            if (totalDiskBytes > 0) parts.push(this.formatSize(totalDiskBytes));
+            if (totalRamBytes > 0) parts.push(this.formatSize(totalRamBytes));
+            totalSizeElement.textContent = parts.length > 0 ? parts.join(' · ') : '—';
+            totalSizeElement.classList.add('collection-metric-hint');
+            totalSizeElement.setAttribute('data-tooltip', 'Sum of on-disk size and RAM for collections on this page (Qdrant memory report, cluster-wide)');
         }
         
         // Use persistent state to remember which collections were open
@@ -1477,14 +1589,13 @@ class VigilanteDashboard {
             console.log(`Collection ${name} has ${collection.nodes.length} nodes`);
         });
 
-        // Get unique node keys in the order they appear in backend response (already sorted)
         const nodeKeys = [...new Set(collections.map(info => {
-            // Match backend sorting logic: prefer podName over peerId
             if (info.podName && info.podName !== 'unknown') {
                 return info.podName;
             }
             return info.peerId || info.nodeUrl;
-        }).filter(Boolean))]; // No .sort() - preserve backend order!
+        }).filter(Boolean))];
+
         const table = document.createElement('table');
         table.className = 'collections-table';
         const tbody = document.createElement('tbody');
@@ -1495,23 +1606,9 @@ class VigilanteDashboard {
                 const row = document.createElement('tr');
                 row.className = 'collection-row';
                 
-                // Calculate total size for this collection across all nodes
-                let collectionTotalSize = 0;
-                const uniqueShards = new Set();
-                collection.nodes.forEach(nodeInfo => {
-                    if (nodeInfo.metrics?.sizeBytes) {
-                        collectionTotalSize += nodeInfo.metrics.sizeBytes;
-                    }
-                    // Collect unique shard IDs from all nodes
-                    if (nodeInfo.metrics?.shards && Array.isArray(nodeInfo.metrics.shards)) {
-                        nodeInfo.metrics.shards.forEach(shard => {
-                            // Handle both old format (number) and new format (object with shardId)
-                            const shardId = typeof shard === 'object' ? shard.shardId : shard;
-                            uniqueShards.add(shardId);
-                        });
-                    }
-                });
-                const collectionTotalShards = uniqueShards.size;
+                const firstNodeMetrics = collection.nodes[0]?.metrics || {};
+                const collectionDiskBytes = firstNodeMetrics.sizeBytes;
+                const collectionRamBytes = firstNodeMetrics.ramBytes;
                 
                 const nameCell = document.createElement('td');
                 nameCell.className = 'collection-name';
@@ -1524,20 +1621,14 @@ class VigilanteDashboard {
                 headerContainer.style.justifyContent = 'space-between';
                 headerContainer.style.alignItems = 'center';
                 
-                // Left side: Collection name and aliases
                 const nameContainer = document.createElement('div');
-                nameContainer.style.display = 'flex';
-                nameContainer.style.flexDirection = 'column';
-                nameContainer.style.gap = '4px';
+                nameContainer.className = 'collection-name-block';
                 
-                // Collection name with copy button
                 const nameDiv = document.createElement('div');
                 nameDiv.className = 'collection-name-line';
-                nameDiv.style.display = 'flex';
-                nameDiv.style.alignItems = 'center';
-                nameDiv.style.gap = '8px';
                 
                 const nameText = document.createElement('span');
+                nameText.className = 'collection-name-text';
                 nameText.textContent = collection.name;
                 nameText.title = collection.name;
                 nameDiv.appendChild(nameText);
@@ -1667,8 +1758,8 @@ class VigilanteDashboard {
                     nameContainer.appendChild(aliasesContainer);
                 }
                 
-                // Right side: Status, Size and shards info
                 const infoContainer = document.createElement('div');
+                infoContainer.className = 'collection-info-block';
                 infoContainer.style.display = 'flex';
                 infoContainer.style.flexDirection = 'column';
                 infoContainer.style.alignItems = 'flex-end';
@@ -1726,26 +1817,28 @@ class VigilanteDashboard {
                     statusSpan.innerHTML = `${icon} ${collection.status}`;
                     statusSpan.setAttribute('data-tooltip', tooltipText);
                     topRow.appendChild(statusSpan);
+                    this.fitCollectionHeaderBadge(statusSpan);
                 }
                 
-                // Size span
-                const sizeSpan = document.createElement('span');
-                sizeSpan.className = 'collection-size';
-                sizeSpan.textContent = this.formatSize(collectionTotalSize);
-                topRow.appendChild(sizeSpan);
+                if (collectionDiskBytes != null && collectionDiskBytes > 0) {
+                    const sizeSpan = document.createElement('span');
+                    sizeSpan.className = 'collection-size collection-metric-hint';
+                    sizeSpan.textContent = this.formatSize(collectionDiskBytes);
+                    sizeSpan.setAttribute('data-tooltip', 'Total on-disk size for this collection (cluster-wide, Qdrant memory report)');
+                    topRow.appendChild(sizeSpan);
+                    this.fitCollectionHeaderBadge(sizeSpan);
+                }
+
+                if (collectionRamBytes != null && collectionRamBytes > 0) {
+                    const ramSpan = document.createElement('span');
+                    ramSpan.className = 'collection-ram-size collection-metric-hint';
+                    ramSpan.textContent = this.formatSize(collectionRamBytes);
+                    ramSpan.setAttribute('data-tooltip', 'Non-evictable heap RAM for this collection (cluster-wide, Qdrant memory report)');
+                    topRow.appendChild(ramSpan);
+                    this.fitCollectionHeaderBadge(ramSpan);
+                }
                 
                 infoContainer.appendChild(topRow);
-                
-                // Bottom row: Shards count (if any)
-                if (collectionTotalShards > 0) {
-                    const shardsSpan = document.createElement('span');
-                    shardsSpan.className = 'collection-shards-count';
-                    shardsSpan.style.fontSize = '0.8rem';
-                    shardsSpan.style.color = '#666';
-                    shardsSpan.innerHTML = `<i class="fas fa-layer-group"></i> ${collectionTotalShards} ${collectionTotalShards === 1 ? 'shard' : 'shards'}`;
-                    shardsSpan.title = `Unique shards in collection: ${collectionTotalShards}`;
-                    infoContainer.appendChild(shardsSpan);
-                }
                 
                 // Create collection actions menu container (three dots menu)
                 const collectionActionsMenuContainer = document.createElement('div');
@@ -1849,9 +1942,9 @@ class VigilanteDashboard {
                         // Update state for closed menus
                         const row = btn.closest('.collection-row');
                         if (row) {
-                            const nameCell = row.querySelector('.collection-name-line');
-                            if (nameCell) {
-                                const collectionName = nameCell.textContent?.trim();
+                            const nameEl = row.querySelector('.collection-name-text');
+                            if (nameEl) {
+                                const collectionName = nameEl.textContent?.trim();
                                 if (collectionName) {
                                     this.openCollectionMenus.delete(collectionName);
                                 }
@@ -1938,7 +2031,8 @@ class VigilanteDashboard {
                         
                         // 4. Get other metrics (if any)
                         const otherMetricsHtml = Object.entries(nodeInfo.metrics)
-                            .filter(([key]) => key !== 'prettySize' && key !== 'sizeBytes' && key !== 'shardStates' && 
+                            .filter(([key]) => key !== 'prettySize' && key !== 'prettyRamSize' && key !== 'sizeBytes'
+                                              && key !== 'ramBytes' && key !== 'memoryReport' && key !== 'shardStates' && 
                                               key !== 'shard_states' && key !== 'shards' && key !== 'outgoingTransfers')
                             .map(([key, value]) => {
                                 const formattedValue = this.formatMetricValue(key, value, nodeInfo);
@@ -1959,19 +2053,9 @@ class VigilanteDashboard {
                             : (nodeInfo.peerId || nodeInfo.nodeUrl);
                         const fullNodeTitle = nodeInfo.peerId ? `${displayName} (${nodeInfo.peerId})` : displayName;
                         
-                        // Format size for header line
-                        let sizeForHeader = '';
-                        if (nodeInfo.metrics.sizeBytes) {
-                            const formattedSize = this.formatSize(nodeInfo.metrics.sizeBytes);
-                            sizeForHeader = `<span class="node-size-badge">${formattedSize}</span>`;
-                        }
-                        
                         nodeDetails.innerHTML = `
                             <div class="node-info-header">
                                 <h4 title="${fullNodeTitle}">${displayName}${peerIdDisplay}</h4>
-                            </div>
-                            <div class="node-size-line">
-                                ${sizeForHeader}
                             </div>
                             ${shardsHtml}
                             ${otherMetricsHtml ? `<dl class="other-metrics">${otherMetricsHtml}</dl>` : ''}
@@ -2271,6 +2355,7 @@ class VigilanteDashboard {
         const container = document.getElementById('collectionsTable');
         container.innerHTML = '';
         container.appendChild(table);
+        this.fitAllCollectionNamesInTable(table);
     }
 
     async loadSnapshots(clearCache = false) {
@@ -2361,20 +2446,24 @@ class VigilanteDashboard {
             
             const headerContainer = document.createElement('div');
             headerContainer.className = 'collection-header-container';
-            headerContainer.style.display = 'flex';
-            headerContainer.style.justifyContent = 'space-between';
-            headerContainer.style.alignItems = 'center';
+            
+            const nameContainer = document.createElement('div');
+            nameContainer.className = 'collection-name-block';
             
             const nameDiv = document.createElement('div');
             nameDiv.className = 'collection-name-line';
-            nameDiv.style.display = 'flex';
-            nameDiv.style.alignItems = 'center';
-            nameDiv.style.gap = '8px';
             
-            const nameContent = document.createElement('span');
-            nameContent.innerHTML = `<i class="fas fa-camera" style="color: #7b1fa2; margin-right: 8px;"></i>${collection.collectionName}`;
-            nameContent.title = collection.collectionName;
-            nameDiv.appendChild(nameContent);
+            const nameIcon = document.createElement('i');
+            nameIcon.className = 'fas fa-camera collection-name-prefix-icon';
+            nameIcon.style.color = '#7b1fa2';
+            nameIcon.setAttribute('aria-hidden', 'true');
+            
+            const nameText = document.createElement('span');
+            nameText.className = 'collection-name-text';
+            nameText.textContent = collection.collectionName;
+            nameText.title = collection.collectionName;
+            nameDiv.appendChild(nameIcon);
+            nameDiv.appendChild(nameText);
             
             // Copy to clipboard button
             const copyButton = document.createElement('button');
@@ -2418,8 +2507,10 @@ class VigilanteDashboard {
                 }
             });
             nameDiv.appendChild(copyButton);
+            nameContainer.appendChild(nameDiv);
             
             const rightContainer = document.createElement('div');
+            rightContainer.className = 'collection-info-block collection-info-block--snapshots';
             rightContainer.style.display = 'flex';
             rightContainer.style.alignItems = 'center';
             rightContainer.style.gap = '8px';
@@ -2427,6 +2518,7 @@ class VigilanteDashboard {
             const sizeSpan = document.createElement('span');
             sizeSpan.className = 'collection-size';
             sizeSpan.textContent = this.formatSize(collection.totalSize);
+            this.fitCollectionHeaderBadge(sizeSpan);
             rightContainer.appendChild(sizeSpan);
             
             // Create snapshot collection actions menu (three dots)
@@ -2473,9 +2565,9 @@ class VigilanteDashboard {
                     // Remove from tracking when closing other menus
                     const parentRow = btn.closest('tr');
                     if (parentRow) {
-                        const collectionNameEl = parentRow.querySelector('.collection-name-line span');
+                        const collectionNameEl = parentRow.querySelector('.collection-name-text');
                         if (collectionNameEl) {
-                            const collectionName = collectionNameEl.textContent?.replace(/^\s*\S+\s*/, '').trim(); // Remove icon
+                            const collectionName = collectionNameEl.textContent?.trim();
                             if (collectionName) {
                                 this.openSnapshotCollectionMenus.delete(collectionName);
                             }
@@ -2509,7 +2601,7 @@ class VigilanteDashboard {
             
             rightContainer.appendChild(snapshotCollectionMenuContainer);
             
-            headerContainer.appendChild(nameDiv);
+            headerContainer.appendChild(nameContainer);
             headerContainer.appendChild(rightContainer);
             nameCell.appendChild(headerContainer);
             row.appendChild(nameCell);
@@ -2726,6 +2818,8 @@ class VigilanteDashboard {
         const container = document.getElementById('snapshotsTable');
         container.innerHTML = '';
         container.appendChild(table);
+        this.syncCollectionHeaderInfoWidth();
+        this.fitAllCollectionNamesInTable(table);
     }
 
     async recoverSnapshotFromNode(nodeUrl, collectionName, snapshotName, podName = null, source = 'QdrantApi', sourceCollectionName = null, snapshotPriority = null, waitForResult = true) {

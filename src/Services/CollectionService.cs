@@ -481,8 +481,7 @@ public class CollectionService : ICollectionService
                         PodNamespace = node.Namespace ?? string.Empty,
                         Metrics = new CollectionMetrics
                         {
-                            [MetricConstants.PrettySizeKey] = MetricConstants.NotAvailableValue,
-                            [MetricConstants.SizeBytesKey] = 0L
+                            [MetricConstants.PrettySizeKey] = MetricConstants.NotAvailableValue
                         },
                         Aliases = aliases,
                         Status = collectionInfoResponse.Result?.Status,
@@ -542,11 +541,7 @@ public class CollectionService : ICollectionService
         // Enrich with clustering info first (creates ShardDetails with ID and State)
         await EnrichCollectionsWithClusteringInfoAsync(healthyNodes, collections, peerToPodMap, cancellationToken);
 
-        // Then enrich with storage info (adds SizeBytes to existing ShardDetails)
-        if (healthyNodes.Any(n => !string.IsNullOrEmpty(n.PodName)))
-        {
-            await EnrichCollectionsWithStorageInfoAsync(healthyNodes, collections, cancellationToken);
-        }
+        await EnrichCollectionsWithMemoryReportAsync(healthyNodes, collections, cancellationToken);
 
         // Enrich shards with vectors/payload sizes from cluster telemetry
         await EnrichCollectionsWithTelemetryAsync(healthyNodes, collections, cancellationToken);
@@ -954,8 +949,7 @@ public class CollectionService : ICollectionService
             shardDetails.Add(new ShardDetails
             {
                 ShardId = (uint)shard.ShardId,
-                State = shard.State.ToString(),
-                SizeBytes = null // Will be populated later from storage info
+                State = shard.State.ToString()
             });
             shardStates[shard.ShardId.ToString()] = shard.State.ToString();
         }
@@ -995,101 +989,78 @@ public class CollectionService : ICollectionService
     }
 
 
-    private async Task EnrichCollectionsWithStorageInfoAsync(
+    /// <summary>
+    /// Enriches collection metrics with cluster-wide disk/RAM usage from Qdrant memory report API.
+    /// Any healthy node returns the same report for the whole collection.
+    /// </summary>
+    private async Task EnrichCollectionsWithMemoryReportAsync(
         IReadOnlyList<NodeInfo> nodes,
         List<CollectionInfo> collections,
         CancellationToken cancellationToken)
     {
-        var storageCollections = new Dictionary<(string NodeUrl, string CollectionName), CollectionSize>();
-        var shardSizes = new Dictionary<(string NodeUrl, string CollectionName), List<ShardSize>>();
+        if (collections.Count == 0)
+            return;
 
-        var nodesWithPod = nodes.Where(n => !string.IsNullOrEmpty(n.PodName));
-        var nodeDataTasks = nodesWithPod.Select(async node =>
+        try
         {
-            try
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodes[0].Url, _options.ApiKey);
+            var collectionNames = collections.Select(c => c.CollectionName).Distinct(StringComparer.Ordinal);
+
+            var reportTasks = collectionNames.Select(async collectionName =>
             {
-                var collectionSizes = (await GetCollectionsSizesForPodAsync(
-                    node.PodName!,
-                    node.Namespace ?? string.Empty,
-                    node.Url,
-                    node.PeerId,
-                    cancellationToken)).ToList();
-
-                var allShardSizes = (await GetAllShardsSizesForPodAsync(
-                    node.PodName!,
-                    node.Namespace ?? string.Empty,
-                    node.Url,
-                    node.PeerId,
-                    cancellationToken)).ToList();
-
-                return (NodeUrl: node.Url, CollectionSizes: collectionSizes, AllShardSizes: allShardSizes);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to get collection sizes for node {NodeUrl}", node.Url);
-                return (node.Url, new List<CollectionSize>(), new List<ShardSize>());
-            }
-        });
-
-        var nodeDataList = await Task.WhenAll(nodeDataTasks);
-        foreach (var (_, collectionSizes, allShardSizes) in nodeDataList)
-        {
-            foreach (var size in collectionSizes)
-                storageCollections[(size.NodeUrl, size.CollectionName)] = size;
-
-            foreach (var shardGroup in allShardSizes.GroupBy(s => (s.NodeUrl, s.CollectionName)))
-                shardSizes[shardGroup.Key] = shardGroup.OrderBy(s => s.ShardId).ToList();
-        }
-
-        // Enrich collections with storage data
-        foreach (var collection in collections)
-        {
-            var key = (collection.NodeUrl, collection.CollectionName);
-
-            if (storageCollections.TryGetValue(key, out var storageInfo))
-            {
-                collection.Metrics.PrettySize = storageInfo.PrettySize;
-                collection.Metrics.SizeBytes = storageInfo.SizeBytes;
-            }
-            else
-            {
-                collection.Issues.Add("Collection exists in API but not found in storage");
-
-                _logger.LogWarning("Collection {CollectionName} on node {NodeUrl} exists in API but not in storage!",
-                    collection.CollectionName, collection.NodeUrl);
-            }
-
-            // Enrich existing shard details with size information from storage (physical disk)
-            if (shardSizes.TryGetValue(key, out var shardSizesList))
-            {
-                // Get existing shard details from Metrics if they exist (from clustering info)
-                if (collection.Metrics.Shards is { } existingShardDetails)
+                try
                 {
-                    // Create a dictionary for quick lookup of shard sizes
-                    var sizeByShardId = shardSizesList.ToDictionary(s => s.ShardId, s => s.SizeBytes);
-
-                    // Update existing shard details with size information
-                    foreach (var shardDetail in existingShardDetails)
+                    var response = await qdrantClient.GetCollectionMemoryReport(collectionName, cancellationToken);
+                    if (response?.Status?.IsSuccess != true || response.Result == null)
                     {
-                        if (sizeByShardId.TryGetValue(shardDetail.ShardId, out var sizeBytes))
-                        {
-                            shardDetail.SizeBytes = sizeBytes;
-                        }
+                        _logger.LogWarning(
+                            "Failed to get memory report for collection {CollectionName}: {Error}",
+                            collectionName,
+                            response?.Status?.GetErrorMessage() ?? MetricConstants.UnknownErrorMessage);
+                        return (collectionName, (CollectionMemoryReportInfo?)null);
                     }
-                }
-                else
-                {
-                    // If shards key doesn't exist yet (no clustering info), create it from storage data
-                    var shardDetails = shardSizesList.Select(s => new ShardDetails
-                    {
-                        ShardId = s.ShardId,
-                        State = null,
-                        SizeBytes = s.SizeBytes
-                    }).ToList();
 
-                    collection.Metrics.Shards = shardDetails;
+                    return (collectionName, (CollectionMemoryReportInfo?)response.Result.ToInfo());
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to get memory report for collection {CollectionName}", collectionName);
+                    return (collectionName, (CollectionMemoryReportInfo?)null);
+                }
+            });
+
+            var reports = await Task.WhenAll(reportTasks);
+            foreach (var (collectionName, report) in reports)
+            {
+                if (report == null)
+                    continue;
+
+                var diskBytes = (long)report.Total.DiskBytes;
+                var ramBytes = (long)report.Total.RamBytes;
+
+                foreach (var collection in collections.Where(c =>
+                             string.Equals(c.CollectionName, collectionName, StringComparison.Ordinal)))
+                {
+                    collection.Metrics.SizeBytes = diskBytes;
+                    collection.Metrics.PrettySize = diskBytes.ToPrettySize();
+                    collection.Metrics.RamBytes = ramBytes;
+                    collection.Metrics.PrettyRamSize = ramBytes.ToPrettySize();
+                    collection.Metrics.MemoryReport = report;
+
+                    _meterService.UpdateCollectionSize(new CollectionSize
+                    {
+                        CollectionName = collectionName,
+                        NodeUrl = collection.NodeUrl,
+                        PeerId = collection.PeerId,
+                        PodName = collection.PodName,
+                        SizeBytes = diskBytes
+                    });
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enrich collections with memory report from node {NodeUrl}", nodes[0].Url);
         }
     }
 
