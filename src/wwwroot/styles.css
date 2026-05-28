@@ -71,7 +71,7 @@ html[data-theme="dark"] {
 }
 
 .container {
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 20px;
     min-height: 100vh;
@@ -562,7 +562,8 @@ html[data-theme="dark"] {
 
 .nodes-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(300px, 360px));
+    justify-content: center;
     gap: 20px;
 }
 
@@ -2345,13 +2346,13 @@ html[data-theme="dark"] #leaderNode {
 .collection-status,
 .collection-size,
 .collection-ram-size {
-    --badge-width: 92px;
+    --badge-width: 88px;
     box-sizing: border-box;
     width: var(--badge-width);
     min-width: var(--badge-width);
     max-width: var(--badge-width);
     padding: 4px 6px;
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     font-weight: 600;
     line-height: 1.2;
     border-radius: 4px;
@@ -2367,7 +2368,7 @@ html[data-theme="dark"] #leaderNode {
 }
 
 .collection-status {
-    --badge-width: 74px;
+    --badge-width: 70px;
 }
 
 .collection-status i {

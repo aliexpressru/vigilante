@@ -1452,9 +1452,13 @@ class VigilanteDashboard {
         });
 
         if (maxWidth > 0) {
+            const tableWidth = collectionsTable.getBoundingClientRect().width || 0;
+            const cappedWidth = tableWidth > 0
+                ? Math.min(maxWidth, tableWidth * 0.38)
+                : maxWidth;
             document.documentElement.style.setProperty(
                 '--collection-header-info-width',
-                `${Math.ceil(maxWidth)}px`);
+                `${Math.ceil(cappedWidth)}px`);
         }
     }
 
