@@ -63,6 +63,15 @@ class VigilanteDashboard {
         this.pendingJobCancellations = new Set();
         this._configCollectionNames = []; // For config modal override row pickers
         this.themeStorageKey = 'vigilante-theme';
+        this.boardOrderStorageKey = 'vigilante-dashboard-board-order-v1';
+        this.boardCollapsedStorageKey = 'vigilante-dashboard-board-collapsed-v1';
+        this.reorderableBoardSelectors = [
+            { id: 'cluster-status', selector: '#overallStatus', contentSelector: '.status-content' },
+            { id: 'background-jobs', selector: '#jobsCard', contentSelector: '#jobsList' },
+            { id: 'cluster-nodes', selector: '.nodes-section', contentSelector: '.nodes-grid, .cluster-actions' },
+            { id: 'collections-overview', selector: '.collections-overview', contentSelector: '.collections-controls, .collections-table' },
+            { id: 'snapshots-overview', selector: '.snapshots-overview', contentSelector: '.snapshots-controls, .snapshots-table' }
+        ];
         this.themeMediaQuery = null;
         this.init();
         this.setupRefreshControls();
@@ -72,6 +81,7 @@ class VigilanteDashboard {
         this.setupConfigControls();
         this.setupThemeToggle();
         this.setupStickyActionsMenu();
+        this.setupBoardReordering();
     }
 
     // Convert numeric status to string
@@ -163,6 +173,234 @@ class VigilanteDashboard {
         if (themeToggleIcon) {
             themeToggleIcon.className = normalizedTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
         }
+    }
+
+    setupBoardReordering() {
+        const container = document.querySelector('.main-content');
+        if (!container) {
+            return;
+        }
+
+        const boards = this.reorderableBoardSelectors
+            .map((item) => {
+                const element = document.querySelector(item.selector);
+                if (!element) {
+                    return null;
+                }
+
+                element.dataset.boardId = item.id;
+                element.classList.add('dashboard-reorder-board');
+                this.ensureBoardControls(element, item);
+
+                return element;
+            })
+            .filter(Boolean);
+
+        if (boards.length < 2) {
+            return;
+        }
+
+        this.applySavedBoardOrder(container, boards);
+        this.setupBoardDnDEvents(container, boards);
+    }
+
+    ensureBoardControls(board, boardConfig) {
+        if (board.querySelector('.board-controls')) {
+            return;
+        }
+
+        const controls = document.createElement('div');
+        controls.className = 'board-controls';
+
+        const handle = document.createElement('button');
+        handle.type = 'button';
+        handle.className = 'board-drag-handle';
+        handle.title = 'Drag to reorder board';
+        handle.setAttribute('aria-label', 'Drag to reorder board');
+        handle.innerHTML = '<i class="fas fa-grip-vertical"></i>';
+        controls.appendChild(handle);
+
+        const collapseButton = document.createElement('button');
+        collapseButton.type = 'button';
+        collapseButton.className = 'board-collapse-toggle';
+        collapseButton.title = 'Collapse board';
+        collapseButton.setAttribute('aria-label', 'Collapse board');
+        collapseButton.innerHTML = '<i class="fas fa-chevron-up"></i>';
+        controls.appendChild(collapseButton);
+
+        board.appendChild(controls);
+
+        const contentNodes = [...board.querySelectorAll(boardConfig.contentSelector)];
+        contentNodes.forEach((node) => node.classList.add('board-collapse-content'));
+        this.applySavedBoardCollapsedState(board, collapseButton);
+
+        handle.addEventListener('mousedown', () => {
+            board.setAttribute('draggable', 'true');
+        });
+
+        handle.addEventListener('mouseup', () => {
+            board.setAttribute('draggable', 'false');
+        });
+
+        handle.addEventListener('mouseleave', () => {
+            if (!board.classList.contains('dragging')) {
+                board.setAttribute('draggable', 'false');
+            }
+        });
+
+        collapseButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.toggleBoardCollapsed(board, collapseButton);
+        });
+    }
+
+    getSavedBoardCollapsedState() {
+        try {
+            const raw = localStorage.getItem(this.boardCollapsedStorageKey);
+            const parsed = raw ? JSON.parse(raw) : {};
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (error) {
+            console.warn('Failed to parse collapsed board state from localStorage:', error);
+            return {};
+        }
+    }
+
+    applySavedBoardCollapsedState(board, collapseButton) {
+        const boardId = board.dataset.boardId;
+        if (!boardId) {
+            return;
+        }
+
+        const state = this.getSavedBoardCollapsedState();
+        const shouldCollapse = state[boardId] === true;
+
+        board.classList.toggle('board-collapsed', shouldCollapse);
+        collapseButton.title = shouldCollapse ? 'Expand board' : 'Collapse board';
+        collapseButton.setAttribute('aria-label', shouldCollapse ? 'Expand board' : 'Collapse board');
+        collapseButton.innerHTML = shouldCollapse
+            ? '<i class="fas fa-chevron-down"></i>'
+            : '<i class="fas fa-chevron-up"></i>';
+    }
+
+    toggleBoardCollapsed(board, collapseButton) {
+        const boardId = board.dataset.boardId;
+        if (!boardId) {
+            return;
+        }
+
+        const isCollapsed = board.classList.toggle('board-collapsed');
+        const state = this.getSavedBoardCollapsedState();
+        state[boardId] = isCollapsed;
+        localStorage.setItem(this.boardCollapsedStorageKey, JSON.stringify(state));
+
+        collapseButton.title = isCollapsed ? 'Expand board' : 'Collapse board';
+        collapseButton.setAttribute('aria-label', isCollapsed ? 'Expand board' : 'Collapse board');
+        collapseButton.innerHTML = isCollapsed
+            ? '<i class="fas fa-chevron-down"></i>'
+            : '<i class="fas fa-chevron-up"></i>';
+    }
+
+    applySavedBoardOrder(container, boards) {
+        const boardById = new Map(boards.map((board) => [board.dataset.boardId, board]));
+        let savedOrder = [];
+
+        try {
+            const raw = localStorage.getItem(this.boardOrderStorageKey);
+            const parsed = raw ? JSON.parse(raw) : [];
+            savedOrder = Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            console.warn('Failed to parse board order from localStorage:', error);
+        }
+
+        const orderedBoards = savedOrder
+            .map((id) => boardById.get(id))
+            .filter(Boolean);
+
+        boards.forEach((board) => {
+            if (!orderedBoards.includes(board)) {
+                orderedBoards.push(board);
+            }
+        });
+
+        orderedBoards.forEach((board) => container.appendChild(board));
+    }
+
+    setupBoardDnDEvents(container, boards) {
+        boards.forEach((board) => {
+            board.setAttribute('draggable', 'false');
+
+            board.addEventListener('dragstart', (event) => {
+                if (board.getAttribute('draggable') !== 'true') {
+                    event.preventDefault();
+                    return;
+                }
+
+                board.classList.add('dragging');
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', board.dataset.boardId || '');
+            });
+
+            board.addEventListener('dragend', () => {
+                board.classList.remove('dragging');
+                board.setAttribute('draggable', 'false');
+                container.querySelectorAll('.dashboard-reorder-board.drag-over').forEach((item) => {
+                    item.classList.remove('drag-over');
+                });
+            });
+        });
+
+        container.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            const dragging = container.querySelector('.dashboard-reorder-board.dragging');
+            if (!dragging) {
+                return;
+            }
+
+            const afterElement = this.getBoardAfterElement(container, event.clientY);
+            container.querySelectorAll('.dashboard-reorder-board.drag-over').forEach((item) => {
+                item.classList.remove('drag-over');
+            });
+
+            if (!afterElement) {
+                container.appendChild(dragging);
+                return;
+            }
+
+            afterElement.classList.add('drag-over');
+            container.insertBefore(dragging, afterElement);
+        });
+
+        container.addEventListener('drop', (event) => {
+            event.preventDefault();
+            container.querySelectorAll('.dashboard-reorder-board.drag-over').forEach((item) => {
+                item.classList.remove('drag-over');
+            });
+            this.saveBoardOrder(container);
+        });
+    }
+
+    getBoardAfterElement(container, mouseY) {
+        const draggableElements = [...container.querySelectorAll('.dashboard-reorder-board:not(.dragging)')];
+
+        return draggableElements.reduce((closest, board) => {
+            const box = board.getBoundingClientRect();
+            const offset = mouseY - box.top - box.height / 2;
+
+            if (offset < 0 && offset > closest.offset) {
+                return { offset, element: board };
+            }
+
+            return closest;
+        }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+    }
+
+    saveBoardOrder(container) {
+        const orderedIds = [...container.querySelectorAll('.dashboard-reorder-board')]
+            .map((board) => board.dataset.boardId)
+            .filter(Boolean);
+
+        localStorage.setItem(this.boardOrderStorageKey, JSON.stringify(orderedIds));
     }
 
     setupRefreshControls() {

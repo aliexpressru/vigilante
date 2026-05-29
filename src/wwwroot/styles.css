@@ -117,6 +117,72 @@ html[data-theme="dark"] {
     grid-template-columns: 1fr;
 }
 
+.dashboard-reorder-board {
+    position: relative;
+}
+
+.dashboard-reorder-board::before {
+    content: '';
+    position: absolute;
+    top: -18px;
+    right: 0;
+    width: 96px;
+    height: 46px;
+    background: inherit;
+    border: none;
+    border-radius: 10px 0 0 0;
+    z-index: 4;
+}
+
+.dashboard-reorder-board.dragging {
+    opacity: 0.6;
+}
+
+.dashboard-reorder-board.drag-over {
+    outline: 2px dashed #667eea;
+    outline-offset: 4px;
+}
+
+.board-controls {
+    position: absolute;
+    top: -8px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 6;
+}
+
+.board-drag-handle,
+.board-collapse-toggle {
+    position: static;
+    width: 30px;
+    height: 30px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #64748b;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    z-index: 5;
+}
+
+.board-drag-handle:hover,
+.board-collapse-toggle:hover {
+    background: #eef2ff;
+    color: #4f46e5;
+}
+
+.board-drag-handle:active {
+    cursor: grabbing;
+}
+
+.board-collapsed .board-collapse-content {
+    display: none !important;
+}
+
 /* Cards */
 .status-card, .issues-card, .nodes-section {
     background: white;
@@ -154,6 +220,10 @@ html[data-theme="dark"] {
     color: #667eea;
     font-size: 1.2rem;
     opacity: 0.3;
+}
+
+#overallStatus .refresh-indicator {
+    display: none;
 }
 
 .refresh-indicator.refreshing {
@@ -1219,6 +1289,24 @@ html[data-theme="dark"] .deletion-message {
     background: #111827;
     color: #e5e7eb;
     border-color: #374151;
+}
+
+html[data-theme="dark"] .board-drag-handle {
+    background: #1f2937;
+    border-color: #374151;
+    color: #94a3b8;
+}
+
+html[data-theme="dark"] .board-collapse-toggle {
+    background: #1f2937;
+    border-color: #374151;
+    color: #94a3b8;
+}
+
+html[data-theme="dark"] .board-drag-handle:hover,
+html[data-theme="dark"] .board-collapse-toggle:hover {
+    background: #312e81;
+    color: #c7d2fe;
 }
 
 html[data-theme="dark"] .metric,
