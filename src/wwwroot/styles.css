@@ -114,15 +114,29 @@ html[data-theme="dark"] {
 .main-content {
     flex: 1;
     display: grid;
-    gap: 20px;
+    gap: 32px;
     grid-template-columns: minmax(0, 1fr);
     min-width: 0;
+    padding-top: 10px;
 }
 
 .dashboard-reorder-board {
     position: relative;
     min-width: 0;
     max-width: 100%;
+    margin: 0;
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease;
+}
+
+.dashboard-reorder-board.status-card:hover,
+.dashboard-reorder-board.jobs-card:hover,
+.dashboard-reorder-board.nodes-section:hover,
+.dashboard-reorder-board.collections-overview:hover,
+.dashboard-reorder-board.snapshots-overview:hover {
+    transform: translateY(-2px);
 }
 
 .dashboard-reorder-board::before {
@@ -352,6 +366,13 @@ html[data-theme="dark"] {
 .jobs-card h3 {
     color: #2196f3;
     margin-bottom: 15px;
+}
+
+.jobs-card.dashboard-reorder-board {
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease;
 }
 
 .jobs-list {
@@ -2072,7 +2093,15 @@ html[data-theme="dark"] #leaderNode {
     border-radius: 12px;
     padding: 25px;
     box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
+    min-width: 0;
+    overflow: visible;
+}
+
+.collections-overview .collections-header,
+.collections-overview .collections-controls,
+.collections-overview .collections-table {
+    max-width: 100%;
+    overflow-x: clip;
 }
 
 .collections-overview h3 {
@@ -2085,7 +2114,10 @@ html[data-theme="dark"] #leaderNode {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
     margin-bottom: 1rem;
+    min-width: 0;
 }
 
 .collections-stats {
@@ -2120,6 +2152,7 @@ html[data-theme="dark"] #leaderNode {
     gap: 1rem;
     margin-bottom: 1rem;
     flex-wrap: wrap;
+    min-width: 0;
 }
 
 .filter-controls {
@@ -2127,7 +2160,7 @@ html[data-theme="dark"] #leaderNode {
     align-items: center;
     gap: 0.5rem;
     flex: 1;
-    min-width: 250px;
+    min-width: 0;
 }
 
 .filter-input {
@@ -2166,6 +2199,8 @@ html[data-theme="dark"] #leaderNode {
     display: flex;
     align-items: center;
     gap: 1rem;
+    flex-wrap: wrap;
+    min-width: 0;
 }
 
 .pagination-btn {
@@ -2239,11 +2274,13 @@ html[data-theme="dark"] #leaderNode {
     max-width: 100%;
     border-collapse: collapse;
     margin-top: 20px;
-    overflow-x: auto;
+    min-width: 0;
 }
 
 .collections-table table {
     width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
     font-size: 0.9rem;
 }
 
@@ -2279,6 +2316,8 @@ html[data-theme="dark"] #leaderNode {
     padding: 12px;
     font-size: 0.95rem;
     color: #333;
+    overflow: hidden;
+    max-width: 0;
 }
 
 .collections-table tr:hover td.collection-name {
@@ -2320,8 +2359,9 @@ html[data-theme="dark"] #leaderNode {
 }
 
 .collection-header-container .collection-info-block {
-    flex-shrink: 0;
-    min-width: var(--collection-header-info-width, auto);
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: min(var(--collection-header-info-width, 100%), 42%);
 }
 
 .collection-info-block--snapshots {
@@ -2702,13 +2742,16 @@ html[data-theme="dark"] #leaderNode {
     background: transparent;
     border-bottom: none;
     padding: 0;
+    overflow: hidden;
+    max-width: 0;
 }
 
 .collection-details-content {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
     gap: 20px;
     padding: 20px;
+    min-width: 0;
 }
 
 /* Footer for shard action buttons (Sync/Drop); invisible until shards are selected */
@@ -4448,7 +4491,6 @@ html[data-theme="dark"] #leaderNode {
     border-radius: 12px;
     padding: 25px;
     box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
 }
 
 .snapshots-overview h3 {
