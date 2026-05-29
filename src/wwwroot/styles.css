@@ -60,6 +60,7 @@ body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
     color: #333;
+    overflow-x: hidden;
 }
 
 :root {
@@ -114,11 +115,14 @@ html[data-theme="dark"] {
     flex: 1;
     display: grid;
     gap: 20px;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
 }
 
 .dashboard-reorder-board {
     position: relative;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .dashboard-reorder-board::before {
@@ -139,8 +143,7 @@ html[data-theme="dark"] {
 }
 
 .dashboard-reorder-board.drag-over {
-    outline: 2px dashed #667eea;
-    outline-offset: 4px;
+    box-shadow: 0 0 0 2px #667eea;
 }
 
 .board-controls {
@@ -2233,8 +2236,10 @@ html[data-theme="dark"] #leaderNode {
 
 .collections-table {
     width: 100%;
+    max-width: 100%;
     border-collapse: collapse;
     margin-top: 20px;
+    overflow-x: auto;
 }
 
 .collections-table table {
@@ -4476,8 +4481,10 @@ html[data-theme="dark"] #leaderNode {
 
 .snapshots-table {
     width: 100%;
+    max-width: 100%;
     border-collapse: collapse;
     margin-top: 20px;
+    overflow-x: auto;
 }
 
 .snapshots-table table {
