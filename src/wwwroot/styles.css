@@ -128,7 +128,8 @@ html[data-theme="dark"] {
     border-radius: 12px;
     padding: 25px;
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-    transition: transform 0.2s ease;
+    top: 0;
+    transition: top 0.2s ease, box-shadow 0.2s ease;
 }
 
 .dashboard-reorder-board.status-card:hover,
@@ -136,7 +137,7 @@ html[data-theme="dark"] {
 .dashboard-reorder-board.nodes-section:hover,
 .dashboard-reorder-board.collections-overview:hover,
 .dashboard-reorder-board.snapshots-overview:hover {
-    transform: translateY(-2px);
+    top: -2px;
 }
 
 .dashboard-reorder-board::before {
