@@ -2245,12 +2245,17 @@ class VigilanteDashboard {
                     
                     if (!wasOpen) {
                         collectionActionsMenuButton.classList.add('active');
+                        const rect = collectionActionsMenuButton.getBoundingClientRect();
+                        collectionActionsDropdown.style.position = 'fixed';
+                        collectionActionsDropdown.style.top = rect.bottom + 'px';
+                        collectionActionsDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                        collectionActionsDropdown.style.left = 'auto';
                         collectionActionsDropdown.classList.add('show');
                         // Update state for opened menu
                         this.openCollectionMenus.add(collection.name);
                     }
                 });
-                
+
                 // Close dropdown when clicking outside
                 document.addEventListener('click', (e) => {
                     if (!collectionActionsMenuContainer.contains(e.target)) {
@@ -2260,17 +2265,24 @@ class VigilanteDashboard {
                         this.openCollectionMenus.delete(collection.name);
                     }
                 });
-                
+
                 // Restore menu state if it was open before refresh
                 if (this.openCollectionMenus.has(collection.name)) {
                     collectionActionsMenuButton.classList.add('active');
+                    requestAnimationFrame(() => {
+                        const rect = collectionActionsMenuButton.getBoundingClientRect();
+                        collectionActionsDropdown.style.position = 'fixed';
+                        collectionActionsDropdown.style.top = rect.bottom + 'px';
+                        collectionActionsDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                        collectionActionsDropdown.style.left = 'auto';
+                    });
                     collectionActionsDropdown.classList.add('show');
                     console.log('Restored open menu state for collection:', collection.name);
                 }
-                
+
                 // Add menu button to the top row (after size)
                 topRow.appendChild(collectionActionsMenuContainer);
-                
+
                 headerContainer.appendChild(nameContainer);
                 headerContainer.appendChild(infoContainer);
                 nameCell.appendChild(headerContainer);
