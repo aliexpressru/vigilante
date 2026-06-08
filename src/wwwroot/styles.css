@@ -137,7 +137,6 @@ html[data-theme="dark"] {
 .dashboard-reorder-board.nodes-section:hover,
 .dashboard-reorder-board.collections-overview:hover,
 .dashboard-reorder-board.snapshots-overview:hover {
-    top: -2px;
     transform: none;
 }
 
@@ -208,11 +207,6 @@ html[data-theme="dark"] {
     border-radius: 12px;
     padding: 25px;
     box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-    transition: transform 0.2s ease;
-}
-
-.status-card:hover, .issues-card:hover, .warnings-card:hover, .nodes-section:hover {
-    transform: translateY(-2px);
 }
 
 /* Status card */
@@ -2835,7 +2829,6 @@ html[data-theme="dark"] #leaderNode {
 
 .collection-node-info:hover {
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    transform: translateY(-1px);
 }
 
 .node-info-header {
