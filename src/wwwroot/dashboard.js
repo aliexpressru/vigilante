@@ -2039,6 +2039,13 @@ class VigilanteDashboard {
                             }
                         });
                         
+                        aliasBadge.style.cursor = 'pointer';
+                        aliasBadge.title = `Copy alias "${alias}" to clipboard`;
+                        aliasBadge.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            copyAliasButton.click();
+                        });
+
                         aliasBadge.appendChild(aliasText);
                         aliasBadge.appendChild(copyAliasButton);
                         aliasesContainer.appendChild(aliasBadge);
