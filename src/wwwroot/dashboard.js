@@ -2860,13 +2860,18 @@ class VigilanteDashboard {
                 
                 if (!wasOpen) {
                     snapshotCollectionMenuButton.classList.add('active');
+                    const rect = snapshotCollectionMenuButton.getBoundingClientRect();
+                    snapshotCollectionDropdown.style.position = 'fixed';
+                    snapshotCollectionDropdown.style.top = rect.bottom + 'px';
+                    snapshotCollectionDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                    snapshotCollectionDropdown.style.left = 'auto';
                     snapshotCollectionDropdown.classList.add('show');
                     this.openSnapshotCollectionMenus.add(collection.collectionName);
                 } else {
                     this.openSnapshotCollectionMenus.delete(collection.collectionName);
                 }
             });
-            
+
             // Close dropdown when clicking outside
             document.addEventListener('click', (e) => {
                 if (!snapshotCollectionMenuContainer.contains(e.target)) {
@@ -2875,10 +2880,17 @@ class VigilanteDashboard {
                     this.openSnapshotCollectionMenus.delete(collection.collectionName);
                 }
             });
-            
+
             // Restore menu state if it was open before refresh
             if (this.openSnapshotCollectionMenus.has(collection.collectionName)) {
                 snapshotCollectionMenuButton.classList.add('active');
+                requestAnimationFrame(() => {
+                    const rect = snapshotCollectionMenuButton.getBoundingClientRect();
+                    snapshotCollectionDropdown.style.position = 'fixed';
+                    snapshotCollectionDropdown.style.top = rect.bottom + 'px';
+                    snapshotCollectionDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                    snapshotCollectionDropdown.style.left = 'auto';
+                });
                 snapshotCollectionDropdown.classList.add('show');
             }
             
