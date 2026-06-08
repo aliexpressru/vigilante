@@ -3039,6 +3039,24 @@ class VigilanteDashboard {
                 snapshotActionsMenuContainer.appendChild(snapshotActionsDropdown);
                 
                 // Add click handler to the menu button
+                const positionSnapshotDropdown = (btn, dropdown) => {
+                    const rect = btn.getBoundingClientRect();
+                    const estimatedHeight = 160;
+                    const opensAbove = (window.innerHeight - rect.bottom) < estimatedHeight && rect.top > estimatedHeight;
+                    dropdown.style.position = 'fixed';
+                    dropdown.style.left = 'auto';
+                    dropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                    if (opensAbove) {
+                        dropdown.style.top = 'auto';
+                        dropdown.style.bottom = (window.innerHeight - rect.top) + 'px';
+                        dropdown.classList.add('opens-above');
+                    } else {
+                        dropdown.style.top = rect.bottom + 'px';
+                        dropdown.style.bottom = 'auto';
+                        dropdown.classList.remove('opens-above');
+                    }
+                };
+
                 snapshotActionsMenuButton.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const wasOpen = snapshotActionsMenuButton.classList.contains('active');
@@ -3051,17 +3069,18 @@ class VigilanteDashboard {
                             menu.classList.remove('show');
                         }
                     });
-                    
+
                     // Clear all tracked open menus when closing others
                     this.openSnapshotMenus.clear();
-                    
+
                     if (!wasOpen) {
                         snapshotActionsMenuButton.classList.add('active');
+                        positionSnapshotDropdown(snapshotActionsMenuButton, snapshotActionsDropdown);
                         snapshotActionsDropdown.classList.add('show');
                         this.openSnapshotMenus.add(snapshotKey);
                     }
                 });
-                
+
                 // Close dropdown when clicking outside
                 document.addEventListener('click', (e) => {
                     if (!snapshotActionsMenuContainer.contains(e.target)) {
@@ -3070,10 +3089,11 @@ class VigilanteDashboard {
                         this.openSnapshotMenus.delete(snapshotKey);
                     }
                 });
-                
+
                 // Restore menu state if it was open before refresh
                 if (this.openSnapshotMenus.has(snapshotKey)) {
                     snapshotActionsMenuButton.classList.add('active');
+                    requestAnimationFrame(() => positionSnapshotDropdown(snapshotActionsMenuButton, snapshotActionsDropdown));
                     snapshotActionsDropdown.classList.add('show');
                 }
                 

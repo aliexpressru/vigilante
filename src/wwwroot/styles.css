@@ -4749,9 +4749,13 @@ html[data-theme="dark"] #leaderNode {
     opacity: 0;
     visibility: hidden;
     transform: translateY(-10px);
-    transition: all 0.2s ease;
+    transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
     z-index: 10001;
     overflow: hidden;
+}
+
+.snapshot-actions-menu-container-inline .snapshot-actions-dropdown.opens-above {
+    transform: translateY(10px);
 }
 
 .snapshot-actions-menu-container-inline .snapshot-actions-dropdown.show {
