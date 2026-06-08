@@ -1658,7 +1658,7 @@ class VigilanteDashboard {
         if (availableWidth <= 0) {
             const gap = 8;
             let reserved = gap;
-            nameLine.querySelectorAll('.collection-name-copy-btn, .collection-name-prefix-icon')
+            nameLine.querySelectorAll('.collection-name-prefix-icon')
                 .forEach(el => { reserved += el.offsetWidth + gap; });
             availableWidth = nameLine.clientWidth - reserved;
         }
@@ -1965,8 +1965,6 @@ class VigilanteDashboard {
                         }
                     }
                 });
-                nameDiv.appendChild(copyButton);
-                
                 nameContainer.appendChild(nameDiv);
                 
                 // Aliases (if any)
@@ -2284,6 +2282,7 @@ class VigilanteDashboard {
                 topRow.appendChild(collectionActionsMenuContainer);
 
                 headerContainer.appendChild(nameContainer);
+                headerContainer.appendChild(copyButton);
                 headerContainer.appendChild(infoContainer);
                 nameCell.appendChild(headerContainer);
                 row.appendChild(nameCell);
