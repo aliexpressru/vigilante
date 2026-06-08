@@ -39,6 +39,9 @@ COPY --from=build /tools /tools
 # Add tools to PATH
 ENV PATH="${PATH}:/tools"
 
+ARG VERSION=dev
+ENV VIGILANTE_VERSION=$VERSION
+
 # Create non-root user
 RUN useradd -r -u 1001 appuser
 

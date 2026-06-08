@@ -44,6 +44,7 @@ class VigilanteDashboard {
         this.clusterNodes = []; // Store cluster nodes for StatefulSet management
         this.environment = 'Loading...'; // Current environment name
         this.namespace = 'Loading...'; // Current namespace
+        this.version = 'Loading...'; // Current app version
         // Logs state
         this.logsRefreshInterval = 0;
         this.logsRefreshTimer = null;
@@ -641,17 +642,20 @@ class VigilanteDashboard {
                 const data = await response.json();
                 this.environment = data.environment || 'Unknown';
                 this.namespace = data.namespace || 'Unknown';
+                this.version = data.version || 'dev';
                 this.updateEnvironmentDisplay();
             } else {
                 console.warn('Failed to load environment:', response.status);
                 this.environment = 'Unknown';
                 this.namespace = 'Unknown';
+                this.version = 'dev';
                 this.updateEnvironmentDisplay();
             }
         } catch (error) {
             console.error('Error loading environment:', error);
             this.environment = 'Unknown';
             this.namespace = 'Unknown';
+            this.version = 'dev';
             this.updateEnvironmentDisplay();
         }
     }
@@ -674,6 +678,11 @@ class VigilanteDashboard {
         const namespaceElement = document.getElementById('namespaceBadge');
         if (namespaceElement) {
             namespaceElement.textContent = this.namespace;
+        }
+
+        const versionElement = document.getElementById('versionBadge');
+        if (versionElement) {
+            versionElement.textContent = `${this.version}`;
         }
     }
 

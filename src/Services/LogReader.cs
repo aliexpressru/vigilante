@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using k8s;
 using Vigilante.Constants;
+using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Services.Interfaces;
 
@@ -12,9 +13,9 @@ namespace Vigilante.Services;
 /// Reads logs from Kubernetes pods (Qdrant) and from the Vigilante service pod
 /// </summary>
 public class LogReader(
-    IKubernetes? kubernetes, 
+    IKubernetes? kubernetes,
     IKubernetesManager? kubernetesManager,
-    ILogger<LogReader> logger, 
+    ILogger<LogReader> logger,
     IWebHostEnvironment env) : ILogReader
 {
     private const int DefaultLimit = 200;
@@ -33,7 +34,7 @@ public class LogReader(
         // When running in cluster, we can read our own pod logs via Kubernetes
         if (kubernetes != null)
         {
-            var podName = Environment.GetEnvironmentVariable("HOSTNAME");
+            var podName = Environment.GetHostname();
             var ns = kubernetesManager?.GetCurrentNamespace() ?? KubernetesConstants.DefaultNamespace;
             if (!string.IsNullOrWhiteSpace(podName))
             {
@@ -193,7 +194,6 @@ public class LogReader(
 
         return Convert.ToBase64String(Encoding.UTF8.GetBytes($"{last.Timestamp:o}{ContinuationSeparator}{last.Source}"));
     }
-
 
     private static LogPage Failed(string message) => new(false, message, Array.Empty<LogEntry>(), null, false);
 

@@ -1,11 +1,11 @@
-using Vigilante;
 using Serilog;
+using Vigilante;
+using Vigilante.Extensions;
 
 // Global HttpClient settings to prevent native memory leaks
 AppContext.SetSwitch("System.Net.SocketsHttpHandler.Http2Support", true);
 AppContext.SetSwitch("System.Net.SocketsHttpHandler.Http2UnencryptedSupport", true);
 AppContext.SetData("System.Net.SocketsHttpHandler.MaxConnectionsPerServer", 10);
-
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,13 +28,13 @@ builder.Host.UseSerilog();
 
 try
 {
-    Log.Information("Starting Vigilante - Qdrant Cluster Guardian");
-    
+    Log.Information("Starting Vigilante - Qdrant Cluster Guardian. {Version}", Environment.GetVigilanteVersion());
+
     var startup = new Startup(builder.Configuration);
     startup.ConfigureServices(builder.Services);
     var app = builder.Build();
     startup.Configure(app, app.Environment);
-    
+
     app.Run();
 }
 catch (Exception ex)

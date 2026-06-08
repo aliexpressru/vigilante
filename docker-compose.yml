@@ -4,7 +4,7 @@
 services:
   qdrant-1:
     container_name: qdrant-1
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:${QDRANT_VERSION}
     environment:
       QDRANT__SERVICE__API_KEY: test
       QDRANT__CLUSTER__ENABLED: "true"
@@ -21,7 +21,7 @@ services:
 
   qdrant-2:
     container_name: qdrant-2
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:${QDRANT_VERSION}
     depends_on:
       - qdrant-1
     environment:
@@ -40,7 +40,7 @@ services:
 
   qdrant-3:
     container_name: qdrant-3
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:${QDRANT_VERSION}
     depends_on:
       - qdrant-1
     environment:
@@ -64,6 +64,7 @@ services:
     # Linux/Intel: export VIGILANTE_PLATFORM=linux/amd64
     platform: ${VIGILANTE_PLATFORM:-linux/arm64}
     environment:
+      VIGILANTE_VERSION: local-docker-compose
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:6360
       Qdrant__ApiKey: test

@@ -118,3 +118,8 @@ coverage/
 *.cache
 *.config
 *.vs
+
+# Per-environment deployment wrappers (contain company-specific config)
+k8s/dev/deploy_dev.ps1
+k8s/stg/deploy_stg.ps1
+k8s/prod/deploy_prod.ps1

@@ -5,12 +5,11 @@
 
 $ErrorActionPreference = 'Stop'
 
-# Set custom label for resource ownership/team tracking
-$env:OWNER_LABEL_NAME = "owner"   # Label name (e.g., "owner", "team", "managed-by")
-$env:OWNER_LABEL_VALUE = "YOUR_NAME_HERE"  # Replace with actual owner/team name
-
-# Set cluster domain for ingress access
-$env:CLUSTER_DOMAIN = "your-cluster-domain.com"  # Replace with actual cluster domain
+# Env variables can be pre-set by per-environment deploy_{env}.ps1 wrappers.
+# Fallback defaults are used when running deploy.ps1 directly.
+if ([string]::IsNullOrEmpty($env:OWNER_LABEL_NAME))  { $env:OWNER_LABEL_NAME  = "owner" }
+if ([string]::IsNullOrEmpty($env:OWNER_LABEL_VALUE)) { $env:OWNER_LABEL_VALUE = "YOUR_NAME_HERE" }
+if ([string]::IsNullOrEmpty($env:CLUSTER_DOMAIN))    { $env:CLUSTER_DOMAIN    = "your-cluster-domain.com" }
 # =======================================================
 
 Write-Host "🚀 Starting Vigilante deployment..."
@@ -169,7 +168,8 @@ if ($LASTEXITCODE -eq 0) {
         kubectl apply -f dynamic-configmap.yaml
         Write-Host "✓ Dynamic config initialized from file"
     } else {
-        Write-Host "✓ Current config: $CURRENT_CONFIG"
+        $formattedConfig = $CURRENT_CONFIG | ConvertFrom-Json | ConvertTo-Json -Depth 10
+        Write-Host "✓ Current config:`n$formattedConfig"
         Write-Host "💡 ConfigMap not updated to preserve runtime changes. To reset, delete and redeploy."
     }
 } else {

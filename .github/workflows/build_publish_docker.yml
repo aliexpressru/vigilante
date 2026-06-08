@@ -51,6 +51,8 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          VERSION=${{ steps.meta.outputs.version }}
         cache-from: type=gha
         # Temporarily disable cache-to to avoid GitHub Actions cache 502 errors
         # cache-to: type=gha,mode=max

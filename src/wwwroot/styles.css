@@ -1119,6 +1119,20 @@ html[data-theme="dark"] {
     transition: all 0.2s ease;
 }
 
+/* Version Badge */
+.version-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 12px;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    transition: all 0.2s ease;
+}
+
 /* Sticky Actions Menu (Three Dots) */
 .sticky-actions-menu-container {
     position: relative;

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Services.Interfaces;
 
@@ -55,10 +56,12 @@ public class ConfigController : ControllerBase
     public IActionResult GetEnvironment()
     {
         var currentNamespace = _kubernetesManager?.GetCurrentNamespace() ?? "default";
-        return Ok(new 
-        { 
+        var version = Environment.GetVigilanteVersion();
+        return Ok(new
+        {
             environment = _environment.EnvironmentName,
-            @namespace = currentNamespace
+            @namespace = currentNamespace,
+            version
         });
     }
 
