@@ -138,6 +138,7 @@ html[data-theme="dark"] {
 .dashboard-reorder-board.collections-overview:hover,
 .dashboard-reorder-board.snapshots-overview:hover {
     top: -2px;
+    transform: none;
 }
 
 .dashboard-reorder-board::before {
@@ -5922,7 +5923,7 @@ html[data-theme="dark"] #leaderNode {
     opacity: 0;
     visibility: hidden;
     transform: translateY(-10px);
-    transition: all 0.2s ease;
+    transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
     z-index: 1000;
     overflow: hidden;
 }

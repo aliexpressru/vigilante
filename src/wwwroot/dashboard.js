@@ -4011,12 +4011,17 @@ class VigilanteDashboard {
             
             if (!wasOpen) {
                 actionsMenuButton.classList.add('active');
+                const rect = actionsMenuButton.getBoundingClientRect();
+                actionsDropdown.style.position = 'fixed';
+                actionsDropdown.style.top = rect.bottom + 'px';
+                actionsDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                actionsDropdown.style.left = 'auto';
                 actionsDropdown.classList.add('show');
                 // Update state for opened menu
                 this.openNodeMenus.add(node.peerId);
             }
         });
-        
+
         // Close dropdown when clicking outside
         document.addEventListener('click', (e) => {
             if (!actionsMenuContainer.contains(e.target)) {
@@ -4026,10 +4031,17 @@ class VigilanteDashboard {
                 this.openNodeMenus.delete(node.peerId);
             }
         });
-        
+
         // Restore menu state if it was open before refresh
         if (this.openNodeMenus.has(node.peerId)) {
             actionsMenuButton.classList.add('active');
+            requestAnimationFrame(() => {
+                const rect = actionsMenuButton.getBoundingClientRect();
+                actionsDropdown.style.position = 'fixed';
+                actionsDropdown.style.top = rect.bottom + 'px';
+                actionsDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                actionsDropdown.style.left = 'auto';
+            });
             actionsDropdown.classList.add('show');
             console.log('Restored open menu state for node:', node.peerId);
         }
