@@ -63,6 +63,15 @@ class VigilanteDashboard {
         this.pendingJobCancellations = new Set();
         this._configCollectionNames = []; // For config modal override row pickers
         this.themeStorageKey = 'vigilante-theme';
+        this.boardOrderStorageKey = 'vigilante-dashboard-board-order-v1';
+        this.boardCollapsedStorageKey = 'vigilante-dashboard-board-collapsed-v1';
+        this.reorderableBoardSelectors = [
+            { id: 'cluster-status', selector: '#overallStatus', contentSelector: '.status-content' },
+            { id: 'background-jobs', selector: '#jobsCard', contentSelector: '#jobsList' },
+            { id: 'cluster-nodes', selector: '.nodes-section', contentSelector: '.nodes-grid, .cluster-actions' },
+            { id: 'collections-overview', selector: '.collections-overview', contentSelector: '.collections-controls, .collections-table' },
+            { id: 'snapshots-overview', selector: '.snapshots-overview', contentSelector: '.snapshots-controls, .snapshots-table' }
+        ];
         this.themeMediaQuery = null;
         this.init();
         this.setupRefreshControls();
@@ -72,6 +81,7 @@ class VigilanteDashboard {
         this.setupConfigControls();
         this.setupThemeToggle();
         this.setupStickyActionsMenu();
+        this.setupBoardReordering();
     }
 
     // Convert numeric status to string
@@ -163,6 +173,234 @@ class VigilanteDashboard {
         if (themeToggleIcon) {
             themeToggleIcon.className = normalizedTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
         }
+    }
+
+    setupBoardReordering() {
+        const container = document.querySelector('.main-content');
+        if (!container) {
+            return;
+        }
+
+        const boards = this.reorderableBoardSelectors
+            .map((item) => {
+                const element = document.querySelector(item.selector);
+                if (!element) {
+                    return null;
+                }
+
+                element.dataset.boardId = item.id;
+                element.classList.add('dashboard-reorder-board');
+                this.ensureBoardControls(element, item);
+
+                return element;
+            })
+            .filter(Boolean);
+
+        if (boards.length < 2) {
+            return;
+        }
+
+        this.applySavedBoardOrder(container, boards);
+        this.setupBoardDnDEvents(container, boards);
+    }
+
+    ensureBoardControls(board, boardConfig) {
+        if (board.querySelector('.board-controls')) {
+            return;
+        }
+
+        const controls = document.createElement('div');
+        controls.className = 'board-controls';
+
+        const handle = document.createElement('button');
+        handle.type = 'button';
+        handle.className = 'board-drag-handle';
+        handle.title = 'Drag to reorder board';
+        handle.setAttribute('aria-label', 'Drag to reorder board');
+        handle.innerHTML = '<i class="fas fa-grip-vertical"></i>';
+        controls.appendChild(handle);
+
+        const collapseButton = document.createElement('button');
+        collapseButton.type = 'button';
+        collapseButton.className = 'board-collapse-toggle';
+        collapseButton.title = 'Collapse board';
+        collapseButton.setAttribute('aria-label', 'Collapse board');
+        collapseButton.innerHTML = '<i class="fas fa-chevron-up"></i>';
+        controls.appendChild(collapseButton);
+
+        board.appendChild(controls);
+
+        const contentNodes = [...board.querySelectorAll(boardConfig.contentSelector)];
+        contentNodes.forEach((node) => node.classList.add('board-collapse-content'));
+        this.applySavedBoardCollapsedState(board, collapseButton);
+
+        handle.addEventListener('mousedown', () => {
+            board.setAttribute('draggable', 'true');
+        });
+
+        handle.addEventListener('mouseup', () => {
+            board.setAttribute('draggable', 'false');
+        });
+
+        handle.addEventListener('mouseleave', () => {
+            if (!board.classList.contains('dragging')) {
+                board.setAttribute('draggable', 'false');
+            }
+        });
+
+        collapseButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.toggleBoardCollapsed(board, collapseButton);
+        });
+    }
+
+    getSavedBoardCollapsedState() {
+        try {
+            const raw = localStorage.getItem(this.boardCollapsedStorageKey);
+            const parsed = raw ? JSON.parse(raw) : {};
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (error) {
+            console.warn('Failed to parse collapsed board state from localStorage:', error);
+            return {};
+        }
+    }
+
+    applySavedBoardCollapsedState(board, collapseButton) {
+        const boardId = board.dataset.boardId;
+        if (!boardId) {
+            return;
+        }
+
+        const state = this.getSavedBoardCollapsedState();
+        const shouldCollapse = state[boardId] === true;
+
+        board.classList.toggle('board-collapsed', shouldCollapse);
+        collapseButton.title = shouldCollapse ? 'Expand board' : 'Collapse board';
+        collapseButton.setAttribute('aria-label', shouldCollapse ? 'Expand board' : 'Collapse board');
+        collapseButton.innerHTML = shouldCollapse
+            ? '<i class="fas fa-chevron-down"></i>'
+            : '<i class="fas fa-chevron-up"></i>';
+    }
+
+    toggleBoardCollapsed(board, collapseButton) {
+        const boardId = board.dataset.boardId;
+        if (!boardId) {
+            return;
+        }
+
+        const isCollapsed = board.classList.toggle('board-collapsed');
+        const state = this.getSavedBoardCollapsedState();
+        state[boardId] = isCollapsed;
+        localStorage.setItem(this.boardCollapsedStorageKey, JSON.stringify(state));
+
+        collapseButton.title = isCollapsed ? 'Expand board' : 'Collapse board';
+        collapseButton.setAttribute('aria-label', isCollapsed ? 'Expand board' : 'Collapse board');
+        collapseButton.innerHTML = isCollapsed
+            ? '<i class="fas fa-chevron-down"></i>'
+            : '<i class="fas fa-chevron-up"></i>';
+    }
+
+    applySavedBoardOrder(container, boards) {
+        const boardById = new Map(boards.map((board) => [board.dataset.boardId, board]));
+        let savedOrder = [];
+
+        try {
+            const raw = localStorage.getItem(this.boardOrderStorageKey);
+            const parsed = raw ? JSON.parse(raw) : [];
+            savedOrder = Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            console.warn('Failed to parse board order from localStorage:', error);
+        }
+
+        const orderedBoards = savedOrder
+            .map((id) => boardById.get(id))
+            .filter(Boolean);
+
+        boards.forEach((board) => {
+            if (!orderedBoards.includes(board)) {
+                orderedBoards.push(board);
+            }
+        });
+
+        orderedBoards.forEach((board) => container.appendChild(board));
+    }
+
+    setupBoardDnDEvents(container, boards) {
+        boards.forEach((board) => {
+            board.setAttribute('draggable', 'false');
+
+            board.addEventListener('dragstart', (event) => {
+                if (board.getAttribute('draggable') !== 'true') {
+                    event.preventDefault();
+                    return;
+                }
+
+                board.classList.add('dragging');
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', board.dataset.boardId || '');
+            });
+
+            board.addEventListener('dragend', () => {
+                board.classList.remove('dragging');
+                board.setAttribute('draggable', 'false');
+                container.querySelectorAll('.dashboard-reorder-board.drag-over').forEach((item) => {
+                    item.classList.remove('drag-over');
+                });
+            });
+        });
+
+        container.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            const dragging = container.querySelector('.dashboard-reorder-board.dragging');
+            if (!dragging) {
+                return;
+            }
+
+            const afterElement = this.getBoardAfterElement(container, event.clientY);
+            container.querySelectorAll('.dashboard-reorder-board.drag-over').forEach((item) => {
+                item.classList.remove('drag-over');
+            });
+
+            if (!afterElement) {
+                container.appendChild(dragging);
+                return;
+            }
+
+            afterElement.classList.add('drag-over');
+            container.insertBefore(dragging, afterElement);
+        });
+
+        container.addEventListener('drop', (event) => {
+            event.preventDefault();
+            container.querySelectorAll('.dashboard-reorder-board.drag-over').forEach((item) => {
+                item.classList.remove('drag-over');
+            });
+            this.saveBoardOrder(container);
+        });
+    }
+
+    getBoardAfterElement(container, mouseY) {
+        const draggableElements = [...container.querySelectorAll('.dashboard-reorder-board:not(.dragging)')];
+
+        return draggableElements.reduce((closest, board) => {
+            const box = board.getBoundingClientRect();
+            const offset = mouseY - box.top - box.height / 2;
+
+            if (offset < 0 && offset > closest.offset) {
+                return { offset, element: board };
+            }
+
+            return closest;
+        }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+    }
+
+    saveBoardOrder(container) {
+        const orderedIds = [...container.querySelectorAll('.dashboard-reorder-board')]
+            .map((board) => board.dataset.boardId)
+            .filter(Boolean);
+
+        localStorage.setItem(this.boardOrderStorageKey, JSON.stringify(orderedIds));
     }
 
     setupRefreshControls() {
@@ -1420,7 +1658,7 @@ class VigilanteDashboard {
         if (availableWidth <= 0) {
             const gap = 8;
             let reserved = gap;
-            nameLine.querySelectorAll('.collection-name-copy-btn, .collection-name-prefix-icon')
+            nameLine.querySelectorAll('.collection-name-prefix-icon')
                 .forEach(el => { reserved += el.offsetWidth + gap; });
             availableWidth = nameLine.clientWidth - reserved;
         }
@@ -1452,9 +1690,13 @@ class VigilanteDashboard {
         });
 
         if (maxWidth > 0) {
+            const tableWidth = collectionsTable.getBoundingClientRect().width || 0;
+            const cappedWidth = tableWidth > 0
+                ? Math.min(maxWidth, tableWidth * 0.38)
+                : maxWidth;
             document.documentElement.style.setProperty(
                 '--collection-header-info-width',
-                `${Math.ceil(maxWidth)}px`);
+                `${Math.ceil(cappedWidth)}px`);
         }
     }
 
@@ -1723,8 +1965,6 @@ class VigilanteDashboard {
                         }
                     }
                 });
-                nameDiv.appendChild(copyButton);
-                
                 nameContainer.appendChild(nameDiv);
                 
                 // Aliases (if any)
@@ -1799,6 +2039,13 @@ class VigilanteDashboard {
                             }
                         });
                         
+                        aliasBadge.style.cursor = 'pointer';
+                        aliasBadge.title = `Copy alias "${alias}" to clipboard`;
+                        aliasBadge.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            copyAliasButton.click();
+                        });
+
                         aliasBadge.appendChild(aliasText);
                         aliasBadge.appendChild(copyAliasButton);
                         aliasesContainer.appendChild(aliasBadge);
@@ -2003,12 +2250,17 @@ class VigilanteDashboard {
                     
                     if (!wasOpen) {
                         collectionActionsMenuButton.classList.add('active');
+                        const rect = collectionActionsMenuButton.getBoundingClientRect();
+                        collectionActionsDropdown.style.position = 'fixed';
+                        collectionActionsDropdown.style.top = rect.bottom + 'px';
+                        collectionActionsDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                        collectionActionsDropdown.style.left = 'auto';
                         collectionActionsDropdown.classList.add('show');
                         // Update state for opened menu
                         this.openCollectionMenus.add(collection.name);
                     }
                 });
-                
+
                 // Close dropdown when clicking outside
                 document.addEventListener('click', (e) => {
                     if (!collectionActionsMenuContainer.contains(e.target)) {
@@ -2018,18 +2270,26 @@ class VigilanteDashboard {
                         this.openCollectionMenus.delete(collection.name);
                     }
                 });
-                
+
                 // Restore menu state if it was open before refresh
                 if (this.openCollectionMenus.has(collection.name)) {
                     collectionActionsMenuButton.classList.add('active');
+                    requestAnimationFrame(() => {
+                        const rect = collectionActionsMenuButton.getBoundingClientRect();
+                        collectionActionsDropdown.style.position = 'fixed';
+                        collectionActionsDropdown.style.top = rect.bottom + 'px';
+                        collectionActionsDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                        collectionActionsDropdown.style.left = 'auto';
+                    });
                     collectionActionsDropdown.classList.add('show');
                     console.log('Restored open menu state for collection:', collection.name);
                 }
-                
+
                 // Add menu button to the top row (after size)
                 topRow.appendChild(collectionActionsMenuContainer);
-                
+
                 headerContainer.appendChild(nameContainer);
+                headerContainer.appendChild(copyButton);
                 headerContainer.appendChild(infoContainer);
                 nameCell.appendChild(headerContainer);
                 row.appendChild(nameCell);
@@ -2606,13 +2866,18 @@ class VigilanteDashboard {
                 
                 if (!wasOpen) {
                     snapshotCollectionMenuButton.classList.add('active');
+                    const rect = snapshotCollectionMenuButton.getBoundingClientRect();
+                    snapshotCollectionDropdown.style.position = 'fixed';
+                    snapshotCollectionDropdown.style.top = rect.bottom + 'px';
+                    snapshotCollectionDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                    snapshotCollectionDropdown.style.left = 'auto';
                     snapshotCollectionDropdown.classList.add('show');
                     this.openSnapshotCollectionMenus.add(collection.collectionName);
                 } else {
                     this.openSnapshotCollectionMenus.delete(collection.collectionName);
                 }
             });
-            
+
             // Close dropdown when clicking outside
             document.addEventListener('click', (e) => {
                 if (!snapshotCollectionMenuContainer.contains(e.target)) {
@@ -2621,10 +2886,17 @@ class VigilanteDashboard {
                     this.openSnapshotCollectionMenus.delete(collection.collectionName);
                 }
             });
-            
+
             // Restore menu state if it was open before refresh
             if (this.openSnapshotCollectionMenus.has(collection.collectionName)) {
                 snapshotCollectionMenuButton.classList.add('active');
+                requestAnimationFrame(() => {
+                    const rect = snapshotCollectionMenuButton.getBoundingClientRect();
+                    snapshotCollectionDropdown.style.position = 'fixed';
+                    snapshotCollectionDropdown.style.top = rect.bottom + 'px';
+                    snapshotCollectionDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                    snapshotCollectionDropdown.style.left = 'auto';
+                });
                 snapshotCollectionDropdown.classList.add('show');
             }
             
@@ -2773,6 +3045,24 @@ class VigilanteDashboard {
                 snapshotActionsMenuContainer.appendChild(snapshotActionsDropdown);
                 
                 // Add click handler to the menu button
+                const positionSnapshotDropdown = (btn, dropdown) => {
+                    const rect = btn.getBoundingClientRect();
+                    const estimatedHeight = 160;
+                    const opensAbove = (window.innerHeight - rect.bottom) < estimatedHeight && rect.top > estimatedHeight;
+                    dropdown.style.position = 'fixed';
+                    dropdown.style.left = 'auto';
+                    dropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                    if (opensAbove) {
+                        dropdown.style.top = 'auto';
+                        dropdown.style.bottom = (window.innerHeight - rect.top) + 'px';
+                        dropdown.classList.add('opens-above');
+                    } else {
+                        dropdown.style.top = rect.bottom + 'px';
+                        dropdown.style.bottom = 'auto';
+                        dropdown.classList.remove('opens-above');
+                    }
+                };
+
                 snapshotActionsMenuButton.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const wasOpen = snapshotActionsMenuButton.classList.contains('active');
@@ -2785,17 +3075,18 @@ class VigilanteDashboard {
                             menu.classList.remove('show');
                         }
                     });
-                    
+
                     // Clear all tracked open menus when closing others
                     this.openSnapshotMenus.clear();
-                    
+
                     if (!wasOpen) {
                         snapshotActionsMenuButton.classList.add('active');
+                        positionSnapshotDropdown(snapshotActionsMenuButton, snapshotActionsDropdown);
                         snapshotActionsDropdown.classList.add('show');
                         this.openSnapshotMenus.add(snapshotKey);
                     }
                 });
-                
+
                 // Close dropdown when clicking outside
                 document.addEventListener('click', (e) => {
                     if (!snapshotActionsMenuContainer.contains(e.target)) {
@@ -2804,10 +3095,11 @@ class VigilanteDashboard {
                         this.openSnapshotMenus.delete(snapshotKey);
                     }
                 });
-                
+
                 // Restore menu state if it was open before refresh
                 if (this.openSnapshotMenus.has(snapshotKey)) {
                     snapshotActionsMenuButton.classList.add('active');
+                    requestAnimationFrame(() => positionSnapshotDropdown(snapshotActionsMenuButton, snapshotActionsDropdown));
                     snapshotActionsDropdown.classList.add('show');
                 }
                 
@@ -3719,12 +4011,17 @@ class VigilanteDashboard {
             
             if (!wasOpen) {
                 actionsMenuButton.classList.add('active');
+                const rect = actionsMenuButton.getBoundingClientRect();
+                actionsDropdown.style.position = 'fixed';
+                actionsDropdown.style.top = rect.bottom + 'px';
+                actionsDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                actionsDropdown.style.left = 'auto';
                 actionsDropdown.classList.add('show');
                 // Update state for opened menu
                 this.openNodeMenus.add(node.peerId);
             }
         });
-        
+
         // Close dropdown when clicking outside
         document.addEventListener('click', (e) => {
             if (!actionsMenuContainer.contains(e.target)) {
@@ -3734,10 +4031,17 @@ class VigilanteDashboard {
                 this.openNodeMenus.delete(node.peerId);
             }
         });
-        
+
         // Restore menu state if it was open before refresh
         if (this.openNodeMenus.has(node.peerId)) {
             actionsMenuButton.classList.add('active');
+            requestAnimationFrame(() => {
+                const rect = actionsMenuButton.getBoundingClientRect();
+                actionsDropdown.style.position = 'fixed';
+                actionsDropdown.style.top = rect.bottom + 'px';
+                actionsDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                actionsDropdown.style.left = 'auto';
+            });
             actionsDropdown.classList.add('show');
             console.log('Restored open menu state for node:', node.peerId);
         }

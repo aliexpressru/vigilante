@@ -60,6 +60,7 @@ body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
     color: #333;
+    overflow-x: hidden;
 }
 
 :root {
@@ -71,7 +72,7 @@ html[data-theme="dark"] {
 }
 
 .container {
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 20px;
     min-height: 100vh;
@@ -113,8 +114,91 @@ html[data-theme="dark"] {
 .main-content {
     flex: 1;
     display: grid;
-    gap: 20px;
-    grid-template-columns: 1fr;
+    gap: 32px;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    padding-top: 10px;
+}
+
+.dashboard-reorder-board {
+    position: relative;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    top: 0;
+    transition: top 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dashboard-reorder-board.status-card:hover,
+.dashboard-reorder-board.jobs-card:hover,
+.dashboard-reorder-board.nodes-section:hover,
+.dashboard-reorder-board.collections-overview:hover,
+.dashboard-reorder-board.snapshots-overview:hover {
+    transform: none;
+}
+
+.dashboard-reorder-board::before {
+    content: '';
+    position: absolute;
+    top: -18px;
+    right: 0;
+    width: 96px;
+    height: 46px;
+    background: inherit;
+    border: none;
+    border-radius: 10px 0 0 0;
+    z-index: 4;
+}
+
+.dashboard-reorder-board.dragging {
+    opacity: 0.6;
+}
+
+.dashboard-reorder-board.drag-over {
+    box-shadow: 0 0 0 2px #667eea;
+}
+
+.board-controls {
+    position: absolute;
+    top: -8px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 6;
+}
+
+.board-drag-handle,
+.board-collapse-toggle {
+    position: static;
+    width: 30px;
+    height: 30px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #64748b;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    z-index: 5;
+}
+
+.board-drag-handle:hover,
+.board-collapse-toggle:hover {
+    background: #eef2ff;
+    color: #4f46e5;
+}
+
+.board-drag-handle:active {
+    cursor: grabbing;
+}
+
+.board-collapsed .board-collapse-content {
+    display: none !important;
 }
 
 /* Cards */
@@ -123,11 +207,6 @@ html[data-theme="dark"] {
     border-radius: 12px;
     padding: 25px;
     box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-    transition: transform 0.2s ease;
-}
-
-.status-card:hover, .issues-card:hover, .warnings-card:hover, .nodes-section:hover {
-    transform: translateY(-2px);
 }
 
 /* Status card */
@@ -154,6 +233,10 @@ html[data-theme="dark"] {
     color: #667eea;
     font-size: 1.2rem;
     opacity: 0.3;
+}
+
+#overallStatus .refresh-indicator {
+    display: none;
 }
 
 .refresh-indicator.refreshing {
@@ -279,6 +362,13 @@ html[data-theme="dark"] {
 .jobs-card h3 {
     color: #2196f3;
     margin-bottom: 15px;
+}
+
+.jobs-card.dashboard-reorder-board {
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease;
 }
 
 .jobs-list {
@@ -562,7 +652,8 @@ html[data-theme="dark"] {
 
 .nodes-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(300px, 360px));
+    justify-content: center;
     gap: 20px;
 }
 
@@ -1220,6 +1311,24 @@ html[data-theme="dark"] .deletion-message {
     border-color: #374151;
 }
 
+html[data-theme="dark"] .board-drag-handle {
+    background: #1f2937;
+    border-color: #374151;
+    color: #94a3b8;
+}
+
+html[data-theme="dark"] .board-collapse-toggle {
+    background: #1f2937;
+    border-color: #374151;
+    color: #94a3b8;
+}
+
+html[data-theme="dark"] .board-drag-handle:hover,
+html[data-theme="dark"] .board-collapse-toggle:hover {
+    background: #312e81;
+    color: #c7d2fe;
+}
+
 html[data-theme="dark"] .metric,
 html[data-theme="dark"] .collection-node-info,
 html[data-theme="dark"] .snapshot-item,
@@ -1857,6 +1966,48 @@ html[data-theme="dark"] .collection-action-item-danger:active {
     color: #fecaca;
 }
 
+html[data-theme="dark"] .node-action-item-danger {
+    color: #f87171;
+}
+
+html[data-theme="dark"] .node-action-item-danger:hover {
+    background: rgba(127, 29, 29, 0.35);
+    color: #fca5a5;
+}
+
+html[data-theme="dark"] .node-action-item-danger:active {
+    background: rgba(153, 27, 27, 0.45);
+    color: #fecaca;
+}
+
+html[data-theme="dark"] .snapshot-collection-action-item-danger {
+    color: #f87171;
+}
+
+html[data-theme="dark"] .snapshot-collection-action-item-danger:hover {
+    background: rgba(127, 29, 29, 0.35);
+    color: #fca5a5;
+}
+
+html[data-theme="dark"] .snapshot-collection-action-item-danger:active {
+    background: rgba(153, 27, 27, 0.45);
+    color: #fecaca;
+}
+
+html[data-theme="dark"] .snapshot-action-item-danger {
+    color: #f87171;
+}
+
+html[data-theme="dark"] .snapshot-action-item-danger:hover {
+    background: rgba(127, 29, 29, 0.35);
+    color: #fca5a5;
+}
+
+html[data-theme="dark"] .snapshot-action-item-danger:active {
+    background: rgba(153, 27, 27, 0.45);
+    color: #fecaca;
+}
+
 /* Keep action windows separated from background in dark theme */
 html[data-theme="dark"] .sticky-actions-dropdown,
 html[data-theme="dark"] .node-actions-dropdown,
@@ -1980,7 +2131,15 @@ html[data-theme="dark"] #leaderNode {
     border-radius: 12px;
     padding: 25px;
     box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
+    min-width: 0;
+    overflow: visible;
+}
+
+.collections-overview .collections-header,
+.collections-overview .collections-controls,
+.collections-overview .collections-table {
+    max-width: 100%;
+    overflow-x: clip;
 }
 
 .collections-overview h3 {
@@ -1993,7 +2152,10 @@ html[data-theme="dark"] #leaderNode {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
     margin-bottom: 1rem;
+    min-width: 0;
 }
 
 .collections-stats {
@@ -2028,6 +2190,7 @@ html[data-theme="dark"] #leaderNode {
     gap: 1rem;
     margin-bottom: 1rem;
     flex-wrap: wrap;
+    min-width: 0;
 }
 
 .filter-controls {
@@ -2035,7 +2198,7 @@ html[data-theme="dark"] #leaderNode {
     align-items: center;
     gap: 0.5rem;
     flex: 1;
-    min-width: 250px;
+    min-width: 0;
 }
 
 .filter-input {
@@ -2074,6 +2237,8 @@ html[data-theme="dark"] #leaderNode {
     display: flex;
     align-items: center;
     gap: 1rem;
+    flex-wrap: wrap;
+    min-width: 0;
 }
 
 .pagination-btn {
@@ -2144,12 +2309,16 @@ html[data-theme="dark"] #leaderNode {
 
 .collections-table {
     width: 100%;
+    max-width: 100%;
     border-collapse: collapse;
     margin-top: 20px;
+    min-width: 0;
 }
 
 .collections-table table {
     width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
     font-size: 0.9rem;
 }
 
@@ -2185,6 +2354,8 @@ html[data-theme="dark"] #leaderNode {
     padding: 12px;
     font-size: 0.95rem;
     color: #333;
+    overflow: hidden;
+    max-width: 0;
 }
 
 .collections-table tr:hover td.collection-name {
@@ -2226,8 +2397,9 @@ html[data-theme="dark"] #leaderNode {
 }
 
 .collection-header-container .collection-info-block {
-    flex-shrink: 0;
-    min-width: var(--collection-header-info-width, auto);
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: min(var(--collection-header-info-width, 100%), 42%);
 }
 
 .collection-info-block--snapshots {
@@ -2345,13 +2517,13 @@ html[data-theme="dark"] #leaderNode {
 .collection-status,
 .collection-size,
 .collection-ram-size {
-    --badge-width: 92px;
+    --badge-width: 88px;
     box-sizing: border-box;
     width: var(--badge-width);
     min-width: var(--badge-width);
     max-width: var(--badge-width);
     padding: 4px 6px;
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     font-weight: 600;
     line-height: 1.2;
     border-radius: 4px;
@@ -2367,7 +2539,7 @@ html[data-theme="dark"] #leaderNode {
 }
 
 .collection-status {
-    --badge-width: 74px;
+    --badge-width: 70px;
 }
 
 .collection-status i {
@@ -2608,13 +2780,16 @@ html[data-theme="dark"] #leaderNode {
     background: transparent;
     border-bottom: none;
     padding: 0;
+    overflow: hidden;
+    max-width: 0;
 }
 
 .collection-details-content {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
     gap: 20px;
     padding: 20px;
+    min-width: 0;
 }
 
 /* Footer for shard action buttons (Sync/Drop); invisible until shards are selected */
@@ -2654,7 +2829,6 @@ html[data-theme="dark"] #leaderNode {
 
 .collection-node-info:hover {
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    transform: translateY(-1px);
 }
 
 .node-info-header {
@@ -4354,7 +4528,6 @@ html[data-theme="dark"] #leaderNode {
     border-radius: 12px;
     padding: 25px;
     box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
 }
 
 .snapshots-overview h3 {
@@ -4387,8 +4560,10 @@ html[data-theme="dark"] #leaderNode {
 
 .snapshots-table {
     width: 100%;
+    max-width: 100%;
     border-collapse: collapse;
     margin-top: 20px;
+    overflow-x: auto;
 }
 
 .snapshots-table table {
@@ -4610,9 +4785,13 @@ html[data-theme="dark"] #leaderNode {
     opacity: 0;
     visibility: hidden;
     transform: translateY(-10px);
-    transition: all 0.2s ease;
+    transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
     z-index: 10001;
     overflow: hidden;
+}
+
+.snapshot-actions-menu-container-inline .snapshot-actions-dropdown.opens-above {
+    transform: translateY(10px);
 }
 
 .snapshot-actions-menu-container-inline .snapshot-actions-dropdown.show {
@@ -5779,7 +5958,7 @@ html[data-theme="dark"] #leaderNode {
     opacity: 0;
     visibility: hidden;
     transform: translateY(-10px);
-    transition: all 0.2s ease;
+    transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
     z-index: 1000;
     overflow: hidden;
 }
@@ -5891,7 +6070,7 @@ html[data-theme="dark"] #leaderNode {
     opacity: 0;
     visibility: hidden;
     transform: translateY(-10px);
-    transition: all 0.2s ease;
+    transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
     z-index: 1000;
     overflow: hidden;
 }
@@ -6002,7 +6181,7 @@ html[data-theme="dark"] #leaderNode {
     opacity: 0;
     visibility: hidden;
     transform: translateY(-10px);
-    transition: all 0.2s ease;
+    transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
     z-index: 10001;
     overflow: hidden;
 }
