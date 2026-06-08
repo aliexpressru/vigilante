@@ -1972,6 +1972,48 @@ html[data-theme="dark"] .collection-action-item-danger:active {
     color: #fecaca;
 }
 
+html[data-theme="dark"] .node-action-item-danger {
+    color: #f87171;
+}
+
+html[data-theme="dark"] .node-action-item-danger:hover {
+    background: rgba(127, 29, 29, 0.35);
+    color: #fca5a5;
+}
+
+html[data-theme="dark"] .node-action-item-danger:active {
+    background: rgba(153, 27, 27, 0.45);
+    color: #fecaca;
+}
+
+html[data-theme="dark"] .snapshot-collection-action-item-danger {
+    color: #f87171;
+}
+
+html[data-theme="dark"] .snapshot-collection-action-item-danger:hover {
+    background: rgba(127, 29, 29, 0.35);
+    color: #fca5a5;
+}
+
+html[data-theme="dark"] .snapshot-collection-action-item-danger:active {
+    background: rgba(153, 27, 27, 0.45);
+    color: #fecaca;
+}
+
+html[data-theme="dark"] .snapshot-action-item-danger {
+    color: #f87171;
+}
+
+html[data-theme="dark"] .snapshot-action-item-danger:hover {
+    background: rgba(127, 29, 29, 0.35);
+    color: #fca5a5;
+}
+
+html[data-theme="dark"] .snapshot-action-item-danger:active {
+    background: rgba(153, 27, 27, 0.45);
+    color: #fecaca;
+}
+
 /* Keep action windows separated from background in dark theme */
 html[data-theme="dark"] .sticky-actions-dropdown,
 html[data-theme="dark"] .node-actions-dropdown,
