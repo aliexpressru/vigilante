@@ -835,7 +835,7 @@ class VigilanteDashboard {
         overlay.className = 'modal-overlay';
 
         const modal = document.createElement('div');
-        modal.className = 'modal-dialog';
+        modal.className = 'modal-dialog modal-dialog--recover';
         modal.innerHTML = `
             <div class="modal-header">
                 <h3><i class="fas fa-undo"></i> Recover Collection from Snapshot</h3>

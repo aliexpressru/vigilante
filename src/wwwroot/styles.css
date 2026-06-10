@@ -4263,6 +4263,20 @@ html[data-theme="dark"] #leaderNode {
     cursor: not-allowed;
 }
 
+.modal-dialog--recover {
+    max-width: min(800px, 92vw);
+}
+
+.modal-dialog--recover .modal-body {
+    overflow-x: auto;
+}
+
+.modal-dialog--recover .form-input {
+    field-sizing: content;
+    min-width: 100%;
+    width: auto;
+}
+
 .checkbox-label {
     display: flex;
     align-items: center;
