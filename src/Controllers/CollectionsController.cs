@@ -29,7 +29,7 @@ public class CollectionsController(
 
             // Collect all issues from collections into a general issues array
             var allIssues = new List<string>();
-            
+
             // Group by collection name first
             // Note: result is already sorted by node (PodName/PeerId) from the service layer
             var collectionGroups = result
@@ -47,7 +47,7 @@ public class CollectionsController(
                                 allIssues.Add($"[{size.CollectionName}@{size.PodName}] {issue}");
                             }
                         }
-                        
+
                         return new V1GetCollectionsInfoPaginatedResponse.CollectionInfo
                         {
                             PodName = size.PodName,
@@ -70,9 +70,7 @@ public class CollectionsController(
             // Apply name filter if provided
             if (!string.IsNullOrWhiteSpace(request.NameFilter))
             {
-                collectionGroups = collectionGroups
-                    .Where(g => g.CollectionName.Contains(request.NameFilter, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                collectionGroups = [.. collectionGroups.Where(g => g.CollectionName.Contains(request.NameFilter, StringComparison.OrdinalIgnoreCase))];
             }
 
             // Calculate pagination on unique collections
@@ -90,7 +88,7 @@ public class CollectionsController(
             return Ok(new V1GetCollectionsInfoPaginatedResponse
             {
                 Collections = pagedCollections,
-                Issues = allIssues.ToArray(),
+                Issues = [.. allIssues],
                 Pagination = new V1GetCollectionsInfoPaginatedResponse.PaginationInfo
                 {
                     CurrentPage = request.Page,
@@ -128,7 +126,7 @@ public class CollectionsController(
                     {
                         Success = false,
                         Message = "NodeUrls list is required for API deletion",
-                        Results = new Dictionary<string, NodeDeletionResult>()
+                        Results = []
                     });
                 }
 
@@ -167,7 +165,7 @@ public class CollectionsController(
                     {
                         Success = false,
                         Message = "Pods list is required for disk deletion",
-                        Results = new Dictionary<string, NodeDeletionResult>()
+                        Results = []
                     });
                 }
 
@@ -396,6 +394,4 @@ public class CollectionsController(
             });
         }
     }
-
 }
-

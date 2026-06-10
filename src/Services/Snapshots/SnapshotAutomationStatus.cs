@@ -1,11 +1,11 @@
 using Vigilante.Constants;
 
-namespace Vigilante.Services;
+namespace Vigilante.Services.Snapshots;
 
 /// <inheritdoc />
 public sealed class SnapshotAutomationStatus : Interfaces.ISnapshotAutomationStatus
 {
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private int _runDepth;
     private string? _currentAction;
     private DateTime? _lastRunStartedUtc;
@@ -39,7 +39,10 @@ public sealed class SnapshotAutomationStatus : Interfaces.ISnapshotAutomationSta
                 _lastCompletedUtc = DateTime.UtcNow;
                 _lastRunSuccess = success;
                 if (_runNotes.Count > 0)
+                {
                     _lastRunSummary = string.Join(" · ", _runNotes);
+                }
+
                 _runNotes.Clear();
             }
         }
@@ -48,7 +51,10 @@ public sealed class SnapshotAutomationStatus : Interfaces.ISnapshotAutomationSta
     public void AppendRunNote(string note)
     {
         if (string.IsNullOrWhiteSpace(note))
+        {
             return;
+        }
+
         lock (_lock)
         {
             _runNotes.Add(note.Trim());
@@ -76,9 +82,15 @@ public sealed class SnapshotAutomationStatus : Interfaces.ISnapshotAutomationSta
                 [JobMetadataKeys.LastRunSuccess] = _lastRunSuccess
             };
             if (!string.IsNullOrEmpty(_currentAction))
+            {
                 d[JobMetadataKeys.CurrentAction] = _currentAction;
+            }
+
             if (!string.IsNullOrEmpty(_lastRunSummary))
+            {
                 d[JobMetadataKeys.LastRunSummary] = _lastRunSummary;
+            }
+
             return d;
         }
     }

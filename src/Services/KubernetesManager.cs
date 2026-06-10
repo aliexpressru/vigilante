@@ -84,7 +84,7 @@ public class KubernetesManager(
     {
         if (kubernetes == null)
         {
-            return new List<string>();
+            return [];
         }
 
         var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;

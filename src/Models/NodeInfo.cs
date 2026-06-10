@@ -24,7 +24,7 @@ public class NodeInfo
     /// <summary>
     /// Issues and errors found on this node
     /// </summary>
-    public List<string> Issues { get; set; } = new();
+    public List<string> Issues { get; set; } = [];
     
     /// <summary>
     /// Short error message for cluster nodes UI display
@@ -34,7 +34,7 @@ public class NodeInfo
     /// <summary>
     /// Warning messages that don't indicate critical failures
     /// </summary>
-    public List<string> Warnings { get; set; } = new();
+    public List<string> Warnings { get; set; } = [];
     
     public NodeErrorType ErrorType { get; set; } = NodeErrorType.None;
     
@@ -42,7 +42,7 @@ public class NodeInfo
     
     public string? StatefulSetName { get; set; }
 
-    public HashSet<string> CurrentPeerIds { get; set; } = new();
+    public HashSet<string> CurrentPeerIds { get; set; } = [];
     
     /// <summary>
     /// Qdrant version running on this node

@@ -45,7 +45,7 @@ public class CollectionServiceTests
         {
             HttpTimeoutSeconds = 5,
             ApiKey = "test-key",
-            Nodes = new List<QdrantNodeConfig>()
+            Nodes = []
         });
     }
     
@@ -344,7 +344,7 @@ public class CollectionServiceTests
             new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1", Namespace = "default" }
         };
 
-        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, new Dictionary<string, string>(), CancellationToken.None);
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, [], CancellationToken.None);
 
         Assert.That(result, Has.Count.EqualTo(1));
         Assert.That(result[0].Issues, Is.Empty);
@@ -376,7 +376,7 @@ public class CollectionServiceTests
             new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = null }
         };
 
-        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, new Dictionary<string, string>(), CancellationToken.None);
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, [], CancellationToken.None);
 
         Assert.That(result, Has.Count.EqualTo(1));
         Assert.That(result[0].Metrics.SizeBytes, Is.EqualTo(1073741824L));
@@ -1749,7 +1749,7 @@ public class CollectionServiceTests
         // Collection1 has shards 0, 1
         _mockCommandExecutor.ListDirectoriesAsync(
             podName, podNamespace, "/qdrant/storage/collections/collection1", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "0", "1" });
+            .Returns(["0", "1"]);
         
         _mockCommandExecutor.GetSizeAsync(
             podName, podNamespace, "/qdrant/storage/collections/collection1", "0", Arg.Any<CancellationToken>())
@@ -1762,7 +1762,7 @@ public class CollectionServiceTests
         // Collection2 has shards 0, 1, 2
         _mockCommandExecutor.ListDirectoriesAsync(
             podName, podNamespace, "/qdrant/storage/collections/collection2", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "0", "1", "2" });
+            .Returns(["0", "1", "2"]);
         
         _mockCommandExecutor.GetSizeAsync(
             podName, podNamespace, "/qdrant/storage/collections/collection2", "0", Arg.Any<CancellationToken>())
@@ -1804,7 +1804,7 @@ public class CollectionServiceTests
         // Arrange
         _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), 
             "/qdrant/storage/collections", Arg.Any<CancellationToken>())
-            .Returns(new List<string>());
+            .Returns([]);
 
         var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
 
@@ -2160,11 +2160,11 @@ public class CollectionServiceTests
 
         _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), "/qdrant/storage/collections",
                 Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "c1" });
+            .Returns(["c1"]);
         _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(), "/qdrant/storage/collections", "c1",
                 Arg.Any<CancellationToken>()).Returns(100L);
         _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(),
-                "/qdrant/storage/collections/c1", Arg.Any<CancellationToken>()).Returns(new List<string> { "0" });
+                "/qdrant/storage/collections/c1", Arg.Any<CancellationToken>()).Returns(["0"]);
         _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(),
                 "/qdrant/storage/collections/c1", "0", Arg.Any<CancellationToken>()).Returns(200L);
 

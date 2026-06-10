@@ -22,8 +22,16 @@ public class DynamicConfig : IEquatable<DynamicConfig>
 
     public bool Equals(DynamicConfig? other)
     {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
+        if (other is null)
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(this, other))
+        {
+            return true;
+        }
+
         return MonitoringIntervalSeconds == other.MonitoringIntervalSeconds
                && DiskUsageAlertThresholdPercent == other.DiskUsageAlertThresholdPercent
                && RamUsageAlertThresholdPercent == other.RamUsageAlertThresholdPercent;

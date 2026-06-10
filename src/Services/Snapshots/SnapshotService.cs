@@ -15,7 +15,7 @@ namespace Vigilante.Services;
 /// <summary>
 /// Service for managing collection snapshots across the Qdrant cluster
 /// </summary>
-public class SnapshotService(
+public partial class SnapshotService(
     IQdrantNodesProvider nodesProvider,
     IQdrantClientFactory clientFactory,
     IS3SnapshotService s3SnapshotService,
@@ -140,7 +140,9 @@ public class SnapshotService(
                         null,
                         cancellationToken);
                     if (string.IsNullOrWhiteSpace(presignedUrl))
+                    {
                         return (false, $"Failed to generate S3 download URL for snapshot '{snapshotName}'");
+                    }
 
                     var qdrantClient = clientFactory.CreateClientFromUrl(targetNodeUrl, _options.ApiKey);
                     var presignedUri = new Uri(presignedUrl);
@@ -275,9 +277,9 @@ public class SnapshotService(
 
             var createResults = await Task.WhenAll(createTasks);
 
-            foreach (var result in createResults)
+            foreach (var (NodeUrl, SnapshotName) in createResults)
             {
-                results[result.NodeUrl] = result.SnapshotName;
+                results[NodeUrl] = SnapshotName;
             }
 
             var successCount = results.Values.Count(s => s != null);
@@ -308,7 +310,9 @@ public class SnapshotService(
                     timeout: pendingTimeout);
                 var cts = new CancellationTokenSource();
                 if (!jobRegistry.TryAddJob(job, cts))
+                {
                     cts.Dispose();
+                }
             }
 
             return new CreateCollectionSnapshotBatchResult
@@ -322,7 +326,7 @@ public class SnapshotService(
             _snapshotCreateInFlight.TryRemove(flightKey, out _);
         }
     }
-    
+
     /// <summary>
     /// Deletes a snapshot for a collection on a specific node
     /// </summary>
@@ -334,30 +338,30 @@ public class SnapshotService(
     {
         try
         {
-            logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} on node {NodeUrl}", 
+            logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} on node {NodeUrl}",
                 snapshotName, collectionName, nodeUrl);
             var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             var result = await qdrantClient.DeleteCollectionSnapshot(
-                collectionName, 
-                snapshotName, 
+                collectionName,
+                snapshotName,
                 cancellationToken,
                 isWaitForResult: false);
-            
+
             if (result.IsAcceptedOrSuccess())
             {
                 var statusText = result.IsAccepted() ? QdrantConstants.SnapshotDeletionAcceptedStatus : QdrantConstants.SnapshotDeletedStatus;
-                logger.LogInformation("Snapshot {SnapshotName} {StatusText} for collection {CollectionName} on node {NodeUrl}", 
+                logger.LogInformation("Snapshot {SnapshotName} {StatusText} for collection {CollectionName} on node {NodeUrl}",
                     snapshotName, statusText, collectionName, nodeUrl);
                 return true;
             }
-            
+
             logger.LogError("Failed to delete snapshot {SnapshotName} for collection {CollectionName}: {Error}",
                 snapshotName, collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
             return false;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to delete snapshot {SnapshotName} for collection {CollectionName} on node {NodeUrl}", 
+            logger.LogError(ex, "Failed to delete snapshot {SnapshotName} for collection {CollectionName} on node {NodeUrl}",
                 snapshotName, collectionName, nodeUrl);
             return false;
         }
@@ -371,9 +375,9 @@ public class SnapshotService(
     {
         var nodeUrlsList = nodeUrls.ToList();
         logger.LogInformation(
-            "Deleting snapshot {SnapshotName} for collection {CollectionName} via API on {NodeCount} specified nodes", 
-            snapshotName, 
-            collectionName, 
+            "Deleting snapshot {SnapshotName} for collection {CollectionName} via API on {NodeCount} specified nodes",
+            snapshotName,
+            collectionName,
             nodeUrlsList.Count);
 
         var results = new Dictionary<string, bool>();
@@ -391,16 +395,16 @@ public class SnapshotService(
 
         var deleteResults = await Task.WhenAll(deleteTasks);
 
-        foreach (var result in deleteResults)
+        foreach (var (NodeUrl, Success) in deleteResults)
         {
-            results[result.NodeUrl] = result.Success;
+            results[NodeUrl] = Success;
         }
 
         var successCount = results.Values.Count(s => s);
         logger.LogInformation(
-            "Snapshot {SnapshotName} deleted via API: {SuccessCount}/{TotalCount} nodes", 
-            snapshotName, 
-            successCount, 
+            "Snapshot {SnapshotName} deleted via API: {SuccessCount}/{TotalCount} nodes",
+            snapshotName,
+            successCount,
             results.Count);
 
         return results;
@@ -414,9 +418,9 @@ public class SnapshotService(
     {
         var podsList = pods.ToList();
         logger.LogInformation(
-            "Deleting snapshot {SnapshotName} for collection {CollectionName} from disk on {PodCount} specified pods", 
-            snapshotName, 
-            collectionName, 
+            "Deleting snapshot {SnapshotName} for collection {CollectionName} from disk on {PodCount} specified pods",
+            snapshotName,
+            collectionName,
             podsList.Count);
 
         var results = new Dictionary<string, bool>();
@@ -435,16 +439,16 @@ public class SnapshotService(
 
         var deleteResults = await Task.WhenAll(deleteTasks);
 
-        foreach (var result in deleteResults)
+        foreach (var (PodName, Success) in deleteResults)
         {
-            results[result.PodName] = result.Success;
+            results[PodName] = Success;
         }
 
         var successCount = results.Values.Count(s => s);
         logger.LogInformation(
-            "Snapshot {SnapshotName} deleted from disk: {SuccessCount}/{TotalCount} pods", 
-            snapshotName, 
-            successCount, 
+            "Snapshot {SnapshotName} deleted from disk: {SuccessCount}/{TotalCount} pods",
+            snapshotName,
+            successCount,
             results.Count);
 
         return results;
@@ -459,7 +463,7 @@ public class SnapshotService(
         string? podNamespace = null,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} (source: {Source})", 
+        logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} (source: {Source})",
             snapshotName, collectionName, source);
 
         switch (source)
@@ -478,7 +482,7 @@ public class SnapshotService(
                 logger.LogError("PodName and PodNamespace are required for deleting snapshots from Kubernetes storage");
                 return false;
             case SnapshotSource.KubernetesStorage:
-                logger.LogInformation("Deleting snapshot {SnapshotName} from Kubernetes storage on pod {PodName}", 
+                logger.LogInformation("Deleting snapshot {SnapshotName} from Kubernetes storage on pod {PodName}",
                     snapshotName, podName);
 
                 return await DeleteSnapshotFromDiskAsync(
@@ -497,7 +501,7 @@ public class SnapshotService(
                     return false;
                 }
 
-                logger.LogInformation("Deleting snapshot {SnapshotName} via Qdrant API on node {NodeUrl}", 
+                logger.LogInformation("Deleting snapshot {SnapshotName} via Qdrant API on node {NodeUrl}",
                     snapshotName, nodeUrl);
 
                 return await DeleteCollectionSnapshotApiAsync(
@@ -520,29 +524,29 @@ public class SnapshotService(
     {
         try
         {
-            logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from node {NodeUrl}", 
+            logger.LogInformation("Downloading snapshot {SnapshotName} for collection {CollectionName} from node {NodeUrl}",
                 snapshotName, collectionName, nodeUrl);
             var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
-            
+
             var result = await qdrantClient.DownloadCollectionSnapshot(
-                collectionName, 
-                snapshotName, 
+                collectionName,
+                snapshotName,
                 cancellationToken);
-            
+
             if (result?.Result?.SnapshotDataStream != null)
             {
-                logger.LogInformation("Snapshot {SnapshotName} downloaded successfully for collection {CollectionName} from node {NodeUrl}", 
+                logger.LogInformation("Snapshot {SnapshotName} downloaded successfully for collection {CollectionName} from node {NodeUrl}",
                     snapshotName, collectionName, nodeUrl);
                 return result.Result.SnapshotDataStream;
             }
-            
+
             logger.LogError("Failed to download snapshot {SnapshotName} for collection {CollectionName}: empty or null result",
                 snapshotName, collectionName);
             return null;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to download snapshot {SnapshotName} for collection {CollectionName} from node {NodeUrl}", 
+            logger.LogError(ex, "Failed to download snapshot {SnapshotName} for collection {CollectionName} from node {NodeUrl}",
                 snapshotName, collectionName, nodeUrl);
             return null;
         }
@@ -598,7 +602,7 @@ public class SnapshotService(
 
             if (snapshotStream == null)
             {
-                logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName}", 
+                logger.LogError("Failed to download snapshot {SnapshotName} from disk on pod {PodName}",
                     snapshotName, podName);
                 return null;
             }
@@ -607,7 +611,7 @@ public class SnapshotService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to download snapshot {SnapshotName} from disk on pod {PodName} in namespace {Namespace}", 
+            logger.LogError(ex, "Failed to download snapshot {SnapshotName} from disk on pod {PodName} in namespace {Namespace}",
                 snapshotName, podName, podNamespace);
             return null;
         }
@@ -731,21 +735,21 @@ public class SnapshotService(
             List<NodeInfo> nodes;
             if (nodesToUse != null)
             {
-                nodes = nodesToUse.ToList();
+                nodes = [.. nodesToUse];
             }
             else
             {
                 nodes = await nodesProvider.BuildNodeInfoListAsync(cancellationToken);
             }
-            
+
             var result = new List<SnapshotInfo>();
             bool hasErrors = false;
-            
+
             // Priority 1: Try to get snapshots from S3 (if configured)
             var isS3Available = await s3SnapshotService.IsAvailableAsync(
-                nodes.FirstOrDefault()?.Namespace, 
+                nodes.FirstOrDefault()?.Namespace,
                 cancellationToken);
-                
+
             if (isS3Available)
             {
                 try
@@ -758,7 +762,7 @@ public class SnapshotService(
                     hasErrors = true;
                 }
             }
-            
+
             // Priority 2: If S3 not available or no snapshots found, try Kubernetes storage (if we have pod names)
             if (result.Count == 0 && !hasErrors)
             {
@@ -768,10 +772,12 @@ public class SnapshotService(
                     var nodeResults = await Task.WhenAll(
                         nodes.Select(node => ProcessNodeSnapshotsFromKubernetesAsync(node, cancellationToken)));
                     foreach (var list in nodeResults)
+                    {
                         result.AddRange(list);
+                    }
                 }
             }
-            
+
             // Priority 3: If still no snapshots, try Qdrant API
             if (result.Count == 0 && !hasErrors)
             {
@@ -803,7 +809,7 @@ public class SnapshotService(
             _cacheLock.Release();
         }
     }
-    
+
     /// <summary>
     /// Gets snapshot information with sizes for a collection on a specific node
     /// </summary>
@@ -816,23 +822,21 @@ public class SnapshotService(
         {
             var qdrantClient = clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
             var result = await qdrantClient.ListCollectionSnapshots(collectionName, cancellationToken);
-            
+
             if (result?.Status?.IsSuccess == true && result.Result != null)
             {
-                return result.Result
-                    .Select(s => (s.Name, s.Size))
-                    .ToList();
+                return [.. result.Result.Select(s => (s.Name, s.Size))];
             }
-            
+
             logger.LogWarning("Failed to get snapshots for collection {CollectionName}: {Error}",
                 collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
-            return new List<(string Name, long Size)>();
+            return [];
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to get snapshots for collection {CollectionName} on node {NodeUrl}", 
+            logger.LogError(ex, "Failed to get snapshots for collection {CollectionName} on node {NodeUrl}",
                 collectionName, nodeUrl);
-            return new List<(string Name, long Size)>();
+            return [];
         }
     }
 
@@ -899,7 +903,7 @@ public class SnapshotService(
                         }
                         else
                         {
-                            logger.LogWarning("Could not get size for snapshot {SnapshotFile} in collection {CollectionName}", 
+                            logger.LogWarning("Could not get size for snapshot {SnapshotFile} in collection {CollectionName}",
                                 snapshotFile, collectionName);
                         }
                     }
@@ -939,11 +943,11 @@ public class SnapshotService(
 
         var fullPath = $"{QdrantConstants.SnapshotsPath}/{collectionName}/{snapshotName}";
         return await commandExecutor.DeleteAndVerifyAsync(
-            podName, 
-            podNamespace, 
-            fullPath, 
-            isDirectory: false, 
-            $"Snapshot {snapshotName}", 
+            podName,
+            podNamespace,
+            fullPath,
+            isDirectory: false,
+            $"Snapshot {snapshotName}",
             cancellationToken);
     }
 
@@ -974,7 +978,9 @@ public class SnapshotService(
 
             var snapshotsList = snapshots.ToList();
             foreach (var snapshot in snapshotsList)
+            {
                 snapshot.Source = SnapshotSource.KubernetesStorage;
+            }
 
             return snapshotsList;
         }
@@ -1041,7 +1047,9 @@ public class SnapshotService(
         var collectionSnapshots = allSnapshots.Where(s => s.CollectionName == collectionName).ToList();
 
         if (collectionSnapshots.Count == 0)
+        {
             return;
+        }
 
         // Group per-node: for Qdrant API / K8s — by NodeUrl; for S3 — by peerId extracted from the snapshot name
         // (S3 snapshots have PeerId = "S3", but the actual peer ID is always embedded in the snapshot name)
@@ -1083,7 +1091,9 @@ public class SnapshotService(
                 .ToList();
 
             if (sorted.Count <= retainLastN)
+            {
                 continue;
+            }
 
             var toDelete = sorted.Take(sorted.Count - retainLastN).Select(x => x.Snapshot).ToList();
             logger.LogInformation(
@@ -1119,12 +1129,17 @@ public class SnapshotService(
         foreach (var (snapshots, error) in nodeResults)
         {
             if (error != null)
+            {
                 errorCount++;
+            }
+
             foreach (var snapshotInfo in snapshots)
             {
                 var uniqueKey = $"{snapshotInfo.NodeUrl}|{snapshotInfo.CollectionName}|{snapshotInfo.SnapshotName}";
                 if (uniqueSnapshots.Add(uniqueKey))
+                {
                     result.Add(snapshotInfo);
+                }
             }
         }
 
@@ -1194,7 +1209,7 @@ public class SnapshotService(
                 {
                     logger.LogError(ex, "Failed to get snapshots for collection {CollectionName} on node {NodeUrl}",
                         collectionName, node.Url);
-                    return new List<SnapshotInfo>();
+                    return [];
                 }
             });
 
@@ -1249,7 +1264,7 @@ public class SnapshotService(
         var remainder = snapshotName[prefix.Length..];
 
         // Timestamp format: -YYYY-MM-DD-HH-mm-ss (followed by optional .snapshot extension)
-        var match = Regex.Match(remainder, @"-(20\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})");
+        var match = TimestampRegex().Match(remainder);
         if (!match.Success)
         {
             return new SnapshotParsedInfo(collectionName, remainder, null);
@@ -1265,11 +1280,16 @@ public class SnapshotService(
             && int.TryParse(match.Groups[5].Value, out var minute)
             && int.TryParse(match.Groups[6].Value, out var second))
         {
-            try { createdAt = new DateTime(year, month, day, hour, minute, second, DateTimeKind.Utc); }
+            try
+            {
+                createdAt = new DateTime(year, month, day, hour, minute, second, DateTimeKind.Utc);
+            }
             catch { /* ignore invalid dates */ }
         }
 
         return new SnapshotParsedInfo(collectionName, peerId, createdAt);
     }
 
+    [GeneratedRegex(@"-(20\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})")]
+    private static partial Regex TimestampRegex();
 }

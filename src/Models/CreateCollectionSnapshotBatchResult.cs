@@ -16,7 +16,10 @@ public sealed class CreateCollectionSnapshotBatchResult
     {
         var dict = new Dictionary<string, string?>();
         foreach (var u in nodeUrls)
+        {
             dict.TryAdd(u, null);
+        }
+
         return new CreateCollectionSnapshotBatchResult { Results = dict, SkippedDuplicatePending = true };
     }
 }

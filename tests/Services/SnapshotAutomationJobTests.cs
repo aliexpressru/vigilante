@@ -6,11 +6,11 @@ using NUnit.Framework;
 using Vigilante.Constants;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
-using Vigilante.Services;
 using Vigilante.Services.Interfaces;
 using Vigilante.Services.Jobs;
 using SnapshotInfo = Vigilante.Models.SnapshotInfo;
 using Aer.QdrantClient.Http.Models.Shared;
+using Vigilante.Services.Snapshots;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -268,10 +268,10 @@ public class SnapshotAutomationJobTests
                 CollectionName = "col1",
                 Status = QdrantCollectionStatus.Green,
                 HnswM = 16,
-                RunningOptimizations = new List<CollectionOptimizationInfo>
-                {
+                RunningOptimizations =
+                [
                     new() { Optimizer = "merge", SegmentsCount = 4, Done = 1, Total = 10 }
-                }
+                ]
             }
         };
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(optimizingCollection);

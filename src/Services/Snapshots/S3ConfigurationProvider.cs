@@ -3,7 +3,7 @@ using Vigilante.Configuration;
 using Vigilante.Constants;
 using Vigilante.Services.Interfaces;
 
-namespace Vigilante.Services;
+namespace Vigilante.Services.Snapshots;
 
 /// <summary>
 /// Service for loading S3 configuration.

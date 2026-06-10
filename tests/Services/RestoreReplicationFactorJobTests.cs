@@ -151,7 +151,7 @@ public class RestoreReplicationFactorJobTests
                         TargetPeerId: 200,
                         CollectionName: "col1")
                 ],
-                AlreadyReplicatedShards: new Dictionary<string, Dictionary<ulong, HashSet<uint>>>())
+                AlreadyReplicatedShards: [])
         };
 
         await using var enumerator = new TestReplicateEnumerator(successResponse);

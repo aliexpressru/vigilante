@@ -33,7 +33,6 @@ public class ClusterController(
         }
     }
 
-
     [HttpPost("replicate-shards")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -92,8 +91,9 @@ public class ClusterController(
                 return Ok(new { message = "Shard transfer aborted successfully" });
             }
 
-            return StatusCode(500, new { 
-                error = "Failed to abort shard transfer", 
+            return StatusCode(500, new
+            {
+                error = "Failed to abort shard transfer",
                 details = $"The transfer from peer {request.SourcePeerId} to peer {request.TargetPeerId} for shard {request.ShardId} could not be aborted. It may have already completed or been cancelled. Please refresh the page to see the current state."
             });
         }

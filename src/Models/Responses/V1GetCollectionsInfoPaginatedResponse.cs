@@ -22,15 +22,15 @@ public class V1GetCollectionsInfoPaginatedResponse
         
         public string PodNamespace { get; set; } = string.Empty;
 
-        public Dictionary<string, object> Metrics { get; set; } = new();
+        public Dictionary<string, object> Metrics { get; set; } = [];
         
-        public List<string> Issues { get; set; } = new();
+        public List<string> Issues { get; set; } = [];
 
-        public List<string> Warnings { get; set; } = new();
+        public List<string> Warnings { get; set; } = [];
 
-        public List<CollectionOptimizationInfo> RunningOptimizations { get; set; } = new();
+        public List<CollectionOptimizationInfo> RunningOptimizations { get; set; } = [];
         
-        public List<string> Aliases { get; set; } = new();
+        public List<string> Aliases { get; set; } = [];
         
         /// <summary>
         /// Collection status from Qdrant API.

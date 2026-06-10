@@ -14,15 +14,15 @@ public class CollectionInfo
     
     public string PodNamespace { get; set; } = string.Empty;
 
-    public CollectionMetrics Metrics { get; set; } = new();
+    public CollectionMetrics Metrics { get; set; } = [];
     
-    public List<string> Issues { get; set; } = new();
+    public List<string> Issues { get; set; } = [];
 
-    public List<string> Warnings { get; set; } = new();
+    public List<string> Warnings { get; set; } = [];
 
-    public List<CollectionOptimizationInfo> RunningOptimizations { get; set; } = new();
+    public List<CollectionOptimizationInfo> RunningOptimizations { get; set; } = [];
     
-    public List<string> Aliases { get; set; } = new();
+    public List<string> Aliases { get; set; } = [];
     
     /// <summary>
     /// Collection status from Qdrant API.

@@ -42,7 +42,7 @@ public class RestoreReplicationFactorJobServiceTests
         _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())
             .Returns(new ClusterState
             {
-                Nodes = new List<NodeInfo> { new() { IsHealthy = false, Url = "http://node1:6333" } }
+                Nodes = [new() { IsHealthy = false, Url = "http://node1:6333" }]
             });
 
         var options = Substitute.For<IOptions<QdrantOptions>>();

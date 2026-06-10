@@ -75,7 +75,7 @@ public class ClusterManagerTests
                 Arg.Any<IEnumerable<(string, string, string?, string?)>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
-            .Returns((new List<CollectionInfo>(), true, (string?)null));
+            .Returns(([], true, (string?)null));
         
         // Setup client factory to return mocked clients
         _clientFactory
@@ -334,7 +334,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod3Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod3Id, Term = 2, Commit = 5 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -451,7 +451,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod2Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
                     { 
                         Leader = pod2Id, // Considers itself the leader
@@ -496,7 +496,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
                     { 
                         Leader = pod1Id,
@@ -785,7 +785,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -821,7 +821,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -1100,7 +1100,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -1164,7 +1164,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -1184,7 +1184,7 @@ public class ClusterManagerTests
                     { "prettySize", MetricConstants.NotAvailableValue },
                     { "sizeBytes", 0L }
                 },
-                Issues = new List<string> { "Collection exists in API but not found in storage" }
+                Issues = ["Collection exists in API but not found in storage"]
             }
         };
 
@@ -1236,7 +1236,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -1318,7 +1318,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -1350,7 +1350,7 @@ public class ClusterManagerTests
                     { "prettySize", MetricConstants.NotAvailableValue },
                     { "sizeBytes", 0L }
                 },
-                Issues = new List<string> { "Collection exists in API but not found in storage" }
+                Issues = ["Collection exists in API but not found in storage"]
             },
             new()
             {
@@ -1443,7 +1443,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -1540,7 +1540,7 @@ public class ClusterManagerTests
                     { "prettySize", MetricConstants.NotAvailableValue },
                     { "sizeBytes", 0L }
                 },
-                Issues = new List<string> { "Collection exists in API but not found in storage" }
+                Issues = ["Collection exists in API but not found in storage"]
             }
         };
 
@@ -1613,7 +1613,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -1681,7 +1681,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -1762,7 +1762,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -1912,7 +1912,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = 1001UL,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint> { },
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = 1001UL, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -1962,7 +1962,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = 1001UL,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint> { },
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = 1001UL, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -2050,7 +2050,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = 1001UL,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = 1001UL, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -2097,7 +2097,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = 1001UL,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = 1001UL, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -2169,7 +2169,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = 1001UL,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = 1001UL, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -2209,7 +2209,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = 1001UL,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = 1001UL, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -2501,7 +2501,7 @@ public class ClusterManagerTests
                             LatestErrorTimestamp = staleErrorTime
                         }
                     },
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                    Peers = []
                 }
             }));
 
@@ -2558,7 +2558,7 @@ public class ClusterManagerTests
                             LatestErrorTimestamp = recentErrorTime
                         }
                     },
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                    Peers = []
                 }
             }));
 
@@ -2623,7 +2623,7 @@ public class ClusterManagerTests
                             LatestErrorTimestamp = recentErrorTime
                         }
                     },
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                    Peers = []
                 }
             }));
 
@@ -2676,7 +2676,7 @@ public class ClusterManagerTests
                             LatestErrorTimestamp = errorTime
                         }
                     },
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                    Peers = []
                 }
             }));
 
@@ -2736,7 +2736,7 @@ public class ClusterManagerTests
                             LatestErrorTimestamp = staleErrorTime
                         }
                     },
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                    Peers = []
                 }
             }));
 
@@ -2812,7 +2812,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod2Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(), // only self, so CurrentPeerIds = {1002}
+                    Peers = [], // only self, so CurrentPeerIds = {1002}
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod2Id, Term = 2, Commit = 5 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -2980,7 +2980,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod2Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod2Id, Term = 2, Commit = 5 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -3068,7 +3068,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod3Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod3Id, Term = 2, Commit = 5 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -3119,7 +3119,7 @@ public class ClusterManagerTests
                         LastUpdate = DateTime.UtcNow,
                         Err = null
                     },
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                    Peers = []
                 }
             }));
 
@@ -3197,7 +3197,7 @@ public class ClusterManagerTests
                         LastUpdate = DateTime.UtcNow,
                         Err = null
                     },
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                    Peers = []
                 }
             }));
 
@@ -3291,7 +3291,7 @@ public class ClusterManagerTests
                         LastUpdate = DateTime.UtcNow,
                         Err = null
                     },
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>()
+                    Peers = []
                 }
             }));
 
@@ -3335,8 +3335,8 @@ public class ClusterManagerTests
     {
         var state = new ClusterState
         {
-            Nodes = new List<NodeInfo>
-            {
+            Nodes =
+            [
                 new()
                 {
                     Url = "http://node1:6333",
@@ -3344,8 +3344,8 @@ public class ClusterManagerTests
                     PeerId = "1001",
                     IsHealthy = true,
                     IsLeader = true, // Mark as leader to avoid "No leader elected" issue
-                    Issues = new List<string> { "", "   ", null!, " real issue " },
-                    Warnings = new List<string> { null!, " ", " warn " }
+                    Issues = ["", "   ", null!, " real issue "],
+                    Warnings = [null!, " ", " warn "]
                 },
                 new()
                 {
@@ -3353,10 +3353,10 @@ public class ClusterManagerTests
                     PodName = "pod2",
                     PeerId = "1002",
                     IsHealthy = true,
-                    Issues = new List<string>(),
-                    Warnings = new List<string> { "second warn" }
+                    Issues = [],
+                    Warnings = ["second warn"]
                 }
-            }
+            ]
         };
 
         var health = state.Health;
@@ -3721,7 +3721,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -3773,7 +3773,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -3823,7 +3823,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -3876,7 +3876,7 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)

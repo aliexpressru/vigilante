@@ -29,7 +29,7 @@ public class SnapshotsControllerTests
         _s3SnapshotService = Substitute.For<IS3SnapshotService>();
         _clusterManager = Substitute.For<IClusterManager>();
         _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())
-            .Returns(new ClusterState { Nodes = new List<NodeInfo>() });
+            .Returns(new ClusterState { Nodes = [] });
         _logger = Substitute.For<ILogger<SnapshotsController>>();
         _controller = new SnapshotsController(_snapshotService, _s3SnapshotService, _clusterManager, _logger);
     }
@@ -238,7 +238,7 @@ public class SnapshotsControllerTests
         var request = new V1CreateSnapshotRequest
         {
             CollectionName = "test_collection",
-            NodeUrls = new List<string> { "http://node1:6333" }
+            NodeUrls = ["http://node1:6333"]
         };
 
         var results = new Dictionary<string, string?>
@@ -273,7 +273,7 @@ public class SnapshotsControllerTests
         var request = new V1CreateSnapshotRequest
         {
             CollectionName = "test_collection",
-            NodeUrls = new List<string> { "http://node1:6333" }
+            NodeUrls = ["http://node1:6333"]
         };
 
         var results = new Dictionary<string, string?>
@@ -306,7 +306,7 @@ public class SnapshotsControllerTests
         var request = new V1CreateSnapshotRequest
         {
             CollectionName = "test_collection",
-            NodeUrls = new List<string> { "http://node1:6333" }
+            NodeUrls = ["http://node1:6333"]
         };
 
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -332,7 +332,7 @@ public class SnapshotsControllerTests
         var request = new V1CreateSnapshotRequest
         {
             CollectionName = "test_collection",
-            NodeUrls = new List<string> { "http://node1:6333", "http://node2:6333" }
+            NodeUrls = ["http://node1:6333", "http://node2:6333"]
         };
 
         var results = new Dictionary<string, string?>
@@ -375,7 +375,7 @@ public class SnapshotsControllerTests
             CollectionName = "test_collection",
             SnapshotName = "snapshot.snapshot",
             Source = SnapshotSource.QdrantApi,
-            NodeUrls = new List<string> { "http://node1:6333" }
+            NodeUrls = ["http://node1:6333"]
         };
 
         var results = new Dictionary<string, bool>
@@ -406,10 +406,10 @@ public class SnapshotsControllerTests
             CollectionName = "test_collection",
             SnapshotName = "snapshot.snapshot",
             Source = SnapshotSource.KubernetesStorage,
-            Pods = new List<V1DeleteSnapshotRequest.PodSpecification>
-            {
+            Pods =
+            [
                 new() { PodName = "pod1", PodNamespace = "default" }
-            }
+            ]
         };
 
         var results = new Dictionary<string, bool>
@@ -440,7 +440,7 @@ public class SnapshotsControllerTests
             CollectionName = "test_collection",
             SnapshotName = "snapshot.snapshot",
             Source = SnapshotSource.QdrantApi,
-            NodeUrls = new List<string> { "http://node1:6333", "http://node2:6333" }
+            NodeUrls = ["http://node1:6333", "http://node2:6333"]
         };
 
         var results = new Dictionary<string, bool>

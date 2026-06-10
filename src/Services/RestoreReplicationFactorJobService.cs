@@ -78,5 +78,4 @@ public sealed class RestoreReplicationFactorJobService(
             AlreadyInProgress: false,
             Message: $"Restore replication factor process started for collection {collectionName}");
     }
-
 }

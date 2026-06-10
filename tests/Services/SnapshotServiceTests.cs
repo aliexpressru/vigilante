@@ -511,7 +511,7 @@ public class SnapshotServiceTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -519,10 +519,10 @@ public class SnapshotServiceTests
 
         // Mock commandExecutor to return collection folders and snapshot files
         _commandExecutor.ListFilesAsync("pod1", "ns1", "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "collection1" });
+            .Returns(["collection1"]);
         
         _commandExecutor.ListFilesAsync("pod1", "ns1", "/qdrant/snapshots/collection1", "*.snapshot", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "snapshot1.snapshot" });
+            .Returns(["snapshot1.snapshot"]);
         
         _commandExecutor.GetSizeAsync("pod1", "ns1", "/qdrant/snapshots/collection1", "snapshot1.snapshot", Arg.Any<CancellationToken>())
             .Returns(1024L);
@@ -563,7 +563,7 @@ public class SnapshotServiceTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -588,10 +588,10 @@ public class SnapshotServiceTests
         // Mock ListCollectionSnapshots response
         var listSnapshotsResponse = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "collection1-1001-snapshot.snapshot", Size = 2048 }
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -634,7 +634,7 @@ public class SnapshotServiceTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -642,7 +642,7 @@ public class SnapshotServiceTests
 
         // Disk returns empty (no collection folders)
         _commandExecutor.ListFilesAsync("pod1", "ns1", "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
-            .Returns(new List<string>());
+            .Returns([]);
 
         // Mock ListCollections response
         var listCollectionsResponse = new ListCollectionsResponse
@@ -663,10 +663,10 @@ public class SnapshotServiceTests
         // Mock ListCollectionSnapshots response
         var listSnapshotsResponse = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "collection1-1001-snapshot.snapshot", Size = 2048 }
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -707,7 +707,7 @@ public class SnapshotServiceTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -732,12 +732,12 @@ public class SnapshotServiceTests
         // Mock ListCollectionSnapshots response - return snapshots from multiple nodes (simulating S3 storage)
         var listSnapshotsResponse = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "collection1-1001-snapshot.snapshot", Size = 2048 }, // Matches node1's PeerId
                 new() { Name = "collection1-1002-snapshot.snapshot", Size = 2048 }, // Different PeerId - should be filtered out
                 new() { Name = "collection1-1003-snapshot.snapshot", Size = 2048 }  // Different PeerId - should be filtered out
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -779,7 +779,7 @@ public class SnapshotServiceTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -805,10 +805,10 @@ public class SnapshotServiceTests
         // Mock ListCollectionSnapshots for collection1
         var listSnapshots1Response = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "collection1-1001-snapshot.snapshot", Size = 2048 }
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -818,10 +818,10 @@ public class SnapshotServiceTests
         // Mock ListCollectionSnapshots for collection2
         var listSnapshots2Response = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "collection2-1001-snapshot.snapshot", Size = 4096 }
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -863,7 +863,7 @@ public class SnapshotServiceTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -892,10 +892,10 @@ public class SnapshotServiceTests
         // collection2 succeeds
         var listSnapshots2Response = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "collection2-1001-snapshot.snapshot", Size = 4096 }
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -928,11 +928,11 @@ public class SnapshotServiceTests
 
         var listSnapshotsResponse = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "snapshot1.snapshot", Size = 1000 },
                 new() { Name = "snapshot2.snapshot", Size = 2000 }
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -1062,10 +1062,10 @@ public class SnapshotServiceTests
         var snapshotSize = 1500000L;
 
         _commandExecutor.ListFilesAsync(podName, podNamespace, "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { collectionName });
+            .Returns([collectionName]);
 
         _commandExecutor.ListFilesAsync(podName, podNamespace, $"/qdrant/snapshots/{collectionName}", "*.snapshot", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { snapshotFileName });
+            .Returns([snapshotFileName]);
 
         _commandExecutor.GetSizeAsync(podName, podNamespace, $"/qdrant/snapshots/{collectionName}", snapshotFileName, Arg.Any<CancellationToken>())
             .Returns(snapshotSize);
@@ -1094,7 +1094,7 @@ public class SnapshotServiceTests
         var peerId = "peer1";
 
         _commandExecutor.ListFilesAsync(podName, podNamespace, "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
-            .Returns(new List<string>());
+            .Returns([]);
 
         // Act
         var result = await _snapshotManager.GetSnapshotsFromDiskForPodAsync(podName, podNamespace, nodeUrl, peerId, CancellationToken.None);

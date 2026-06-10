@@ -175,7 +175,7 @@ public class KubernetesManagerTests
 
         var eventList = new Corev1EventList
         {
-            Items = new List<Corev1Event> { warningEvent1, warningEvent2 }
+            Items = [warningEvent1, warningEvent2]
         };
 
         var httpResponse = new HttpOperationResponse<Corev1EventList>
@@ -208,7 +208,7 @@ public class KubernetesManagerTests
         
         var eventList = new Corev1EventList
         {
-            Items = new List<Corev1Event>()
+            Items = []
         };
 
         var httpResponse = new HttpOperationResponse<Corev1EventList>
@@ -255,7 +255,7 @@ public class KubernetesManagerTests
         
         var eventList = new Corev1EventList
         {
-            Items = new List<Corev1Event>()
+            Items = []
         };
 
         var httpResponse = new HttpOperationResponse<Corev1EventList>

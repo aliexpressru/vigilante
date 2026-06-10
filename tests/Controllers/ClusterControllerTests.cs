@@ -33,8 +33,8 @@ public class ClusterControllerTests
         // Arrange
         var clusterState = new ClusterState
         {
-            Nodes = new List<NodeInfo>
-            {
+            Nodes =
+            [
                 new()
                 {
                     Url = "http://node1:6333",
@@ -44,7 +44,7 @@ public class ClusterControllerTests
                     PodName = "pod1",
                     Namespace = "default"
                 }
-            }
+            ]
         };
 
         _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())
@@ -68,15 +68,15 @@ public class ClusterControllerTests
         // Arrange
         var clusterState = new ClusterState
         {
-            Nodes = new List<NodeInfo>
-            {
+            Nodes =
+            [
                 new()
                 {
                     Url = "http://node1:6333",
                     PeerId = "peer1",
                     IsHealthy = false,
                     IsLeader = false,
-                    Issues = new List<string> { "Connection timeout" },
+                    Issues = ["Connection timeout"],
                     PodName = "pod1",
                     Namespace = "default"
                 },
@@ -86,11 +86,11 @@ public class ClusterControllerTests
                     PeerId = "peer2",
                     IsHealthy = false,
                     IsLeader = false,
-                    Issues = new List<string> { "Network error" },
+                    Issues = ["Network error"],
                     PodName = "pod2",
                     Namespace = "default"
                 }
-            }
+            ]
         };
 
         _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())

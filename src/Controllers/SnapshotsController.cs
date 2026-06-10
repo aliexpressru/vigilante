@@ -56,7 +56,7 @@ public class SnapshotsController(
                     CollectionName = g.Key,
                     TotalSize = g.Sum(s => s.SizeBytes),
                     PrettyTotalSize = g.Sum(s => s.SizeBytes).ToPrettySize(),
-                    Snapshots = g.ToArray()
+                    Snapshots = [.. g]
                 })
                 .OrderBy(g => g.CollectionName)
                 .ToList();
@@ -64,9 +64,7 @@ public class SnapshotsController(
             // Apply name filter if provided
             if (!string.IsNullOrWhiteSpace(request.NameFilter))
             {
-                collectionGroups = collectionGroups
-                    .Where(g => g.CollectionName.Contains(request.NameFilter, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                collectionGroups = [.. collectionGroups.Where(g => g.CollectionName.Contains(request.NameFilter, StringComparison.OrdinalIgnoreCase))];
             }
 
             // Calculate pagination on unique collection groups
@@ -182,7 +180,7 @@ public class SnapshotsController(
                         {
                             Success = false,
                             Message = "NodeUrls list is required for QdrantApi source",
-                            Results = new Dictionary<string, NodeSnapshotDeletionResult>()
+                            Results = []
                         });
                     }
 
@@ -202,7 +200,7 @@ public class SnapshotsController(
                         {
                             Success = false,
                             Message = "Pods list is required for KubernetesStorage source",
-                            Results = new Dictionary<string, NodeSnapshotDeletionResult>()
+                            Results = []
                         });
                     }
 
@@ -231,7 +229,7 @@ public class SnapshotsController(
                     {
                         Success = false,
                         Message = $"Unknown snapshot source: {request.Source}",
-                        Results = new Dictionary<string, NodeSnapshotDeletionResult>()
+                        Results = []
                     });
             }
 
@@ -338,7 +336,7 @@ public class SnapshotsController(
             SnapshotSource? source = null;
             if (!isUrlRecovery)
             {
-                Enum.TryParse<SnapshotSource>(request.Source, out var parsedSource);
+                _ = Enum.TryParse<SnapshotSource>(request.Source, out var parsedSource);
                 source = parsedSource;
             }
 
@@ -449,6 +447,5 @@ public class SnapshotsController(
             });
         }
     }
-
 }
 

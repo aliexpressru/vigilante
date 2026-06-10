@@ -8,6 +8,7 @@ using Vigilante.Models.Enums;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
 using Vigilante.Services.Jobs;
+using Vigilante.Services.Snapshots;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -69,10 +70,10 @@ public class QdrantMonitorServiceTests
     {
         var state = new ClusterState
         {
-            Nodes = new List<NodeInfo>
-            {
+            Nodes =
+            [
                 new() { PeerId = "node1", IsHealthy = true, IsLeader = true }
-            }
+            ]
         };
 
         if (hasIssues)
@@ -88,11 +89,11 @@ public class QdrantMonitorServiceTests
     {
         var state = new ClusterState
         {
-            Nodes = new List<NodeInfo>
-            {
+            Nodes =
+            [
                 new() { PeerId = "node1", IsHealthy = true, IsLeader = true },
                 new() { PeerId = "node2", IsHealthy = false }
-            }
+            ]
         };
 
         if (hasIssues)
@@ -108,11 +109,11 @@ public class QdrantMonitorServiceTests
     {
         var state = new ClusterState
         {
-            Nodes = new List<NodeInfo>
-            {
+            Nodes =
+            [
                 // Unavailable state: no healthy nodes, but still has a leader to avoid "No leader elected" issue
                 new() { PeerId = "node1", IsHealthy = false, IsLeader = true }
-            }
+            ]
         };
 
         if (hasIssues)

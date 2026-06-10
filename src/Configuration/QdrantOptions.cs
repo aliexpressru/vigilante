@@ -4,10 +4,9 @@ public class QdrantOptions
 {
     public int HttpTimeoutSeconds { get; set; } = 5;
 
-
     public string? ApiKey { get; set; }
 
-    public List<QdrantNodeConfig> Nodes { get; set; } = new();
+    public List<QdrantNodeConfig> Nodes { get; set; } = [];
 
     /// <summary>
     /// S3 configuration for snapshot storage (optional)

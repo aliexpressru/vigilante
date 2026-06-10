@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Vigilante.Models.Enums;
 
 namespace Vigilante.Models;
@@ -5,22 +6,24 @@ namespace Vigilante.Models;
 public class ClusterState
 {
     private ClusterStatus? _status;
-    
-    private ClusterHealth? _health;
-    
+
     public ClusterStatus Status => _status ??= CalculateStatus();
 
-    public ClusterHealth Health => _health ??= CalculateHealth();
+    [AllowNull]
+    public ClusterHealth Health
+    {
+        get => field ??= CalculateHealth();
+        private set;
+    }
 
-    public List<NodeInfo> Nodes { get; set; } = new();
+    public List<NodeInfo> Nodes { get; set; } = [];
 
     public DateTime LastUpdated { get; set; }
-    
+
     /// <summary>
     /// StatefulSet name for the Qdrant cluster
     /// </summary>
     public string? StatefulSetName { get; set; }
-
 
     /// <summary>
     /// Invalidates cached health and status to force recalculation.
@@ -28,7 +31,7 @@ public class ClusterState
     /// </summary>
     public void InvalidateCache()
     {
-        _health = null;
+        Health = null;
         _status = null;
     }
 
@@ -43,7 +46,7 @@ public class ClusterState
         {
             return ClusterStatus.Degraded;
         }
-        
+
         return ClusterStatus.Healthy;
     }
 
@@ -81,7 +84,7 @@ public class ClusterState
         }
 
         health.Issues = issues;
-        
+
         // Collect warnings separately from all nodes (both healthy and unhealthy)
         var warnings = new List<string>();
         var nodesWithWarnings = Nodes.Where(n => n.Warnings.Count > 0);
@@ -98,7 +101,7 @@ public class ClusterState
                 warnings.Add($"{nodeName}: {warning.Trim()}");
             }
         }
-        
+
         health.Warnings = warnings;
 
         return health;

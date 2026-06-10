@@ -12,7 +12,7 @@ namespace Vigilante.Services;
 /// <summary>
 /// Reads logs from Kubernetes pods (Qdrant) and from the Vigilante service pod
 /// </summary>
-public class LogReader(
+public partial class LogReader(
     IKubernetes? kubernetes,
     IKubernetesManager? kubernetesManager,
     ILogger<LogReader> logger,
@@ -20,8 +20,15 @@ public class LogReader(
 {
     private const int DefaultLimit = 200;
     private const string ContinuationSeparator = "|";
-    private static readonly Regex VigilanteLevelRegex = new(@"^\[[^\]]+\s+([A-Z]{3,5})\]", RegexOptions.Compiled);
-    private static readonly Regex GenericLeadingLevelRegex = new(@"^\s*([A-Z]{3,5})\b", RegexOptions.Compiled);
+
+    private static readonly Regex _vigilanteLevelRegex = VigilanteLevelRegex();
+    private static readonly Regex _genericLeadingLevelRegex = GenericLeadingLevelRegex();
+
+    [GeneratedRegex(@"^\[[^\]]+\s+([A-Z]{3,5})\]")]
+    private static partial Regex VigilanteLevelRegex();
+
+    [GeneratedRegex(@"^\s*([A-Z]{3,5})\b")]
+    private static partial Regex GenericLeadingLevelRegex();
 
     public async Task<LogPage> GetQdrantPodLogsAsync(string podName, LogQuery query, CancellationToken cancellationToken)
     {
@@ -104,7 +111,7 @@ public class LogReader(
             var entries = ParseLogs(raw, source ?? podName);
             if (cursor is not null)
             {
-                entries = entries.Where(e => e.Timestamp > cursor.Value).ToList();
+                entries = [.. entries.Where(e => e.Timestamp > cursor.Value)];
             }
             entries = ApplyFilters(entries, query);
 
@@ -139,7 +146,7 @@ public class LogReader(
             var parsed = ParseLogs(string.Join('\n', lines), "vigilante");
             if (cursor is not null)
             {
-                parsed = parsed.Where(e => e.Timestamp > cursor.Value).ToList();
+                parsed = [.. parsed.Where(e => e.Timestamp > cursor.Value)];
             }
             parsed = ApplyFilters(parsed, query);
 
@@ -148,7 +155,7 @@ public class LogReader(
             var truncated = ordered.Count > limit;
             if (truncated)
             {
-                entries = entries.TakeLast(limit).ToList();
+                entries = [.. entries.TakeLast(limit)];
             }
 
             var next = truncated ? BuildContinuationToken(entries.LastOrDefault()) : null;
@@ -162,7 +169,7 @@ public class LogReader(
         }
     }
 
-    private DateTime? ParseContinuation(string? continuation)
+    private static DateTime? ParseContinuation(string? continuation)
     {
         if (string.IsNullOrWhiteSpace(continuation))
         {
@@ -185,7 +192,7 @@ public class LogReader(
         return null;
     }
 
-    private string? BuildContinuationToken(LogEntry? last)
+    private static string? BuildContinuationToken(LogEntry? last)
     {
         if (last == null)
         {
@@ -195,7 +202,7 @@ public class LogReader(
         return Convert.ToBase64String(Encoding.UTF8.GetBytes($"{last.Timestamp:o}{ContinuationSeparator}{last.Source}"));
     }
 
-    private static LogPage Failed(string message) => new(false, message, Array.Empty<LogEntry>(), null, false);
+    private static LogPage Failed(string message) => new(false, message, [], null, false);
 
     private static List<LogEntry> ApplyFilters(List<LogEntry> entries, LogQuery query)
     {
@@ -222,18 +229,18 @@ public class LogReader(
             filtered = filtered.Where(entry => entry.Message.Contains(searchText, StringComparison.OrdinalIgnoreCase));
         }
 
-        return filtered.ToList();
+        return [.. filtered];
     }
 
     private static LogLevelFilter? TryExtractLevel(string message)
     {
-        var vigilanteMatch = VigilanteLevelRegex.Match(message);
+        var vigilanteMatch = _vigilanteLevelRegex.Match(message);
         if (vigilanteMatch.Success)
         {
             return NormalizeLevel(vigilanteMatch.Groups[1].Value);
         }
 
-        var qdrantMatch = GenericLeadingLevelRegex.Match(message);
+        var qdrantMatch = _genericLeadingLevelRegex.Match(message);
         if (qdrantMatch.Success)
         {
             return NormalizeLevel(qdrantMatch.Groups[1].Value);
@@ -267,7 +274,7 @@ public class LogReader(
         };
     }
 
-    private List<LogEntry> ParseLogs(string raw, string source)
+    private static List<LogEntry> ParseLogs(string raw, string source)
     {
         var result = new List<LogEntry>();
         if (string.IsNullOrWhiteSpace(raw))
@@ -294,6 +301,6 @@ public class LogReader(
             result.Add(new LogEntry(ts, messagePart, source));
         }
 
-        return result.OrderBy(e => e.Timestamp).ToList();
+        return [.. result.OrderBy(e => e.Timestamp)];
     }
 }
