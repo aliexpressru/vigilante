@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using FluentAssertions;
+using FluentAssertions.Execution;
 using NUnit.Framework;
 using Vigilante.Controllers;
 using Vigilante.Models;
@@ -23,28 +25,28 @@ public class LogsControllerTests
         var ts1 = DateTime.UtcNow.AddSeconds(-1);
         var ts2 = DateTime.UtcNow;
         var request = new V1GetQdrantLogsRequest { PodName = "pod-1", Limit = 2, Continuation = "tok" };
-        var page = new LogPage(true, null, new[]
-        {
+        var page = new LogPage(true, null,
+        [
             new LogEntry(ts1, "msg1", "pod-1"),
             new LogEntry(ts2, "msg2", "pod-1")
-        }, "next", true);
+        ], "next", true);
         logReader.GetQdrantPodLogsAsync("pod-1", Arg.Any<LogQuery>(), Arg.Any<CancellationToken>()).Returns(page);
 
         var result = await controller.GetQdrantLogs(request, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         var ok = (OkObjectResult)result;
         var response = ok.Value as V1LogsPageResponse;
-        Assert.That(response, Is.Not.Null);
-        Assert.Multiple(() =>
+        response.Should().NotBeNull();
+        using (new AssertionScope())
         {
-            Assert.That(response!.Success, Is.True);
-            Assert.That(response.Logs.Count, Is.EqualTo(2));
-            Assert.That(response.Logs[0].Message, Is.EqualTo("msg1"));
-            Assert.That(response.Logs[0].Timestamp, Is.EqualTo(ts1).Within(TimeSpan.FromSeconds(1)));
-            Assert.That(response.Continuation, Is.EqualTo("next"));
-            Assert.That(response.Truncated, Is.True);
-        });
+            response!.Success.Should().BeTrue();
+            response.Logs.Count.Should().Be(2);
+            response.Logs[0].Message.Should().Be("msg1");
+            response.Logs[0].Timestamp.Should().BeCloseTo(ts1, TimeSpan.FromSeconds(1));
+            response.Continuation.Should().Be("next");
+            response.Truncated.Should().BeTrue();
+        }
     }
 
     [Test]
@@ -54,7 +56,7 @@ public class LogsControllerTests
         var logger = Substitute.For<ILogger<LogsController>>();
         var controller = new LogsController(logReader, logger);
         var request = new V1GetQdrantLogsRequest { PodName = "pod-from-body", Limit = 1 };
-        var page = new LogPage(true, null, Array.Empty<LogEntry>(), null, false);
+        var page = new LogPage(true, null, [], null, false);
         LogQuery? capturedQuery = null;
         logReader
             .GetQdrantPodLogsAsync("pod-from-body", Arg.Do<LogQuery>(q => capturedQuery = q), Arg.Any<CancellationToken>())
@@ -63,8 +65,8 @@ public class LogsControllerTests
         await controller.GetQdrantLogs(request, CancellationToken.None);
 
         await logReader.Received(1).GetQdrantPodLogsAsync("pod-from-body", Arg.Any<LogQuery>(), Arg.Any<CancellationToken>());
-        Assert.That(capturedQuery, Is.Not.Null);
-        Assert.That(capturedQuery!.Limit, Is.EqualTo(1));
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Limit.Should().Be(1);
     }
 
     [Test]
@@ -82,22 +84,22 @@ public class LogsControllerTests
             Levels = LogLevelFilter.Info | LogLevelFilter.Error,
             SearchText = "cluster"
         };
-        var page = new LogPage(true, null, Array.Empty<LogEntry>(), null, false);
+        var page = new LogPage(true, null, [], null, false);
         LogQuery? capturedQuery = null;
         logReader.GetQdrantPodLogsAsync("pod-1", Arg.Do<LogQuery>(q => capturedQuery = q), Arg.Any<CancellationToken>())
             .Returns(page);
 
         await controller.GetQdrantLogs(request, CancellationToken.None);
 
-        Assert.That(capturedQuery, Is.Not.Null);
-        Assert.Multiple(() =>
+        capturedQuery.Should().NotBeNull();
+        using (new AssertionScope())
         {
-            Assert.That(capturedQuery!.Namespace, Is.EqualTo("ns"));
-            Assert.That(capturedQuery.Limit, Is.EqualTo(50));
-            Assert.That(capturedQuery.Continuation, Is.EqualTo("tok"));
-            Assert.That(capturedQuery.Levels, Is.EqualTo(LogLevelFilter.Info | LogLevelFilter.Error));
-            Assert.That(capturedQuery.SearchText, Is.EqualTo("cluster"));
-        });
+            capturedQuery!.Namespace.Should().Be("ns");
+            capturedQuery.Limit.Should().Be(50);
+            capturedQuery.Continuation.Should().Be("tok");
+            capturedQuery.Levels.Should().Be(LogLevelFilter.Info | LogLevelFilter.Error);
+            capturedQuery.SearchText.Should().Be("cluster");
+        }
     }
 
     [Test]
@@ -112,9 +114,9 @@ public class LogsControllerTests
 
         var result = await controller.GetQdrantLogs(request, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var obj = (ObjectResult)result;
-        Assert.That(obj.StatusCode, Is.EqualTo(StatusCodes.Status500InternalServerError));
+        obj.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
     }
 
     [Test]
@@ -125,24 +127,24 @@ public class LogsControllerTests
         var controller = new LogsController(logReader, logger);
         var ts = DateTime.UtcNow;
         var request = new V1GetVigilanteLogsRequest { Limit = 3, Continuation = "tok" };
-        var page = new LogPage(true, null, new[]
-        {
+        var page = new LogPage(true, null,
+        [
             new LogEntry(ts, "service", "vigilante")
-        }, null, false);
+        ], null, false);
         logReader.GetServiceLogsAsync(Arg.Any<LogQuery>(), Arg.Any<CancellationToken>()).Returns(page);
 
         var result = await controller.GetVigilanteLogs(request, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         var ok = (OkObjectResult)result;
         var response = ok.Value as V1LogsPageResponse;
-        Assert.That(response, Is.Not.Null);
-        Assert.Multiple(() =>
+        response.Should().NotBeNull();
+        using (new AssertionScope())
         {
-            Assert.That(response!.Logs.Count, Is.EqualTo(1));
-            Assert.That(response.Logs[0].Source, Is.EqualTo("vigilante"));
-            Assert.That(response.Logs[0].Timestamp, Is.EqualTo(ts).Within(TimeSpan.FromSeconds(1)));
-        });
+            response!.Logs.Count.Should().Be(1);
+            response.Logs[0].Source.Should().Be("vigilante");
+            response.Logs[0].Timestamp.Should().BeCloseTo(ts, TimeSpan.FromSeconds(1));
+        }
     }
 
     [Test]
@@ -157,8 +159,8 @@ public class LogsControllerTests
 
         var result = await controller.GetVigilanteLogs(request, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var obj = (ObjectResult)result;
-        Assert.That(obj.StatusCode, Is.EqualTo(StatusCodes.Status500InternalServerError));
+        obj.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
     }
 }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using FluentAssertions;
 using NUnit.Framework;
 using Vigilante.Controllers;
 using Vigilante.Models;
@@ -46,9 +47,9 @@ public class ConfigControllerTests
         var result = await _controller.GetConfig(CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        Assert.That(okResult.Value, Is.EqualTo(expectedConfig));
+        okResult.Value.Should().Be(expectedConfig);
     }
 
     [Test]
@@ -62,9 +63,9 @@ public class ConfigControllerTests
         var result = await _controller.GetConfig(CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     [Test]
@@ -77,13 +78,13 @@ public class ConfigControllerTests
         var result = await _controller.UpdateConfig(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result;
         var returnedConfig = okResult.Value as DynamicConfig;
-        
-        Assert.That(returnedConfig, Is.Not.Null);
-        Assert.That(returnedConfig!.MonitoringIntervalSeconds, Is.EqualTo(90));
-        Assert.That(returnedConfig.DiskUsageAlertThresholdPercent, Is.EqualTo(85m));
+
+        returnedConfig.Should().NotBeNull();
+        returnedConfig!.MonitoringIntervalSeconds.Should().Be(90);
+        returnedConfig.DiskUsageAlertThresholdPercent.Should().Be(85m);
 
         await _dynamicConfigService.Received(1).UpdateConfigAsync(
             Arg.Is<DynamicConfig>(c => c.MonitoringIntervalSeconds == 90 && c.DiskUsageAlertThresholdPercent == 85m),
@@ -100,8 +101,8 @@ public class ConfigControllerTests
         var result = await _controller.UpdateConfig(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
-        
+        result.Should().BeAssignableTo<BadRequestObjectResult>();
+
         await _dynamicConfigService.DidNotReceive().UpdateConfigAsync(
             Arg.Any<DynamicConfig>(),
             Arg.Any<CancellationToken>());
@@ -117,8 +118,8 @@ public class ConfigControllerTests
         var result = await _controller.UpdateConfig(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
-        
+        result.Should().BeAssignableTo<BadRequestObjectResult>();
+
         await _dynamicConfigService.DidNotReceive().UpdateConfigAsync(
             Arg.Any<DynamicConfig>(),
             Arg.Any<CancellationToken>());
@@ -135,7 +136,7 @@ public class ConfigControllerTests
 
         var result = await _controller.UpdateConfig(request, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
+        result.Should().BeAssignableTo<BadRequestObjectResult>();
         await _dynamicConfigService.DidNotReceive().UpdateConfigAsync(
             Arg.Any<DynamicConfig>(),
             Arg.Any<CancellationToken>());
@@ -153,7 +154,7 @@ public class ConfigControllerTests
 
         var result = await _controller.UpdateConfig(request, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
+        result.Should().BeAssignableTo<BadRequestObjectResult>();
         await _dynamicConfigService.DidNotReceive().UpdateConfigAsync(
             Arg.Any<DynamicConfig>(),
             Arg.Any<CancellationToken>());
@@ -174,8 +175,8 @@ public class ConfigControllerTests
         var result = await _controller.UpdateConfig(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
-        
+        result.Should().BeAssignableTo<OkObjectResult>();
+
         await _dynamicConfigService.Received(1).UpdateConfigAsync(
             Arg.Is<DynamicConfig>(c => c.MonitoringIntervalSeconds == seconds),
             Arg.Any<CancellationToken>());
@@ -186,7 +187,7 @@ public class ConfigControllerTests
     {
         // Arrange
         var request = new UpdateConfigRequest { MonitoringIntervalSeconds = 60 };
-        
+
         _dynamicConfigService.UpdateConfigAsync(
             Arg.Any<DynamicConfig>(),
             Arg.Any<CancellationToken>())
@@ -196,9 +197,9 @@ public class ConfigControllerTests
         var result = await _controller.UpdateConfig(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     [Test]
@@ -212,17 +213,17 @@ public class ConfigControllerTests
         var result = _controller.GetEnvironment();
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        
-        dynamic? value = okResult.Value;
-        Assert.That(value, Is.Not.Null);
-        
+
+        object? value = okResult.Value;
+        value.Should().NotBeNull();
+
         var envName = value!.GetType().GetProperty("environment")?.GetValue(value)?.ToString();
         var namespaceName = value.GetType().GetProperty("namespace")?.GetValue(value)?.ToString();
-        
-        Assert.That(envName, Is.EqualTo("Development"));
-        Assert.That(namespaceName, Is.EqualTo("my-namespace"));
+
+        envName.Should().Be("Development");
+        namespaceName.Should().Be("my-namespace");
     }
 
     [Test]
@@ -236,16 +237,16 @@ public class ConfigControllerTests
         var result = controller.GetEnvironment();
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        
-        dynamic? value = okResult.Value;
-        Assert.That(value, Is.Not.Null);
-        
+
+        object? value = okResult.Value;
+        value.Should().NotBeNull();
+
         var envName = value!.GetType().GetProperty("environment")?.GetValue(value)?.ToString();
         var namespaceName = value.GetType().GetProperty("namespace")?.GetValue(value)?.ToString();
-        
-        Assert.That(envName, Is.EqualTo("Production"));
-        Assert.That(namespaceName, Is.EqualTo("default"));
+
+        envName.Should().Be("Production");
+        namespaceName.Should().Be("default");
     }
 }

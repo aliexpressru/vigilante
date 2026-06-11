@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 using Aer.QdrantClient.Http.Abstractions;
@@ -124,7 +125,7 @@ public class SnapshotServiceTests
             podNamespace: podNamespace);
 
         // Assert
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await _commandExecutor.Received(1).DeleteAndVerifyAsync(
             podName,
             podNamespace,
@@ -152,7 +153,7 @@ public class SnapshotServiceTests
             podNamespace: "test-namespace");
 
         // Assert
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
         await _commandExecutor.DidNotReceive().DeleteAndVerifyAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -189,7 +190,7 @@ public class SnapshotServiceTests
             podNamespace: null);
 
         // Assert
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await mockClient.Received(1).DeleteCollectionSnapshot(
             collectionName, snapshotName, Arg.Any<CancellationToken>(), false);
     }
@@ -212,7 +213,7 @@ public class SnapshotServiceTests
             podNamespace: null);
 
         // Assert
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
         // No need to verify collectionService since we're using snapshotService's own method now
     }
 
@@ -249,7 +250,7 @@ public class SnapshotServiceTests
             podNamespace: null);
 
         // Assert
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
         await mockClient.Received(1).DeleteCollectionSnapshot(
             collectionName, snapshotName, Arg.Any<CancellationToken>(), false);
     }
@@ -316,10 +317,10 @@ public class SnapshotServiceTests
             CancellationToken.None);
 
         // Assert
-        Assert.That(batch.SkippedDuplicatePending, Is.False);
-        Assert.That(batch.Results, Has.Count.EqualTo(2));
-        Assert.That(batch.Results["http://node1:6333"], Is.EqualTo("snapshot1.snapshot"));
-        Assert.That(batch.Results["http://node2:6333"], Is.EqualTo("snapshot2.snapshot"));
+        batch.SkippedDuplicatePending.Should().BeFalse();
+        batch.Results.Should().HaveCount(2);
+        batch.Results["http://node1:6333"].Should().Be("snapshot1.snapshot");
+        batch.Results["http://node2:6333"].Should().Be("snapshot2.snapshot");
     }
 
     [Test]
@@ -339,10 +340,10 @@ public class SnapshotServiceTests
 
         var batch = await _snapshotManager.CreateCollectionSnapshotAsync(
             collectionName,
-            new[] { "http://node1:6333" },
+            ["http://node1:6333"],
             CancellationToken.None);
 
-        Assert.That(batch.SkippedDuplicatePending, Is.True);
+        batch.SkippedDuplicatePending.Should().BeTrue();
         await mockClient.DidNotReceive()
             .CreateCollectionSnapshot(Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>());
         _jobRegistry.DidNotReceive().TryAddJob(Arg.Any<IJob>(), Arg.Any<CancellationTokenSource>());
@@ -382,15 +383,16 @@ public class SnapshotServiceTests
             CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result.Values.All(v => v), Is.True);
-        Assert.That(result["pod1"], Is.True);
-        Assert.That(result["pod2"], Is.True);
+        result.Should().HaveCount(2);
+        result.Values.All(v => v).Should().BeTrue();
+        result["pod1"].Should().BeTrue();
+        result["pod2"].Should().BeTrue();
 
         // Verify it used Kubernetes storage (DeleteAndVerifyAsync)
         await _commandExecutor.Received(1).DeleteAndVerifyAsync("pod1", "ns1", "/qdrant/snapshots/test_collection/test-snapshot.snapshot", false, Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _commandExecutor.Received(1).DeleteAndVerifyAsync("pod2", "ns1", "/qdrant/snapshots/test_collection/test-snapshot.snapshot", false, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
+
     [Test]
     public async Task DeleteCollectionSnapshotOnAllNodesAsync_UsesS3WhenAvailable()
     {
@@ -418,7 +420,7 @@ public class SnapshotServiceTests
             CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
+        result.Should().HaveCount(2);
 
         // Note: This test now tests the API deletion method specifically
         // For S3 deletion, we would use DeleteSnapshotAsync with S3 source
@@ -473,8 +475,8 @@ public class SnapshotServiceTests
             CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result.Values.All(v => v), Is.True);
+        result.Should().HaveCount(2);
+        result.Values.All(v => v).Should().BeTrue();
 
         // Verify it used Qdrant API
         await mockClient1.Received(1).DeleteCollectionSnapshot(collectionName, snapshotName, Arg.Any<CancellationToken>(), false);
@@ -530,10 +532,10 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result.First().Source, Is.EqualTo(SnapshotSource.KubernetesStorage));
-        Assert.That(result.First().SnapshotName, Is.EqualTo("snapshot1.snapshot"));
-        Assert.That(result.First().CollectionName, Is.EqualTo("collection1"));
+        result.Should().HaveCount(1);
+        result[0].Source.Should().Be(SnapshotSource.KubernetesStorage);
+        result[0].SnapshotName.Should().Be("snapshot1.snapshot");
+        result[0].CollectionName.Should().Be("collection1");
     }
 
     [Test]
@@ -573,10 +575,10 @@ public class SnapshotServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -601,10 +603,10 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result.First().Source, Is.EqualTo(SnapshotSource.QdrantApi));
-        Assert.That(result.First().SnapshotName, Is.EqualTo("collection1-1001-snapshot.snapshot"));
-        Assert.That(result.First().SizeBytes, Is.EqualTo(2048));
+        result.Should().HaveCount(1);
+        result[0].Source.Should().Be(SnapshotSource.QdrantApi);
+        result[0].SnapshotName.Should().Be("collection1-1001-snapshot.snapshot");
+        result[0].SizeBytes.Should().Be(2048);
     }
 
     [Test]
@@ -648,10 +650,10 @@ public class SnapshotServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -676,8 +678,8 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result.First().Source, Is.EqualTo(SnapshotSource.QdrantApi));
+        result.Should().HaveCount(1);
+        result[0].Source.Should().Be(SnapshotSource.QdrantApi);
     }
 
     [Test]
@@ -717,10 +719,10 @@ public class SnapshotServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -747,9 +749,9 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert - should only return the snapshot matching this node's PeerId
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result.First().SnapshotName, Is.EqualTo("collection1-1001-snapshot.snapshot"));
-        Assert.That(result.First().PeerId, Is.EqualTo("1001"));
+        result.Should().HaveCount(1);
+        result[0].SnapshotName.Should().Be("collection1-1001-snapshot.snapshot");
+        result[0].PeerId.Should().Be("1001");
     }
 
     [Test]
@@ -789,11 +791,11 @@ public class SnapshotServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1"),
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection2")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -831,9 +833,9 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result.Count(s => s.CollectionName == "collection1"), Is.EqualTo(1));
-        Assert.That(result.Count(s => s.CollectionName == "collection2"), Is.EqualTo(1));
+        result.Should().HaveCount(2);
+        result.Count(s => s.CollectionName == "collection1").Should().Be(1);
+        result.Count(s => s.CollectionName == "collection2").Should().Be(1);
     }
 
     [Test]
@@ -872,11 +874,11 @@ public class SnapshotServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1"),
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection2")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -905,8 +907,8 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert - should still get snapshots from collection2
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result.First().CollectionName, Is.EqualTo("collection2"));
+        result.Should().HaveCount(1);
+        result[0].CollectionName.Should().Be("collection2");
     }
 
     #endregion
@@ -942,11 +944,11 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetCollectionSnapshotsWithSizeAsync(nodeUrl, collectionName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result[0].Name, Is.EqualTo("snapshot1.snapshot"));
-        Assert.That(result[0].Size, Is.EqualTo(1000));
-        Assert.That(result[1].Name, Is.EqualTo("snapshot2.snapshot"));
-        Assert.That(result[1].Size, Is.EqualTo(2000));
+        result.Should().HaveCount(2);
+        result[0].Name.Should().Be("snapshot1.snapshot");
+        result[0].Size.Should().Be(1000);
+        result[1].Name.Should().Be("snapshot2.snapshot");
+        result[1].Size.Should().Be(2000);
     }
 
     [Test]
@@ -974,7 +976,7 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetCollectionSnapshotsWithSizeAsync(nodeUrl, collectionName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Empty);
+        result.Should().BeEmpty();
     }
 
     #endregion
@@ -990,7 +992,7 @@ public class SnapshotServiceTests
         var snapshotName = "test-snapshot.snapshot";
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
-        var mockStream = new MemoryStream(new byte[] { 1, 2, 3, 4, 5 });
+        var mockStream = new MemoryStream([1, 2, 3, 4, 5]);
 
         var downloadResponse = new DownloadSnapshotResponse(
             snapshotName,
@@ -1009,8 +1011,8 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.DownloadCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result, Is.SameAs(mockStream));
+        result.Should().NotBeNull();
+        result.Should().BeSameAs(mockStream);
     }
 
     [Test]
@@ -1040,7 +1042,7 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.DownloadCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Null);
+        result.Should().BeNull();
     }
 
     #endregion
@@ -1074,13 +1076,13 @@ public class SnapshotServiceTests
 
         // Assert
         var snapshots = result.ToList();
-        Assert.That(snapshots, Has.Count.EqualTo(1));
-        Assert.That(snapshots[0].PodName, Is.EqualTo(podName));
-        Assert.That(snapshots[0].NodeUrl, Is.EqualTo(nodeUrl));
-        Assert.That(snapshots[0].PeerId, Is.EqualTo(peerId));
-        Assert.That(snapshots[0].CollectionName, Is.EqualTo(collectionName));
-        Assert.That(snapshots[0].SnapshotName, Is.EqualTo(snapshotFileName));
-        Assert.That(snapshots[0].SizeBytes, Is.EqualTo(snapshotSize));
+        snapshots.Should().HaveCount(1);
+        snapshots[0].PodName.Should().Be(podName);
+        snapshots[0].NodeUrl.Should().Be(nodeUrl);
+        snapshots[0].PeerId.Should().Be(peerId);
+        snapshots[0].CollectionName.Should().Be(collectionName);
+        snapshots[0].SnapshotName.Should().Be(snapshotFileName);
+        snapshots[0].SizeBytes.Should().Be(snapshotSize);
     }
 
     [Test]
@@ -1099,7 +1101,7 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsFromDiskForPodAsync(podName, podNamespace, nodeUrl, peerId, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Empty);
+        result.Should().BeEmpty();
     }
 
     #endregion
@@ -1129,7 +1131,7 @@ public class SnapshotServiceTests
             podName, podNamespace, collectionName, snapshotName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await _commandExecutor.Received(1).DeleteAndVerifyAsync(
             podName,
             podNamespace,

@@ -89,9 +89,6 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
     // With base64: checksum matches perfectly (9682cf3aedb95823f365b8eb31931dd646d04d71f2b103c593fa877a06f8358d)
     private const string StreamFileCommand = "base64 {0}";
 
-    // Command: stat -c %s {path}
-    // - "stat": Display file status
-
     /// <summary>
     /// Lists directories in the specified path
     /// </summary>

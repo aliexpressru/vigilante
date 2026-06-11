@@ -1,3 +1,4 @@
+using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -21,7 +22,7 @@ public class ClusterControllerTests
     {
         _clusterManager = Substitute.For<IClusterManager>();
         _logger = Substitute.For<ILogger<ClusterController>>();
-        
+
         _controller = new ClusterController(_clusterManager, _logger);
     }
 
@@ -54,12 +55,12 @@ public class ClusterControllerTests
         var result = await _controller.GetClusterStatusAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as ClusterState;
-        Assert.That(response, Is.Not.Null);
-        Assert.That(response!.Nodes, Has.Count.EqualTo(1));
-        Assert.That(response.Health.IsHealthy, Is.True);
+        response.Should().NotBeNull();
+        response!.Nodes.Should().HaveCount(1);
+        response.Health.IsHealthy.Should().BeTrue();
     }
 
     [Test]
@@ -102,9 +103,9 @@ public class ClusterControllerTests
         // Assert
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as ClusterState;
-        Assert.That(response!.Health.IsHealthy, Is.False);
-        Assert.That(response.Health.Issues, Is.Not.Empty);
-        Assert.That(response.Nodes, Has.Count.EqualTo(2));
+        response!.Health.IsHealthy.Should().BeFalse();
+        response.Health.Issues.Should().NotBeEmpty();
+        response.Nodes.Should().HaveCount(2);
     }
 
     [Test]
@@ -118,9 +119,9 @@ public class ClusterControllerTests
         var result = await _controller.GetClusterStatusAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     #endregion
@@ -136,7 +137,7 @@ public class ClusterControllerTests
             SourcePeerId = 1001,
             TargetPeerId = 1002,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 0, 1 },
+            ShardIdsToReplicate = [0, 1],
             IsMoveShards = false
         };
 
@@ -154,10 +155,10 @@ public class ClusterControllerTests
         var result = await _controller.ReplicateShards(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        Assert.That(okResult.Value, Is.Not.Null);
-        
+        okResult.Value.Should().NotBeNull();
+
         // Verify the method was called with correct parameters
         await _clusterManager.Received(1).ReplicateShardsAsync(
             request.SourcePeerId!.Value,
@@ -178,7 +179,7 @@ public class ClusterControllerTests
             SourcePeerId = 1001,
             TargetPeerId = 1002,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 0 },
+            ShardIdsToReplicate = [0],
             IsMoveShards = false
         };
 
@@ -196,9 +197,9 @@ public class ClusterControllerTests
         var result = await _controller.ReplicateShards(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     [Test]
@@ -210,7 +211,7 @@ public class ClusterControllerTests
             SourcePeerId = 1001,
             TargetPeerId = 1002,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 0 },
+            ShardIdsToReplicate = [0],
             IsMoveShards = true
         };
 
@@ -228,7 +229,7 @@ public class ClusterControllerTests
         var result = await _controller.ReplicateShards(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         await _clusterManager.Received(1).ReplicateShardsAsync(
             request.SourcePeerId!.Value,
             request.TargetPeerId!.Value,
@@ -248,7 +249,7 @@ public class ClusterControllerTests
             SourcePeerId = 1001,
             TargetPeerId = 1002,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 0, 1, 2, 3 },
+            ShardIdsToReplicate = [0, 1, 2, 3],
             IsMoveShards = false
         };
 
@@ -266,7 +267,7 @@ public class ClusterControllerTests
         var result = await _controller.ReplicateShards(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
     }
 
     [Test]
@@ -278,7 +279,7 @@ public class ClusterControllerTests
             SourcePeerId = 1001,
             TargetPeerId = 1002,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 0 },
+            ShardIdsToReplicate = [0],
             IsMoveShards = false,
             ShardTransferMethod = "Snapshot"
         };
@@ -297,7 +298,7 @@ public class ClusterControllerTests
         var result = await _controller.ReplicateShards(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         await _clusterManager.Received(1).ReplicateShardsAsync(
             request.SourcePeerId!.Value,
             request.TargetPeerId!.Value,
@@ -317,7 +318,7 @@ public class ClusterControllerTests
             SourcePeerId = 1001,
             TargetPeerId = 1002,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 0 },
+            ShardIdsToReplicate = [0],
             IsMoveShards = false,
             ShardTransferMethod = "StreamRecords"
         };
@@ -336,7 +337,7 @@ public class ClusterControllerTests
         var result = await _controller.ReplicateShards(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         await _clusterManager.Received(1).ReplicateShardsAsync(
             request.SourcePeerId!.Value,
             request.TargetPeerId!.Value,
@@ -356,7 +357,7 @@ public class ClusterControllerTests
             SourcePeerId = 1001,
             TargetPeerId = 1002,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 0 },
+            ShardIdsToReplicate = [0],
             IsMoveShards = false,
             ShardTransferMethod = "WalDelta"
         };
@@ -375,7 +376,7 @@ public class ClusterControllerTests
         var result = await _controller.ReplicateShards(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         await _clusterManager.Received(1).ReplicateShardsAsync(
             request.SourcePeerId!.Value,
             request.TargetPeerId!.Value,
@@ -395,7 +396,7 @@ public class ClusterControllerTests
             SourcePeerId = 1001,
             TargetPeerId = 1002,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 0 },
+            ShardIdsToReplicate = [0],
             IsMoveShards = false,
             ShardTransferMethod = "ReshardingStreamRecords"
         };
@@ -414,7 +415,7 @@ public class ClusterControllerTests
         var result = await _controller.ReplicateShards(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         await _clusterManager.Received(1).ReplicateShardsAsync(
             request.SourcePeerId!.Value,
             request.TargetPeerId!.Value,
@@ -434,7 +435,7 @@ public class ClusterControllerTests
             SourcePeerId = 1001,
             TargetPeerId = 1002,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 0 },
+            ShardIdsToReplicate = [0],
             IsMoveShards = false,
             ShardTransferMethod = null
         };
@@ -453,7 +454,7 @@ public class ClusterControllerTests
         var result = await _controller.ReplicateShards(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         await _clusterManager.Received(1).ReplicateShardsAsync(
             request.SourcePeerId!.Value,
             request.TargetPeerId!.Value,
@@ -473,7 +474,7 @@ public class ClusterControllerTests
             SourcePeerId = 1001,
             TargetPeerId = 1002,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 0 },
+            ShardIdsToReplicate = [0],
             IsMoveShards = false
         };
 
@@ -491,9 +492,9 @@ public class ClusterControllerTests
         var result = await _controller.ReplicateShards(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     #endregion
@@ -524,10 +525,10 @@ public class ClusterControllerTests
         var result = await _controller.AbortShardTransfer(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        Assert.That(okResult.Value, Is.Not.Null);
-        
+        okResult.Value.Should().NotBeNull();
+
         await _clusterManager.Received(1).AbortShardTransferAsync(
             request.SourcePeerId!.Value,
             request.TargetPeerId!.Value,
@@ -560,9 +561,9 @@ public class ClusterControllerTests
         var result = await _controller.AbortShardTransfer(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     [Test]
@@ -589,9 +590,9 @@ public class ClusterControllerTests
         var result = await _controller.AbortShardTransfer(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     #endregion
@@ -606,7 +607,7 @@ public class ClusterControllerTests
         {
             CollectionName = "test_collection",
             PeerId = 123456789,
-            ShardIds = new uint[] { 1, 2, 3 },
+            ShardIds = [1, 2, 3],
             IsDryRun = false
         };
 
@@ -622,10 +623,10 @@ public class ClusterControllerTests
         var result = await _controller.DropShardsFromPeer(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        Assert.That(okResult.Value, Is.Not.Null);
-        
+        okResult.Value.Should().NotBeNull();
+
         // Verify the method was called with correct parameters
         await _clusterManager.Received(1).DropShardsFromPeerAsync(
             request.CollectionName,
@@ -643,7 +644,7 @@ public class ClusterControllerTests
         {
             CollectionName = "test_collection",
             PeerId = 987654321,
-            ShardIds = new uint[] { 5, 6 },
+            ShardIds = [5, 6],
             IsDryRun = true
         };
 
@@ -659,8 +660,8 @@ public class ClusterControllerTests
         var result = await _controller.DropShardsFromPeer(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
-        
+        result.Should().BeAssignableTo<OkObjectResult>();
+
         // Verify dry run flag was passed correctly
         await _clusterManager.Received(1).DropShardsFromPeerAsync(
             request.CollectionName,
@@ -678,7 +679,7 @@ public class ClusterControllerTests
         {
             CollectionName = "test_collection",
             PeerId = 123456789,
-            ShardIds = new uint[] { 1 },
+            ShardIds = [1],
             IsDryRun = false
         };
 
@@ -694,9 +695,9 @@ public class ClusterControllerTests
         var result = await _controller.DropShardsFromPeer(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     [Test]
@@ -707,7 +708,7 @@ public class ClusterControllerTests
         {
             CollectionName = "test_collection",
             PeerId = 123456789,
-            ShardIds = new uint[] { 1 },
+            ShardIds = [1],
             IsDryRun = false
         };
 
@@ -723,9 +724,9 @@ public class ClusterControllerTests
         var result = await _controller.DropShardsFromPeer(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     [Test]
@@ -753,8 +754,8 @@ public class ClusterControllerTests
         var result = await _controller.DropShardsFromPeer(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
-        
+        result.Should().BeAssignableTo<OkObjectResult>();
+
         // Verify all shards were passed
         await _clusterManager.Received(1).DropShardsFromPeerAsync(
             request.CollectionName,
@@ -790,10 +791,10 @@ public class ClusterControllerTests
         var result = await _controller.StartResharding(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        Assert.That(okResult.Value, Is.Not.Null);
-        
+        okResult.Value.Should().NotBeNull();
+
         // Verify the method was called with correct parameters
         await _clusterManager.Received(1).StartReshardingAsync(
             request.CollectionName,
@@ -824,8 +825,8 @@ public class ClusterControllerTests
         var result = await _controller.StartResharding(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
-        
+        result.Should().BeAssignableTo<OkObjectResult>();
+
         // Verify the method was called with correct parameters
         await _clusterManager.Received(1).StartReshardingAsync(
             request.CollectionName,
@@ -849,10 +850,10 @@ public class ClusterControllerTests
         var result = await _controller.StartResharding(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
+        result.Should().BeAssignableTo<BadRequestObjectResult>();
         var badRequestResult = (BadRequestObjectResult)result;
-        Assert.That(badRequestResult.StatusCode, Is.EqualTo(400));
-        
+        badRequestResult.StatusCode.Should().Be(400);
+
         // Verify the service was never called
         await _clusterManager.DidNotReceive().StartReshardingAsync(
             Arg.Any<string>(),
@@ -883,9 +884,9 @@ public class ClusterControllerTests
         var result = await _controller.StartResharding(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     [Test]
@@ -910,9 +911,9 @@ public class ClusterControllerTests
         var result = await _controller.StartResharding(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     [Test]
@@ -937,7 +938,7 @@ public class ClusterControllerTests
         var result = await _controller.StartResharding(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
     }
 
     #endregion
@@ -963,7 +964,7 @@ public class ClusterControllerTests
 
         var result = await _controller.RemovePeer(request, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         await _clusterManager.Received(1).RemovePeerAsync(
             request.PeerId,
             false,
@@ -990,7 +991,7 @@ public class ClusterControllerTests
 
         var result = await _controller.RemovePeer(request, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         await _clusterManager.Received(1).RemovePeerAsync(
             request.PeerId,
             true,
@@ -1017,7 +1018,7 @@ public class ClusterControllerTests
 
         var result = await _controller.RemovePeer(request, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         await _clusterManager.Received(1).RemovePeerAsync(
             request.PeerId,
             false,
@@ -1039,8 +1040,8 @@ public class ClusterControllerTests
 
         var result = await _controller.RemovePeer(request, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
-        Assert.That(((ObjectResult)result).StatusCode, Is.EqualTo(500));
+        result.Should().BeAssignableTo<ObjectResult>();
+        ((ObjectResult)result).StatusCode.Should().Be(500);
     }
 
     [Test]
@@ -1057,8 +1058,8 @@ public class ClusterControllerTests
 
         var result = await _controller.RemovePeer(request, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
-        Assert.That(((ObjectResult)result).StatusCode, Is.EqualTo(500));
+        result.Should().BeAssignableTo<ObjectResult>();
+        ((ObjectResult)result).StatusCode.Should().Be(500);
     }
 
     #endregion

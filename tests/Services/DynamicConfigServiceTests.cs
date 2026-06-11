@@ -1,3 +1,4 @@
+using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
@@ -60,8 +61,8 @@ public class DynamicConfigServiceTests
         var result = await _service.GetConfigAsync();
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result.MonitoringIntervalSeconds, Is.EqualTo(120)); // Default value
+        result.Should().NotBeNull();
+        result.MonitoringIntervalSeconds.Should().Be(120); // Default value
     }
 
     [Test]
@@ -77,8 +78,8 @@ public class DynamicConfigServiceTests
         var result = await testService.GetConfigAsync();
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result.MonitoringIntervalSeconds, Is.EqualTo(120)); // Default value
+        result.Should().NotBeNull();
+        result.MonitoringIntervalSeconds.Should().Be(120); // Default value
     }
 
     [Test]
@@ -119,9 +120,9 @@ public class DynamicConfigServiceTests
         await _service.UpdateConfigAsync(newConfig);
 
         // Assert
-        Assert.That(eventRaised, Is.True, "ConfigChanged event should be raised");
-        Assert.That(receivedConfig, Is.Not.Null);
-        Assert.That(receivedConfig!.MonitoringIntervalSeconds, Is.EqualTo(90));
+        eventRaised.Should().BeTrue("ConfigChanged event should be raised");
+        receivedConfig.Should().NotBeNull();
+        receivedConfig!.MonitoringIntervalSeconds.Should().Be(90);
     }
 
     [Test]
@@ -145,12 +146,12 @@ public class DynamicConfigServiceTests
         await _service.UpdateConfigAsync(newConfig);
 
         // Assert - Event should still be raised even if K8s update fails
-        Assert.That(receivedConfig, Is.Not.Null);
-        Assert.That(receivedConfig!.MonitoringIntervalSeconds, Is.EqualTo(150));
-        
+        receivedConfig.Should().NotBeNull();
+        receivedConfig!.MonitoringIntervalSeconds.Should().Be(150);
+
         // Verify the config is cached
         var cachedConfig = await _service.GetConfigAsync();
-        Assert.That(cachedConfig.MonitoringIntervalSeconds, Is.EqualTo(150));
+        cachedConfig.MonitoringIntervalSeconds.Should().Be(150);
     }
 
     private DynamicConfigService CreateTestService()

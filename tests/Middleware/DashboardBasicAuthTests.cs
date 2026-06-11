@@ -1,4 +1,5 @@
 using System.Text;
+using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using NUnit.Framework;
 using Vigilante.Middleware;
@@ -13,13 +14,13 @@ public class DashboardBasicAuthTests
     [TestCase("   ")]
     public void IsEnabled_WhenPasswordMissing_ReturnsFalse(string? password)
     {
-        Assert.That(DashboardBasicAuth.IsEnabled(password), Is.False);
+        DashboardBasicAuth.IsEnabled(password).Should().BeFalse();
     }
 
     [Test]
     public void IsEnabled_WhenPasswordSet_ReturnsTrue()
     {
-        Assert.That(DashboardBasicAuth.IsEnabled("secret"), Is.True);
+        DashboardBasicAuth.IsEnabled("secret").Should().BeTrue();
     }
 
     [TestCase("/health")]
@@ -30,7 +31,7 @@ public class DashboardBasicAuthTests
     [TestCase("/api/v1/auth/logout")]
     public void IsPublicPath_ForPublicPaths_ReturnsTrue(string path)
     {
-        Assert.That(DashboardBasicAuth.IsPublicPath(path), Is.True);
+        DashboardBasicAuth.IsPublicPath(path).Should().BeTrue();
     }
 
     [TestCase("/")]
@@ -38,19 +39,19 @@ public class DashboardBasicAuthTests
     [TestCase("/swagger")]
     public void IsPublicPath_ForProtectedPaths_ReturnsFalse(string path)
     {
-        Assert.That(DashboardBasicAuth.IsPublicPath(path), Is.False);
+        DashboardBasicAuth.IsPublicPath(path).Should().BeFalse();
     }
 
     [Test]
     public void TryValidatePassword_WithValidPassword_ReturnsTrue()
     {
-        Assert.That(DashboardBasicAuth.TryValidatePassword("secret", "secret"), Is.True);
+        DashboardBasicAuth.TryValidatePassword("secret", "secret").Should().BeTrue();
     }
 
     [Test]
     public void TryValidatePassword_WithInvalidPassword_ReturnsFalse()
     {
-        Assert.That(DashboardBasicAuth.TryValidatePassword("wrong", "secret"), Is.False);
+        DashboardBasicAuth.TryValidatePassword("wrong", "secret").Should().BeFalse();
     }
 
     [Test]
@@ -58,7 +59,7 @@ public class DashboardBasicAuthTests
     {
         var header = BasicHeader("any-user", "secret");
 
-        Assert.That(DashboardBasicAuth.TryValidateAuthorizationHeader(header, "secret"), Is.True);
+        DashboardBasicAuth.TryValidateAuthorizationHeader(header, "secret").Should().BeTrue();
     }
 
     [Test]
@@ -66,13 +67,13 @@ public class DashboardBasicAuthTests
     {
         var header = BasicHeader("any-user", "wrong");
 
-        Assert.That(DashboardBasicAuth.TryValidateAuthorizationHeader(header, "secret"), Is.False);
+        DashboardBasicAuth.TryValidateAuthorizationHeader(header, "secret").Should().BeFalse();
     }
 
     [Test]
     public void TryValidateAuthorizationHeader_WhenHeaderMissing_ReturnsFalse()
     {
-        Assert.That(DashboardBasicAuth.TryValidateAuthorizationHeader(null, "secret"), Is.False);
+        DashboardBasicAuth.TryValidateAuthorizationHeader(null, "secret").Should().BeFalse();
     }
 
     [Test]
@@ -82,20 +83,20 @@ public class DashboardBasicAuthTests
         context.Request.Method = HttpMethods.Get;
         context.Request.Headers.Accept = "text/html,application/xhtml+xml";
 
-        Assert.That(DashboardBasicAuth.IsBrowserNavigation(context.Request), Is.True);
+        DashboardBasicAuth.IsBrowserNavigation(context.Request).Should().BeTrue();
     }
 
     [TestCase("/swagger")]
     [TestCase("/swagger/v1/swagger.json")]
     public void IsSwaggerPath_ForSwaggerRoutes_ReturnsTrue(string path)
     {
-        Assert.That(DashboardBasicAuth.IsSwaggerPath(path), Is.True);
+        DashboardBasicAuth.IsSwaggerPath(path).Should().BeTrue();
     }
 
     [Test]
     public void IsSwaggerOpenApiDocument_ForSwaggerJson_ReturnsTrue()
     {
-        Assert.That(DashboardBasicAuth.IsSwaggerOpenApiDocument("/swagger/v1/swagger.json"), Is.True);
+        DashboardBasicAuth.IsSwaggerOpenApiDocument("/swagger/v1/swagger.json").Should().BeTrue();
     }
 
     [Test]
@@ -105,7 +106,7 @@ public class DashboardBasicAuthTests
         context.Request.Method = HttpMethods.Get;
         context.Request.Path = "/swagger/v1/swagger.json";
 
-        Assert.That(DashboardBasicAuth.ShouldRedirectSwaggerToLogin(context.Request), Is.False);
+        DashboardBasicAuth.ShouldRedirectSwaggerToLogin(context.Request).Should().BeFalse();
     }
 
     [Test]
@@ -115,7 +116,7 @@ public class DashboardBasicAuthTests
         context.Request.Method = HttpMethods.Post;
         context.Request.Headers.Accept = "application/json";
 
-        Assert.That(DashboardBasicAuth.IsBrowserNavigation(context.Request), Is.False);
+        DashboardBasicAuth.IsBrowserNavigation(context.Request).Should().BeFalse();
     }
 
     private static string BasicHeader(string username, string password)

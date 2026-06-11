@@ -1,3 +1,4 @@
+using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -7,7 +8,6 @@ using Vigilante.Configuration;
 using Vigilante.Models;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -59,9 +59,8 @@ public class RestoreReplicationFactorJobServiceTests
 
         var result = await service.RequestRestoreReplicationFactorAsync("col1", null, null, CancellationToken.None);
 
-        Assert.That(result.ApiError, Is.True);
-        Assert.That(result.AlreadyInProgress, Is.False);
-        Assert.That(result.Message, Does.Contain("No healthy node"));
+        result.ApiError.Should().BeTrue();
+        result.AlreadyInProgress.Should().BeFalse();
+        result.Message.Should().Contain("No healthy node");
     }
-
 }

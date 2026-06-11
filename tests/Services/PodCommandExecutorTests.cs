@@ -1,4 +1,5 @@
 using k8s;
+using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
@@ -56,10 +57,10 @@ public class PodCommandExecutorTests
         var result = await _executor.ListDirectoriesAsync(podName, podNamespace, directory, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(3));
-        Assert.That(result[0], Is.EqualTo("test_collection"));
-        Assert.That(result[1], Is.EqualTo("products"));
-        Assert.That(result[2], Is.EqualTo("embeddings"));
+        result.Should().HaveCount(3);
+        result[0].Should().Be("test_collection");
+        result[1].Should().Be("products");
+        result[2].Should().Be("embeddings");
     }
 
     [Test]
@@ -86,11 +87,11 @@ public class PodCommandExecutorTests
         var result = await _executor.ListDirectoriesAsync(podName, podNamespace, directory, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result, Does.Not.Contain(".hidden"));
-        Assert.That(result, Does.Not.Contain(".git"));
-        Assert.That(result, Does.Contain("visible"));
-        Assert.That(result, Does.Contain("data"));
+        result.Should().HaveCount(2);
+        result.Should().NotContain(".hidden");
+        result.Should().NotContain(".git");
+        result.Should().Contain("visible");
+        result.Should().Contain("data");
     }
 
     [Test]
@@ -116,7 +117,7 @@ public class PodCommandExecutorTests
         var result = await _executor.ListDirectoriesAsync(podName, podNamespace, directory, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Empty);
+        result.Should().BeEmpty();
     }
 
     [Test]
@@ -144,14 +145,14 @@ public class PodCommandExecutorTests
         var result = await _executor.ListDirectoriesAsync(podName, podNamespace, directory, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(3));
-        Assert.That(result[0], Is.EqualTo("collection1"));
-        Assert.That(result[1], Is.EqualTo("collection2"));
-        Assert.That(result[2], Is.EqualTo("test_data"));
+        result.Should().HaveCount(3);
+        result[0].Should().Be("collection1");
+        result[1].Should().Be("collection2");
+        result[2].Should().Be("test_data");
         // Verify no control characters in results
         foreach (var item in result)
         {
-            Assert.That(item.All(c => !char.IsControl(c)), Is.True, $"Item '{item}' contains control characters");
+            item.All(c => !char.IsControl(c)).Should().BeTrue($"Item '{item}' contains control characters");
         }
     }
 
@@ -180,16 +181,16 @@ public class PodCommandExecutorTests
         var result = await _executor.ListDirectoriesAsync(podName, podNamespace, directory, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(3));
-        Assert.That(result[0], Is.EqualTo("long_collection_name_with_special__chars~~20251104"));
-        Assert.That(result[1], Is.EqualTo("tmp"));
-        Assert.That(result[2], Is.EqualTo("upload"));
-        
+        result.Should().HaveCount(3);
+        result[0].Should().Be("long_collection_name_with_special__chars~~20251104");
+        result[1].Should().Be("tmp");
+        result[2].Should().Be("upload");
+
         // Verify no trailing slashes or colons
         foreach (var item in result)
         {
-            Assert.That(item, Does.Not.EndWith("/"));
-            Assert.That(item, Does.Not.EndWith(":"));
+            item.Should().NotEndWith("/");
+            item.Should().NotEndWith(":");
         }
     }
 
@@ -222,9 +223,9 @@ public class PodCommandExecutorTests
         var result = await _executor.ListFilesAsync(podName, podNamespace, directory, pattern, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result[0], Is.EqualTo("test_collection-2024-11-01-120000.snapshot"));
-        Assert.That(result[1], Is.EqualTo("test_collection-2024-11-05-093000.snapshot"));
+        result.Should().HaveCount(2);
+        result[0].Should().Be("test_collection-2024-11-01-120000.snapshot");
+        result[1].Should().Be("test_collection-2024-11-05-093000.snapshot");
     }
 
     [Test]
@@ -252,7 +253,7 @@ public class PodCommandExecutorTests
         var result = await _executor.ListFilesAsync(podName, podNamespace, directory, pattern, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Empty);
+        result.Should().BeEmpty();
     }
 
     [Test]
@@ -280,10 +281,10 @@ public class PodCommandExecutorTests
         var result = await _executor.ListFilesAsync(podName, podNamespace, directory, pattern, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(3));
-        Assert.That(result[0], Is.EqualTo("collection1"));
-        Assert.That(result[1], Is.EqualTo("collection2"));
-        Assert.That(result[2], Is.EqualTo("collection3"));
+        result.Should().HaveCount(3);
+        result[0].Should().Be("collection1");
+        result[1].Should().Be("collection2");
+        result[2].Should().Be("collection3");
     }
 
     #endregion
@@ -316,8 +317,8 @@ public class PodCommandExecutorTests
         var result = await _executor.GetSizeAsync(podName, podNamespace, baseDirectory, itemName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result.Value, Is.EqualTo(1288490188L));
+        result.Should().NotBeNull();
+        result!.Value.Should().Be(1288490188L);
     }
 
     [Test]
@@ -345,8 +346,8 @@ public class PodCommandExecutorTests
         var result = await _executor.GetSizeAsync(podName, podNamespace, baseDirectory, itemName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result.Value, Is.EqualTo(1024L));
+        result.Should().NotBeNull();
+        result!.Value.Should().Be(1024L);
     }
 
     [Test]
@@ -374,8 +375,8 @@ public class PodCommandExecutorTests
         var result = await _executor.GetSizeAsync(podName, podNamespace, baseDirectory, itemName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result.Value, Is.EqualTo(10995116277760L));
+        result.Should().NotBeNull();
+        result!.Value.Should().Be(10995116277760L);
     }
 
     [Test]
@@ -403,8 +404,8 @@ public class PodCommandExecutorTests
         var result = await _executor.GetSizeAsync(podName, podNamespace, baseDirectory, itemName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result.Value, Is.EqualTo(524288000L));
+        result.Should().NotBeNull();
+        result!.Value.Should().Be(524288000L);
     }
 
     [Test]
@@ -432,7 +433,7 @@ public class PodCommandExecutorTests
         var result = await _executor.GetSizeAsync(podName, podNamespace, baseDirectory, itemName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Null);
+        result.Should().BeNull();
     }
 
     [Test]
@@ -459,7 +460,7 @@ public class PodCommandExecutorTests
         var result = await _executor.GetSizeAsync(podName, podNamespace, baseDirectory, itemName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Null);
+        result.Should().BeNull();
     }
 
     [Test]
@@ -487,8 +488,8 @@ public class PodCommandExecutorTests
         var result = await _executor.GetSizeAsync(podName, podNamespace, baseDirectory, itemName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result.Value, Is.EqualTo(1073741824L));
+        result.Should().NotBeNull();
+        result!.Value.Should().Be(1073741824L);
     }
 
     #endregion
@@ -525,7 +526,7 @@ public class PodCommandExecutorTests
             podName, podNamespace, fullPath, isDirectory, description, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
     }
 
     [Test]
@@ -558,7 +559,7 @@ public class PodCommandExecutorTests
             podName, podNamespace, fullPath, isDirectory, description, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
     }
 
     [Test]
@@ -587,7 +588,7 @@ public class PodCommandExecutorTests
             podName, podNamespace, fullPath, isDirectory, description, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
     }
 
     [Test]
@@ -620,7 +621,7 @@ public class PodCommandExecutorTests
             podName, podNamespace, fullPath, isDirectory, description, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
     }
 
     #endregion

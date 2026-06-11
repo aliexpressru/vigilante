@@ -1,3 +1,5 @@
+using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -82,14 +84,15 @@ public class CollectionsControllerTests
         var result = await _controller.GetCollectionsInfo(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1GetCollectionsInfoPaginatedResponse;
-        Assert.That(response, Is.Not.Null);
-        Assert.That(response!.Collections, Has.Length.EqualTo(3)); // Both nodes of collection1 + collection2
-        Assert.That(response.Pagination.CurrentPage, Is.EqualTo(1));
-        Assert.That(response.Pagination.TotalItems, Is.EqualTo(2)); // 2 unique collections
-        Assert.That(response.Pagination.TotalPages, Is.EqualTo(1));
+
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
+        response.Should().NotBeNull();
+        response!.Collections.Should().HaveCount(3); // Both nodes of collection1 + collection2
+        response.Pagination.CurrentPage.Should().Be(1);
+        response.Pagination.TotalItems.Should().Be(2); // 2 unique collections
+        response.Pagination.TotalPages.Should().Be(1);
     }
 
     [Test]
@@ -126,12 +129,15 @@ public class CollectionsControllerTests
         // Assert
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1GetCollectionsInfoPaginatedResponse;
-        Assert.That(response!.Collections, Has.Length.EqualTo(2));
-        Assert.That(response.Collections[0].CollectionName, Is.EqualTo("collection3"));
-        Assert.That(response.Collections[1].CollectionName, Is.EqualTo("collection4"));
-        Assert.That(response.Pagination.CurrentPage, Is.EqualTo(2));
-        Assert.That(response.Pagination.TotalItems, Is.EqualTo(5));
-        Assert.That(response.Pagination.TotalPages, Is.EqualTo(3));
+        using (new AssertionScope())
+        {
+            response!.Collections.Should().HaveCount(2);
+            response.Collections[0].CollectionName.Should().Be("collection3");
+            response.Collections[1].CollectionName.Should().Be("collection4");
+            response.Pagination.CurrentPage.Should().Be(2);
+            response.Pagination.TotalItems.Should().Be(5);
+            response.Pagination.TotalPages.Should().Be(3);
+        }
     }
 
     [Test]
@@ -187,9 +193,9 @@ public class CollectionsControllerTests
         // Assert
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1GetCollectionsInfoPaginatedResponse;
-        Assert.That(response!.Collections, Has.Length.EqualTo(2));
-        Assert.That(response.Pagination.TotalItems, Is.EqualTo(2));
-        Assert.That(response.Collections.All(c => c.CollectionName.Contains("test")), Is.True);
+        response!.Collections.Should().HaveCount(2);
+        response.Pagination.TotalItems.Should().Be(2);
+        response.Collections.All(c => c.CollectionName.Contains("test")).Should().BeTrue();
     }
 
     [Test]
@@ -221,8 +227,8 @@ public class CollectionsControllerTests
         // Assert
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1GetCollectionsInfoPaginatedResponse;
-        Assert.That(response!.Issues, Has.Length.EqualTo(2));
-        Assert.That(response.Issues[0], Does.Contain("[collection1@pod1]"));
+        response!.Issues.Should().HaveCount(2);
+        response.Issues[0].Should().Contain("[collection1@pod1]");
     }
 
     [Test]
@@ -310,9 +316,13 @@ public class CollectionsControllerTests
         // Assert
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1GetCollectionsInfoPaginatedResponse;
-        Assert.That(response!.Collections, Has.Length.EqualTo(3)); // All 3 nodes for collection1
-        Assert.That(response.Pagination.TotalItems, Is.EqualTo(1)); // Only 1 unique collection
-        Assert.That(response.Collections.All(c => c.CollectionName == "collection1"), Is.True);
+
+        using (new AssertionScope())
+        {
+            response!.Collections.Should().HaveCount(3); // All 3 nodes for collection1
+            response.Pagination.TotalItems.Should().Be(1); // Only 1 unique collection
+            response.Collections.All(c => c.CollectionName == "collection1").Should().BeTrue();
+        }
     }
 
     [Test]
@@ -332,9 +342,9 @@ public class CollectionsControllerTests
         // Assert
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1GetCollectionsInfoPaginatedResponse;
-        Assert.That(response!.Collections, Is.Empty);
-        Assert.That(response.Pagination.TotalItems, Is.EqualTo(0));
-        Assert.That(response.Pagination.TotalPages, Is.EqualTo(0));
+        response!.Collections.Should().BeEmpty();
+        response.Pagination.TotalItems.Should().Be(0);
+        response.Pagination.TotalPages.Should().Be(0);
     }
 
     [Test]
@@ -350,9 +360,9 @@ public class CollectionsControllerTests
         var result = await _controller.GetCollectionsInfo(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     #endregion
@@ -386,10 +396,10 @@ public class CollectionsControllerTests
         var result = await _controller.DeleteCollection(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1DeleteCollectionResponse;
-        Assert.That(response!.Success, Is.True);
+        response!.Success.Should().BeTrue();
     }
 
     [Test]
@@ -422,11 +432,11 @@ public class CollectionsControllerTests
         var result = await _controller.DeleteCollection(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1DeleteCollectionResponse;
-        Assert.That(response!.Success, Is.True);
-        Assert.That(response.Results, Contains.Key("pod1"));
+        response!.Success.Should().BeTrue();
+        response.Results.Should().ContainKey("pod1");
     }
 
     [Test]
@@ -461,11 +471,11 @@ public class CollectionsControllerTests
         var result = await _controller.DeleteCollection(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1DeleteCollectionResponse;
-        Assert.That(response!.Success, Is.True);
-        Assert.That(response.Results, Has.Count.EqualTo(2));
+        response!.Success.Should().BeTrue();
+        response.Results.Should().HaveCount(2);
     }
 
     [Test]
@@ -500,11 +510,11 @@ public class CollectionsControllerTests
         var result = await _controller.DeleteCollection(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1DeleteCollectionResponse;
-        Assert.That(response!.Success, Is.True);
-        Assert.That(response.Message, Does.Contain("1/2"));
+        response!.Success.Should().BeTrue();
+        response.Message.Should().Contain("1/2");
     }
 
     [Test]
@@ -539,9 +549,9 @@ public class CollectionsControllerTests
         var result = await _controller.DeleteCollection(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     #endregion
@@ -666,11 +676,12 @@ public class CollectionsControllerTests
 
         var result = await _controller.SetCollectionAlias(request, CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1SetCollectionAliasResponse;
-        Assert.That(response!.Success, Is.True);
-        Assert.That(response.Message, Does.Contain("my_alias").And.Contain("my_collection"));
+        response!.Success.Should().BeTrue();
+        response.Message.Should().Contain("my_alias");
+        response.Message.Should().Contain("my_collection");
     }
 
     [Test]
@@ -686,11 +697,11 @@ public class CollectionsControllerTests
 
         var result = await _controller.SetCollectionAlias(request, CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
         var response = objectResult.Value as V1SetCollectionAliasResponse;
-        Assert.That(response!.Success, Is.False);
+        response!.Success.Should().BeFalse();
     }
 
     #endregion
@@ -710,11 +721,12 @@ public class CollectionsControllerTests
 
         var result = await _controller.RenameCollectionAlias(request, CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1RenameCollectionAliasResponse;
-        Assert.That(response!.Success, Is.True);
-        Assert.That(response.Message, Does.Contain("old_alias").And.Contain("new_alias"));
+        response!.Success.Should().BeTrue();
+        response.Message.Should().Contain("old_alias");
+        response.Message.Should().Contain("new_alias");
     }
 
     [Test]
@@ -730,11 +742,11 @@ public class CollectionsControllerTests
 
         var result = await _controller.RenameCollectionAlias(request, CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
         var response = objectResult.Value as V1RenameCollectionAliasResponse;
-        Assert.That(response!.Success, Is.False);
+        response!.Success.Should().BeFalse();
     }
 
     #endregion
@@ -753,11 +765,11 @@ public class CollectionsControllerTests
 
         var result = await _controller.DeleteCollectionAlias(request, CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1DeleteCollectionAliasResponse;
-        Assert.That(response!.Success, Is.True);
-        Assert.That(response.Message, Does.Contain("my_alias"));
+        response!.Success.Should().BeTrue();
+        response.Message.Should().Contain("my_alias");
     }
 
     [Test]
@@ -772,11 +784,11 @@ public class CollectionsControllerTests
 
         var result = await _controller.DeleteCollectionAlias(request, CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
         var response = objectResult.Value as V1DeleteCollectionAliasResponse;
-        Assert.That(response!.Success, Is.False);
+        response!.Success.Should().BeFalse();
     }
 
     #endregion
@@ -797,12 +809,12 @@ public class CollectionsControllerTests
 
         var result = await _controller.RestoreReplicationFactor(request, CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<AcceptedResult>());
+        result.Result.Should().BeAssignableTo<AcceptedResult>();
         var accepted = (AcceptedResult)result.Result!;
         var response = accepted.Value as V1RestoreReplicationFactorResponse;
-        Assert.That(response, Is.Not.Null);
-        Assert.That(response!.Status, Is.EqualTo("Started"));
-        Assert.That(response.Message, Does.Contain("col1"));
+        response.Should().NotBeNull();
+        response!.Status.Should().Be("Started");
+        response.Message.Should().Contain("col1");
     }
 
     [Test]
@@ -819,12 +831,12 @@ public class CollectionsControllerTests
 
         var result = await _controller.RestoreReplicationFactor(request, CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var conflict = (ObjectResult)result.Result!;
-        Assert.That(conflict.StatusCode, Is.EqualTo(409));
+        conflict.StatusCode.Should().Be(409);
         var response = conflict.Value as V1RestoreReplicationFactorResponse;
-        Assert.That(response, Is.Not.Null);
-        Assert.That(response!.Status, Is.EqualTo("AlreadyInProgress"));
+        response.Should().NotBeNull();
+        response!.Status.Should().Be("AlreadyInProgress");
     }
 
     [Test]
@@ -841,9 +853,9 @@ public class CollectionsControllerTests
 
         var result = await _controller.RestoreReplicationFactor(request, CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     #endregion

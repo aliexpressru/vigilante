@@ -1,3 +1,4 @@
+using FluentAssertions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -14,7 +15,6 @@ using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
-using SnapshotInfo = Vigilante.Models.SnapshotInfo;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -50,25 +50,25 @@ public class ClusterManagerTests
         _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new DynamicConfig()));
         _mockClients = new ConcurrentDictionary<string, IQdrantHttpClient>();
-        
+
         _options.Value.Returns(new QdrantOptions { HttpTimeoutSeconds = 5 });
-        
+
         // Create mock environment (Development by default for tests)
         _environment = Substitute.For<IHostEnvironment>();
         _environment.EnvironmentName.Returns(Environments.Development);
-        
+
         // Create TestDataProvider with the same options and environment
         _testDataProvider = new TestDataProvider(_options, _environment);
-        
+
         // Setup kubernetes manager
         _kubernetesManager = Substitute.For<IKubernetesManager>();
         _jobRegistry = Substitute.For<IJobRegistry>();
-        
+
         // Setup collection service to always return healthy
         _collectionService
             .CheckCollectionsHealthAsync(Arg.Any<IQdrantHttpClient>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult((true, (string?)null)));
-        
+
         // Setup GetCollectionsFromQdrantAsync to return healthy status by default
         _collectionService
             .GetCollectionsFromQdrantAsync(
@@ -76,11 +76,11 @@ public class ClusterManagerTests
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(([], true, (string?)null));
-        
+
         // Setup client factory to return mocked clients
         _clientFactory
             .CreateClient(
-                Arg.Any<Uri>(), 
+                Arg.Any<Uri>(),
                 Arg.Any<string?>())
             .Returns(info =>
             {
@@ -88,7 +88,7 @@ public class ClusterManagerTests
                 var key = uri.Host + ":" + uri.Port;
                 return _mockClients.GetOrAdd(key, _ => Substitute.For<IQdrantHttpClient>());
             });
-        
+
         // Setup GetBasicNodeInfoAsync to return basic NodeInfo without calling GetClusterInfo
         // GetNodeInfoAsync will call GetClusterInfo separately to enrich the data
         _nodesProvider.GetBasicNodeInfoAsync(Arg.Any<QdrantNodeConfig>(), Arg.Any<CancellationToken>())
@@ -96,7 +96,7 @@ public class ClusterManagerTests
             {
                 var config = callInfo.ArgAt<QdrantNodeConfig>(0);
                 var nodeUrl = $"http://{config.Host}:{config.Port}";
-                
+
                 return Task.FromResult(new NodeInfo
                 {
                     Url = nodeUrl,
@@ -107,7 +107,7 @@ public class ClusterManagerTests
                     LastSeen = DateTime.UtcNow
                 });
             });
-        
+
         _clusterManager = new ClusterManager(
             _nodesProvider,
             _clientFactory,
@@ -139,7 +139,6 @@ public class ClusterManagerTests
         var pod1Id = 1001UL;
         var pod2Id = 1002UL;
         var pod3Id = 1003UL;
-        
 
         // Setup responses for each node - all nodes see all peers
         var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
@@ -154,8 +153,8 @@ public class ClusterManagerTests
                         { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() },
                         { pod3Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
                     },
-                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                    { 
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit
+                    {
                         Leader = pod1Id,
                         Term = 1,
                         Commit = 1
@@ -176,8 +175,8 @@ public class ClusterManagerTests
                         { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() },
                         { pod3Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
                     },
-                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                    { 
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit
+                    {
                         Leader = pod1Id,
                         Term = 1,
                         Commit = 1
@@ -198,8 +197,8 @@ public class ClusterManagerTests
                         { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() },
                         { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
                     },
-                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                    { 
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit
+                    {
                         Leader = pod1Id,
                         Term = 1,
                         Commit = 1
@@ -212,11 +211,11 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(result.Nodes, Has.Count.EqualTo(3));
-        Assert.That(result.Nodes.Count(n => n.IsHealthy), Is.EqualTo(3));
-        Assert.That(result.Nodes.All(n => n.Issues.Count == 0), Is.True);
-        Assert.That(result.Nodes.Count(n => n.IsLeader), Is.EqualTo(1));
-        Assert.That(result.Nodes.Single(n => n.IsLeader).PodName, Is.EqualTo("pod1"));
+        result.Nodes.Should().HaveCount(3);
+        result.Nodes.Count(n => n.IsHealthy).Should().Be(3);
+        result.Nodes.All(n => n.Issues.Count == 0).Should().BeTrue();
+        result.Nodes.Count(n => n.IsLeader).Should().Be(1);
+        result.Nodes.Single(n => n.IsLeader).PodName.Should().Be("pod1");
     }
 
     [Test]
@@ -293,7 +292,7 @@ public class ClusterManagerTests
 
         // First call establishes the baseline
         var firstResult = await _clusterManager.GetClusterStateAsync();
-        Assert.That(firstResult.Nodes.Count(n => n.IsHealthy), Is.EqualTo(3));
+        firstResult.Nodes.Count(n => n.IsHealthy).Should().Be(3);
 
         // Now simulate a split: Group 1 (pod1, pod2) vs Group 2 (pod3 isolated)
         mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
@@ -344,13 +343,13 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(result.Nodes, Has.Count.EqualTo(3));
+        result.Nodes.Should().HaveCount(3);
         // pod1 and pod2 form majority (2 nodes with same peer set), pod3 is isolated
-        Assert.That(result.Nodes.Count(n => n.IsHealthy), Is.EqualTo(2), "Expected 2 healthy nodes (majority group)");
-        
+        result.Nodes.Count(n => n.IsHealthy).Should().Be(2, "Expected 2 healthy nodes (majority group)");
+
         var unhealthyNode = result.Nodes.Single(n => !n.IsHealthy);
-        Assert.That(unhealthyNode.PodName, Is.EqualTo("pod3"));
-        Assert.That(unhealthyNode.ErrorType, Is.EqualTo(NodeErrorType.ClusterSplit));
+        unhealthyNode.PodName.Should().Be("pod3");
+        unhealthyNode.ErrorType.Should().Be(NodeErrorType.ClusterSplit);
     }
 
     [Test]
@@ -371,7 +370,7 @@ public class ClusterManagerTests
 
         var node1Key = nodes[0].Host + ":" + nodes[0].Port;
         var node1Client = _mockClients.GetOrAdd(node1Key, _ => Substitute.For<IQdrantHttpClient>());
-        
+
         var node2Key = nodes[1].Host + ":" + nodes[1].Port;
         var node2Client = _mockClients.GetOrAdd(node2Key, _ => Substitute.For<IQdrantHttpClient>());
 
@@ -382,12 +381,12 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint> 
-                    { 
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+                    {
                         { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
                     },
-                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                    { 
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit
+                    {
                         Leader = pod1Id,
                         Term = 1,
                         Commit = 1
@@ -406,8 +405,8 @@ public class ClusterManagerTests
                     {
                         { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
                     },
-                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                    { 
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit
+                    {
                         Leader = pod1Id,
                         Term = 1,
                         Commit = 1
@@ -418,7 +417,7 @@ public class ClusterManagerTests
 
         // First call establishes the baseline
         var firstResult = await _clusterManager.GetClusterStateAsync();
-        Assert.That(firstResult.Nodes.Count(n => n.IsHealthy), Is.EqualTo(2));
+        firstResult.Nodes.Count(n => n.IsHealthy).Should().Be(2);
 
         // Second call: Node 1 sees node 2 but has message send failures, node 2 doesn't see node 1
         node1Client.GetClusterInfo(Arg.Any<CancellationToken>())
@@ -427,12 +426,12 @@ public class ClusterManagerTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint> 
-                    { 
+                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
+                    {
                         { pod2Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
                     },
-                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                    { 
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit
+                    {
                         Leader = pod1Id,
                         Term = 2,
                         Commit = 10
@@ -452,8 +451,8 @@ public class ClusterManagerTests
                 {
                     PeerId = pod2Id,
                     Peers = [],
-                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                    { 
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit
+                    {
                         Leader = pod2Id, // Considers itself the leader
                         Term = 2,
                         Commit = 5
@@ -466,11 +465,11 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(result.Nodes, Has.Count.EqualTo(2));
+        result.Nodes.Should().HaveCount(2);
         // Both nodes are inconsistent with the previous majority state, but one will be majority (the one that matches most)
         var unhealthyNodes = result.Nodes.Where(n => !n.IsHealthy).ToList();
-        Assert.That(unhealthyNodes, Has.Count.GreaterThanOrEqualTo(1), "At least one node should be unhealthy");
-        Assert.That(unhealthyNodes.Any(n => n.ErrorType == NodeErrorType.ClusterSplit), Is.True);
+        unhealthyNodes.Should().HaveCountGreaterThanOrEqualTo(1, "At least one node should be unhealthy");
+        unhealthyNodes.Any(n => n.ErrorType == NodeErrorType.ClusterSplit).Should().BeTrue();
     }
 
     [Test]
@@ -497,8 +496,8 @@ public class ClusterManagerTests
                 {
                     PeerId = pod1Id,
                     Peers = [],
-                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                    { 
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit
+                    {
                         Leader = pod1Id,
                         Term = 1,
                         Commit = 1
@@ -524,9 +523,9 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert: timing-out node is excluded from cluster state (not in majority), only the responding node is shown
-        Assert.That(result.Nodes, Has.Count.EqualTo(1));
-        Assert.That(result.Nodes[0].IsHealthy, Is.True);
-        Assert.That(result.Nodes[0].PodName, Is.EqualTo("pod1"));
+        result.Nodes.Should().HaveCount(1);
+        result.Nodes[0].IsHealthy.Should().BeTrue();
+        result.Nodes[0].PodName.Should().Be("pod1");
     }
 
     [Test]
@@ -550,9 +549,9 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(result.Nodes, Has.Count.EqualTo(1));
-        Assert.That(result.Nodes[0].IsHealthy, Is.False);
-        Assert.That(result.Nodes[0].ErrorType, Is.EqualTo(NodeErrorType.ConnectionError));
+        result.Nodes.Should().HaveCount(1);
+        result.Nodes[0].IsHealthy.Should().BeFalse();
+        result.Nodes[0].ErrorType.Should().Be(NodeErrorType.ConnectionError);
     }
 
     [Test]
@@ -627,8 +626,7 @@ public class ClusterManagerTests
             }));
 
         var firstResult = await _clusterManager.GetClusterStateAsync();
-        Assert.That(firstResult.Nodes.Count(n => n.IsHealthy), Is.EqualTo(3));
-
+        firstResult.Nodes.Count(n => n.IsHealthy).Should().Be(3);
 
         // Now pod1 and pod2 have leader=pod1, pod3 has leader=pod3
         mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
@@ -684,10 +682,10 @@ public class ClusterManagerTests
 
         // Assert - all nodes see same peers but pod3 has different leader
         // All nodes should be healthy as they agree on peer set
-        Assert.That(result.Nodes, Has.Count.EqualTo(3));
-        Assert.That(result.Nodes.Count(n => n.IsHealthy), Is.EqualTo(3));
+        result.Nodes.Should().HaveCount(3);
+        result.Nodes.Count(n => n.IsHealthy).Should().Be(3);
         // But there should be 2 nodes claiming to be leaders (split brain with leaders)
-        Assert.That(result.Nodes.Count(n => n.IsLeader), Is.GreaterThanOrEqualTo(1));
+        result.Nodes.Count(n => n.IsLeader).Should().BeGreaterThanOrEqualTo(1);
     }
 
     [Test]
@@ -758,7 +756,7 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(result.Nodes, Is.Empty);
+        result.Nodes.Should().BeEmpty();
         _meterService.Received(1).UpdateAliveNodes(0);
     }
 
@@ -795,7 +793,7 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(result.StatefulSetName, Is.EqualTo("qdrant1"));
+        result.StatefulSetName.Should().Be("qdrant1");
     }
 
     [Test]
@@ -831,7 +829,7 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(result.StatefulSetName, Is.Null);
+        result.StatefulSetName.Should().BeNull();
     }
 
     [Test]
@@ -859,9 +857,9 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(result.Nodes, Has.Count.EqualTo(2));
-        Assert.That(result.Nodes.Count(n => n.IsHealthy), Is.EqualTo(0));
-        Assert.That(result.Nodes.All(n => n.ErrorType == NodeErrorType.ConnectionError), Is.True);
+        result.Nodes.Should().HaveCount(2);
+        result.Nodes.Count(n => n.IsHealthy).Should().Be(0);
+        result.Nodes.All(n => n.ErrorType == NodeErrorType.ConnectionError).Should().BeTrue();
         _meterService.Received(1).UpdateAliveNodes(0);
     }
 
@@ -890,8 +888,8 @@ public class ClusterManagerTests
                 {
                     PeerId = pod1Id,
                     Peers = null, // No peer information
-                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                    { 
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit
+                    {
                         Leader = pod1Id,
                         Term = 1,
                         Commit = 1
@@ -912,8 +910,8 @@ public class ClusterManagerTests
                     {
                         { pod1Id.ToString(), new GetClusterInfoResponse.PeerInfoUint() }
                     },
-                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                    { 
+                    RaftInfo = new GetClusterInfoResponse.RaftInfoUnit
+                    {
                         Leader = pod1Id,
                         Term = 1,
                         Commit = 1
@@ -926,13 +924,13 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(result.Nodes, Has.Count.EqualTo(2));
+        result.Nodes.Should().HaveCount(2);
         // Node 1 should still be healthy (no split detection without peer info)
-        Assert.That(result.Nodes.Count(n => n.IsHealthy), Is.EqualTo(2));
+        result.Nodes.Count(n => n.IsHealthy).Should().Be(2);
     }
 
     [Test]
-    public void GetClusterStateAsync_WhenCancellationRequested_ThrowsOperationCanceledException()
+    public async Task GetClusterStateAsync_WhenCancellationRequested_ThrowsOperationCanceledException()
     {
         // Arrange
         _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
@@ -941,15 +939,16 @@ public class ClusterManagerTests
                 var ct = callInfo.Arg<CancellationToken>();
                 ct.ThrowIfCancellationRequested();
                 return Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(
-                    new[] { new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" } });
+                    [new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }]);
             });
 
         var cts = new CancellationTokenSource();
         cts.Cancel();
 
         // Act & Assert
-        Assert.ThrowsAsync<OperationCanceledException>(
-            async () => await _clusterManager.GetClusterStateAsync(cts.Token));
+        Func<Task> act = async () => await _clusterManager.GetClusterStateAsync(cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Test]
@@ -1001,8 +1000,8 @@ public class ClusterManagerTests
                     {
                         PeerId = peerId,
                         Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(majorityPeers.Where(kv => kv.Key != peerId.ToString())),
-                        RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                        { 
+                        RaftInfo = new GetClusterInfoResponse.RaftInfoUnit
+                        {
                             Leader = pod1Id,
                             Term = 2,
                             Commit = 100
@@ -1024,8 +1023,8 @@ public class ClusterManagerTests
                     {
                         PeerId = peerId,
                         Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(minorityPeers.Where(kv => kv.Key != peerId.ToString())),
-                        RaftInfo = new GetClusterInfoResponse.RaftInfoUnit 
-                        { 
+                        RaftInfo = new GetClusterInfoResponse.RaftInfoUnit
+                        {
                             Leader = pod4Id,
                             Term = 2,
                             Commit = 50
@@ -1039,13 +1038,13 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(result.Nodes, Has.Count.EqualTo(5));
+        result.Nodes.Should().HaveCount(5);
         // Majority group (3 nodes) should be healthy, minority (2 nodes) should be unhealthy
-        Assert.That(result.Nodes.Count(n => n.IsHealthy), Is.EqualTo(3), "Expected 3 healthy nodes (majority)");
-        Assert.That(result.Nodes.Count(n => !n.IsHealthy), Is.EqualTo(2), "Expected 2 unhealthy nodes (minority)");
-        
+        result.Nodes.Count(n => n.IsHealthy).Should().Be(3, "Expected 3 healthy nodes (majority)");
+        result.Nodes.Count(n => !n.IsHealthy).Should().Be(2, "Expected 2 unhealthy nodes (minority)");
+
         var unhealthyNodes = result.Nodes.Where(n => !n.IsHealthy).ToList();
-        Assert.That(unhealthyNodes.All(n => n.ErrorType == NodeErrorType.ClusterSplit), Is.True);
+        unhealthyNodes.All(n => n.ErrorType == NodeErrorType.ClusterSplit).Should().BeTrue();
     }
 
     [Test]
@@ -1072,9 +1071,9 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(result.Nodes, Has.Count.EqualTo(1));
-        Assert.That(result.Nodes[0].IsHealthy, Is.False);
-        Assert.That(result.Nodes[0].ErrorType, Is.EqualTo(NodeErrorType.InvalidResponse));
+        result.Nodes.Should().HaveCount(1);
+        result.Nodes[0].IsHealthy.Should().BeFalse();
+        result.Nodes[0].ErrorType.Should().Be(NodeErrorType.InvalidResponse);
     }
 
     #region Collection Issues Tests
@@ -1139,8 +1138,8 @@ public class ClusterManagerTests
             Arg.Any<CancellationToken>(),
                 Arg.Any<bool>());
 
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].CollectionName, Is.EqualTo("test_collection"));
+        result.Should().HaveCount(1);
+        result[0].CollectionName.Should().Be("test_collection");
     }
 
     [Test]
@@ -1202,17 +1201,17 @@ public class ClusterManagerTests
                 Arg.Any<string>(),
                 Arg.Any<string>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new List<CollectionSize>());
+            .Returns([]);
 
         // Act
         var result = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].Issues, Has.Count.EqualTo(1));
-        Assert.That(result[0].Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
-        Assert.That(result[0].Metrics.PrettySize, Is.EqualTo(MetricConstants.NotAvailableValue));
-        Assert.That(result[0].Metrics.SizeBytes, Is.EqualTo(0L));
+        result.Should().HaveCount(1);
+        result[0].Issues.Should().HaveCount(1);
+        result[0].Issues[0].Should().Be("Collection exists in API but not found in storage");
+        result[0].Metrics.PrettySize.Should().Be(MetricConstants.NotAvailableValue);
+        result[0].Metrics.SizeBytes.Should().Be(0L);
     }
 
     [Test]
@@ -1291,10 +1290,10 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].Issues, Has.Count.EqualTo(0), "Should have no issues when collection exists in both API and storage");
-        Assert.That(result[0].Metrics.PrettySize, Is.EqualTo("1 GB"));
-        Assert.That(result[0].Metrics.SizeBytes, Is.EqualTo(1073741824L));
+        result.Should().HaveCount(1);
+        result[0].Issues.Should().HaveCount(0, "Should have no issues when collection exists in both API and storage");
+        result[0].Metrics.PrettySize.Should().Be("1 GB");
+        result[0].Metrics.SizeBytes.Should().Be(1073741824L);
     }
 
     [Test]
@@ -1406,20 +1405,20 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(3));
-        
+        result.Should().HaveCount(3);
+
         var collectionInBoth = result.First(c => c.CollectionName == "collection_in_both");
-        Assert.That(collectionInBoth.Issues, Has.Count.EqualTo(0));
-        Assert.That(collectionInBoth.Metrics.SizeBytes, Is.EqualTo(500000000L));
+        collectionInBoth.Issues.Should().HaveCount(0);
+        collectionInBoth.Metrics.SizeBytes.Should().Be(500000000L);
 
         var collectionMissing = result.First(c => c.CollectionName == "collection_missing_from_storage");
-        Assert.That(collectionMissing.Issues, Has.Count.EqualTo(1));
-        Assert.That(collectionMissing.Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
-        Assert.That(collectionMissing.Metrics.PrettySize, Is.EqualTo(MetricConstants.NotAvailableValue));
+        collectionMissing.Issues.Should().HaveCount(1);
+        collectionMissing.Issues[0].Should().Be("Collection exists in API but not found in storage");
+        collectionMissing.Metrics.PrettySize.Should().Be(MetricConstants.NotAvailableValue);
 
         var anotherInBoth = result.First(c => c.CollectionName == "another_in_both");
-        Assert.That(anotherInBoth.Issues, Has.Count.EqualTo(0));
-        Assert.That(anotherInBoth.Metrics.SizeBytes, Is.EqualTo(750000000L));
+        anotherInBoth.Issues.Should().HaveCount(0);
+        anotherInBoth.Metrics.SizeBytes.Should().Be(750000000L);
     }
 
     [Test]
@@ -1455,15 +1454,14 @@ public class ClusterManagerTests
                 Arg.Any<Dictionary<string, string>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
-            .Returns(new List<CollectionInfo>());
+            .Returns([]);
 
         // Act
         var result = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert - should return test data
-        Assert.That(result, Has.Count.GreaterThan(0), "Should return test data when no collections from API");
-        Assert.That(result.Any(c => c.CollectionName.Contains("test") || c.CollectionName.Contains("product")), 
-            Is.True, "Test data should contain standard test collections");
+        result.Should().HaveCountGreaterThan(0, "Should return test data when no collections from API");
+        result.Any(c => c.CollectionName.Contains("test") || c.CollectionName.Contains("product")).Should().BeTrue("Test data should contain standard test collections");
     }
 
     [Test]
@@ -1558,8 +1556,8 @@ public class ClusterManagerTests
                 "http://node1:6333",
                 Arg.Any<string>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new List<CollectionSize>
-            {
+            .Returns(
+            [
                 new()
                 {
                     CollectionName = "collection1",
@@ -1568,7 +1566,7 @@ public class ClusterManagerTests
                     PeerId = "1001",
                     SizeBytes = 1000000000L
                 }
-            });
+            ]);
 
         _collectionService.GetCollectionsSizesForPodAsync(
                 "pod2",
@@ -1576,21 +1574,21 @@ public class ClusterManagerTests
                 "http://node2:6333",
                 Arg.Any<string>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new List<CollectionSize>());
+            .Returns([]);
 
         // Act
         var result = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        
+        result.Should().HaveCount(2);
+
         var node1Collection = result.First(c => c.NodeUrl == "http://node1:6333");
-        Assert.That(node1Collection.Issues, Has.Count.EqualTo(0));
-        Assert.That(node1Collection.Metrics.SizeBytes, Is.EqualTo(1000000000L));
+        node1Collection.Issues.Should().HaveCount(0);
+        node1Collection.Metrics.SizeBytes.Should().Be(1000000000L);
 
         var node2Collection = result.First(c => c.NodeUrl == "http://node2:6333");
-        Assert.That(node2Collection.Issues, Has.Count.EqualTo(1));
-        Assert.That(node2Collection.Issues[0], Is.EqualTo("Collection exists in API but not found in storage"));
+        node2Collection.Issues.Should().HaveCount(1);
+        node2Collection.Issues[0].Should().Be("Collection exists in API but not found in storage");
     }
 
     [Test]
@@ -1644,7 +1642,7 @@ public class ClusterManagerTests
 
         // Act - First call
         var result1 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
-        
+
         // Act - Second call (ClusterManager will call CollectionService again, but CollectionService handles caching internally)
         var result2 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
 
@@ -1655,10 +1653,10 @@ public class ClusterManagerTests
             Arg.Any<CancellationToken>(),
             false); // Both calls should have clearCache=false
 
-        Assert.That(result1, Has.Count.EqualTo(1));
-        Assert.That(result2, Has.Count.EqualTo(1));
-        Assert.That(result1[0].CollectionName, Is.EqualTo("test_collection"));
-        Assert.That(result2[0].CollectionName, Is.EqualTo("test_collection"));
+        result1.Should().HaveCount(1);
+        result2.Should().HaveCount(1);
+        result1[0].CollectionName.Should().Be("test_collection");
+        result2[0].CollectionName.Should().Be("test_collection");
     }
 
     [Test]
@@ -1720,7 +1718,7 @@ public class ClusterManagerTests
 
         // Act - First call
         var result1 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
-        
+
         // Act - Second call with clearCache=true
         var result2 = await _clusterManager.GetCollectionsInfoAsync(clearCache: true);
 
@@ -1730,7 +1728,7 @@ public class ClusterManagerTests
             Arg.Any<Dictionary<string, string>>(),
             Arg.Any<CancellationToken>(),
             false);
-        
+
         // Assert - Second call should have clearCache=true
         await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
             Arg.Any<IReadOnlyList<NodeInfo>>(),
@@ -1738,8 +1736,8 @@ public class ClusterManagerTests
             Arg.Any<CancellationToken>(),
             true);
 
-        Assert.That(result1[0].CollectionName, Is.EqualTo("collection1"));
-        Assert.That(result2[0].CollectionName, Is.EqualTo("collection2"));
+        result1[0].CollectionName.Should().Be("collection1");
+        result2[0].CollectionName.Should().Be("collection2");
     }
 
     [Test]
@@ -1792,18 +1790,18 @@ public class ClusterManagerTests
         // Act
         // First call - gets real collections and caches them
         var result1 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
-        
+
         // Second call - clearCache=true but gets empty result, should clear cache and return test data
         var result2 = await _clusterManager.GetCollectionsInfoAsync(clearCache: true);
-        
+
         // Third call - clearCache=false, should NOT return stale cache (it was cleared), should fetch again
         var result3 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
 
         // Assert
-        Assert.That(result1[0].CollectionName, Is.EqualTo("collection1"), "First call should return real collection");
-        Assert.That(result2[0].CollectionName, Does.StartWith("test_"), "Second call should return test data");
-        Assert.That(result3[0].CollectionName, Does.StartWith("test_"), "Third call should return test data (cache was cleared)");
-        
+        result1[0].CollectionName.Should().Be("collection1", "First call should return real collection");
+        result2[0].CollectionName.Should().StartWith("test_", "Second call should return test data");
+        result3[0].CollectionName.Should().StartWith("test_", "Third call should return test data (cache was cleared)");
+
         // Service should be called 3 times - caching is handled inside CollectionService
         await _collectionService.Received(3).GetEnrichedCollectionsInfoAsync(
             Arg.Any<IReadOnlyList<NodeInfo>>(),
@@ -1814,7 +1812,6 @@ public class ClusterManagerTests
 
     #endregion
 
-
     #region DeleteCollectionViaApiOnAllNodesAsync Tests
 
     [Test]
@@ -1822,7 +1819,7 @@ public class ClusterManagerTests
     {
         // Arrange
         var collectionName = "test_collection";
-        
+
         var nodes = new[]
         {
             new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" },
@@ -1880,8 +1877,8 @@ public class ClusterManagerTests
             cancellationToken: CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result.Values.All(v => v), Is.True);
+        result.Should().HaveCount(2);
+        result.Values.All(v => v).Should().BeTrue();
     }
 
     #endregion
@@ -1935,7 +1932,7 @@ public class ClusterManagerTests
             sourcePeerId, targetPeerId, collectionName, shardIds, false, null, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
     }
 
     [Test]
@@ -1985,7 +1982,7 @@ public class ClusterManagerTests
             sourcePeerId, targetPeerId, collectionName, shardIds, true, null, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await _collectionService.Received(1).ReplicateShardsAsync(
             Arg.Any<string>(),
             sourcePeerId,
@@ -2024,7 +2021,7 @@ public class ClusterManagerTests
             sourcePeerId, targetPeerId, collectionName, shardIds, false, null, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
     }
 
     #endregion
@@ -2068,7 +2065,7 @@ public class ClusterManagerTests
 
         var result = await _clusterManager.RemovePeerAsync(peerId, false, null, CancellationToken.None);
 
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await mockClient.Received(1).RemovePeer(
             peerId,
             Arg.Any<CancellationToken>(),
@@ -2115,7 +2112,7 @@ public class ClusterManagerTests
 
         var result = await _clusterManager.RemovePeerAsync(peerId, true, timeout, CancellationToken.None);
 
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await mockClient.Received(1).RemovePeer(
             peerId,
             Arg.Any<CancellationToken>(),
@@ -2141,7 +2138,7 @@ public class ClusterManagerTests
 
         var result = await _clusterManager.RemovePeerAsync(1001UL, false, null, CancellationToken.None);
 
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
         await mockClient.DidNotReceive().RemovePeer(
             Arg.Any<ulong>(),
             Arg.Any<CancellationToken>(),
@@ -2187,7 +2184,7 @@ public class ClusterManagerTests
 
         var result = await _clusterManager.RemovePeerAsync(peerId, false, null, CancellationToken.None);
 
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
     }
 
     [Test]
@@ -2224,7 +2221,7 @@ public class ClusterManagerTests
 
         var result = await _clusterManager.RemovePeerAsync(peerId, false, null, CancellationToken.None);
 
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
     }
 
     [Test]
@@ -2292,14 +2289,14 @@ public class ClusterManagerTests
             }));
 
         var removeResult = await _clusterManager.RemovePeerAsync(pod3Id, false, null, CancellationToken.None);
-        Assert.That(removeResult, Is.True);
+        removeResult.Should().BeTrue();
 
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
-        Assert.That(state.Nodes, Has.Count.EqualTo(2));
-        Assert.That(state.Nodes.Select(n => n.PeerId), Does.Not.Contain(pod3Id.ToString()));
-        Assert.That(state.Nodes.Select(n => n.PeerId), Does.Contain(pod1Id.ToString()));
-        Assert.That(state.Nodes.Select(n => n.PeerId), Does.Contain(pod2Id.ToString()));
+        state.Nodes.Should().HaveCount(2);
+        state.Nodes.Select(n => n.PeerId).Should().NotContain(pod3Id.ToString());
+        state.Nodes.Select(n => n.PeerId).Should().Contain(pod1Id.ToString());
+        state.Nodes.Select(n => n.PeerId).Should().Contain(pod2Id.ToString());
     }
 
     [Test]
@@ -2366,12 +2363,12 @@ public class ClusterManagerTests
             }));
 
         var removeResult = await _clusterManager.RemovePeerAsync(pod3Id, false, null, CancellationToken.None);
-        Assert.That(removeResult, Is.False);
+        removeResult.Should().BeFalse();
 
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
-        Assert.That(state.Nodes, Has.Count.EqualTo(3));
-        Assert.That(state.Nodes.Select(n => n.PeerId), Does.Contain(pod3Id.ToString()));
+        state.Nodes.Should().HaveCount(3);
+        state.Nodes.Select(n => n.PeerId).Should().Contain(pod3Id.ToString());
     }
 
     #endregion
@@ -2430,10 +2427,10 @@ public class ClusterManagerTests
 
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
-        Assert.That(state.Nodes, Has.Count.EqualTo(2));
-        Assert.That(state.Nodes.Select(n => n.PeerId), Does.Contain(pod1Id.ToString()));
-        Assert.That(state.Nodes.Select(n => n.PeerId), Does.Contain(pod2Id.ToString()));
-        Assert.That(state.Nodes.Any(n => n.PeerId == "node3:6333"), Is.False);
+        state.Nodes.Should().HaveCount(2);
+        state.Nodes.Select(n => n.PeerId).Should().Contain(pod1Id.ToString());
+        state.Nodes.Select(n => n.PeerId).Should().Contain(pod2Id.ToString());
+        state.Nodes.Any(n => n.PeerId == "node3:6333").Should().BeFalse();
     }
 
     [Test]
@@ -2453,9 +2450,9 @@ public class ClusterManagerTests
 
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
-        Assert.That(state.Nodes, Has.Count.EqualTo(1));
-        Assert.That(state.Nodes[0].PeerId, Is.EqualTo("node1:6333"));
-        Assert.That(state.Nodes[0].IsHealthy, Is.False);
+        state.Nodes.Should().HaveCount(1);
+        state.Nodes[0].PeerId.Should().Be("node1:6333");
+        state.Nodes[0].IsHealthy.Should().BeFalse();
     }
 
     #endregion
@@ -2509,14 +2506,14 @@ public class ClusterManagerTests
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        state.Nodes.Should().HaveCount(1);
         var node = state.Nodes[0];
-        Assert.That(node.IsHealthy, Is.True, "Node should be healthy - stale failures don't mark it unhealthy");
-        Assert.That(node.ErrorType, Is.EqualTo(NodeErrorType.None), "Node should have no error type");
-        Assert.That(node.Warnings, Has.Count.EqualTo(1), "Node should have one warning");
-        Assert.That(node.Warnings[0], Does.Contain("Stale message send failures"));
-        Assert.That(node.Warnings[0], Does.Contain("1002"));
-        Assert.That(node.Warnings[0], Does.Contain("Connection timeout"));
+        node.IsHealthy.Should().BeTrue("Node should be healthy - stale failures don't mark it unhealthy");
+        node.ErrorType.Should().Be(NodeErrorType.None, "Node should have no error type");
+        node.Warnings.Should().HaveCount(1, "Node should have one warning");
+        node.Warnings[0].Should().Contain("Stale message send failures");
+        node.Warnings[0].Should().Contain("1002");
+        node.Warnings[0].Should().Contain("Connection timeout");
     }
 
     [Test]
@@ -2566,15 +2563,15 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(result.Nodes, Has.Count.EqualTo(1));
+        result.Nodes.Should().HaveCount(1);
         var node = result.Nodes[0];
-        Assert.That(node.IsHealthy, Is.False, "Node should be unhealthy - active failures mark it unhealthy");
-        Assert.That(node.ErrorType, Is.EqualTo(NodeErrorType.MessageSendFailures));
-        Assert.That(node.Issues, Has.Count.GreaterThan(0), "Node should have issues");
+        node.IsHealthy.Should().BeFalse("Node should be unhealthy - active failures mark it unhealthy");
+        node.ErrorType.Should().Be(NodeErrorType.MessageSendFailures);
+        node.Issues.Should().HaveCountGreaterThan(0, "Node should have issues");
         var issuesText = string.Join(" ", node.Issues);
-        Assert.That(issuesText, Does.Contain("Message send failures"));
-        Assert.That(issuesText, Does.Contain("1002"));
-        Assert.That(issuesText, Does.Contain("Network unreachable"));
+        issuesText.Should().Contain("Message send failures");
+        issuesText.Should().Contain("1002");
+        issuesText.Should().Contain("Network unreachable");
     }
 
     [Test]
@@ -2631,16 +2628,16 @@ public class ClusterManagerTests
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        state.Nodes.Should().HaveCount(1);
         var node = state.Nodes[0];
-        
-        Assert.That(node.IsHealthy, Is.False, "Node should be unhealthy due to recent failure");
-        Assert.That(node.ErrorType, Is.EqualTo(NodeErrorType.MessageSendFailures));
-        Assert.That(node.Issues, Has.Count.GreaterThan(0), "Node should have issues");
+
+        node.IsHealthy.Should().BeFalse("Node should be unhealthy due to recent failure");
+        node.ErrorType.Should().Be(NodeErrorType.MessageSendFailures);
+        node.Issues.Should().HaveCountGreaterThan(0, "Node should have issues");
         var issuesText = string.Join(" ", node.Issues);
-        Assert.That(issuesText, Does.Contain("1003"), "Issues should mention peer with recent failure");
-        Assert.That(issuesText, Does.Contain("Current error"));
-        Assert.That(issuesText, Does.Not.Contain("1002"), "Issues should not mention peer with stale failure");
+        issuesText.Should().Contain("1003", "Issues should mention peer with recent failure");
+        issuesText.Should().Contain("Current error");
+        issuesText.Should().NotContain("1002", "Issues should not mention peer with stale failure");
     }
 
     [Test]
@@ -2684,16 +2681,16 @@ public class ClusterManagerTests
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        state.Nodes.Should().HaveCount(1);
         var node = state.Nodes[0];
-        
-        Assert.That(node.IsHealthy, Is.False, "Without consensus timestamp, all failures are treated as active");
-        Assert.That(node.ErrorType, Is.EqualTo(NodeErrorType.MessageSendFailures));
-        Assert.That(node.Issues, Has.Count.GreaterThan(0), "Node should have issues");
+
+        node.IsHealthy.Should().BeFalse("Without consensus timestamp, all failures are treated as active");
+        node.ErrorType.Should().Be(NodeErrorType.MessageSendFailures);
+        node.Issues.Should().HaveCountGreaterThan(0, "Node should have issues");
         var issuesText = string.Join(" ", node.Issues);
-        Assert.That(issuesText, Does.Contain("Message send failures"));
-        Assert.That(issuesText, Does.Contain("1002"));
-        Assert.That(issuesText, Does.Contain("Connection failed"));
+        issuesText.Should().Contain("Message send failures");
+        issuesText.Should().Contain("1002");
+        issuesText.Should().Contain("Connection failed");
     }
 
     [Test]
@@ -2744,11 +2741,11 @@ public class ClusterManagerTests
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(state.Health.IsHealthy, Is.True, "Cluster should be healthy");
-        Assert.That(state.Health.Issues, Has.Count.EqualTo(0), "Should have no issues (stale failures go to warnings)");
-        Assert.That(state.Health.Warnings, Has.Count.EqualTo(1), "Should have 1 warning for stale failures");
-        Assert.That(state.Health.Warnings[0], Does.Contain("pod1"));
-        Assert.That(state.Health.Warnings[0], Does.Contain("Stale message send failures"));
+        state.Health.IsHealthy.Should().BeTrue("Cluster should be healthy");
+        state.Health.Issues.Should().HaveCount(0, "Should have no issues (stale failures go to warnings)");
+        state.Health.Warnings.Should().HaveCount(1, "Should have 1 warning for stale failures");
+        state.Health.Warnings[0].Should().Contain("pod1");
+        state.Health.Warnings[0].Should().Contain("Stale message send failures");
     }
 
     #endregion
@@ -2831,22 +2828,22 @@ public class ClusterManagerTests
         var state = await clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(state.Status, Is.EqualTo(ClusterStatus.Degraded), "Cluster should be degraded");
-        
+        state.Status.Should().Be(ClusterStatus.Degraded, "Cluster should be degraded");
+
         // Verify Kubernetes warnings were fetched
         await kubernetesManager.Received(1).GetWarningEventsAsync("qdrant", Arg.Any<CancellationToken>());
-        
+
         // Verify warnings were added to a node
-        var nodeWithWarnings = state.Nodes.FirstOrDefault(n => n.Warnings.Any());
-        Assert.That(nodeWithWarnings, Is.Not.Null, "At least one node should have warnings");
-        Assert.That(nodeWithWarnings!.Warnings.Count, Is.EqualTo(2), "Should have 2 K8s warnings");
-        Assert.That(nodeWithWarnings.Warnings[0], Does.Contain("K8s Event:"));
-        Assert.That(nodeWithWarnings.Warnings[0], Does.Contain("BackOff"));
-        
+        var nodeWithWarnings = state.Nodes.FirstOrDefault(n => n.Warnings.Count != 0);
+        nodeWithWarnings.Should().NotBeNull("At least one node should have warnings");
+        nodeWithWarnings!.Warnings.Count.Should().Be(2, "Should have 2 K8s warnings");
+        nodeWithWarnings.Warnings[0].Should().Contain("K8s Event:");
+        nodeWithWarnings.Warnings[0].Should().Contain("BackOff");
+
         // Verify warnings appear in ClusterHealth.Warnings
-        Assert.That(state.Health.Warnings, Has.Count.EqualTo(2), "ClusterHealth should have 2 warnings");
-        Assert.That(state.Health.Warnings[0], Does.Contain("K8s Event:"));
-        Assert.That(state.Health.Warnings[0], Does.Contain("BackOff"));
+        state.Health.Warnings.Should().HaveCount(2, "ClusterHealth should have 2 warnings");
+        state.Health.Warnings[0].Should().Contain("K8s Event:");
+        state.Health.Warnings[0].Should().Contain("BackOff");
     }
 
     [Test]
@@ -2918,8 +2915,8 @@ public class ClusterManagerTests
         var state = await clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(state.Status, Is.EqualTo(ClusterStatus.Healthy), "Cluster should be healthy");
-        
+        state.Status.Should().Be(ClusterStatus.Healthy, "Cluster should be healthy");
+
         // Verify Kubernetes warnings were NOT fetched
         await kubernetesManager.DidNotReceive().GetWarningEventsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -2988,9 +2985,9 @@ public class ClusterManagerTests
 
         // Act & Assert - should not throw
         var state = await clusterManager.GetClusterStateAsync(CancellationToken.None);
-        
-        Assert.That(state.Status, Is.EqualTo(ClusterStatus.Degraded), "Cluster should be degraded");
-        Assert.That(state.Nodes.All(n => n.Warnings.Count == 0), Is.True, "No warnings should be added without K8s manager");
+
+        state.Status.Should().Be(ClusterStatus.Degraded, "Cluster should be degraded");
+        state.Nodes.All(n => n.Warnings.Count == 0).Should().BeTrue("No warnings should be added without K8s manager");
     }
 
     [Test]
@@ -3080,10 +3077,10 @@ public class ClusterManagerTests
 
         // Act & Assert - should not throw, should handle exception gracefully
         var state = await clusterManager.GetClusterStateAsync(CancellationToken.None);
-        
-        Assert.That(state.Status, Is.EqualTo(ClusterStatus.Degraded), "Cluster should be degraded");
+
+        state.Status.Should().Be(ClusterStatus.Degraded, "Cluster should be degraded");
         // Should still return valid state even if K8s warnings fetch failed
-        Assert.That(state.Nodes, Has.Count.EqualTo(3));
+        state.Nodes.Should().HaveCount(3);
     }
 
     #endregion
@@ -3104,7 +3101,7 @@ public class ClusterManagerTests
 
         var peerId = 1001UL;
         var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
-        
+
         mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new GetClusterInfoResponse
             {
@@ -3129,8 +3126,8 @@ public class ClusterManagerTests
             Status = new QdrantStatus(QdrantOperationStatusType.Ok),
             Result = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint
             {
-                Issues = new[]
-                {
+                Issues =
+                [
                     new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
                     {
                         Id = "disk_usage",
@@ -3147,10 +3144,10 @@ public class ClusterManagerTests
                         RelatedCollection = null,
                         Solution = null
                     }
-                }
+                ]
             }
         };
-        
+
 #pragma warning disable QD0001
         mockClient.ReportIssues(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(reportIssuesResponse));
@@ -3160,12 +3157,12 @@ public class ClusterManagerTests
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        state.Nodes.Should().HaveCount(1);
         var node = state.Nodes[0];
-        Assert.That(node.IsHealthy, Is.True, "Node should be healthy even with Qdrant issues (they are informational)");
-        Assert.That(node.Issues, Has.Count.EqualTo(2), "Should have 2 issues from Qdrant");
-        Assert.That(node.Issues[0], Is.EqualTo("[disk_usage] Disk usage is above 80%"));
-        Assert.That(node.Issues[1], Is.EqualTo("[memory_usage] Memory usage is above 90%"));
+        node.IsHealthy.Should().BeTrue("Node should be healthy even with Qdrant issues (they are informational)");
+        node.Issues.Should().HaveCount(2, "Should have 2 issues from Qdrant");
+        node.Issues[0].Should().Be("[disk_usage] Disk usage is above 80%");
+        node.Issues[1].Should().Be("[memory_usage] Memory usage is above 90%");
     }
 
     [Test]
@@ -3182,7 +3179,7 @@ public class ClusterManagerTests
 
         var peerId = 1001UL;
         var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
-        
+
         mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new GetClusterInfoResponse
             {
@@ -3207,8 +3204,8 @@ public class ClusterManagerTests
             Status = new QdrantStatus(QdrantOperationStatusType.Ok),
             Result = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint
             {
-                Issues = new[]
-                {
+                Issues =
+                [
                     new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
                     {
                         Id = null,
@@ -3241,10 +3238,10 @@ public class ClusterManagerTests
                         RelatedCollection = null,
                         Solution = null
                     }
-                }
+                ]
             }
         };
-        
+
 #pragma warning disable QD0001
         mockClient.ReportIssues(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(reportIssuesResponse));
@@ -3254,12 +3251,12 @@ public class ClusterManagerTests
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        state.Nodes.Should().HaveCount(1);
         var node = state.Nodes[0];
-        Assert.That(node.Issues, Has.Count.EqualTo(1), "Only one valid issue should remain");
-        Assert.That(node.Issues[0], Is.EqualTo("[disk_usage] High"));
-        Assert.That(state.Health.Issues, Has.Count.EqualTo(1));
-        Assert.That(state.Health.Issues[0], Is.EqualTo("pod1: [disk_usage] High"));
+        node.Issues.Should().HaveCount(1, "Only one valid issue should remain");
+        node.Issues[0].Should().Be("[disk_usage] High");
+        state.Health.Issues.Should().HaveCount(1);
+        state.Health.Issues[0].Should().Be("pod1: [disk_usage] High");
     }
 
     [Test]
@@ -3276,7 +3273,7 @@ public class ClusterManagerTests
 
         var peerId = 1001UL;
         var mockClient = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
-        
+
         mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new GetClusterInfoResponse
             {
@@ -3301,8 +3298,8 @@ public class ClusterManagerTests
             Status = new QdrantStatus(QdrantOperationStatusType.Ok),
             Result = new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint
             {
-                Issues = new[]
-                {
+                Issues =
+                [
                     new Aer.QdrantClient.Http.Models.Responses.ReportIssuesResponse.QdrantIssuesUint.QdrantIssue
                     {
                         Id = "shard_replication",
@@ -3311,10 +3308,10 @@ public class ClusterManagerTests
                         RelatedCollection = "my_collection",
                         Solution = null
                     }
-                }
+                ]
             }
         };
-        
+
 #pragma warning disable QD0001
         mockClient.ReportIssues(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(reportIssuesResponse));
@@ -3324,10 +3321,10 @@ public class ClusterManagerTests
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(state.Nodes, Has.Count.EqualTo(1));
+        state.Nodes.Should().HaveCount(1);
         var node = state.Nodes[0];
-        Assert.That(node.Issues, Has.Count.EqualTo(1));
-        Assert.That(node.Issues[0], Is.EqualTo("[shard_replication] Shard has no active replicas (Collection: my_collection)"));
+        node.Issues.Should().HaveCount(1);
+        node.Issues[0].Should().Be("[shard_replication] Shard has no active replicas (Collection: my_collection)");
     }
 
     [Test]
@@ -3361,15 +3358,15 @@ public class ClusterManagerTests
 
         var health = state.Health;
 
-        Assert.That(health.Issues, Has.Count.EqualTo(1));
-        Assert.That(health.Issues[0], Is.EqualTo("pod1: real issue"));
-        Assert.That(health.Warnings, Has.Count.EqualTo(2));
-        Assert.That(health.Warnings, Does.Contain("pod1: warn"));
-        Assert.That(health.Warnings, Does.Contain("pod2: second warn"));
+        health.Issues.Should().HaveCount(1);
+        health.Issues[0].Should().Be("pod1: real issue");
+        health.Warnings.Should().HaveCount(2);
+        health.Warnings.Should().Contain("pod1: warn");
+        health.Warnings.Should().Contain("pod2: second warn");
     }
 
     #endregion
-    
+
     #region Node Sorting Tests
 
     [Test]
@@ -3446,10 +3443,10 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert - nodes should be sorted by PodName
-        Assert.That(result.Nodes, Has.Count.EqualTo(3));
-        Assert.That(result.Nodes[0].PodName, Is.EqualTo("qdrant-0"));
-        Assert.That(result.Nodes[1].PodName, Is.EqualTo("qdrant-1"));
-        Assert.That(result.Nodes[2].PodName, Is.EqualTo("qdrant-2"));
+        result.Nodes.Should().HaveCount(3);
+        result.Nodes[0].PodName.Should().Be("qdrant-0");
+        result.Nodes[1].PodName.Should().Be("qdrant-1");
+        result.Nodes[2].PodName.Should().Be("qdrant-2");
     }
 
     [Test]
@@ -3526,10 +3523,10 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert - nodes should be sorted by PeerId when PodName is not available
-        Assert.That(result.Nodes, Has.Count.EqualTo(3));
-        Assert.That(result.Nodes[0].PeerId, Is.EqualTo(peerId2.ToString()));
-        Assert.That(result.Nodes[1].PeerId, Is.EqualTo(peerId3.ToString()));
-        Assert.That(result.Nodes[2].PeerId, Is.EqualTo(peerId1.ToString()));
+        result.Nodes.Should().HaveCount(3);
+        result.Nodes[0].PeerId.Should().Be(peerId2.ToString());
+        result.Nodes[1].PeerId.Should().Be(peerId3.ToString());
+        result.Nodes[2].PeerId.Should().Be(peerId1.ToString());
     }
 
     [Test]
@@ -3606,14 +3603,14 @@ public class ClusterManagerTests
         var result = await _clusterManager.GetClusterStateAsync();
 
         // Assert - nodes with PodName should come first (sorted by name), then by PeerId
-        Assert.That(result.Nodes, Has.Count.EqualTo(3));
+        result.Nodes.Should().HaveCount(3);
         // First should be peerId2 (no pod name, sorted by peerId which is "2002")
-        Assert.That(result.Nodes[0].PeerId, Is.EqualTo(peerId2.ToString()));
-        Assert.That(result.Nodes[0].PodName, Is.Null);
+        result.Nodes[0].PeerId.Should().Be(peerId2.ToString());
+        result.Nodes[0].PodName.Should().BeNull();
         // Then qdrant-0
-        Assert.That(result.Nodes[1].PodName, Is.EqualTo("qdrant-0"));
+        result.Nodes[1].PodName.Should().Be("qdrant-0");
         // Then qdrant-1
-        Assert.That(result.Nodes[2].PodName, Is.EqualTo("qdrant-1"));
+        result.Nodes[2].PodName.Should().Be("qdrant-1");
     }
 
     #endregion
@@ -3625,7 +3622,7 @@ public class ClusterManagerTests
     {
         // Arrange
         _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(Array.Empty<QdrantNodeConfig>()));
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>([]));
 
         _clusterManager.ReportIssue("snapshot:my-collection", "snapshot failed");
 
@@ -3633,7 +3630,7 @@ public class ClusterManagerTests
         var state = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(state.Health.Issues, Has.Some.Contains("[snapshot:my-collection] snapshot failed"));
+        state.Health.Issues.Should().Contain(i => i.Contains("[snapshot:my-collection] snapshot failed"));
     }
 
     [Test]
@@ -3641,7 +3638,7 @@ public class ClusterManagerTests
     {
         // Arrange
         _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(Array.Empty<QdrantNodeConfig>()));
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>([]));
 
         _clusterManager.ReportIssue("snapshot:col", "first error");
         _clusterManager.ReportIssue("snapshot:col", "second error");
@@ -3651,8 +3648,8 @@ public class ClusterManagerTests
 
         // Assert
         var snapshotIssues = state.Health.Issues.Where(i => i.Contains("[snapshot:col]")).ToList();
-        Assert.That(snapshotIssues, Has.Count.EqualTo(1));
-        Assert.That(snapshotIssues[0], Does.Contain("second error"));
+        snapshotIssues.Should().HaveCount(1);
+        snapshotIssues[0].Should().Contain("second error");
     }
 
     [Test]
@@ -3660,7 +3657,7 @@ public class ClusterManagerTests
     {
         // Arrange
         _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(Array.Empty<QdrantNodeConfig>()));
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>([]));
 
         _clusterManager.ReportIssue("snapshot:my-collection", "snapshot failed");
         _clusterManager.ClearIssue("snapshot:my-collection");
@@ -3669,7 +3666,7 @@ public class ClusterManagerTests
         var state = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(state.Health.Issues, Has.None.Contains("[snapshot:my-collection]"));
+        state.Health.Issues.Should().NotContain(i => i.Contains("[snapshot:my-collection]"));
     }
 
     [Test]
@@ -3677,10 +3674,11 @@ public class ClusterManagerTests
     {
         // Arrange
         _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(Array.Empty<QdrantNodeConfig>()));
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>([]));
 
         // Act & Assert — no exception
-        Assert.DoesNotThrow(() => _clusterManager.ClearIssue("snapshot:does-not-exist"));
+        Action act = () => _clusterManager.ClearIssue("snapshot:does-not-exist");
+        act.Should().NotThrow();
     }
 
     [Test]
@@ -3688,7 +3686,7 @@ public class ClusterManagerTests
     {
         // Arrange
         _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(Array.Empty<QdrantNodeConfig>()));
+            .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>([]));
 
         _clusterManager.ReportIssue("snapshot:col1", "error on col1");
         _clusterManager.ReportIssue("snapshot:col2", "error on col2");
@@ -3697,8 +3695,8 @@ public class ClusterManagerTests
         var state = await _clusterManager.GetClusterStateAsync();
 
         // Assert
-        Assert.That(state.Health.Issues, Has.Some.Contains("[snapshot:col1] error on col1"));
-        Assert.That(state.Health.Issues, Has.Some.Contains("[snapshot:col2] error on col2"));
+        state.Health.Issues.Should().Contain(i => i.Contains("[snapshot:col1] error on col1"));
+        state.Health.Issues.Should().Contain(i => i.Contains("[snapshot:col2] error on col2"));
     }
 
     [Test]
@@ -3748,9 +3746,9 @@ public class ClusterManagerTests
 
         // Assert
         var node = state.Nodes.Single();
-        Assert.That(node.Storage.UsedBytes, Is.EqualTo(90));
-        Assert.That(node.Storage.CapacityBytes, Is.EqualTo(180));
-        Assert.That(node.Storage.UsagePercent, Is.EqualTo(50));
+        node.Storage.UsedBytes.Should().Be(90);
+        node.Storage.CapacityBytes.Should().Be(180);
+        node.Storage.UsagePercent.Should().Be(50);
     }
 
     [Test]
@@ -3792,9 +3790,9 @@ public class ClusterManagerTests
 
         // Assert
         var node = state.Nodes.Single();
-        Assert.That(node.Storage.UsedBytes, Is.Null);
-        Assert.That(node.Storage.CapacityBytes, Is.Null);
-        Assert.That(node.Storage.UsagePercent, Is.Null);
+        node.Storage.UsedBytes.Should().BeNull();
+        node.Storage.CapacityBytes.Should().BeNull();
+        node.Storage.UsagePercent.Should().BeNull();
     }
 
     [Test]
@@ -3847,7 +3845,7 @@ public class ClusterManagerTests
 
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
-        Assert.That(state.Nodes.Single().Issues.Any(i => i.Contains("Disk usage is 94.44%")), Is.True);
+        state.Nodes.Single().Issues.Any(i => i.Contains("Disk usage is 94.44%")).Should().BeTrue();
     }
 
     [Test]
@@ -3899,7 +3897,7 @@ public class ClusterManagerTests
 
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
-        Assert.That(state.Nodes.Single().Issues.Any(i => i.Contains("RAM usage is 94.00%")), Is.True);
+        state.Nodes.Single().Issues.Any(i => i.Contains("RAM usage is 94.00%")).Should().BeTrue();
     }
 
     #endregion

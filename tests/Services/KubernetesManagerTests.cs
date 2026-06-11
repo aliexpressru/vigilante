@@ -1,6 +1,7 @@
 using k8s;
 using k8s.Autorest;
 using k8s.Models;
+using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
@@ -45,7 +46,7 @@ public class KubernetesManagerTests
         var result = await manager.DeletePodAsync(podName, "qdrant");
 
         // Assert
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
     }
 
     [Test]
@@ -56,9 +57,9 @@ public class KubernetesManagerTests
 
         // Act & Assert - should not throw
         var result = await _manager.DeletePodAsync(podName);
-        
+
         // Result depends on actual K8s API call which will fail in test, but method should handle gracefully
-        Assert.That(result, Is.False); // Expected to fail without real API
+        result.Should().BeFalse(); // Expected to fail without real API
     }
 
     #endregion
@@ -75,7 +76,7 @@ public class KubernetesManagerTests
         var result = await manager.RolloutRestartStatefulSetAsync("qdrant", "qdrant");
 
         // Assert
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
     }
 
     [Test]
@@ -88,7 +89,7 @@ public class KubernetesManagerTests
         var result = await _manager.RolloutRestartStatefulSetAsync(statefulSetName);
 
         // Assert - will fail without real K8s API but should handle gracefully
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
     }
 
     #endregion
@@ -105,7 +106,7 @@ public class KubernetesManagerTests
         var result = await manager.ScaleStatefulSetAsync("qdrant", 3, "qdrant");
 
         // Assert
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
     }
 
     [Test]
@@ -119,7 +120,7 @@ public class KubernetesManagerTests
         var result = await _manager.ScaleStatefulSetAsync(statefulSetName, replicas, "qdrant");
 
         // Assert - expected to fail gracefully without real API
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
     }
 
     #endregion
@@ -136,8 +137,8 @@ public class KubernetesManagerTests
         var result = await manager.GetWarningEventsAsync("qdrant");
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result, Is.Empty);
+        result.Should().NotBeNull();
+        result.Should().BeEmpty();
     }
 
     [Test]
@@ -147,7 +148,7 @@ public class KubernetesManagerTests
         var namespace1 = "qdrant";
         var coreV1 = Substitute.For<ICoreV1Operations>();
         _kubernetes.CoreV1.Returns(coreV1);
-        
+
         var warningEvent1 = new Corev1Event
         {
             Type = "Warning",
@@ -190,12 +191,12 @@ public class KubernetesManagerTests
         var result = await _manager.GetWarningEventsAsync(namespace1);
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result.Count, Is.EqualTo(2));
-        Assert.That(result[0], Does.Contain("Pod/qdrant-0"));
-        Assert.That(result[0], Does.Contain("FailedScheduling"));
-        Assert.That(result[1], Does.Contain("Pod/qdrant-1"));
-        Assert.That(result[1], Does.Contain("BackOff"));
+        result.Should().NotBeNull();
+        result.Count.Should().Be(2);
+        result[0].Should().Contain("Pod/qdrant-0");
+        result[0].Should().Contain("FailedScheduling");
+        result[1].Should().Contain("Pod/qdrant-1");
+        result[1].Should().Contain("BackOff");
     }
 
     [Test]
@@ -205,7 +206,7 @@ public class KubernetesManagerTests
         var namespace1 = "qdrant";
         var coreV1 = Substitute.For<ICoreV1Operations>();
         _kubernetes.CoreV1.Returns(coreV1);
-        
+
         var eventList = new Corev1EventList
         {
             Items = []
@@ -223,8 +224,8 @@ public class KubernetesManagerTests
         var result = await _manager.GetWarningEventsAsync(namespace1);
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result, Is.Empty);
+        result.Should().NotBeNull();
+        result.Should().BeEmpty();
     }
 
     [Test]
@@ -234,7 +235,7 @@ public class KubernetesManagerTests
         var namespace1 = "qdrant";
         var coreV1 = Substitute.For<ICoreV1Operations>();
         _kubernetes.CoreV1.Returns(coreV1);
-        
+
         coreV1.ListNamespacedEventWithHttpMessagesAsync(default, default, default, default, default, default, default, default, default, default, default, default, default)
             .ReturnsForAnyArgs(Task.FromException<HttpOperationResponse<Corev1EventList>>(new Exception("API Error")));
 
@@ -242,8 +243,8 @@ public class KubernetesManagerTests
         var result = await _manager.GetWarningEventsAsync(namespace1);
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result, Is.Empty);
+        result.Should().NotBeNull();
+        result.Should().BeEmpty();
     }
 
     [Test]
@@ -252,7 +253,7 @@ public class KubernetesManagerTests
         // Arrange
         var coreV1 = Substitute.For<ICoreV1Operations>();
         _kubernetes.CoreV1.Returns(coreV1);
-        
+
         var eventList = new Corev1EventList
         {
             Items = []
@@ -270,11 +271,10 @@ public class KubernetesManagerTests
         var result = await _manager.GetWarningEventsAsync(null);
 
         // Assert
-        Assert.That(result, Is.Not.Null);
+        result.Should().NotBeNull();
         await coreV1.ReceivedWithAnyArgs(1).ListNamespacedEventWithHttpMessagesAsync(default, default, default, default, default, default, default, default, default, default, default, default, default);
     }
 
     #endregion
 }
-
 

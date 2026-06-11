@@ -1,10 +1,10 @@
+using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 using Vigilante.Models;
-using Vigilante.Models.Enums;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
 using Vigilante.Services.Jobs;
@@ -496,7 +496,7 @@ public class QdrantMonitorServiceTests
         _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())
             .Returns(healthyState);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<CollectionInfo>());
+            .Returns([]);
         _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new DynamicConfig { MonitoringIntervalSeconds = 60 }));
 
@@ -545,9 +545,9 @@ public class QdrantMonitorServiceTests
         await Task.Delay(500, CancellationToken.None);
 
         var errors = realJobRegistry.GetActiveErrorsAndPruneExpired(DateTime.UtcNow, TimeSpan.FromMinutes(5));
-        Assert.That(errors, Has.Count.EqualTo(1));
-        Assert.That(errors[0].Key, Is.EqualTo("snapshot-automation"));
-        Assert.That(errors[0].Message, Is.EqualTo("collections failed"));
+        errors.Should().HaveCount(1);
+        errors[0].Key.Should().Be("snapshot-automation");
+        errors[0].Message.Should().Be("collections failed");
     }
 
     [Test]
@@ -582,14 +582,14 @@ public class QdrantMonitorServiceTests
             .Select(call => (bool)call.GetArguments()[0]!)
             .ToList();
 
-        Assert.That(attentionCalls, Is.Not.Empty);
-        Assert.That(attentionCalls, Has.Some.EqualTo(true));
-        Assert.That(attentionCalls, Has.Some.EqualTo(false));
+        attentionCalls.Should().NotBeEmpty();
+        attentionCalls.Should().Contain(true);
+        attentionCalls.Should().Contain(false);
 
         var firstTrueIndex = attentionCalls.IndexOf(true);
         var firstFalseIndex = attentionCalls.IndexOf(false);
-        Assert.That(firstTrueIndex, Is.GreaterThanOrEqualTo(0));
-        Assert.That(firstFalseIndex, Is.GreaterThan(firstTrueIndex));
+        firstTrueIndex.Should().BeGreaterThanOrEqualTo(0);
+        firstFalseIndex.Should().BeGreaterThan(firstTrueIndex);
     }
 
     #endregion
