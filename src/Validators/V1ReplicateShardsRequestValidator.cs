@@ -23,12 +23,10 @@ public class V1ReplicateShardsRequestValidator : AbstractValidator<V1ReplicateSh
 
         RuleFor(x => x.ShardIdsToReplicate)
             .NotEmpty();
-        
+
         RuleFor(x => x.ShardTransferMethod)
             .IsEnumName(typeof(ShardTransferMethod), caseSensitive: false)
             .When(x => !string.IsNullOrEmpty(x.ShardTransferMethod))
             .WithMessage($"ShardTransferMethod must be one of: {string.Join(", ", Enum.GetNames<ShardTransferMethod>())}");
     }
 }
-
-

@@ -20,6 +20,11 @@ public class DynamicConfigService : IDynamicConfigService
     private readonly string _configFilePath;
     private bool _initialized;
 
+    private readonly JsonSerializerOptions _serializerOptions = new()
+    {
+        WriteIndented = true
+    };
+
     /// <summary>
     /// Event raised when configuration is updated
     /// </summary>
@@ -106,22 +111,19 @@ public class DynamicConfigService : IDynamicConfigService
     {
         // Always update cached config
         _cachedConfig = config;
-        
+
         _logger.LogInformation(
             "Updated dynamic config: MonitoringIntervalSeconds={Interval}",
             config.MonitoringIntervalSeconds);
-        
+
         // Raise event to notify subscribers
         ConfigChanged?.Invoke(this, config);
-        
+
         // Try to update ConfigMap in Kubernetes if we're running in cluster
         try
         {
-            var configJson = JsonSerializer.Serialize(config, new JsonSerializerOptions 
-            { 
-                WriteIndented = true 
-            });
-            
+            var configJson = JsonSerializer.Serialize(config, _serializerOptions);
+
             await _kubernetesManager.UpdateConfigMapDataAsync(
                 KubernetesConstants.DynamicConfigMapName,
                 KubernetesConstants.DynamicConfigMapKey,
@@ -142,7 +144,7 @@ public class DynamicConfigService : IDynamicConfigService
         try
         {
             var directory = Path.GetDirectoryName(_configFilePath);
-            
+
             if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
             {
                 _logger.LogWarning("Config directory not found: {Directory}, file watching disabled", directory);
@@ -167,13 +169,13 @@ public class DynamicConfigService : IDynamicConfigService
                 }
 
                 _logger.LogInformation("Detected config directory change: {ChangeType} - {Name}", args.ChangeType, args.Name);
-                
+
                 // Fire and forget async reload
                 _ = Task.Run(async () =>
                 {
                     // Wait for the atomic update to complete
                     await Task.Delay(500, cancellationToken);
-                    
+
                     await _lock.WaitAsync(cancellationToken);
                     try
                     {
@@ -184,15 +186,15 @@ public class DynamicConfigService : IDynamicConfigService
                         }
 
                         var configJson = await File.ReadAllTextAsync(_configFilePath, cancellationToken);
-                        var config = JsonSerializer.Deserialize<DynamicConfig>(configJson);
-                        
+                        var config = JsonSerializer.Deserialize<DynamicConfig>(configJson, _serializerOptions);
+
                         if (config != null && !config.Equals(_cachedConfig))
                         {
                             _cachedConfig = config;
                             _logger.LogInformation(
                                 "Config reloaded from file: MonitoringIntervalSeconds={Interval}",
                                 config.MonitoringIntervalSeconds);
-                            
+
                             // Raise event to notify subscribers
                             ConfigChanged?.Invoke(this, config);
                         }

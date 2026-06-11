@@ -16,7 +16,7 @@ internal class WebSocketStream : Stream
     private readonly long? _expectedSize;
     private bool _disposed;
     private long _totalBytesRead;
-    private byte[] _leftoverBuffer = Array.Empty<byte>();
+    private byte[] _leftoverBuffer = [];
     private int _leftoverOffset;
     private int _leftoverCount;
     private int _stdoutMessages;
@@ -91,11 +91,17 @@ internal class WebSocketStream : Stream
 
                 // Track message types
                 if (channel == 1)
+                {
                     _stdoutMessages++;
+                }
                 else if (channel == 2)
+                {
                     _stderrMessages++;
+                }
                 else
+                {
                     _otherMessages++;
+                }
 
                 // Skip messages from non-stdout channels (like stderr)
                 if (channel != 1)
@@ -121,9 +127,9 @@ internal class WebSocketStream : Stream
 
                 // Copy data (excluding channel byte) to output buffer
                 Array.Copy(tempBuffer, 1, buffer, offset, bytesToCopy);
-                
+
                 _totalBytesRead += bytesToCopy;
-                
+
                 // If we have more data than requested, store it in leftover buffer
                 if (dataLength > bytesToCopy)
                 {
@@ -147,7 +153,7 @@ internal class WebSocketStream : Stream
                 return 0;
             }
         }
-        
+
         return 0; // WebSocket is not open
     }
 
@@ -178,7 +184,7 @@ internal class WebSocketStream : Stream
                 {
                     var extraBytes = _totalBytesRead - _expectedSize.Value;
                     var status = extraBytes == 0 ? "OK" : "WARNING";
-                    
+
                     _logger.LogInformation(
                         "{Status} Download completed: {FilePath} from {PodName}\n" +
                         "   Expected file size: {ExpectedSize} bytes ({ExpectedSizeFormatted})\n" +
@@ -191,7 +197,7 @@ internal class WebSocketStream : Stream
                         _expectedSize.Value, _expectedSize.Value.ToPrettySize(),
                         _totalBytesRead, _totalBytesRead.ToPrettySize(),
                         _totalWebSocketBytes, _totalWebSocketBytes.ToPrettySize(),
-                        _totalWebSocketBytes - _totalBytesRead, 
+                        _totalWebSocketBytes - _totalBytesRead,
                         (_totalWebSocketBytes - _totalBytesRead) * 100.0 / Math.Max(_totalWebSocketBytes, 1),
                         extraBytes >= 0 ? "ERROR" : "OK", extraBytes, Math.Abs(extraBytes).ToPrettySize(),
                         _stdoutMessages, _stderrMessages, _otherMessages);
@@ -207,7 +213,7 @@ internal class WebSocketStream : Stream
                         _filePath, _podName,
                         _totalBytesRead, _totalBytesRead.ToPrettySize(),
                         _totalWebSocketBytes, _totalWebSocketBytes.ToPrettySize(),
-                        _totalWebSocketBytes - _totalBytesRead, 
+                        _totalWebSocketBytes - _totalBytesRead,
                         (_totalWebSocketBytes - _totalBytesRead) * 100.0 / Math.Max(_totalWebSocketBytes, 1),
                         _stdoutMessages, _stderrMessages, _otherMessages);
                 }

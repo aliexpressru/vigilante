@@ -25,7 +25,7 @@ public class TestDataProvider
         // Only return test data in Development environment
         if (!_environment.IsDevelopment())
         {
-            return new List<CollectionInfo>();
+            return [];
         }
 
         var testData = new List<CollectionInfo>();

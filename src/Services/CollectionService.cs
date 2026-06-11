@@ -17,7 +17,7 @@ public class CollectionService : ICollectionService
 {
     private readonly ILogger<CollectionService> _logger;
     private readonly IMeterService _meterService;
-    private readonly IPodCommandExecutor? _commandExecutor;
+    private readonly PodCommandExecutor? _commandExecutor;
     private readonly QdrantOptions _options;
     private readonly IQdrantClientFactory _clientFactory;
     private List<CollectionInfo>? _cachedCollections;
@@ -74,7 +74,7 @@ public class CollectionService : ICollectionService
             var result = await qdrantClient.ReplicateShards(
                 sourcePeerId: sourcePeerId,
                 targetPeerId: targetPeerId,
-                collectionNamesToReplicate: new[] { collectionName },
+                collectionNamesToReplicate: [collectionName],
                 shardIdsToReplicate: shardIds,
                 isMoveShards: isMove,
                 shardTransferMethod: transferMethod,
@@ -227,7 +227,7 @@ public class CollectionService : ICollectionService
             }
 
             // If there are collections, check each one in parallel
-            if (collectionsResponse.Result?.Collections != null && collectionsResponse.Result.Collections.Any())
+            if (collectionsResponse.Result?.Collections != null && collectionsResponse.Result.Collections.Length != 0)
             {
                 var collections = collectionsResponse.Result.Collections;
 
@@ -255,11 +255,11 @@ public class CollectionService : ICollectionService
                 var results = await Task.WhenAll(checkTasks);
 
                 // Check if any collection failed
-                var failedCollection = results.FirstOrDefault(r => !r.IsHealthy);
-                if (failedCollection.CollectionName != null)
+                var (IsHealthy, CollectionName, Error) = results.FirstOrDefault(r => !r.IsHealthy);
+                if (CollectionName != null)
                 {
                     return (false,
-                        $"Failed to get info for collection '{failedCollection.CollectionName}': {failedCollection.Error}");
+                        $"Failed to get info for collection '{CollectionName}': {Error}");
                 }
             }
 
@@ -525,7 +525,7 @@ public class CollectionService : ICollectionService
         {
             _logger.LogWarning("No healthy nodes available to get collections from");
 
-            return new List<CollectionInfo>();
+            return [];
         }
 
         var (collections, _, _) = await GetCollectionsFromQdrantAsync(
@@ -552,10 +552,9 @@ public class CollectionService : ICollectionService
 
         // Sort collection shards by node within each collection:
         // Group by collection name, sort nodes within each group, then flatten back
-        collections = collections
+        collections = [.. collections
             .GroupBy(c => c.CollectionName)
-            .SelectMany(group => group.OrderBy(c => NodeSortingExtensions.GetNodeSortKey(c.PodName, c.PeerId)))
-            .ToList();
+            .SelectMany(group => group.OrderBy(c => NodeSortingExtensions.GetNodeSortKey(c.PodName, c.PeerId)))];
 
         // Log summary with unique collection names
         return collections;
@@ -792,7 +791,7 @@ public class CollectionService : ICollectionService
             return [];
         }
 
-        return running
+        return [.. running
             .Select(r =>
             {
                 return new CollectionOptimizationInfo
@@ -802,8 +801,7 @@ public class CollectionService : ICollectionService
                     Done = r.Progress?.Done,
                     Total = r.Progress?.Total
                 };
-            })
-            .ToList();
+            })];
     }
 
     private static void PopulateCollectionWarnings(List<CollectionInfo> collections)
@@ -910,7 +908,7 @@ public class CollectionService : ICollectionService
                 {
                     _logger.LogError(ex, "Failed to get clustering info for collection {Collection} on node {NodeUrl}",
                         collectionName, healthyNodeUrl);
-                    return (collectionName, (Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse?)null);
+                    return (collectionName, (GetCollectionClusteringInfoResponse?)null);
                 }
             });
 
@@ -940,8 +938,8 @@ public class CollectionService : ICollectionService
         }
     }
 
-    private void UpdateShardMetrics(CollectionInfo info,
-        Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+    private static void UpdateShardMetrics(CollectionInfo info,
+        GetCollectionClusteringInfoResponse.CollectionClusteringInfo
             clusteringResult)
     {
         if (clusteringResult.LocalShards == null)
@@ -969,9 +967,9 @@ public class CollectionService : ICollectionService
         }
     }
 
-    private void UpdateTransferMetrics(
+    private static void UpdateTransferMetrics(
         CollectionInfo info,
-        Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+        GetCollectionClusteringInfoResponse.CollectionClusteringInfo
             clusteringResult,
         Dictionary<string, string> peerToPodMap)
     {
@@ -1003,7 +1001,7 @@ public class CollectionService : ICollectionService
     /// Any healthy node returns the same report for the whole collection.
     /// </summary>
     private async Task EnrichCollectionsWithMemoryReportAsync(
-        IReadOnlyList<NodeInfo> nodes,
+        List<NodeInfo> nodes,
         List<CollectionInfo> collections,
         CancellationToken cancellationToken)
     {

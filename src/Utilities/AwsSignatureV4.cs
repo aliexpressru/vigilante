@@ -26,7 +26,7 @@ public static class AwsSignatureV4
         var now = DateTimeOffset.UtcNow;
         var timestamp = now.ToString("yyyyMMddTHHmmssZ");
         var datestamp = now.ToString("yyyyMMdd");
-        
+
         // Build the canonical URI
         // The objectKey comes in already encoded (e.g., snapshots/collection%7E%7Eversion/file.snapshot)
         // For the URL path, we need to encode each path segment separately
@@ -35,10 +35,10 @@ public static class AwsSignatureV4
         var encodedSegments = pathSegments.Select(segment => Uri.EscapeDataString(segment));
         var encodedObjectKey = string.Join("/", encodedSegments);
         var canonicalUri = $"/{bucketName}/{encodedObjectKey}";
-        
+
         // Build credential scope
         var credentialScope = $"{datestamp}/{region}/s3/aws4_request";
-        
+
         // Build the canonical query string
         var queryParams = new SortedDictionary<string, string>
         {
@@ -48,10 +48,10 @@ public static class AwsSignatureV4
             { "X-Amz-Expires", expirationSeconds.ToString() },
             { "X-Amz-SignedHeaders", "host" }
         };
-        
+
         var canonicalQueryString = string.Join("&",
             queryParams.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value)}"));
-        
+
         // Extract host from endpoint
         var uri = new Uri(endpoint);
         var host = uri.Host;
@@ -59,11 +59,11 @@ public static class AwsSignatureV4
         {
             host = $"{host}:{uri.Port}";
         }
-        
+
         // Build canonical request
         var canonicalHeaders = $"host:{host}\n";
         var signedHeaders = "host";
-        
+
         var canonicalRequest = string.Join("\n",
             "GET",
             canonicalUri,
@@ -71,47 +71,44 @@ public static class AwsSignatureV4
             canonicalHeaders,
             signedHeaders,
             "UNSIGNED-PAYLOAD");
-        
+
         // Create string to sign
-        using var sha256 = SHA256.Create();
-        var canonicalRequestHash = BitConverter.ToString(
-            sha256.ComputeHash(Encoding.UTF8.GetBytes(canonicalRequest)))
-            .Replace("-", "").ToLowerInvariant();
-        
+        var canonicalRequestHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalRequest)));
+
         var stringToSign = string.Join("\n",
             "AWS4-HMAC-SHA256",
             timestamp,
             credentialScope,
             canonicalRequestHash);
-        
+
         // Calculate signature
         var signature = CalculateSignature(secretKey, datestamp, region, stringToSign);
-        
+
         // Build final URL
         var url = $"{endpoint.TrimEnd('/')}{canonicalUri}?{canonicalQueryString}&X-Amz-Signature={signature}";
-        
+
         return url;
     }
-    
+
     private static string CalculateSignature(string secretKey, string datestamp, string region, string stringToSign)
     {
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes($"AWS4{secretKey}"));
-        
+
         var dateKey = hmac.ComputeHash(Encoding.UTF8.GetBytes(datestamp));
-        
+
         hmac.Key = dateKey;
         var dateRegionKey = hmac.ComputeHash(Encoding.UTF8.GetBytes(region));
-        
+
         hmac.Key = dateRegionKey;
         var dateRegionServiceKey = hmac.ComputeHash(Encoding.UTF8.GetBytes("s3"));
-        
+
         hmac.Key = dateRegionServiceKey;
         var signingKey = hmac.ComputeHash(Encoding.UTF8.GetBytes("aws4_request"));
-        
+
         hmac.Key = signingKey;
         var signature = hmac.ComputeHash(Encoding.UTF8.GetBytes(stringToSign));
-        
-        return BitConverter.ToString(signature).Replace("-", "").ToLowerInvariant();
+
+        return Convert.ToHexStringLower(signature);
     }
 }
 

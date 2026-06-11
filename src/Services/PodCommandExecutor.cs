@@ -14,7 +14,7 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
 {
 
     // Shell command templates with detailed explanations
-    
+
     // Command: cd {directory} && ls -1d */
     // - "cd {directory}": Change to target directory
     // - "&&": Execute next command only if cd succeeds
@@ -133,19 +133,19 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
         {
             var command = string.Format(GetSizeCommand, baseDirectory, itemName);
             var rawOutput = await ExecuteCommandAsync(podName, podNamespace, command, cancellationToken);
-            
+
             var output = rawOutput
                 .Trim()
                 .Replace("\n", "")
                 .Replace("\r", "")
                 .Replace("\0", "");
-            
-            var cleanedOutput = new string(output.Where(char.IsDigit).ToArray());
+
+            var cleanedOutput = new string([.. output.Where(char.IsDigit)]);
             if (!string.IsNullOrEmpty(cleanedOutput) && long.TryParse(cleanedOutput, out var sizeBytes))
             {
                 return sizeBytes;
             }
-            
+
             logger.LogWarning("Failed to parse size for {Item}: '{Output}'", itemName, output);
             return null;
         }
@@ -170,15 +170,15 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
         try
         {
             // Execute delete command
-            var deleteCommand = isDirectory 
+            var deleteCommand = isDirectory
                 ? string.Format(RemoveDirectoryCommand, fullPath)
                 : string.Format(RemoveFileCommand, fullPath);
-            
+
             var deleteOutput = await ExecuteCommandAsync(podName, podNamespace, deleteCommand, cancellationToken);
 
             // Check for errors in output
-            if (!string.IsNullOrEmpty(deleteOutput) && 
-                (deleteOutput.Contains("error", StringComparison.OrdinalIgnoreCase) || 
+            if (!string.IsNullOrEmpty(deleteOutput) &&
+                (deleteOutput.Contains("error", StringComparison.OrdinalIgnoreCase) ||
                  deleteOutput.Contains("permission denied", StringComparison.OrdinalIgnoreCase)))
             {
                 logger.LogError("Failed to delete {Description}: {Output}", itemDescription, deleteOutput);
@@ -186,22 +186,22 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
             }
 
             // Verify deletion
-            var verifyCommand = isDirectory 
+            var verifyCommand = isDirectory
                 ? string.Format(CheckDirectoryExistsCommand, fullPath)
                 : string.Format(CheckFileExistsCommand, fullPath);
-            
+
             var verifyOutput = await ExecuteCommandAsync(podName, podNamespace, verifyCommand, cancellationToken);
             var verifyResult = verifyOutput.Trim();
 
             if (verifyResult.Contains("deleted"))
             {
-                logger.LogInformation("{Description} deleted successfully from disk on pod {PodName}", 
+                logger.LogInformation("{Description} deleted successfully from disk on pod {PodName}",
                     itemDescription, podName);
                 return true;
             }
             else
             {
-                logger.LogError("{Description} still exists after deletion attempt on pod {PodName}", 
+                logger.LogError("{Description} still exists after deletion attempt on pod {PodName}",
                     itemDescription, podName);
                 return false;
             }
@@ -223,11 +223,11 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
         {
             throw new InvalidOperationException("Kubernetes client is not available");
         }
-        
+
         using var webSocket = await kubernetes.WebSocketNamespacedPodExecAsync(
             podName,
             podNamespace,
-            new[] { "sh", "-c", command },
+            ["sh", "-c", command],
             QdrantConstants.ContainerName,
             cancellationToken: cancellationToken);
 
@@ -246,14 +246,14 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
                 // Check if first byte is a channel ID (0-3), otherwise it's regular data
                 var dataStart = 0;
                 var dataLength = result.Count;
-                
+
                 if (result.Count > 0 && buffer[0] <= 3)
                 {
                     // First byte is a channel prefix, skip it
                     dataStart = 1;
                     dataLength = result.Count - 1;
                 }
-                
+
                 if (dataLength > 0)
                 {
                     output.Append(Encoding.UTF8.GetString(buffer, dataStart, dataLength));
@@ -273,17 +273,15 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
         var output = await ExecuteCommandAsync(podName, podNamespace, command, cancellationToken);
 
         // First remove all control characters from the entire output
-        var cleanOutput = new string(output.Where(c => !char.IsControl(c) || c == '\n' || c == '\r').ToArray());
+        var cleanOutput = new string([.. output.Where(c => !char.IsControl(c) || c == '\n' || c == '\r')]);
 
-        return cleanOutput
-            .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+        return [.. cleanOutput
+            .Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries)
             .Select(name => name
                 .TrimEnd('/', ':')  // Remove both / and : that ls -1d */ can add
                 .Trim())
-            .Where(name => !string.IsNullOrWhiteSpace(name) && !name.StartsWith("."))
-            .ToList();
+            .Where(name => !string.IsNullOrWhiteSpace(name) && !name.StartsWith('.'))];
     }
-
 
     /// <summary>
     /// Gets exact file size in bytes using stat command
@@ -296,36 +294,36 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
     {
         try
         {
-            logger.LogInformation("Getting file size for {FilePath} on pod {PodName} in namespace {Namespace}", 
+            logger.LogInformation("Getting file size for {FilePath} on pod {PodName} in namespace {Namespace}",
                 filePath, podName, podNamespace);
-            
+
             // Use stat -c %s to get exact file size in bytes
             var command = $"stat -c %s {filePath}";
             logger.LogInformation("Executing command: {Command}", command);
-            
+
             var output = await ExecuteCommandAsync(podName, podNamespace, command, cancellationToken);
-            
-            logger.LogInformation("stat command raw output: '{Output}' (length: {Length})", 
+
+            logger.LogInformation("stat command raw output: '{Output}' (length: {Length})",
                 output, output?.Length ?? 0);
-            
+
             if (string.IsNullOrWhiteSpace(output))
             {
                 logger.LogWarning("stat command returned empty output for {FilePath}", filePath);
                 return null;
             }
-            
+
             // Trim all whitespace
             var trimmedOutput = output.Trim();
-            
-            logger.LogInformation("After trim: '{TrimmedOutput}' (length: {Length})", 
+
+            logger.LogInformation("After trim: '{TrimmedOutput}' (length: {Length})",
                 trimmedOutput, trimmedOutput.Length);
-            
+
             if (long.TryParse(trimmedOutput, out var size))
             {
                 logger.LogInformation("Got file size for {FilePath}: {Size} bytes", filePath, size);
                 return size;
             }
-            
+
             logger.LogWarning("Could not parse file size. Output: '{Output}'", trimmedOutput);
             return null;
         }
@@ -349,12 +347,12 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
         {
             var command = string.Format(GetFileContentCommand, filePath);
             var content = await ExecuteCommandAsync(podName, podNamespace, command, cancellationToken);
-            
+
             if (string.IsNullOrWhiteSpace(content))
             {
                 return null;
             }
-            
+
             return content.Trim();
         }
         catch (Exception ex)
@@ -381,38 +379,38 @@ public class PodCommandExecutor(IKubernetes? kubernetes, ILogger<PodCommandExecu
 
             // Use cat - it outputs exactly the file size (verified: cat | wc -c == stat)
             var command = string.Format(StreamFileCommand, filePath);
-            
+
             if (expectedSize.HasValue)
             {
-                logger.LogInformation("Expected file size: {Size} bytes ({FormattedSize})", 
+                logger.LogInformation("Expected file size: {Size} bytes ({FormattedSize})",
                     expectedSize.Value, expectedSize.Value.ToPrettySize());
             }
-            
+
             if (kubernetes == null)
             {
                 throw new InvalidOperationException("Kubernetes client is not available");
             }
-            
+
             var webSocket = await kubernetes.WebSocketNamespacedPodExecAsync(
                 podName,
                 podNamespace,
-                new[] { "sh", "-c", command },
+                ["sh", "-c", command],
                 QdrantConstants.ContainerName,
                 cancellationToken: cancellationToken);
 
             // Create a stream that will read from WebSocket (base64 encoded)
             var webSocketStream = new WebSocketStream(webSocket, logger, filePath, podName, null);
-            
+
             // Wrap in CryptoStream to decode base64 on the fly
             var base64Transform = new System.Security.Cryptography.FromBase64Transform();
             var decodingStream = new System.Security.Cryptography.CryptoStream(
-                webSocketStream, 
-                base64Transform, 
+                webSocketStream,
+                base64Transform,
                 System.Security.Cryptography.CryptoStreamMode.Read);
-            
+
             logger.LogInformation("Started streaming file {FilePath} from pod {PodName} (base64 encoded)",
                 filePath, podName);
-            
+
             return decodingStream;
         }
         catch (Exception ex)

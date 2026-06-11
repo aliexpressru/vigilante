@@ -1,4 +1,3 @@
-using Vigilante.Constants;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
@@ -15,10 +14,11 @@ public class QdrantMonitorService(
     ILogger<QdrantMonitorService> logger)
     : BackgroundService
 {
-    internal DynamicConfig DynamicConfig = new();
     private bool? _previousNeedsAttention;
     private CancellationTokenSource? _delayCts;
-    private readonly object _configLock = new();
+    private readonly Lock _configLock = new();
+
+    internal DynamicConfig DynamicConfig { get; set; } = new();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -50,7 +50,7 @@ public class QdrantMonitorService(
 
                     TrackClusterStatusChange(state);
 
-                    if (!state.Health.IsHealthy || state.Health.Issues.Any())
+                    if (!state.Health.IsHealthy || state.Health.Issues.Count != 0)
                     {
                         logger.LogWarning("Cluster Status: {Status} | Healthy: {HealthyNodes}/{TotalNodes} | Issues: {Issues}",
                             state.Status,
@@ -137,7 +137,7 @@ public class QdrantMonitorService(
     internal void TrackClusterStatusChange(ClusterState state)
     {
         var currentStatus = state.Status;
-        var hasIssues = state.Health.Issues.Any();
+        var hasIssues = state.Health.Issues.Count != 0;
         var needsAttention = hasIssues || currentStatus is ClusterStatus.Degraded or ClusterStatus.Unavailable;
         var reason = hasIssues ? "active issues" : currentStatus.ToString();
 

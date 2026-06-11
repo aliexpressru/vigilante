@@ -21,23 +21,23 @@ public class KubernetesManager(
         {
             return false;
         }
-        
+
         if (string.IsNullOrEmpty(namespaceParameter))
         {
             logger.LogWarning(KubernetesConstants.NamespaceNotProvidedForPodMessage, podName, KubernetesConstants.DefaultNamespace);
         }
-        
+
         var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
-        
+
         try
         {
             logger.LogInformation("Deleting pod {PodName} in namespace {Namespace}", podName, ns);
-            
+
             await kubernetes.CoreV1.DeleteNamespacedPodAsync(
                 name: podName,
                 namespaceParameter: ns,
                 cancellationToken: cancellationToken);
-            
+
             logger.LogInformation("Successfully deleted pod {PodName}", podName);
             return true;
         }
@@ -78,7 +78,6 @@ public class KubernetesManager(
             string.Format(KubernetesConstants.ScaleOperationFormat, replicas),
             cancellationToken);
     }
-
 
     public async Task<List<string>> GetWarningEventsAsync(string? namespaceParameter = null, CancellationToken cancellationToken = default)
     {
@@ -152,7 +151,7 @@ public class KubernetesManager(
         catch (Exception ex)
         {
             // Check if it's a Forbidden error (RBAC issue)
-            if (ex.Message.Contains(KubernetesConstants.ForbiddenError) || 
+            if (ex.Message.Contains(KubernetesConstants.ForbiddenError) ||
                 ex.Message.Contains(KubernetesConstants.ForbiddenStatusCode))
             {
                 logger.LogWarning(KubernetesConstants.RbacPermissionErrorMessage, ns);
@@ -196,7 +195,7 @@ public class KubernetesManager(
 
         var ns = namespaceParameter ?? GetCurrentNamespace();
 
-        logger.LogInformation("Updating ConfigMap {Name} key {Key} in namespace {Namespace}", 
+        logger.LogInformation("Updating ConfigMap {Name} key {Key} in namespace {Namespace}",
             configMapName, key, ns);
 
         var patch = new
@@ -212,7 +211,7 @@ public class KubernetesManager(
             configMapName,
             ns,
             cancellationToken: cancellationToken);
-        
+
         logger.LogInformation("Successfully updated ConfigMap {Name} key {Key}", configMapName, key);
     }
 
@@ -418,43 +417,43 @@ public class KubernetesManager(
         {
             return false;
         }
-        
+
         if (string.IsNullOrEmpty(namespaceParameter))
         {
-            logger.LogWarning(KubernetesConstants.NamespaceNotProvidedForStatefulSetMessage, 
+            logger.LogWarning(KubernetesConstants.NamespaceNotProvidedForStatefulSetMessage,
                 statefulSetName, KubernetesConstants.DefaultNamespace);
         }
-        
+
         var ns = namespaceParameter ?? KubernetesConstants.DefaultNamespace;
-        
+
         try
         {
-            logger.LogInformation("Performing {Operation} for StatefulSet {StatefulSetName} in namespace {Namespace}", 
+            logger.LogInformation("Performing {Operation} for StatefulSet {StatefulSetName} in namespace {Namespace}",
                 operationDescription, statefulSetName, ns);
-            
+
             // Get current StatefulSet
             var statefulSet = await kubernetes.AppsV1.ReadNamespacedStatefulSetAsync(
                 name: statefulSetName,
                 namespaceParameter: ns,
                 cancellationToken: cancellationToken);
-            
+
             // Apply modification
             modifyAction(statefulSet);
-            
+
             // Update StatefulSet
             await kubernetes.AppsV1.ReplaceNamespacedStatefulSetAsync(
                 body: statefulSet,
                 name: statefulSetName,
                 namespaceParameter: ns,
                 cancellationToken: cancellationToken);
-            
-            logger.LogInformation("Successfully performed {Operation} for StatefulSet {StatefulSetName}", 
+
+            logger.LogInformation("Successfully performed {Operation} for StatefulSet {StatefulSetName}",
                 operationDescription, statefulSetName);
             return true;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to {Operation} for StatefulSet {StatefulSetName} in namespace {Namespace}", 
+            logger.LogError(ex, "Failed to {Operation} for StatefulSet {StatefulSetName} in namespace {Namespace}",
                 operationDescription, statefulSetName, ns);
             return false;
         }
@@ -562,15 +561,29 @@ public class KubernetesManager(
         }
 
         if (TryParseBinaryQuantity(trimmed, "Ki", 1L << 10, out var kibibytes))
+        {
             return kibibytes;
+        }
+
         if (TryParseBinaryQuantity(trimmed, "Mi", 1L << 20, out var mebibytes))
+        {
             return mebibytes;
+        }
+
         if (TryParseBinaryQuantity(trimmed, "Gi", 1L << 30, out var gibibytes))
+        {
             return gibibytes;
+        }
+
         if (TryParseBinaryQuantity(trimmed, "Ti", 1L << 40, out var tebibytes))
+        {
             return tebibytes;
+        }
+
         if (TryParseBinaryQuantity(trimmed, "Pi", 1L << 50, out var pebibytes))
+        {
             return pebibytes;
+        }
 
         return null;
     }

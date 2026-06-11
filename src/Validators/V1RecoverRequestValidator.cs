@@ -41,5 +41,5 @@ public class V1RecoverRequestValidator : AbstractValidator<V1RecoverRequest>
         !string.IsNullOrWhiteSpace(url) && Uri.TryCreate(url, UriKind.Absolute, out _);
 
     private static bool BeValidSource(string? source) =>
-        source == "KubernetesStorage" || source == "QdrantApi" || source == "S3Storage";
+        source is "KubernetesStorage" or "QdrantApi" or "S3Storage";
 }
