@@ -38,12 +38,12 @@ public partial class SnapshotService(
         string targetNodeUrl,
         Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
         bool waitForResult,
+        CancellationToken cancellationToken,
         SnapshotSource? source = null,
         string? snapshotName = null,
         string? sourceCollectionName = null,
         string? snapshotUrl = null,
-        string? snapshotChecksum = null,
-        CancellationToken cancellationToken = default)
+        string? snapshotChecksum = null)
     {
         if (waitForResult)
         {
@@ -76,19 +76,20 @@ public partial class SnapshotService(
             AlreadyInProgress: false,
             Message: $"Recovery started for collection '{collectionName}'"));
 
-        async Task<SnapshotRecoveryStartResult> ExecuteRecoverStartAsync(CancellationToken token)
+        async Task<SnapshotRecoveryStartResult> ExecuteRecoverStartAsync(CancellationToken ct)
         {
             var (success, error) = await ExecuteRecoverAsync(
                 collectionName,
                 targetNodeUrl,
                 snapshotPriority,
                 waitForResult: true,
+                ct,
                 source,
                 snapshotName,
                 sourceCollectionName,
                 snapshotUrl,
-                snapshotChecksum,
-                token);
+                snapshotChecksum);
+
             return success
                 ? new SnapshotRecoveryStartResult(false, false, $"Collection '{collectionName}' recovered successfully")
                 : new SnapshotRecoveryStartResult(true, false, error ?? "Recovery failed");
@@ -100,12 +101,12 @@ public partial class SnapshotService(
         string targetNodeUrl,
         Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
         bool waitForResult,
+        CancellationToken cancellationToken,
         SnapshotSource? source = null,
         string? snapshotName = null,
         string? sourceCollectionName = null,
         string? snapshotUrl = null,
-        string? snapshotChecksum = null,
-        CancellationToken cancellationToken = default)
+        string? snapshotChecksum = null)
     {
         try
         {
@@ -198,7 +199,7 @@ public partial class SnapshotService(
     public async Task<CreateCollectionSnapshotBatchResult> CreateCollectionSnapshotAsync(
         string collectionName,
         IEnumerable<string> nodeUrls,
-        CancellationToken cancellationToken = default,
+        CancellationToken cancellationToken,
         bool waitForResult = false,
         int? retainLastNAfterVisible = null,
         IReadOnlySet<string>? retentionClusterPeerIds = null)
@@ -414,7 +415,7 @@ public partial class SnapshotService(
         string collectionName,
         string snapshotName,
         IEnumerable<(string PodName, string PodNamespace)> pods,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         var podsList = pods.ToList();
         logger.LogInformation(
@@ -458,10 +459,10 @@ public partial class SnapshotService(
         string collectionName,
         string snapshotName,
         SnapshotSource source,
+        CancellationToken cancellationToken,
         string? nodeUrl = null,
         string? podName = null,
-        string? podNamespace = null,
-        CancellationToken cancellationToken = default)
+        string? podNamespace = null)
     {
         logger.LogInformation("Deleting snapshot {SnapshotName} for collection {CollectionName} (source: {Source})",
             snapshotName, collectionName, source);
@@ -621,9 +622,9 @@ public partial class SnapshotService(
         string nodeUrl,
         string collectionName,
         string snapshotName,
+        CancellationToken cancellationToken,
         string? podName = null,
-        string? podNamespace = null,
-        CancellationToken cancellationToken = default)
+        string? podNamespace = null)
     {
         logger.LogInformation(
             "Downloading snapshot {SnapshotName} for collection {CollectionName} with fallback (S3 → API → Disk)",
@@ -714,8 +715,8 @@ public partial class SnapshotService(
     }
 
     public async Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(
+        CancellationToken cancellationToken,
         bool clearCache = false,
-        CancellationToken cancellationToken = default,
         IReadOnlyList<NodeInfo>? nodesToUse = null)
     {
         await _cacheLock.WaitAsync(cancellationToken);
@@ -1036,14 +1037,14 @@ public partial class SnapshotService(
     public async Task EnforceRetentionAsync(
         string collectionName,
         int retainLastN,
-        IReadOnlySet<string>? currentClusterPeerIds = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? currentClusterPeerIds = null)
     {
         logger.LogInformation(
             "Enforcing retention of last {RetainLastN} snapshots per node for collection {CollectionName}",
             retainLastN, collectionName);
 
-        var allSnapshots = await GetSnapshotsInfoAsync(clearCache: true, cancellationToken);
+        var allSnapshots = await GetSnapshotsInfoAsync(cancellationToken, clearCache: true);
         var collectionSnapshots = allSnapshots.Where(s => s.CollectionName == collectionName).ToList();
 
         if (collectionSnapshots.Count == 0)
@@ -1234,7 +1235,7 @@ public partial class SnapshotService(
         var nodes = nodeUrls.Select(u => new NodeInfo { Url = u }).ToList();
         try
         {
-            var list = await GetSnapshotsInfoAsync(true, cancellationToken, nodesToUse: nodes).ConfigureAwait(false);
+            var list = await GetSnapshotsInfoAsync(cancellationToken, true, nodesToUse: nodes).ConfigureAwait(false);
             return list
                 .Where(s => string.Equals(s.CollectionName, collectionName, StringComparison.OrdinalIgnoreCase))
                 .Select(PendingSnapshotCreationJob.BaselineKey)

@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Vigilante.Constants;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
@@ -28,6 +26,7 @@ public sealed class PendingSnapshotCreationJob : IJob
     private readonly TimeSpan _timeout;
 
     public string Key => KeyPrefix + _collectionName;
+
     public bool IsWaitingForReady => false;
 
     public PendingSnapshotCreationJob(
@@ -55,11 +54,15 @@ public sealed class PendingSnapshotCreationJob : IJob
     {
         if (s.Source == SnapshotSource.S3Storage
             || string.Equals(s.NodeUrl, S3Constants.StorageIdentifier, StringComparison.OrdinalIgnoreCase))
+        {
             return "s3:" + s.SnapshotName;
+        }
+
         return "n:" + s.NodeUrl + "|" + s.SnapshotName;
     }
 
     public Task<bool?> CheckReadyAsync(CancellationToken cancellationToken) => Task.FromResult<bool?>(true);
+
     public void OnReady() { }
 
     public async Task<(bool HasMore, bool Success, string? ErrorMessage)> AdvanceAsync(CancellationToken cancellationToken)
@@ -82,8 +85,8 @@ public sealed class PendingSnapshotCreationJob : IJob
         try
         {
             snapshots = await snapshotService.GetSnapshotsInfoAsync(
-                clearCache: true,
                 cancellationToken,
+                clearCache: true,
                 nodesToUse: _requestedNodes);
         }
         catch (Exception ex)
@@ -138,9 +141,15 @@ public sealed class PendingSnapshotCreationJob : IJob
     {
         var t0 = _requestedAtUtc.AddSeconds(-15);
         if (s.S3StorageModifiedUtc is { } sm && sm >= t0)
+        {
             return true;
+        }
+
         if (s.CreatedAt is { } ca && ca >= t0)
+        {
             return true;
+        }
+
         return false;
     }
 
@@ -157,8 +166,8 @@ public sealed class PendingSnapshotCreationJob : IJob
                     .EnforceRetentionAsync(
                         _collectionName,
                         _retainLastNAfterVisible.Value,
-                        _retentionClusterPeerIds,
-                        cancellationToken)
+                        cancellationToken,
+                        _retentionClusterPeerIds)
                     .ConfigureAwait(false);
                 logger.LogInformation(
                     "Retention (last {N}) applied for {Collection} after snapshots became visible",

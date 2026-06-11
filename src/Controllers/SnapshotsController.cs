@@ -29,7 +29,7 @@ public class SnapshotsController(
         try
         {
             var state = await clusterManager.GetClusterStateAsync(cancellationToken);
-            var result = await snapshotService.GetSnapshotsInfoAsync(request.ClearCache, cancellationToken, state.Nodes);
+            var result = await snapshotService.GetSnapshotsInfoAsync(cancellationToken, request.ClearCache, state.Nodes);
 
             var snapshotDtos = result
                 .Select(snapshot => new V1GetSnapshotsInfoPaginatedResponse.SnapshotInfoDto
@@ -298,9 +298,9 @@ public class SnapshotsController(
                     request.NodeUrl!,
                     request.CollectionName,
                     request.SnapshotName,
+                    cancellationToken,
                     request.PodName ?? string.Empty,
-                    request.PodNamespace ?? string.Empty,
-                    cancellationToken);
+                    request.PodNamespace ?? string.Empty);
             }
 
             if (snapshotStream == null)
@@ -345,12 +345,12 @@ public class SnapshotsController(
                 request.TargetNodeUrl,
                 snapshotPriority,
                 request.WaitForResult,
+                cancellationToken,
                 source: source,
                 snapshotName: request.SnapshotName,
                 sourceCollectionName: request.SourceCollectionName,
                 snapshotUrl: request.SnapshotUrl,
-                snapshotChecksum: request.SnapshotChecksum,
-                cancellationToken);
+                snapshotChecksum: request.SnapshotChecksum);
 
             if (result.AlreadyInProgress)
             {

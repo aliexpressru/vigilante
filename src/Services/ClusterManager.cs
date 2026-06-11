@@ -1125,7 +1125,7 @@ public partial class ClusterManager(
         try
         {
             var state = await GetClusterStateAsync(cancellationToken);
-            var allSnapshots = await snapshotService.GetSnapshotsInfoAsync(clearCache: true, cancellationToken, state.Nodes);
+            var allSnapshots = await snapshotService.GetSnapshotsInfoAsync(cancellationToken, clearCache: true, state.Nodes);
             var collectionSnapshots = allSnapshots.Where(s => s.CollectionName == collectionName).ToList();
 
             if (collectionSnapshots.Count == 0)

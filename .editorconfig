@@ -20,8 +20,6 @@ dotnet_diagnostic.IDE0037.severity = silent
 # suppress unconditional logger calls warnings
 dotnet_diagnostic.CA1873.severity = silent
 
-
-
 # Heap allocations viewer
 dotnet_diagnostic.HAA0101.severity = silent
 dotnet_diagnostic.HAA0102.severity = suggestion

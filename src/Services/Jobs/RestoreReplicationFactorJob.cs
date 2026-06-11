@@ -13,15 +13,16 @@ namespace Vigilante.Services.Jobs;
 internal sealed class RestoreReplicationFactorJob : IJob
 {
     private readonly IQdrantHttpClient _client;
-    private readonly string _collectionName;
     private readonly IAsyncEnumerator<ReplicateShardsToPeerResponse> _enumerator;
     private readonly DateTime _startedAtUtc;
     private readonly IReadOnlyList<ScheduledShardReplication> _replicationPlanSnapshot;
-    private bool _waitingForReady;
     private bool _disposed;
 
-    public string Key => _collectionName;
-    public bool IsWaitingForReady => _waitingForReady;
+    public string Key => CollectionName;
+
+    public bool IsWaitingForReady { get; private set; }
+
+    public string CollectionName { get; }
 
     private RestoreReplicationFactorJob(
         IQdrantHttpClient client,
@@ -31,11 +32,11 @@ internal sealed class RestoreReplicationFactorJob : IJob
         bool waitingForReady)
     {
         _client = client;
-        _collectionName = collectionName;
+        CollectionName = collectionName;
         _enumerator = enumerator;
         _startedAtUtc = DateTime.UtcNow;
         _replicationPlanSnapshot = replicationPlanSnapshot;
-        _waitingForReady = waitingForReady;
+        IsWaitingForReady = waitingForReady;
     }
 
     /// <summary>
@@ -60,7 +61,9 @@ internal sealed class RestoreReplicationFactorJob : IJob
             timeout: timeout);
 
         if (response is null)
+        {
             return (null, null);
+        }
 
         if (response.Status.IsSuccess != true)
         {
@@ -68,10 +71,14 @@ internal sealed class RestoreReplicationFactorJob : IJob
         }
 
         if (response.Result is null)
+        {
             return (null, null);
+        }
 
         if (!response.Result.ShardsNeedReplication)
+        {
             return (null, null);
+        }
 
         var replicator = response.Result;
         // Snapshot the full plan BEFORE the first MoveNextAsync() call, because MoveNext dequeues step #1.
@@ -93,7 +100,9 @@ internal sealed class RestoreReplicationFactorJob : IJob
             itemFailurePrefix: "Step 1: replication failed");
 
         if (step1Failure is not null)
+        {
             return (null, step1Failure);
+        }
 
         var job = new RestoreReplicationFactorJob(client, collectionName, enumerator, replicationPlanSnapshot, waitingForReady: true);
         return (job, null);
@@ -102,7 +111,7 @@ internal sealed class RestoreReplicationFactorJob : IJob
     public IReadOnlyDictionary<string, object?>? GetMetadata()
     {
         // Keep metadata stable for the whole job lifetime; live ReplicationPlan queue is consumed during execution.
-        var currentAction = _waitingForReady
+        var currentAction = IsWaitingForReady
             ? "Waiting for shard transfers to complete"
             : "Restoring replication factor";
 
@@ -113,7 +122,9 @@ internal sealed class RestoreReplicationFactorJob : IJob
         };
 
         if (_replicationPlanSnapshot.Count > 0)
+        {
             metadata[JobMetadataKeys.ReplicationPlan] = _replicationPlanSnapshot;
+        }
 
         return metadata;
     }
@@ -121,7 +132,7 @@ internal sealed class RestoreReplicationFactorJob : IJob
     public async Task<bool?> CheckReadyAsync(CancellationToken cancellationToken)
     {
         var readyResponse = await _client.CheckCollectionReady(
-            _collectionName,
+            CollectionName,
             cancellationToken,
             requiredNumberOfGreenCollectionResponses: 1,
             isCheckShardTransfersCompleted: true);
@@ -130,12 +141,12 @@ internal sealed class RestoreReplicationFactorJob : IJob
 
     public void OnReady()
     {
-        _waitingForReady = false;
+        IsWaitingForReady = false;
     }
 
     public async Task<(bool HasMore, bool Success, string? ErrorMessage)> AdvanceAsync(CancellationToken cancellationToken)
     {
-        if (_waitingForReady)
+        if (IsWaitingForReady)
         {
             throw new InvalidOperationException("Call OnReady() after CheckReadyAsync returned true before calling AdvanceAsync.");
         }
@@ -153,16 +164,21 @@ internal sealed class RestoreReplicationFactorJob : IJob
             itemFailurePrefix: "Replication failed");
 
         if (failure is not null)
+        {
             return (false, false, failure);
+        }
 
-        _waitingForReady = true;
+        IsWaitingForReady = true;
         return (true, true, null);
     }
 
     public ValueTask DisposeAsync()
     {
         if (_disposed)
+        {
             return ValueTask.CompletedTask;
+        }
+
         _disposed = true;
         return _enumerator.DisposeAsync();
     }
@@ -187,12 +203,16 @@ internal sealed class RestoreReplicationFactorJob : IJob
 
         var replicatedShards = replicateResponse.Result?.ReplicatedShards;
         if (replicatedShards is null)
+        {
             return noReplicatedShardsMessage;
+        }
 
         foreach (var item in replicatedShards)
         {
             if (item.IsSuccess)
+            {
                 continue;
+            }
 
             return $"{itemFailurePrefix} (ShardId: {item.ShardId}, Source: {item.SourcePeerId}, Target: {item.TargetPeerId})";
         }

@@ -1,6 +1,6 @@
-namespace Vigilante.Services.Interfaces;
-
 using Vigilante.Models;
+
+namespace Vigilante.Services.Interfaces;
 
 /// <summary>
 /// Interface for managing Kubernetes resources (pods, StatefulSets)
@@ -21,17 +21,17 @@ public interface IKubernetesManager
     /// Scales a StatefulSet to the specified number of replicas
     /// </summary>
     Task<bool> ScaleStatefulSetAsync(string statefulSetName, int replicas, string? namespaceParameter = null, CancellationToken cancellationToken = default);
-    
+
     /// <summary>
     /// Gets warning events from Kubernetes for the specified namespace
     /// </summary>
     Task<List<string>> GetWarningEventsAsync(string? namespaceParameter = null, CancellationToken cancellationToken = default);
-    
+
     /// <summary>
     /// Gets the current namespace from the service account namespace file, or returns default namespace
     /// </summary>
     string GetCurrentNamespace();
-    
+
     /// <summary>
     /// Updates a specific key in ConfigMap data
     /// </summary>

@@ -66,7 +66,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -119,7 +119,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -158,7 +158,7 @@ public class SnapshotsControllerTests
             Source = SnapshotSource.KubernetesStorage
         }).ToList();
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -188,7 +188,7 @@ public class SnapshotsControllerTests
     {
         // Arrange
         var snapshots = new List<SnapshotInfo>();
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -202,14 +202,14 @@ public class SnapshotsControllerTests
         await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        await _snapshotService.Received(1).GetSnapshotsInfoAsync(true, Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), true, Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     [Test]
     public async Task GetSnapshotsInfo_WhenExceptionThrown_Returns500()
     {
         // Arrange
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(Task.FromException<IReadOnlyList<SnapshotInfo>>(new Exception("Test error")));
 
         var request = new V1GetSnapshotsInfoRequest
@@ -488,9 +488,9 @@ public class SnapshotsControllerTests
             request.NodeUrl,
             request.CollectionName,
             request.SnapshotName,
+            Arg.Any<CancellationToken>(),
             request.PodName,
-            request.PodNamespace,
-            Arg.Any<CancellationToken>())
+            request.PodNamespace)
             .Returns(stream);
 
         // Act
@@ -519,9 +519,9 @@ public class SnapshotsControllerTests
             Arg.Any<string>(),
             Arg.Any<string>(),
             Arg.Any<string>(),
+            Arg.Any<CancellationToken>(),
             Arg.Any<string?>(),
-            Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
+            Arg.Any<string?>())
             .Returns((Stream?)null);
 
         // Act
@@ -554,12 +554,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 SnapshotSource.KubernetesStorage,
                 request.SnapshotName,
                 request.SourceCollectionName,
                 null,
-                null,
-                Arg.Any<CancellationToken>())
+                null)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: false,
@@ -592,12 +592,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 SnapshotSource.KubernetesStorage,
                 request.SnapshotName,
                 request.SourceCollectionName,
                 null,
-                null,
-                Arg.Any<CancellationToken>())
+                null)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: true,
@@ -630,12 +630,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 SnapshotSource.S3Storage,
                 request.SnapshotName,
                 request.SourceCollectionName,
                 null,
-                null,
-                Arg.Any<CancellationToken>())
+                null)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: false,
@@ -646,18 +646,18 @@ public class SnapshotsControllerTests
 
         // Assert
         Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
-        
+
         await _snapshotService.Received(1).RequestRecoverAsync(
             request.CollectionName,
             request.TargetNodeUrl,
             Arg.Any<SnapshotPriority>(),
             request.WaitForResult,
+            Arg.Any<CancellationToken>(),
             SnapshotSource.S3Storage,
             request.SnapshotName,
             request.SourceCollectionName,
             null,
-            null,
-            Arg.Any<CancellationToken>());
+            null);
     }
 
     [Test]
@@ -678,12 +678,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 SnapshotSource.S3Storage,
                 request.SnapshotName,
                 request.SourceCollectionName,
                 null,
-                null,
-                Arg.Any<CancellationToken>())
+                null)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: false,
@@ -694,18 +694,18 @@ public class SnapshotsControllerTests
 
         // Assert
         Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
-        
+
         await _snapshotService.Received(1).RequestRecoverAsync(
             request.CollectionName,
             request.TargetNodeUrl,
             Arg.Any<SnapshotPriority>(),
             request.WaitForResult,
+            Arg.Any<CancellationToken>(),
             SnapshotSource.S3Storage,
             request.SnapshotName,
             request.SourceCollectionName,
             null,
-            null,
-            Arg.Any<CancellationToken>());
+            null);
     }
 
     [Test]
@@ -726,12 +726,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 SnapshotSource.KubernetesStorage,
                 request.SnapshotName,
                 request.SourceCollectionName,
                 null,
-                null,
-                Arg.Any<CancellationToken>())
+                null)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: false,
@@ -767,7 +767,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -780,7 +780,7 @@ public class SnapshotsControllerTests
         await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        await _snapshotService.Received(1).GetSnapshotsInfoAsync(true, Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), true, Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     [Test]
@@ -802,7 +802,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -815,7 +815,7 @@ public class SnapshotsControllerTests
         await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        await _snapshotService.Received(1).GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), false, Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     [Test]
@@ -837,7 +837,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -849,7 +849,7 @@ public class SnapshotsControllerTests
         await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        await _snapshotService.Received(1).GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), false, Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     #endregion
@@ -874,12 +874,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 null,
                 null,
                 null,
                 request.SnapshotUrl,
-                request.SnapshotChecksum,
-                Arg.Any<CancellationToken>())
+                request.SnapshotChecksum)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: false,
@@ -912,12 +912,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 null,
                 null,
                 null,
                 request.SnapshotUrl,
-                request.SnapshotChecksum,
-                Arg.Any<CancellationToken>())
+                request.SnapshotChecksum)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: true,
                 AlreadyInProgress: false,
@@ -949,12 +949,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 null,
                 null,
                 null,
                 request.SnapshotUrl,
-                request.SnapshotChecksum,
-                Arg.Any<CancellationToken>())
+                request.SnapshotChecksum)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: false,

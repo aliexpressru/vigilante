@@ -16,7 +16,7 @@ public interface ISnapshotService
     Task<CreateCollectionSnapshotBatchResult> CreateCollectionSnapshotAsync(
         string collectionName,
         IEnumerable<string> nodeUrls,
-        CancellationToken cancellationToken = default,
+        CancellationToken cancellationToken,
         bool waitForResult = false,
         int? retainLastNAfterVisible = null,
         IReadOnlySet<string>? retentionClusterPeerIds = null);
@@ -45,7 +45,7 @@ public interface ISnapshotService
         string collectionName,
         string snapshotName,
         IEnumerable<string> nodeUrls,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Deletes a snapshot file from specified pods on disk
@@ -54,7 +54,7 @@ public interface ISnapshotService
         string collectionName,
         string snapshotName,
         IEnumerable<(string PodName, string PodNamespace)> pods,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Deletes a snapshot file directly from disk on a specific pod
@@ -73,9 +73,9 @@ public interface ISnapshotService
         string nodeUrl,
         string collectionName,
         string snapshotName,
+        CancellationToken cancellationToken,
         string? podName = null,
-        string? podNamespace = null,
-        CancellationToken cancellationToken = default);
+        string? podNamespace = null);
 
     /// <summary>
     /// Downloads a snapshot for a collection from a specific node via Qdrant API
@@ -104,8 +104,8 @@ public interface ISnapshotService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="nodesToUse">When provided, only these nodes are queried (e.g. current cluster nodes). When null, all nodes from provider are used.</param>
     Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(
+        CancellationToken cancellationToken,
         bool clearCache = false,
-        CancellationToken cancellationToken = default,
         IReadOnlyList<NodeInfo>? nodesToUse = null);
 
     /// <summary>
@@ -115,10 +115,10 @@ public interface ISnapshotService
         string collectionName,
         string snapshotName,
         SnapshotSource source,
+        CancellationToken cancellationToken,
         string? nodeUrl = null,
         string? podName = null,
-        string? podNamespace = null,
-        CancellationToken cancellationToken = default);
+        string? podNamespace = null);
 
     /// <summary>
     /// Enforces retention policy: keeps last N snapshots per node for a collection, deletes older ones.
@@ -127,8 +127,8 @@ public interface ISnapshotService
     Task EnforceRetentionAsync(
         string collectionName,
         int retainLastN,
-        IReadOnlySet<string>? currentClusterPeerIds = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? currentClusterPeerIds = null);
 
     /// <summary>
     /// Clears the in-memory snapshot cache.
@@ -140,23 +140,23 @@ public interface ISnapshotService
         string targetNodeUrl,
         Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
         bool waitForResult,
+        CancellationToken cancellationToken,
         SnapshotSource? source = null,
         string? snapshotName = null,
         string? sourceCollectionName = null,
         string? snapshotUrl = null,
-        string? snapshotChecksum = null,
-        CancellationToken cancellationToken = default);
+        string? snapshotChecksum = null);
 
     Task<(bool Success, string? ErrorMessage)> ExecuteRecoverAsync(
         string collectionName,
         string targetNodeUrl,
         Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
         bool waitForResult,
+        CancellationToken cancellationToken,
         SnapshotSource? source = null,
         string? snapshotName = null,
         string? sourceCollectionName = null,
         string? snapshotUrl = null,
-        string? snapshotChecksum = null,
-        CancellationToken cancellationToken = default);
+        string? snapshotChecksum = null);
 
 }

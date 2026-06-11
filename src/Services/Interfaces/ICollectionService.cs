@@ -49,7 +49,6 @@ public interface ICollectionService
     Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client,
         CancellationToken cancellationToken = default);
 
-
     /// <summary>
     /// Deletes a collection via Qdrant API
     /// </summary>
@@ -66,7 +65,7 @@ public interface ICollectionService
         string podNamespace,
         string collectionName,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Checks if a collection exists on a specific node
     /// </summary>
@@ -80,7 +79,7 @@ public interface ICollectionService
         IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken,
         bool clearCache = false);
-    
+
     /// <summary>
     /// Gets enriched collections information from healthy nodes with storage and clustering data
     /// </summary>
