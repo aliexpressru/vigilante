@@ -72,7 +72,7 @@ public class ClusterManagerTests
         // Setup GetCollectionsFromQdrantAsync to return healthy status by default
         _collectionService
             .GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string, string, string?, string?)>>(),
+                Arg.Any<IEnumerable<(string, ulong, string?, string?)>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(([], true, (string?)null));
@@ -100,7 +100,7 @@ public class ClusterManagerTests
                 return Task.FromResult(new NodeInfo
                 {
                     Url = nodeUrl,
-                    PeerId = string.Empty, // Will be populated by GetNodeInfoAsync
+                    PeerId = 0, // Will be populated by GetNodeInfoAsync
                     Namespace = config.Namespace,
                     PodName = config.PodName,
                     StatefulSetName = config.StatefulSetName,
@@ -1112,7 +1112,7 @@ public class ClusterManagerTests
                 CollectionName = "test_collection",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 Metrics = new CollectionMetrics
                 {
                     { "prettySize", MetricConstants.NotAvailableValue },
@@ -1123,7 +1123,7 @@ public class ClusterManagerTests
 
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
-                Arg.Any<Dictionary<string, string>>(),
+                Arg.Any<Dictionary<ulong, string>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(apiCollections);
@@ -1134,7 +1134,7 @@ public class ClusterManagerTests
         // Assert
         await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
             Arg.Any<IReadOnlyList<NodeInfo>>(),
-            Arg.Any<Dictionary<string, string>>(),
+            Arg.Any<Dictionary<ulong, string>>(),
             Arg.Any<CancellationToken>(),
                 Arg.Any<bool>());
 
@@ -1177,7 +1177,7 @@ public class ClusterManagerTests
                 CollectionName = "missing_from_storage",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 Metrics = new CollectionMetrics
                 {
                     { "prettySize", MetricConstants.NotAvailableValue },
@@ -1189,7 +1189,7 @@ public class ClusterManagerTests
 
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
-                Arg.Any<Dictionary<string, string>>(),
+                Arg.Any<Dictionary<ulong, string>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(apiCollections);
@@ -1199,7 +1199,7 @@ public class ClusterManagerTests
                 Arg.Any<string>(),
                 Arg.Any<string>(),
                 Arg.Any<string>(),
-                Arg.Any<string>(),
+                Arg.Any<ulong>(),
                 Arg.Any<CancellationToken>())
             .Returns([]);
 
@@ -1249,7 +1249,7 @@ public class ClusterManagerTests
                 CollectionName = "test_collection",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 Metrics = new CollectionMetrics
                 {
                     { "prettySize", "1 GB" },
@@ -1260,7 +1260,7 @@ public class ClusterManagerTests
 
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
-                Arg.Any<Dictionary<string, string>>(),
+                Arg.Any<Dictionary<ulong, string>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(apiCollections);
@@ -1273,7 +1273,7 @@ public class ClusterManagerTests
                 CollectionName = "test_collection",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 SizeBytes = 1073741824L // 1 GB
             }
         };
@@ -1282,7 +1282,7 @@ public class ClusterManagerTests
                 Arg.Any<string>(),
                 Arg.Any<string>(),
                 Arg.Any<string>(),
-                Arg.Any<string>(),
+                Arg.Any<ulong>(),
                 Arg.Any<CancellationToken>())
             .Returns(storageCollections);
 
@@ -1331,7 +1331,7 @@ public class ClusterManagerTests
                 CollectionName = "collection_in_both",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 Metrics = new CollectionMetrics
                 {
                     { "prettySize", "476.84 MB" },
@@ -1343,7 +1343,7 @@ public class ClusterManagerTests
                 CollectionName = "collection_missing_from_storage",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 Metrics = new CollectionMetrics
                 {
                     { "prettySize", MetricConstants.NotAvailableValue },
@@ -1356,7 +1356,7 @@ public class ClusterManagerTests
                 CollectionName = "another_in_both",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 Metrics = new CollectionMetrics
                 {
                     { "prettySize", "715.26 MB" },
@@ -1367,7 +1367,7 @@ public class ClusterManagerTests
 
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
-                Arg.Any<Dictionary<string, string>>(),
+                Arg.Any<Dictionary<ulong, string>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(apiCollections);
@@ -1380,7 +1380,7 @@ public class ClusterManagerTests
                 CollectionName = "collection_in_both",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 SizeBytes = 500000000L
             },
             new()
@@ -1388,7 +1388,7 @@ public class ClusterManagerTests
                 CollectionName = "another_in_both",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 SizeBytes = 750000000L
             }
         };
@@ -1397,7 +1397,7 @@ public class ClusterManagerTests
                 Arg.Any<string>(),
                 Arg.Any<string>(),
                 Arg.Any<string>(),
-                Arg.Any<string>(),
+                Arg.Any<ulong>(),
                 Arg.Any<CancellationToken>())
             .Returns(storageCollections);
 
@@ -1451,7 +1451,7 @@ public class ClusterManagerTests
         // API returns no collections
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
-                Arg.Any<Dictionary<string, string>>(),
+                Arg.Any<Dictionary<ulong, string>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns([]);
@@ -1520,7 +1520,7 @@ public class ClusterManagerTests
                 CollectionName = "collection1",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 Metrics = new CollectionMetrics
                 {
                     { "prettySize", "953.67 MB" },
@@ -1532,7 +1532,7 @@ public class ClusterManagerTests
                 CollectionName = "collection1",
                 NodeUrl = "http://node2:6333",
                 PodName = "pod2",
-                PeerId = "1002",
+                PeerId = pod2Id,
                 Metrics = new CollectionMetrics
                 {
                     { "prettySize", MetricConstants.NotAvailableValue },
@@ -1544,7 +1544,7 @@ public class ClusterManagerTests
 
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
-                Arg.Any<Dictionary<string, string>>(),
+                Arg.Any<Dictionary<ulong, string>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(apiCollections);
@@ -1554,7 +1554,7 @@ public class ClusterManagerTests
                 "pod1",
                 Arg.Any<string>(),
                 "http://node1:6333",
-                Arg.Any<string>(),
+                Arg.Any<ulong>(),
                 Arg.Any<CancellationToken>())
             .Returns(
             [
@@ -1563,7 +1563,7 @@ public class ClusterManagerTests
                     CollectionName = "collection1",
                     NodeUrl = "http://node1:6333",
                     PodName = "pod1",
-                    PeerId = "1001",
+                    PeerId = pod1Id,
                     SizeBytes = 1000000000L
                 }
             ]);
@@ -1572,7 +1572,7 @@ public class ClusterManagerTests
                 "pod2",
                 Arg.Any<string>(),
                 "http://node2:6333",
-                Arg.Any<string>(),
+                Arg.Any<ulong>(),
                 Arg.Any<CancellationToken>())
             .Returns([]);
 
@@ -1624,7 +1624,7 @@ public class ClusterManagerTests
                 CollectionName = "test_collection",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 Metrics = new CollectionMetrics
                 {
                     { "prettySize", "1 MB" },
@@ -1635,7 +1635,7 @@ public class ClusterManagerTests
 
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
-                Arg.Any<Dictionary<string, string>>(),
+                Arg.Any<Dictionary<ulong, string>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(apiCollections);
@@ -1649,7 +1649,7 @@ public class ClusterManagerTests
         // Assert - ClusterManager calls CollectionService twice (caching is now handled inside CollectionService)
         await _collectionService.Received(2).GetEnrichedCollectionsInfoAsync(
             Arg.Any<IReadOnlyList<NodeInfo>>(),
-            Arg.Any<Dictionary<string, string>>(),
+            Arg.Any<Dictionary<ulong, string>>(),
             Arg.Any<CancellationToken>(),
             false); // Both calls should have clearCache=false
 
@@ -1692,7 +1692,7 @@ public class ClusterManagerTests
                 CollectionName = "collection1",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 Metrics = new CollectionMetrics { { "sizeBytes", 1000L } }
             }
         };
@@ -1704,14 +1704,14 @@ public class ClusterManagerTests
                 CollectionName = "collection2",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 Metrics = new CollectionMetrics { { "sizeBytes", 2000L } }
             }
         };
 
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
-                Arg.Any<Dictionary<string, string>>(),
+                Arg.Any<Dictionary<ulong, string>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(firstCollections, secondCollections);
@@ -1725,14 +1725,14 @@ public class ClusterManagerTests
         // Assert - First call should have clearCache=false
         await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
             Arg.Any<IReadOnlyList<NodeInfo>>(),
-            Arg.Any<Dictionary<string, string>>(),
+            Arg.Any<Dictionary<ulong, string>>(),
             Arg.Any<CancellationToken>(),
             false);
 
         // Assert - Second call should have clearCache=true
         await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
             Arg.Any<IReadOnlyList<NodeInfo>>(),
-            Arg.Any<Dictionary<string, string>>(),
+            Arg.Any<Dictionary<ulong, string>>(),
             Arg.Any<CancellationToken>(),
             true);
 
@@ -1773,7 +1773,7 @@ public class ClusterManagerTests
                 CollectionName = "collection1",
                 NodeUrl = "http://node1:6333",
                 PodName = "pod1",
-                PeerId = "1001",
+                PeerId = pod1Id,
                 Metrics = new CollectionMetrics { { "sizeBytes", 1000L } }
             }
         };
@@ -1782,7 +1782,7 @@ public class ClusterManagerTests
 
         _collectionService.GetEnrichedCollectionsInfoAsync(
                 Arg.Any<IReadOnlyList<NodeInfo>>(),
-                Arg.Any<Dictionary<string, string>>(),
+                Arg.Any<Dictionary<ulong, string>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(initialCollections, emptyCollections, emptyCollections);
@@ -1805,7 +1805,7 @@ public class ClusterManagerTests
         // Service should be called 3 times - caching is handled inside CollectionService
         await _collectionService.Received(3).GetEnrichedCollectionsInfoAsync(
             Arg.Any<IReadOnlyList<NodeInfo>>(),
-            Arg.Any<Dictionary<string, string>>(),
+            Arg.Any<Dictionary<ulong, string>>(),
             Arg.Any<CancellationToken>(),
             Arg.Any<bool>());
     }
@@ -2233,6 +2233,7 @@ public class ClusterManagerTests
             new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" },
             new QdrantNodeConfig { Host = "node3", Port = 6333, Namespace = "ns1", PodName = "pod3" }
         };
+
         var pod1Id = 1001UL;
         var pod2Id = 1002UL;
         var pod3Id = 1003UL;
@@ -2294,9 +2295,9 @@ public class ClusterManagerTests
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         state.Nodes.Should().HaveCount(2);
-        state.Nodes.Select(n => n.PeerId).Should().NotContain(pod3Id.ToString());
-        state.Nodes.Select(n => n.PeerId).Should().Contain(pod1Id.ToString());
-        state.Nodes.Select(n => n.PeerId).Should().Contain(pod2Id.ToString());
+        state.Nodes.Select(n => n.PeerId).Should().NotContain(pod3Id);
+        state.Nodes.Select(n => n.PeerId).Should().Contain(pod1Id);
+        state.Nodes.Select(n => n.PeerId).Should().Contain(pod2Id);
     }
 
     [Test]
@@ -2368,7 +2369,7 @@ public class ClusterManagerTests
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         state.Nodes.Should().HaveCount(3);
-        state.Nodes.Select(n => n.PeerId).Should().Contain(pod3Id.ToString());
+        state.Nodes.Select(n => n.PeerId).Should().Contain(pod3Id);
     }
 
     #endregion
@@ -2384,6 +2385,7 @@ public class ClusterManagerTests
             new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" },
             new QdrantNodeConfig { Host = "node3", Port = 6333, Namespace = "ns1", PodName = "pod3" }
         };
+
         var pod1Id = 1001UL;
         var pod2Id = 1002UL;
         var peersTwo = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>
@@ -2422,15 +2424,17 @@ public class ClusterManagerTests
             }));
 
         var mockClient3 = _mockClients.GetOrAdd("node3:6333", _ => Substitute.For<IQdrantHttpClient>());
+
         mockClient3.GetClusterInfo(Arg.Any<CancellationToken>())
             .Returns<GetClusterInfoResponse>(_ => throw new HttpRequestException("Connection refused"));
 
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         state.Nodes.Should().HaveCount(2);
-        state.Nodes.Select(n => n.PeerId).Should().Contain(pod1Id.ToString());
-        state.Nodes.Select(n => n.PeerId).Should().Contain(pod2Id.ToString());
-        state.Nodes.Any(n => n.PeerId == "node3:6333").Should().BeFalse();
+        state.Nodes.Select(n => n.PeerId).Should().Contain(pod1Id);
+        state.Nodes.Select(n => n.PeerId).Should().Contain(pod2Id);
+
+        state.Nodes.Any(n => n.PeerId == 0).Should().BeFalse();
     }
 
     [Test]
@@ -2445,13 +2449,14 @@ public class ClusterManagerTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var mockClient1 = _mockClients.GetOrAdd("node1:6333", _ => Substitute.For<IQdrantHttpClient>());
+
         mockClient1.GetClusterInfo(Arg.Any<CancellationToken>())
             .Returns<GetClusterInfoResponse>(_ => throw new HttpRequestException("Connection refused"));
 
         var state = await _clusterManager.GetClusterStateAsync(CancellationToken.None);
 
         state.Nodes.Should().HaveCount(1);
-        state.Nodes[0].PeerId.Should().Be("node1:6333");
+        state.Nodes[0].PeerId.Should().Be(0);
         state.Nodes[0].IsHealthy.Should().BeFalse();
     }
 
@@ -3338,7 +3343,7 @@ public class ClusterManagerTests
                 {
                     Url = "http://node1:6333",
                     PodName = "pod1",
-                    PeerId = "1001",
+                    PeerId = 1001,
                     IsHealthy = true,
                     IsLeader = true, // Mark as leader to avoid "No leader elected" issue
                     Issues = ["", "   ", null!, " real issue "],
@@ -3348,7 +3353,7 @@ public class ClusterManagerTests
                 {
                     Url = "http://node2:6333",
                     PodName = "pod2",
-                    PeerId = "1002",
+                    PeerId = 1002,
                     IsHealthy = true,
                     Issues = [],
                     Warnings = ["second warn"]
@@ -3524,9 +3529,9 @@ public class ClusterManagerTests
 
         // Assert - nodes should be sorted by PeerId when PodName is not available
         result.Nodes.Should().HaveCount(3);
-        result.Nodes[0].PeerId.Should().Be(peerId2.ToString());
-        result.Nodes[1].PeerId.Should().Be(peerId3.ToString());
-        result.Nodes[2].PeerId.Should().Be(peerId1.ToString());
+        result.Nodes[0].PeerId.Should().Be(peerId2);
+        result.Nodes[1].PeerId.Should().Be(peerId3);
+        result.Nodes[2].PeerId.Should().Be(peerId1);
     }
 
     [Test]
@@ -3605,7 +3610,7 @@ public class ClusterManagerTests
         // Assert - nodes with PodName should come first (sorted by name), then by PeerId
         result.Nodes.Should().HaveCount(3);
         // First should be peerId2 (no pod name, sorted by peerId which is "2002")
-        result.Nodes[0].PeerId.Should().Be(peerId2.ToString());
+        result.Nodes[0].PeerId.Should().Be(peerId2);
         result.Nodes[0].PodName.Should().BeNull();
         // Then qdrant-0
         result.Nodes[1].PodName.Should().Be("qdrant-0");

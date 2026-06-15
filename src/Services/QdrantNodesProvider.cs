@@ -131,7 +131,7 @@ public class QdrantNodesProvider(
         return new NodeInfo
         {
             Url = nodeUrl,
-            PeerId = peerId ?? string.Empty,
+            PeerId = peerId ?? 0,
             Namespace = nodeConfig.Namespace,
             PodName = nodeConfig.PodName,
             StatefulSetName = nodeConfig.StatefulSetName,
@@ -142,7 +142,7 @@ public class QdrantNodesProvider(
     /// <summary>
     /// Gets the peer ID for a specific node
     /// </summary>
-    private async Task<string?> GetPeerIdForNodeAsync(
+    private async Task<ulong?> GetPeerIdForNodeAsync(
         string nodeUrl,
         QdrantNodeConfig nodeConfig,
         CancellationToken cancellationToken)
@@ -158,7 +158,7 @@ public class QdrantNodesProvider(
 
             if (clusterInfo.Status.IsSuccess && clusterInfo.Result?.PeerId != null)
             {
-                return clusterInfo.Result.PeerId.ToString();
+                return clusterInfo.Result.PeerId;
             }
 
             logger.LogWarning("Failed to get cluster info from node {NodeUrl}: {Error}",

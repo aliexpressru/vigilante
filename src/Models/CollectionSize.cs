@@ -8,7 +8,7 @@ public class CollectionSize
 
     public required string NodeUrl { get; set; }
 
-    public required string PeerId { get; set; }
+    public required ulong PeerId { get; set; }
 
     public required string CollectionName { get; set; }
 

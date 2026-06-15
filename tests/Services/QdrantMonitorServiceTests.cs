@@ -5,6 +5,7 @@ using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 using Vigilante.Models;
+using Vigilante.Models.Snapshots;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
 using Vigilante.Services.Jobs;
@@ -72,7 +73,7 @@ public class QdrantMonitorServiceTests
         {
             Nodes =
             [
-                new() { PeerId = "node1", IsHealthy = true, IsLeader = true }
+                new() { PeerId = 1, IsHealthy = true, IsLeader = true }
             ]
         };
 
@@ -91,8 +92,8 @@ public class QdrantMonitorServiceTests
         {
             Nodes =
             [
-                new() { PeerId = "node1", IsHealthy = true, IsLeader = true },
-                new() { PeerId = "node2", IsHealthy = false }
+                new() { PeerId = 1, IsHealthy = true, IsLeader = true },
+                new() { PeerId = 2, IsHealthy = false }
             ]
         };
 
@@ -112,7 +113,7 @@ public class QdrantMonitorServiceTests
             Nodes =
             [
                 // Unavailable state: no healthy nodes, but still has a leader to avoid "No leader elected" issue
-                new() { PeerId = "node1", IsHealthy = false, IsLeader = true }
+                new() { PeerId = 1, IsHealthy = false, IsLeader = true }
             ]
         };
 

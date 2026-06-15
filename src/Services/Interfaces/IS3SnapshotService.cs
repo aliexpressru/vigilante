@@ -44,7 +44,7 @@ public interface IS3SnapshotService
     /// <summary>
     /// Checks if S3 storage is configured and available
     /// </summary>
-    Task<bool> IsAvailableAsync(
+    Task<bool> CheckIsAvailableAsync(
         string? namespaceParameter = null,
         CancellationToken cancellationToken = default);
 

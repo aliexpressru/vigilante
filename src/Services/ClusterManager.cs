@@ -108,6 +108,7 @@ public partial class ClusterManager(
             var prefix = key.StartsWith(PendingSnapshotCreationJob.KeyPrefix, StringComparison.Ordinal)
                 ? "Snapshot creation failed: "
                 : ClusterConstants.RestoreReplicationFactorFailedPrefix;
+
             state.Health.Issues.Add($"[{IssueKeyConstants.JobFailure(key)}] {prefix}{message}");
         }
 
@@ -258,8 +259,9 @@ public partial class ClusterManager(
         CancellationToken cancellationToken = default)
     {
         var state = await GetClusterStateAsync(cancellationToken);
+
         var peerToPodMap = state.Nodes
-            .Where(n => !string.IsNullOrEmpty(n.PeerId) && !string.IsNullOrEmpty(n.PodName))
+            .Where(n => n.PeerId != 0 && !string.IsNullOrEmpty(n.PodName))
             .ToDictionary(n => n.PeerId, n => n.PodName!);
 
         // Get enriched collections info from CollectionService
@@ -646,11 +648,13 @@ public partial class ClusterManager(
         CancellationToken originalCancellationToken)
     {
         // PeerId is already set by GetBasicNodeInfoAsync, but verify it matches
-        var expectedPeerId = clusterInfoResult.PeerId.ToString();
-        if (string.IsNullOrEmpty(nodeInfo.PeerId))
+        var expectedPeerId = clusterInfoResult.PeerId;
+
+        if (nodeInfo.PeerId == 0)
         {
             nodeInfo.PeerId = expectedPeerId;
         }
+
         else if (nodeInfo.PeerId != expectedPeerId)
         {
             logger.LogWarning("PeerId mismatch for node {NodeUrl}: expected {Expected}, got {Actual}",
@@ -779,8 +783,8 @@ public partial class ClusterManager(
         {
             nodeInfo.CurrentPeerIds =
             [
-                ..clusterInfoResult.Peers.Keys,
-                clusterInfoResult.PeerId.ToString()
+                ..clusterInfoResult.ParsedPeers.Keys,
+                clusterInfoResult.PeerId
             ];
         }
     }
@@ -855,7 +859,9 @@ public partial class ClusterManager(
             var issuesResponse = await client.ReportIssues(cancellationToken);
 #pragma warning restore QD0001
 
-            if (issuesResponse.Status.IsSuccess && issuesResponse.Result?.Issues != null)
+            if (issuesResponse != null
+                && issuesResponse.Status.IsSuccess
+                && issuesResponse.Result?.Issues != null)
             {
                 var qdrantIssues = issuesResponse.Result.Issues;
 
@@ -921,7 +927,7 @@ public partial class ClusterManager(
         }
 
         // Set node state
-        nodeInfo.PeerId = $"{node.Host}:{node.Port}";
+        nodeInfo.PeerId = 0;
         nodeInfo.IsHealthy = false;
         nodeInfo.Issues.Add(errorMessage);
         nodeInfo.ShortError = GetShortErrorMessage(errorType);
@@ -930,11 +936,11 @@ public partial class ClusterManager(
         // Log the error
         if (exception != null)
         {
-            logger.LogWarning(exception, "Failed to get status for node {NodeUrl}", nodeInfo.Url);
+            logger.LogWarning(exception, "Failed to get status for node {NodeUrl}, Host : {Host}, Port: {Port}", nodeInfo.Url, node.Host, node.Port);
         }
         else
         {
-            logger.LogWarning("Node {NodeUrl} error: {ErrorMessage}", nodeInfo.Url, errorMessage);
+            logger.LogWarning("Node {NodeUrl}, Host : {Host}, Port: {Port} error: {ErrorMessage}", node.Host, node.Port, nodeInfo.Url, errorMessage);
         }
     }
 
@@ -956,7 +962,7 @@ public partial class ClusterManager(
         {
             var warningEvents = await kubernetesManager.GetWarningEventsAsync(namespaceToUse, cancellationToken);
 
-            if (warningEvents.Count > 0)
+            if (warningEvents is { Count: > 0 })
             {
                 var targetNode = state.Nodes.FirstOrDefault(n => !n.IsHealthy) ?? state.Nodes.FirstOrDefault();
 
@@ -1026,21 +1032,16 @@ public partial class ClusterManager(
 
         var filtered = nodeStatuses.Where(n =>
         {
-            if (string.IsNullOrEmpty(n.PeerId))
-            {
-                return true;
-            }
-
-            if (ulong.TryParse(n.PeerId, out var peerIdNum) && _excludedPeerIds.ContainsKey(peerIdNum))
+            if (_excludedPeerIds.ContainsKey(n.PeerId))
             {
                 return false;
             }
 
-            // Only filter by majority when PeerId is host:port (node never responded). Nodes with numeric PeerId
+            // Only filter by majority when PeerId is 0 (node never responded). Nodes with numeric PeerId
             // (responded at least once) stay visible so we can show them as unhealthy (e.g. cluster split minority).
-            if (majorityPeerIds.Count > 0 &&
-                !ulong.TryParse(n.PeerId, out _) &&
-                !majorityPeerIds.Contains(n.PeerId))
+            if (majorityPeerIds.Count > 0
+                && n.PeerId == 0
+                && !majorityPeerIds.Contains(n.PeerId))
             {
                 return false;
             }

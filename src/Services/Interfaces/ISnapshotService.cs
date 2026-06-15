@@ -1,5 +1,6 @@
 using Vigilante.Models;
 using Vigilante.Models.Enums;
+using Vigilante.Models.Snapshots;
 
 namespace Vigilante.Services.Interfaces;
 
@@ -19,7 +20,7 @@ public interface ISnapshotService
         CancellationToken cancellationToken,
         bool waitForResult = false,
         int? retainLastNAfterVisible = null,
-        IReadOnlySet<string>? retentionClusterPeerIds = null);
+        IReadOnlySet<ulong>? retentionClusterPeerIds = null);
 
     /// <summary>
     /// Gets snapshot information with sizes for a collection on a specific node
@@ -103,7 +104,7 @@ public interface ISnapshotService
     /// <param name="clearCache">Whether to clear cache before fetching.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="nodesToUse">When provided, only these nodes are queried (e.g. current cluster nodes). When null, all nodes from provider are used.</param>
-    Task<IReadOnlyList<SnapshotInfo>> GetSnapshotsInfoAsync(
+    Task<IReadOnlyCollection<SnapshotInfo>> GetSnapshotsInfoAsync(
         CancellationToken cancellationToken,
         bool clearCache = false,
         IReadOnlyList<NodeInfo>? nodesToUse = null);
@@ -128,7 +129,7 @@ public interface ISnapshotService
         string collectionName,
         int retainLastN,
         CancellationToken cancellationToken,
-        IReadOnlySet<string>? currentClusterPeerIds = null);
+        IReadOnlySet<ulong>? currentClusterPeerIds = null);
 
     /// <summary>
     /// Clears the in-memory snapshot cache.

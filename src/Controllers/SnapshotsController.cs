@@ -36,7 +36,7 @@ public class SnapshotsController(
                 {
                     PodName = snapshot.PodName,
                     NodeUrl = snapshot.NodeUrl,
-                    PeerId = snapshot.PeerId,
+                    PeerId = snapshot.PeerId.ToString(),
                     CollectionName = snapshot.CollectionName,
                     SnapshotName = snapshot.SnapshotName,
                     SizeBytes = snapshot.SizeBytes,

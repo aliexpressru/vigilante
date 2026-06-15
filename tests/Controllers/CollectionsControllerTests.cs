@@ -43,7 +43,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 PodNamespace = "default",
                 Metrics = [],
@@ -53,7 +53,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod2",
                 NodeUrl = "http://node2:6333",
-                PeerId = "peer2",
+                PeerId = 2,
                 CollectionName = "collection1",
                 PodNamespace = "default",
                 Metrics = [],
@@ -63,7 +63,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection2",
                 PodNamespace = "default",
                 Metrics = [],
@@ -106,7 +106,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = $"collection{i}",
                 PodNamespace = "default",
                 Metrics = [],
@@ -150,7 +150,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "test_collection_1",
                 PodNamespace = "default",
                 Metrics = [],
@@ -160,7 +160,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "other_collection",
                 PodNamespace = "default",
                 Metrics = [],
@@ -170,7 +170,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "test_collection_2",
                 PodNamespace = "default",
                 Metrics = [],
@@ -208,7 +208,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 PodNamespace = "default",
                 Metrics = [],
@@ -241,7 +241,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 PodNamespace = "default",
                 Metrics = [],
@@ -274,7 +274,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 PodNamespace = "default",
                 Metrics = [],
@@ -284,7 +284,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod2",
                 NodeUrl = "http://node2:6333",
-                PeerId = "peer2",
+                PeerId = 2,
                 CollectionName = "collection1",
                 PodNamespace = "default",
                 Metrics = [],
@@ -294,7 +294,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod3",
                 NodeUrl = "http://node3:6333",
-                PeerId = "peer3",
+                PeerId = 3,
                 CollectionName = "collection1",
                 PodNamespace = "default",
                 Metrics = [],
@@ -568,7 +568,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 PodNamespace = "default",
                 Metrics = [],
@@ -602,7 +602,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 PodNamespace = "default",
                 Metrics = [],
@@ -636,7 +636,7 @@ public class CollectionsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 PodNamespace = "default",
                 Metrics = [],

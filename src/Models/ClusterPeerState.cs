@@ -2,10 +2,10 @@ namespace Vigilante.Models;
 
 public class ClusterPeerState
 {
-    private HashSet<string> _majorityPeerIds = [];
+    private HashSet<ulong> _majorityPeerIds = [];
     private readonly Lock _syncLock = new();
 
-    public IReadOnlySet<string> MajorityPeerIds => _majorityPeerIds;
+    public IReadOnlySet<ulong> MajorityPeerIds => _majorityPeerIds;
 
     public bool TryUpdateMajorityState(IEnumerable<NodeInfo> nodes)
     {
@@ -19,7 +19,7 @@ public class ClusterPeerState
         // Group nodes by their peer lists to find the predominant set
         var peerGroups = healthyNodes
             .GroupBy(n => string.Join(",", n.CurrentPeerIds.OrderBy(p => p)))
-            .Select(g => new { PeerSet = new HashSet<string>(g.First().CurrentPeerIds), Count = g.Count() })
+            .Select(g => new { PeerSet = new HashSet<ulong>(g.First().CurrentPeerIds), Count = g.Count() })
             .OrderByDescending(g => g.Count)
             .ToList();
 
@@ -62,10 +62,10 @@ public class ClusterPeerState
                 return true;
             }
 
-            var expectedPeers = new HashSet<string>(_majorityPeerIds);
+            var expectedPeers = new HashSet<ulong>(_majorityPeerIds);
             expectedPeers.Remove(node.PeerId); // Remove self from expected list
 
-            var currentPeers = new HashSet<string>(node.CurrentPeerIds);
+            var currentPeers = new HashSet<ulong>(node.CurrentPeerIds);
             currentPeers.Remove(node.PeerId); // Remove self from current list
 
             // Check differences between expected and current state
@@ -82,7 +82,7 @@ public class ClusterPeerState
         }
     }
 
-    private static string BuildInconsistencyReason(List<string> unexpectedPeers, List<string> missingPeers)
+    private static string BuildInconsistencyReason(List<ulong> unexpectedPeers, List<ulong> missingPeers)
     {
         var reasons = new List<string>(2);
 

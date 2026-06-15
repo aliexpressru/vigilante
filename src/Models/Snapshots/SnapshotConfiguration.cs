@@ -1,4 +1,4 @@
-namespace Vigilante.Models;
+namespace Vigilante.Models.Snapshots;
 
 /// <summary>
 /// Snapshot management configuration

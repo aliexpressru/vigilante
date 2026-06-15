@@ -52,7 +52,7 @@ public class CollectionsController(
                         {
                             PodName = size.PodName,
                             NodeUrl = size.NodeUrl,
-                            PeerId = size.PeerId,
+                            PeerId = size.PeerId.ToString(),
                             CollectionName = size.CollectionName,
                             PodNamespace = size.PodNamespace,
                             Metrics = size.Metrics,

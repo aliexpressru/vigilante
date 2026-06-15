@@ -10,9 +10,9 @@ using Vigilante.Extensions;
 using Vigilante.Configuration;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
-using Vigilante.Services;
 using Vigilante.Services.Interfaces;
 using Vigilante.Services.Jobs;
+using Vigilante.Services.Snapshots;
 
 namespace Aer.Vigilante.Tests.Services;
 

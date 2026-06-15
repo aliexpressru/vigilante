@@ -3,6 +3,7 @@ using Vigilante.Configuration;
 using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models;
+using Vigilante.Models.Snapshots;
 
 namespace Vigilante.Services;
 
@@ -42,7 +43,7 @@ public class TestDataProvider
         // Generate test peers from actual Qdrant configuration
         var testPeers = _options.Nodes.Select((node, index) =>
             (
-                peerId: $"peer{index + 1}",
+                peerId: (ulong)(index + 1),
                 podName: $"qdrant-{index}",
                 url: $"http://{node.Host}:{node.Port}"
             )
@@ -53,9 +54,9 @@ public class TestDataProvider
         {
             testPeers =
             [
-                ("peer1", "qdrant-0", "http://localhost:6333"),
-                ("peer2", "qdrant-1", "http://localhost:6334"),
-                ("peer3", "qdrant-2", "http://localhost:6335")
+                (1U, "qdrant-0", "http://localhost:6333"),
+                (2U, "qdrant-1", "http://localhost:6334"),
+                (3U, "qdrant-2", "http://localhost:6335")
             ];
         }
 
@@ -88,7 +89,7 @@ public class TestDataProvider
                 var shardStates = new Dictionary<string, string>();
 
                 // Distribute shards among peers with different states
-                if (peerId == "peer1")
+                if (peerId == 1U)
                 {
                     shards.Add(new ShardDetails { ShardId = 0, State = "Active", VectorsSizeBytes = 200000000, PayloadsSizeBytes = 100000000 });
                     shards.Add(new ShardDetails { ShardId = 1, State = "Initializing", VectorsSizeBytes = 250000000, PayloadsSizeBytes = 100000000 });
@@ -100,7 +101,7 @@ public class TestDataProvider
                     shardStates["1"] = "Initializing";    // Being initialized
                     shardStates["2"] = "PartialSnapshot"; // Being transferred
                 }
-                else if (peerId == "peer2")
+                else if (peerId == 2U)
                 {
                     shards.Add(new ShardDetails { ShardId = 3, State = "Listener", VectorsSizeBytes = 180000000, PayloadsSizeBytes = 100000000 });
                     shards.Add(new ShardDetails { ShardId = 4, State = "Dead", VectorsSizeBytes = 190000000, PayloadsSizeBytes = 100000000 });
@@ -111,7 +112,7 @@ public class TestDataProvider
                     shardStates["4"] = "Dead";           // Inaccessible
                     shardStates["5"] = "Recovery";       // Being recovered
                 }
-                else if (peerId == "peer3")
+                else if (peerId == 3U)
                 {
                     shards.Add(new ShardDetails { ShardId = 6, State = "Resharding", VectorsSizeBytes = 230000000, PayloadsSizeBytes = 100000000 });
                     shards.Add(new ShardDetails { ShardId = 7, State = "ReshardingScaleDown", VectorsSizeBytes = 170000000, PayloadsSizeBytes = 100000000 });
@@ -166,7 +167,7 @@ public class TestDataProvider
         // Generate test peers from actual Qdrant configuration
         var testPeers = _options.Nodes.Select((node, index) =>
             (
-                peerId: $"peer{index + 1}",
+                peerId: (ulong)(index + 1),
                 podName: $"qdrant-{index}",
                 url: $"http://{node.Host}:{node.Port}",
                 index
@@ -178,9 +179,9 @@ public class TestDataProvider
         {
             testPeers =
             [
-                ("peer1", "qdrant-0", "http://localhost:6333", 0),
-                ("peer2", "qdrant-1", "http://localhost:6334", 1),
-                ("peer3", "qdrant-2", "http://localhost:6335", 2)
+                (1U, "qdrant-0", "http://localhost:6333", 0),
+                (2U, "qdrant-1", "http://localhost:6334", 1),
+                (3U, "qdrant-2", "http://localhost:6335", 2)
             ];
         }
 

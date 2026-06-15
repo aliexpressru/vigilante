@@ -1,3 +1,5 @@
+using Vigilante.Models.Snapshots;
+
 namespace Vigilante.Models;
 
 /// <summary>

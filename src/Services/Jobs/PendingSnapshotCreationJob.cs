@@ -1,6 +1,7 @@
 using Vigilante.Constants;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
+using Vigilante.Models.Snapshots;
 using Vigilante.Services.Interfaces;
 
 namespace Vigilante.Services.Jobs;
@@ -22,7 +23,7 @@ public sealed class PendingSnapshotCreationJob : IJob
     private readonly DateTime _requestedAtUtc;
     private readonly HashSet<string> _baselineSnapshotKeys;
     private readonly int? _retainLastNAfterVisible;
-    private readonly IReadOnlySet<string>? _retentionClusterPeerIds;
+    private readonly IReadOnlySet<ulong>? _retentionClusterPeerIds;
     private readonly TimeSpan _timeout;
 
     public string Key => KeyPrefix + _collectionName;
@@ -36,7 +37,7 @@ public sealed class PendingSnapshotCreationJob : IJob
         DateTime requestedAtUtc,
         IReadOnlySet<string> baselineSnapshotKeys,
         int? retainLastNAfterVisible = null,
-        IReadOnlySet<string>? retentionClusterPeerIds = null,
+        IReadOnlySet<ulong>? retentionClusterPeerIds = null,
         TimeSpan? timeout = null)
     {
         _serviceProvider = serviceProvider;
@@ -75,13 +76,15 @@ public sealed class PendingSnapshotCreationJob : IJob
             var timeoutText = _timeout.TotalMinutes >= 1
                 ? $"{(int)_timeout.TotalMinutes} minute(s)"
                 : $"{(int)_timeout.TotalSeconds} second(s)";
+
             logger.LogWarning(
                 "Snapshot creation job timed out for collection {CollectionName}: snapshots did not appear within {Timeout}",
                 _collectionName, timeoutText);
+
             return (false, false, $"Snapshot did not appear within {timeoutText}");
         }
 
-        IReadOnlyList<SnapshotInfo> snapshots;
+        IReadOnlyCollection<SnapshotInfo> snapshots;
         try
         {
             snapshots = await snapshotService.GetSnapshotsInfoAsync(

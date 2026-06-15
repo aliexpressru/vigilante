@@ -56,7 +56,7 @@ public class ClusterState
         {
             TotalNodes = Nodes.Count,
             HealthyNodes = Nodes.Count(n => n.IsHealthy),
-            Leader = Nodes.FirstOrDefault(n => n.IsLeader)?.PeerId ?? string.Empty
+            Leader = Nodes.FirstOrDefault(n => n.IsLeader)?.PeerId ?? 0
         };
 
         health.IsHealthy = health.HealthyNodes == health.TotalNodes;
@@ -78,7 +78,7 @@ public class ClusterState
             }
         }
 
-        if (string.IsNullOrEmpty(health.Leader))
+        if (health.Leader == 0)
         {
             issues.Add("No leader elected");
         }

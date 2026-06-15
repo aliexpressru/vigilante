@@ -108,7 +108,7 @@ public class CollectionServiceTests
         var podName = "test-pod";
         var podNamespace = "test-ns";
         var nodeUrl = "http://test-node:6333";
-        var peerId = "peer1";
+        var peerId = 1UL;
 
         var collections = new List<string> { "collection1", "collection2" };
 
@@ -142,7 +142,7 @@ public class CollectionServiceTests
         var podName = "test-pod";
         var podNamespace = "test-ns";
         var nodeUrl = "http://test-node:6333";
-        var peerId = "peer1";
+        var peerId = 1UL;
 
         var collections = new List<string> { "collection1" };
 
@@ -210,10 +210,10 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = false }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = false }
         };
 
-        var peerToPodMap = new Dictionary<string, string>();
+        var peerToPodMap = new Dictionary<ulong, string>();
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
@@ -253,14 +253,14 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" },
-            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = false, PodName = "pod2" }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1" },
+            new() { Url = "http://node2:6333", PeerId = 1002, IsHealthy = false, PodName = "pod2" }
         };
 
-        var peerToPodMap = new Dictionary<string, string>
+        var peerToPodMap = new Dictionary<ulong, string>
         {
-            { "1001", "pod1" },
-            { "1002", "pod2" }
+            { 1001, "pod1" },
+            { 1002, "pod2" }
         };
 
         // Act
@@ -301,10 +301,10 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1", Namespace = "default" }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1", Namespace = "default" }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { 1001, "pod1" } };
 
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
@@ -341,7 +341,7 @@ public class CollectionServiceTests
         var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1", Namespace = "default" }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1", Namespace = "default" }
         };
 
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, [], CancellationToken.None);
@@ -373,7 +373,7 @@ public class CollectionServiceTests
         var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = null }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = null }
         };
 
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, [], CancellationToken.None);
@@ -445,10 +445,10 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = null }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = null }
         };
 
-        var peerToPodMap = new Dictionary<string, string>();
+        var peerToPodMap = new Dictionary<ulong, string>();
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
@@ -522,10 +522,10 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1" }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { 1001, "pod1" } };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
@@ -590,10 +590,10 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { 1001, "pod1" } };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
@@ -645,10 +645,10 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { 1001, "pod1" } };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
@@ -697,10 +697,10 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { 1001, "pod1" } };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
@@ -826,16 +826,16 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" },
-            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = "pod2" },
-            new() { Url = "http://node3:6333", PeerId = "1003", IsHealthy = true, PodName = "pod3" }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1" },
+            new() { Url = "http://node2:6333", PeerId = 1002, IsHealthy = true, PodName = "pod2" },
+            new() { Url = "http://node3:6333", PeerId = 1003, IsHealthy = true, PodName = "pod3" }
         };
 
-        var peerToPodMap = new Dictionary<string, string>
+        var peerToPodMap = new Dictionary<ulong, string>
         {
-            { "1001", "pod1" },
-            { "1002", "pod2" },
-            { "1003", "pod3" }
+            { 1001, "pod1" },
+            { 1002, "pod2" },
+            { 1003, "pod3" }
         };
 
         // Act
@@ -954,16 +954,16 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" },
-            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = "pod2" },
-            new() { Url = "http://node3:6333", PeerId = "1003", IsHealthy = false, PodName = "pod3" } // Unhealthy
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1" },
+            new() { Url = "http://node2:6333", PeerId = 1002, IsHealthy = true, PodName = "pod2" },
+            new() { Url = "http://node3:6333", PeerId = 1003, IsHealthy = false, PodName = "pod3" } // Unhealthy
         };
 
-        var peerToPodMap = new Dictionary<string, string>
+        var peerToPodMap = new Dictionary<ulong, string>
         {
-            { "1001", "pod1" },
-            { "1002", "pod2" },
-            { "1003", "pod3" }
+            { 1001, "pod1" },
+            { 1002, "pod2" },
+            { 1003, "pod3" }
         };
 
         // Act
@@ -1052,10 +1052,10 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1" }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { 1001, "pod1" } };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
@@ -1095,9 +1095,9 @@ public class CollectionServiceTests
         // Arrange - Setup 3 nodes
         var nodes = new[]
         {
-            ("http://node1:6333", "peer1", (string?)"ns1", (string?)"pod1"),
-            ("http://node2:6333", "peer2", (string?)"ns1", (string?)"pod2"),
-            ("http://node3:6333", "peer3", (string?)"ns1", (string?)"pod3")
+            ("http://node1:6333", 1UL, (string?)"ns1", (string?)"pod1"),
+            ("http://node2:6333", 2UL, (string?)"ns1", (string?)"pod2"),
+            ("http://node3:6333", 3UL, (string?)"ns1", (string?)"pod3")
         };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
@@ -1156,7 +1156,7 @@ public class CollectionServiceTests
     public async Task GetCollectionsFromQdrantAsync_CacheIgnored_WhenContainsOnlyPartialNodes()
     {
         // Arrange
-        var singleNode = new[] { ("http://node1:6333", "peer1", (string?)"ns1", (string?)"pod1") };
+        var singleNode = new[] { ("http://node1:6333", 1UL, (string?)"ns1", (string?)"pod1") };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
@@ -1195,9 +1195,9 @@ public class CollectionServiceTests
         // Act - Request data from 3 nodes, cache should be ignored
         var allNodes = new[]
         {
-            ("http://node1:6333", "peer1", (string?)"ns1", (string?)"pod1"),
-            ("http://node2:6333", "peer2", (string?)"ns1", (string?)"pod2"),
-            ("http://node3:6333", "peer3", (string?)"ns1", (string?)"pod3")
+            ("http://node1:6333", 1UL, (string?)"ns1", (string?)"pod1"),
+            ("http://node2:6333", 2UL, (string?)"ns1", (string?)"pod2"),
+            ("http://node3:6333", 3UL, (string?)"ns1", (string?)"pod3")
         };
 
         var (result, isHealthy, error) = await service.GetCollectionsFromQdrantAsync(
@@ -1223,9 +1223,9 @@ public class CollectionServiceTests
         // Arrange
         var allNodes = new[]
         {
-            ("http://node1:6333", "peer1", (string?)"ns1", (string?)"pod1"),
-            ("http://node2:6333", "peer2", (string?)"ns1", (string?)"pod2"),
-            ("http://node3:6333", "peer3", (string?)"ns1", (string?)"pod3")
+            ("http://node1:6333", 1UL, (string?)"ns1", (string?)"pod1"),
+            ("http://node2:6333", 2UL, (string?)"ns1", (string?)"pod2"),
+            ("http://node3:6333", 3UL, (string?)"ns1", (string?)"pod3")
         };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
@@ -1265,8 +1265,8 @@ public class CollectionServiceTests
         // Act - Request only 2 nodes (subset), should use cache
         var subsetNodes = new[]
         {
-            ("http://node1:6333", "peer1", (string?)"ns1", (string?)"pod1"),
-            ("http://node2:6333", "peer2", (string?)"ns1", (string?)"pod2")
+            ("http://node1:6333", 1UL, (string?)"ns1", (string?)"pod1"),
+            ("http://node2:6333", 2UL, (string?)"ns1", (string?)"pod2")
         };
 
         var (result, isHealthy, error) = await service.GetCollectionsFromQdrantAsync(
@@ -1290,7 +1290,7 @@ public class CollectionServiceTests
     public async Task GetCollectionsFromQdrantAsync_CacheCleared_WhenClearCacheIsTrue()
     {
         // Arrange
-        var nodes = new[] { ("http://node1:6333", "peer1", (string?)"ns1", (string?)"pod1") };
+        var nodes = new[] { ("http://node1:6333", 1UL, (string?)"ns1", (string?)"pod1") };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
@@ -1352,16 +1352,16 @@ public class CollectionServiceTests
         // Arrange
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "qdrant-2" },
-            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = "qdrant-0" },
-            new() { Url = "http://node3:6333", PeerId = "1003", IsHealthy = true, PodName = "qdrant-1" }
+            new() { Url = "http://node1:6333", PeerId = 1001UL, IsHealthy = true, PodName = "qdrant-2" },
+            new() { Url = "http://node2:6333", PeerId = 1002UL, IsHealthy = true, PodName = "qdrant-0" },
+            new() { Url = "http://node3:6333", PeerId = 1003UL, IsHealthy = true, PodName = "qdrant-1" }
         };
 
-        var peerToPodMap = new Dictionary<string, string>
+        var peerToPodMap = new Dictionary<ulong, string>
         {
-            { "1001", "qdrant-2" },
-            { "1002", "qdrant-0" },
-            { "1003", "qdrant-1" }
+            { 1001UL, "qdrant-2" },
+            { 1002UL, "qdrant-0" },
+            { 1003UL, "qdrant-1" }
         };
 
         var mockClient1 = Substitute.For<IQdrantHttpClient>();
@@ -1431,11 +1431,11 @@ public class CollectionServiceTests
         // Assert - collection nodes should be sorted by PodName
         result.Should().HaveCount(3);
         result[0].PodName.Should().Be("qdrant-0");
-        result[0].PeerId.Should().Be("1002");
+        result[0].PeerId.Should().Be(1002);
         result[1].PodName.Should().Be("qdrant-1");
-        result[1].PeerId.Should().Be("1003");
+        result[1].PeerId.Should().Be(1003);
         result[2].PodName.Should().Be("qdrant-2");
-        result[2].PeerId.Should().Be("1001");
+        result[2].PeerId.Should().Be(1001);
     }
 
     [Test]
@@ -1444,12 +1444,12 @@ public class CollectionServiceTests
         // Arrange
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "3001", IsHealthy = true, PodName = null },
-            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = null },
-            new() { Url = "http://node3:6333", PeerId = "2003", IsHealthy = true, PodName = null }
+            new() { Url = "http://node1:6333", PeerId = 3001UL, IsHealthy = true, PodName = null },
+            new() { Url = "http://node2:6333", PeerId = 1002UL, IsHealthy = true, PodName = null },
+            new() { Url = "http://node3:6333", PeerId = 2003UL, IsHealthy = true, PodName = null }
         };
 
-        var peerToPodMap = new Dictionary<string, string>();
+        var peerToPodMap = new Dictionary<ulong, string>();
 
         var mockClient1 = Substitute.For<IQdrantHttpClient>();
         var mockClient2 = Substitute.For<IQdrantHttpClient>();
@@ -1517,9 +1517,9 @@ public class CollectionServiceTests
 
         // Assert - collection nodes should be sorted by PeerId when PodName is not available
         result.Should().HaveCount(3);
-        result[0].PeerId.Should().Be("1002");
-        result[1].PeerId.Should().Be("2003");
-        result[2].PeerId.Should().Be("3001");
+        result[0].PeerId.Should().Be(1002);
+        result[1].PeerId.Should().Be(2003);
+        result[2].PeerId.Should().Be(3001);
     }
 
     [Test]
@@ -1528,16 +1528,16 @@ public class CollectionServiceTests
         // Arrange - two collections on nodes in different order
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "qdrant-2" },
-            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = "qdrant-0" },
-            new() { Url = "http://node3:6333", PeerId = "1003", IsHealthy = true, PodName = "qdrant-1" }
+            new() { Url = "http://node1:6333", PeerId = 1001UL, IsHealthy = true, PodName = "qdrant-2" },
+            new() { Url = "http://node2:6333", PeerId = 1002UL, IsHealthy = true, PodName = "qdrant-0" },
+            new() { Url = "http://node3:6333", PeerId = 1003UL, IsHealthy = true, PodName = "qdrant-1" }
         };
 
-        var peerToPodMap = new Dictionary<string, string>
+        var peerToPodMap = new Dictionary<ulong, string>
         {
-            { "1001", "qdrant-2" },
-            { "1002", "qdrant-0" },
-            { "1003", "qdrant-1" }
+            { 1001UL, "qdrant-2" },
+            { 1002UL, "qdrant-0" },
+            { 1003UL, "qdrant-1" }
         };
 
         var mockClient1 = Substitute.For<IQdrantHttpClient>();
@@ -1850,13 +1850,13 @@ public class CollectionServiceTests
         // Arrange
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "peer1", IsHealthy = true,
+            new() { Url = "http://node1:6333", PeerId = 1, IsHealthy = true,
                     PodName = "qdrant-0", Namespace = "default" }
         };
 
-        var peerToPodMap = new Dictionary<string, string>
+        var peerToPodMap = new Dictionary<ulong, string>
         {
-            { "peer1", "qdrant-0" }
+            { 1, "qdrant-0" }
         };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
@@ -1941,22 +1941,21 @@ public class CollectionServiceTests
     {
         // Arrange: one node with numeric PeerId to match telemetry replica
         const string nodeUrl = "http://node1:6333";
-        const ulong peerIdUlong = 100;
-        var peerIdStr = peerIdUlong.ToString();
+        const ulong peerId = 100;
 
         var nodes = new List<NodeInfo>
         {
             new()
             {
                 Url = nodeUrl,
-                PeerId = peerIdStr,
+                PeerId = peerId,
                 IsHealthy = true,
                 PodName = "qdrant-0",
                 Namespace = "default"
             }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { peerIdStr, "qdrant-0" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { peerId, "qdrant-0" } };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
         _clientFactory.CreateClientFromUrl(nodeUrl, Arg.Any<string?>()).Returns(mockClient);
@@ -2024,7 +2023,7 @@ public class CollectionServiceTests
                                 [
                                     new GetClusterTelemetryResponse.CollectionTelemetry.ShardInfo.ReplicaInfo
                                     {
-                                        PeerId = peerIdUlong,
+                                        PeerId = peerId,
                                         VectorsSizeBytes = vectorsSize,
                                         PayloadsSizeBytes = payloadsSize
                                     }
@@ -2069,14 +2068,14 @@ public class CollectionServiceTests
             new()
             {
                 Url = "http://node1:6333",
-                PeerId = "1",
+                PeerId = 1,
                 IsHealthy = true,
                 PodName = "qdrant-0",
                 Namespace = "default"
             }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { "1", "qdrant-0" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { 1, "qdrant-0" } };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
         _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
@@ -2139,14 +2138,14 @@ public class CollectionServiceTests
             new()
             {
                 Url = "http://node1:6333",
-                PeerId = "1",
+                PeerId = 1,
                 IsHealthy = true,
                 PodName = "qdrant-0",
                 Namespace = "default"
             }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { "1", "qdrant-0" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { 1, "qdrant-0" } };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
         _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);

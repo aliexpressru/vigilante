@@ -17,7 +17,9 @@ public class CollectionService : ICollectionService
 {
     private readonly ILogger<CollectionService> _logger;
     private readonly IMeterService _meterService;
-    private readonly PodCommandExecutor? _commandExecutor;
+#pragma warning disable CA1859 // Use concrete types when possible for improved performance | Justification : Should stay IPodCommandExecutor for testing purposes
+    private readonly IPodCommandExecutor? _commandExecutor;
+#pragma warning restore CA1859 // Use concrete types when possible for improved performance
     private readonly QdrantOptions _options;
     private readonly IQdrantClientFactory _clientFactory;
     private List<CollectionInfo>? _cachedCollections;
@@ -156,7 +158,7 @@ public class CollectionService : ICollectionService
         string podName,
         string podNamespace,
         string nodeUrl,
-        string peerId,
+        ulong peerId,
         CancellationToken cancellationToken)
     {
         if (_commandExecutor == null)
@@ -336,7 +338,7 @@ public class CollectionService : ICollectionService
     }
 
     public async Task<(List<CollectionInfo> Collections, bool IsHealthy, string? ErrorMessage)> GetCollectionsFromQdrantAsync(
-        IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
+        IEnumerable<(string Url, ulong PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken,
         bool clearCache = false)
     {
@@ -405,7 +407,7 @@ public class CollectionService : ICollectionService
     }
 
     private async Task<(List<CollectionInfo> Collections, bool IsHealthy)> GetCollectionsFromSingleNodeAsync(
-        (string Url, string PeerId, string? Namespace, string? PodName) node,
+        (string Url, ulong PeerId, string? Namespace, string? PodName) node,
         CancellationToken cancellationToken)
     {
         try
@@ -514,7 +516,7 @@ public class CollectionService : ICollectionService
 
     public async Task<IReadOnlyList<CollectionInfo>> GetEnrichedCollectionsInfoAsync(
         IReadOnlyList<NodeInfo> nodes,
-        Dictionary<string, string> peerToPodMap,
+        Dictionary<ulong, string> peerToPodMap,
         CancellationToken cancellationToken,
         bool clearCache = false)
     {
@@ -874,7 +876,7 @@ public class CollectionService : ICollectionService
     private async Task EnrichWithClusteringInfoAsync(
         string healthyNodeUrl,
         IList<CollectionInfo> collectionInfos,
-        Dictionary<string, string> peerToPodMap,
+        Dictionary<ulong, string> peerToPodMap,
         CancellationToken cancellationToken)
     {
         try
@@ -884,7 +886,7 @@ public class CollectionService : ICollectionService
             var healthyNodePeerId = collectionInfos
                 .FirstOrDefault(c => c.NodeUrl == healthyNodeUrl)?.PeerId;
 
-            if (string.IsNullOrEmpty(healthyNodePeerId))
+            if (healthyNodePeerId == 0)
             {
                 _logger.LogWarning("Could not find peer ID for node {NodeUrl}", healthyNodeUrl);
 
@@ -971,7 +973,7 @@ public class CollectionService : ICollectionService
         CollectionInfo info,
         GetCollectionClusteringInfoResponse.CollectionClusteringInfo
             clusteringResult,
-        Dictionary<string, string> peerToPodMap)
+        Dictionary<ulong, string> peerToPodMap)
     {
         if (clusteringResult.ShardTransfers == null)
         {
@@ -979,11 +981,11 @@ public class CollectionService : ICollectionService
         }
 
         var outgoingTransfers = clusteringResult.ShardTransfers
-            .Where(t => t.From.ToString() == info.PeerId)
+            .Where(t => t.From == info.PeerId)
             .Select(t => new OutgoingTransferInfo
             {
                 ShardId = t.ShardId,
-                To = peerToPodMap.TryGetValue(t.To.ToString(), out var podName) ? podName : t.To.ToString(),
+                To = peerToPodMap.TryGetValue(t.To, out var podName) ? podName : t.To.ToString(),
                 ToPeerId = t.To.ToString(),
                 IsSync = t.Sync,
                 Method = t.Method.ToString()
@@ -1117,9 +1119,8 @@ public class CollectionService : ICollectionService
 
                     foreach (var replica in shard.Replicas)
                     {
-                        var peerIdStr = replica.PeerId.ToString();
                         var info = collections.FirstOrDefault(c =>
-                            c.CollectionName == collectionName && c.PeerId == peerIdStr);
+                            c.CollectionName == collectionName && c.PeerId == replica.PeerId);
                         if (info == null)
                         {
                             continue;
@@ -1271,7 +1272,7 @@ public class CollectionService : ICollectionService
     private async Task EnrichCollectionsWithClusteringInfoAsync(
         IReadOnlyList<NodeInfo> nodes,
         List<CollectionInfo> collections,
-        Dictionary<string, string> peerToPodMap,
+        Dictionary<ulong, string> peerToPodMap,
         CancellationToken cancellationToken)
     {
         // Get clustering info from each healthy node to get their local shards

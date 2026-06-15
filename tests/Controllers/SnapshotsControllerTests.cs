@@ -9,8 +9,9 @@ using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
+using Vigilante.Models.Snapshots;
 using Vigilante.Services.Interfaces;
-using SnapshotInfo = Vigilante.Models.SnapshotInfo;
+using SnapshotInfo = Vigilante.Models.Snapshots.SnapshotInfo;
 
 namespace Aer.Vigilante.Tests.Controllers;
 
@@ -47,7 +48,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 SnapshotName = "collection1-peer1-snapshot1.snapshot",
                 SizeBytes = 1024,
@@ -58,7 +59,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod2",
                 NodeUrl = "http://node2:6333",
-                PeerId = "peer2",
+                PeerId = 2,
                 CollectionName = "collection2",
                 SnapshotName = "collection2-peer2-snapshot2.snapshot",
                 SizeBytes = 2048,
@@ -100,7 +101,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "test_collection",
                 SnapshotName = "test_collection-peer1-snapshot.snapshot",
                 SizeBytes = 1024,
@@ -111,7 +112,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod2",
                 NodeUrl = "http://node2:6333",
-                PeerId = "peer2",
+                PeerId = 2,
                 CollectionName = "other_collection",
                 SnapshotName = "other_collection-peer2-snapshot.snapshot",
                 SizeBytes = 2048,
@@ -151,7 +152,7 @@ public class SnapshotsControllerTests
         {
             PodName = $"pod{i}",
             NodeUrl = $"http://node{i}:6333",
-            PeerId = $"peer{i}",
+            PeerId = (ulong)i,
             CollectionName = $"collection{i}",
             SnapshotName = $"collection{i}-peer{i}-snapshot.snapshot",
             SizeBytes = 1024 * i,
@@ -211,7 +212,7 @@ public class SnapshotsControllerTests
     {
         // Arrange
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(Task.FromException<IReadOnlyList<SnapshotInfo>>(new Exception("Test error")));
+            .Returns(Task.FromException<IReadOnlyCollection<SnapshotInfo>>(new Exception("Test error")));
 
         var request = new V1GetSnapshotsInfoRequest
         {
@@ -759,7 +760,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 SnapshotName = "collection1-peer1-snapshot1.snapshot",
                 SizeBytes = 1024,
@@ -794,7 +795,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 SnapshotName = "collection1-peer1-snapshot1.snapshot",
                 SizeBytes = 1024,
@@ -829,7 +830,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 SnapshotName = "collection1-peer1-snapshot1.snapshot",
                 SizeBytes = 1024,

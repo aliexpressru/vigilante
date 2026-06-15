@@ -11,6 +11,7 @@ using Vigilante.Services.Interfaces;
 using Vigilante.Services.Jobs;
 using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Services.Snapshots;
+using Vigilante.Models.Snapshots;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -40,7 +41,7 @@ public class SnapshotAutomationJobTests
         _logger = Substitute.For<ILogger<SnapshotAutomationJob>>();
         _collectionService
             .GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+                Arg.Any<IEnumerable<(string Url, ulong PeerId, string? Namespace, string? PodName)>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(Task.FromResult((new List<CollectionInfo>(), false, (string?)null)));
@@ -78,7 +79,7 @@ public class SnapshotAutomationJobTests
             }
         ];
 
-    private static IReadOnlyList<NodeInfo> HealthyNodes(string url = "http://node1:6333", string peerId = "peer1") =>
+    private static IReadOnlyList<NodeInfo> HealthyNodes(string url = "http://node1:6333", ulong peerId = 1) =>
         [new() { Url = url, IsHealthy = true, PeerId = peerId }];
 
     private static DynamicConfig ScheduleEnabled(int? intervalMinutes = null, int? retainLastN = null, DateTimeOffset? startAt = null) =>
@@ -152,7 +153,7 @@ public class SnapshotAutomationJobTests
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
-                Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
+                Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>())
             .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
             {
                 Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" },
@@ -166,7 +167,7 @@ public class SnapshotAutomationJobTests
         hasMore.Should().BeFalse();
         success.Should().BeTrue();
         await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
-            "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), false, null, Arg.Any<IReadOnlySet<string>>());
+            "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), false, null, Arg.Any<IReadOnlySet<ulong>>());
     }
 
     [Test]
@@ -194,7 +195,7 @@ public class SnapshotAutomationJobTests
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
-                Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
+                Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>())
             .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
             {
                 Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" },
@@ -205,9 +206,9 @@ public class SnapshotAutomationJobTests
         await job.AdvanceAsync(CancellationToken.None);
 
         await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
-            "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), false, null, Arg.Any<IReadOnlySet<string>>());
+            "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), false, null, Arg.Any<IReadOnlySet<ulong>>());
         await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
-            "col2", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>());
+            "col2", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>());
     }
 
     [Test]
@@ -219,7 +220,7 @@ public class SnapshotAutomationJobTests
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(
             [
-                new() { CollectionName = "col1", SnapshotName = "col1-20240101-peer1", PodName = "", NodeUrl = "http://node1:6333", PeerId = "peer1", PodNamespace = "", Source = SnapshotSource.KubernetesStorage }
+                new() { CollectionName = "col1", SnapshotName = "col1-20240101-peer1", PodName = "", NodeUrl = "http://node1:6333", PeerId = 1, PodNamespace = "", Source = SnapshotSource.KubernetesStorage }
             ]);
 
         var job = CreateJob(config: config);
@@ -228,7 +229,7 @@ public class SnapshotAutomationJobTests
 
         await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
             Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
-            Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>());
+            Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>());
     }
 
     [Test]
@@ -250,7 +251,7 @@ public class SnapshotAutomationJobTests
 
         await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
             Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
-            Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>());
+            Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>());
     }
 
     [Test]
@@ -280,7 +281,7 @@ public class SnapshotAutomationJobTests
 
         await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
             Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
-            Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>());
+            Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>());
     }
 
     [Test]
@@ -293,7 +294,7 @@ public class SnapshotAutomationJobTests
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
-                Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
+                Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>())
             .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
             {
                 Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" },
@@ -305,7 +306,7 @@ public class SnapshotAutomationJobTests
         await job.AdvanceAsync(CancellationToken.None);
 
         await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
-            "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), false, null, Arg.Any<IReadOnlySet<string>>());
+            "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), false, null, Arg.Any<IReadOnlySet<ulong>>());
     }
 
     [Test]
@@ -318,7 +319,7 @@ public class SnapshotAutomationJobTests
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
-                Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
+                Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>())
             .ThrowsAsync(new Exception("connection refused"));
 
         var job = CreateJob(config: config);
@@ -327,7 +328,7 @@ public class SnapshotAutomationJobTests
 
         hasMore.Should().BeFalse();
         success.Should().BeTrue(); // job reports success; ReportIssue is side effect
-        error.Should().NotBeNullOrEmpty();
+        error.Should().BeNullOrEmpty();
 
         _clusterManager.Received(1).ReportIssue(IssueKeyConstants.Snapshot("col1"), Arg.Any<string>());
     }
@@ -342,7 +343,7 @@ public class SnapshotAutomationJobTests
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
-                Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
+                Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>())
             .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
             {
                 Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" },
@@ -380,13 +381,13 @@ public class SnapshotAutomationJobTests
         var collectionService = Substitute.For<ICollectionService>();
         collectionService
             .GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+                Arg.Any<IEnumerable<(string Url, ulong PeerId, string? Namespace, string? PodName)>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(Task.FromResult((
                 new List<CollectionInfo>
                 {
-                    new() { CollectionName = "live_col", NodeUrl = "http://node1:6333", PeerId = "p1" }
+                    new() { CollectionName = "live_col", NodeUrl = "http://node1:6333", PeerId = 1 }
                 },
                 true,
                 (string?)null)));
@@ -408,7 +409,7 @@ public class SnapshotAutomationJobTests
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
-                Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
+                Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>())
             .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
             {
                 Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap" },
@@ -446,7 +447,7 @@ public class SnapshotAutomationJobTests
         var collectionService = Substitute.For<ICollectionService>();
         collectionService
             .GetCollectionsFromQdrantAsync(
-                Arg.Any<IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)>>(),
+                Arg.Any<IEnumerable<(string Url, ulong PeerId, string? Namespace, string? PodName)>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
             .Returns(Task.FromResult((new List<CollectionInfo>(), false, (string?)null)));
@@ -500,14 +501,14 @@ public class SnapshotAutomationJobTests
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
-                Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
+                Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>())
             .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
             {
                 Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" },
                 SkippedDuplicatePending = false
             }));
 
-        var nodes = HealthyNodes("http://node1:6333", "111");
+        var nodes = HealthyNodes("http://node1:6333", 111);
         var job = CreateJob(nodes, config);
 
         await job.AdvanceAsync(CancellationToken.None);
@@ -518,9 +519,9 @@ public class SnapshotAutomationJobTests
             Arg.Any<CancellationToken>(),
             false,
             1,
-            Arg.Is<IReadOnlySet<string>>(set => set != null && set.Contains("111")));
+            Arg.Is<IReadOnlySet<ulong>>(set => set != null && set.Contains(111)));
         await _snapshotService.DidNotReceive()
-            .EnforceRetentionAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlySet<string>>());
+            .EnforceRetentionAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlySet<ulong>>());
     }
 
     [Test]
@@ -533,7 +534,7 @@ public class SnapshotAutomationJobTests
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
                 Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
-                Arg.Any<int?>(), Arg.Any<IReadOnlySet<string>>())
+                Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>())
             .Returns(Task.FromResult(CreateCollectionSnapshotBatchResult.SkippedForNodes(["http://node1:6333"])));
 
         var job = CreateJob(config: config);

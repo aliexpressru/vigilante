@@ -1,10 +1,11 @@
 using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Constants;
 using Vigilante.Models;
+using Vigilante.Models.Snapshots;
 using Vigilante.Services.Interfaces;
 using Vigilante.Services.Snapshots;
 using ISnapshotAutomationStatus = Vigilante.Services.Interfaces.ISnapshotAutomationStatus;
-using SnapshotInfo = Vigilante.Models.SnapshotInfo;
+using SnapshotInfo = Vigilante.Models.Snapshots.SnapshotInfo;
 
 namespace Vigilante.Services.Jobs;
 
@@ -156,14 +157,15 @@ public sealed class SnapshotAutomationJob : IJob
                         var missingNodeUrls = healthyNodeUrls
                             .Where(url =>
                             {
-                                var peerId = _nodes.FirstOrDefault(n => n.Url == url)?.PeerId;
-                                if (string.IsNullOrEmpty(peerId))
+                                var peerId = _nodes.FirstOrDefault(n => n.Url == url)?.PeerId ?? 0;
+
+                                if (peerId == 0)
                                 {
                                     return true;
                                 }
 
                                 return !existingSnaps.Any(s =>
-                                    s.SnapshotName.Contains(peerId, StringComparison.OrdinalIgnoreCase));
+                                    s.SnapshotName.Contains(value: peerId.ToString(), StringComparison.OrdinalIgnoreCase));
                             })
                             .ToList();
 
@@ -183,15 +185,17 @@ public sealed class SnapshotAutomationJob : IJob
                     var dueNodeUrls = healthyNodeUrls
                         .Where(url =>
                         {
-                            var peerId = _nodes.FirstOrDefault(n => n.Url == url)?.PeerId;
-                            if (string.IsNullOrEmpty(peerId))
+                            var peerId = _nodes.FirstOrDefault(n => n.Url == url)?.PeerId ?? 0;
+
+                            if (peerId == 0)
                             {
                                 return true;
                             }
 
                             var lastCreatedAt = existingSnaps
-                                .Where(s => s.SnapshotName.Contains(peerId, StringComparison.OrdinalIgnoreCase) && s.CreatedAt.HasValue)
+                                .Where(s => s.SnapshotName.Contains(peerId.ToString(), StringComparison.OrdinalIgnoreCase) && s.CreatedAt.HasValue)
                                 .Max(s => s.CreatedAt);
+
                             return IsIntervalSnapshotDue(
                                 now,
                                 lastCreatedAt,
@@ -341,11 +345,12 @@ public sealed class SnapshotAutomationJob : IJob
         try
         {
             var retentionPeerIds = _nodes
-                .Where(n => !string.IsNullOrEmpty(n.PeerId))
-                .Select(n => n.PeerId!)
+                .Where(n => n.PeerId != 0)
+                .Select(n => n.PeerId)
                 .ToHashSet();
 
             SetCurrentAction(Actions.CreatingSnapshot(collectionName, nodeUrls.Count));
+
             var batch = await snapshotService.CreateCollectionSnapshotAsync(
                     collectionName,
                     nodeUrls,
@@ -353,6 +358,7 @@ public sealed class SnapshotAutomationJob : IJob
                     waitForResult: false,
                     retainLastNAfterVisible: schedule.RetainLastN,
                     retentionClusterPeerIds: retentionPeerIds)
+
                 .ConfigureAwait(false);
             if (batch.SkippedDuplicatePending)
             {
@@ -497,6 +503,7 @@ public sealed class SnapshotAutomationJob : IJob
             .Where(n => n.IsHealthy)
             .Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName))
             .ToList();
+
         if (nodesTuple.Count == 0)
         {
             return;

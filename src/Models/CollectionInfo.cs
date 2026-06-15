@@ -8,22 +8,22 @@ public class CollectionInfo
 
     public string NodeUrl { get; set; } = string.Empty;
 
-    public string PeerId { get; set; } = string.Empty;
+    public ulong PeerId { get; set; } = 0;
 
     public string CollectionName { get; set; } = string.Empty;
-    
+
     public string PodNamespace { get; set; } = string.Empty;
 
     public CollectionMetrics Metrics { get; set; } = [];
-    
+
     public List<string> Issues { get; set; } = [];
 
     public List<string> Warnings { get; set; } = [];
 
     public List<CollectionOptimizationInfo> RunningOptimizations { get; set; } = [];
-    
+
     public List<string> Aliases { get; set; } = [];
-    
+
     /// <summary>
     /// Collection status from Qdrant API.
     /// Green - all good, Yellow - optimization is running, Red - some operations failed.

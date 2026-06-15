@@ -39,7 +39,7 @@ public class ClusterControllerTests
                 new()
                 {
                     Url = "http://node1:6333",
-                    PeerId = "peer1",
+                    PeerId = 1,
                     IsHealthy = true,
                     IsLeader = true,
                     PodName = "pod1",
@@ -74,7 +74,7 @@ public class ClusterControllerTests
                 new()
                 {
                     Url = "http://node1:6333",
-                    PeerId = "peer1",
+                    PeerId = 1,
                     IsHealthy = false,
                     IsLeader = false,
                     Issues = ["Connection timeout"],
@@ -84,7 +84,7 @@ public class ClusterControllerTests
                 new()
                 {
                     Url = "http://node2:6333",
-                    PeerId = "peer2",
+                    PeerId = 2,
                     IsHealthy = false,
                     IsLeader = false,
                     Issues = ["Network error"],

@@ -7,6 +7,7 @@ using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
 using Vigilante.Services.Jobs;
+using Vigilante.Models.Snapshots;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -40,7 +41,7 @@ public class PendingSnapshotCreationJobTests
         {
             PodName = "pod-1",
             NodeUrl = nodeUrl,
-            PeerId = "peer-1",
+            PeerId = 1,
             CollectionName = collectionName,
             SnapshotName = "snap-1",
             SizeBytes = 0,
@@ -58,7 +59,7 @@ public class PendingSnapshotCreationJobTests
         {
             PodName = S3Constants.StorageIdentifier,
             NodeUrl = S3Constants.StorageIdentifier,
-            PeerId = S3Constants.StorageIdentifier,
+            PeerId = 1,
             CollectionName = collectionName,
             SnapshotName = snapshotName,
             SizeBytes = 0,
@@ -74,7 +75,7 @@ public class PendingSnapshotCreationJobTests
         DateTime? requestedAtUtc = null,
         IReadOnlySet<string>? baselineSnapshotKeys = null,
         int? retainLastNAfterVisible = null,
-        IReadOnlySet<string>? retentionClusterPeerIds = null,
+        IReadOnlySet<ulong>? retentionClusterPeerIds = null,
         TimeSpan? timeout = null)
     {
         return new PendingSnapshotCreationJob(
@@ -197,7 +198,7 @@ public class PendingSnapshotCreationJobTests
         var job = CreateJob("col");
         _snapshotService
             .GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(Task.FromException<IReadOnlyList<SnapshotInfo>>(new InvalidOperationException("Node unavailable")));
+            .Returns(Task.FromException<IReadOnlyCollection<SnapshotInfo>>(new InvalidOperationException("Node unavailable")));
 
         var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
@@ -339,7 +340,7 @@ public class PendingSnapshotCreationJobTests
     {
         var requestedAt = DateTime.UtcNow.AddSeconds(-10);
         var nodes = NodeList("http://node1:6333");
-        var peerIds = new HashSet<string> { "p1" };
+        var peerIds = new HashSet<ulong> { 1 };
         var job = CreateJob(
             "col",
             nodes,
