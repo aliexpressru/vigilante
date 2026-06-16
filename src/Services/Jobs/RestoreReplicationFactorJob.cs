@@ -29,7 +29,8 @@ internal sealed class RestoreReplicationFactorJob : IJob
         string collectionName,
         IAsyncEnumerator<ReplicateShardsToPeerResponse> enumerator,
         IReadOnlyList<ScheduledShardReplication> replicationPlanSnapshot,
-        bool waitingForReady)
+        bool waitingForReady
+    )
     {
         _client = client;
         CollectionName = collectionName;
@@ -49,7 +50,8 @@ internal sealed class RestoreReplicationFactorJob : IJob
         string collectionName,
         ShardTransferMethod transferMethod,
         TimeSpan? timeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var logger = serviceProvider.GetRequiredService<ILogger<RestoreReplicationFactorJob>>();
         var response = await client.RestoreShardReplicationFactor(
@@ -58,7 +60,8 @@ internal sealed class RestoreReplicationFactorJob : IJob
             logger: logger,
             isDryRun: false,
             shardTransferMethod: transferMethod,
-            timeout: timeout);
+            timeout: timeout
+        );
 
         if (response is null)
         {
@@ -67,7 +70,7 @@ internal sealed class RestoreReplicationFactorJob : IJob
 
         if (response.Status.IsSuccess != true)
         {
-            return (null, GetRestoreShardReplicationFactorStartFailureMessage(response.Status));
+            return (null, $"Failed to start restore replication factor: {response.Status.GetErrorMessage() ?? "Unknown error"}");
         }
 
         if (response.Result is null)
@@ -81,11 +84,13 @@ internal sealed class RestoreReplicationFactorJob : IJob
         }
 
         var replicator = response.Result;
+
         // Snapshot the full plan BEFORE the first MoveNextAsync() call, because MoveNext dequeues step #1.
-        var replicationPlanSnapshot = replicator.ReplicationPlan
-            .OrderBy(p => p.StepNumber)
-            .ToList();
-        var enumerator = replicator.ExecuteReplications(cancellationToken, transferMethod, timeout).GetAsyncEnumerator(cancellationToken);
+        var replicationPlanSnapshot = replicator.ReplicationPlan.OrderBy(p => p.StepNumber).ToList();
+
+        var enumerator = replicator
+            .ExecuteReplications(cancellationToken, transferMethod, timeout)
+            .GetAsyncEnumerator(cancellationToken);
 
         if (!await enumerator.MoveNextAsync())
         {
@@ -93,32 +98,39 @@ internal sealed class RestoreReplicationFactorJob : IJob
         }
 
         var replicateResponse = enumerator.Current;
+
         var step1Failure = GetReplicationStepFailureMessage(
             replicateResponse,
             failedToStartPrefix: "Step 1: replication failed to start",
             noReplicatedShardsMessage: "Step 1: replication response has no ReplicatedShards",
-            itemFailurePrefix: "Step 1: replication failed");
+            itemFailurePrefix: "Step 1: replication failed"
+        );
 
         if (step1Failure is not null)
         {
             return (null, step1Failure);
         }
 
-        var job = new RestoreReplicationFactorJob(client, collectionName, enumerator, replicationPlanSnapshot, waitingForReady: true);
+        var job = new RestoreReplicationFactorJob(
+            client,
+            collectionName,
+            enumerator,
+            replicationPlanSnapshot,
+            waitingForReady: true
+        );
+
         return (job, null);
     }
 
     public IReadOnlyDictionary<string, object?>? GetMetadata()
     {
         // Keep metadata stable for the whole job lifetime; live ReplicationPlan queue is consumed during execution.
-        var currentAction = IsWaitingForReady
-            ? "Waiting for shard transfers to complete"
-            : "Restoring replication factor";
+        var currentAction = IsWaitingForReady ? "Waiting for shard transfers to complete" : "Restoring replication factor";
 
         var metadata = new Dictionary<string, object?>
         {
             [JobMetadataKeys.CurrentAction] = currentAction,
-            [JobMetadataKeys.StartedAtUtc] = _startedAtUtc
+            [JobMetadataKeys.StartedAtUtc] = _startedAtUtc,
         };
 
         if (_replicationPlanSnapshot.Count > 0)
@@ -135,7 +147,9 @@ internal sealed class RestoreReplicationFactorJob : IJob
             CollectionName,
             cancellationToken,
             requiredNumberOfGreenCollectionResponses: 1,
-            isCheckShardTransfersCompleted: true);
+            isCheckShardTransfersCompleted: true
+        );
+
         return readyResponse?.Result;
     }
 
@@ -148,7 +162,9 @@ internal sealed class RestoreReplicationFactorJob : IJob
     {
         if (IsWaitingForReady)
         {
-            throw new InvalidOperationException("Call OnReady() after CheckReadyAsync returned true before calling AdvanceAsync.");
+            throw new InvalidOperationException(
+                "Call OnReady() after CheckReadyAsync returned true before calling AdvanceAsync."
+            );
         }
 
         if (!await _enumerator.MoveNextAsync())
@@ -161,7 +177,8 @@ internal sealed class RestoreReplicationFactorJob : IJob
             replicateResponse,
             failedToStartPrefix: "Replication step failed to start",
             noReplicatedShardsMessage: "Replication step failed: response has no ReplicatedShards",
-            itemFailurePrefix: "Replication failed");
+            itemFailurePrefix: "Replication failed"
+        );
 
         if (failure is not null)
         {
@@ -183,17 +200,12 @@ internal sealed class RestoreReplicationFactorJob : IJob
         return _enumerator.DisposeAsync();
     }
 
-    internal static string GetRestoreShardReplicationFactorStartFailureMessage(QdrantStatus status)
-    {
-        var msg = status.GetErrorMessage() ?? "Unknown error";
-        return $"Failed to start restore replication factor: {msg}";
-    }
-
     internal static string? GetReplicationStepFailureMessage(
         ReplicateShardsToPeerResponse replicateResponse,
         string failedToStartPrefix,
         string noReplicatedShardsMessage,
-        string itemFailurePrefix)
+        string itemFailurePrefix
+    )
     {
         if (replicateResponse.Status.IsSuccess != true)
         {

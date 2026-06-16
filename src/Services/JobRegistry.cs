@@ -104,6 +104,7 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
     {
         var result = new List<(string Key, string Message)>();
         var expired = new List<string>();
+
         foreach (var (key, (message, recordedAt)) in _jobErrors)
         {
             if (now - recordedAt <= ttl)
@@ -135,6 +136,7 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
             var error = _jobErrors.TryGetValue(key, out var err) ? err.Message : null;
             var errorRecordedAt = _jobErrors.TryGetValue(key, out var err2) ? err2.RecordedAt : (DateTime?)null;
             var metadata = job.GetMetadata();
+
             list.Add(new JobInfoDto(key, error, errorRecordedAt, metadata));
         }
 
@@ -162,9 +164,13 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
         return list;
     }
 
-    public async Task ProcessPendingJobsAsync(CancellationToken cancellationToken = default, IReadOnlySet<string>? excludeJobKeys = null)
+    public async Task ProcessPendingJobsAsync(
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<string>? excludeJobKeys = null
+    )
     {
         var jobs = GetPendingJobs();
+
         if (excludeJobKeys is { Count: > 0 })
         {
             jobs = [.. jobs.Where(p => !excludeJobKeys.Contains(p.Job.Key))];
@@ -183,7 +189,9 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
     {
         var key = pending.Job.Key;
         var gate = _jobExecutionGates.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        await gate.WaitAsync(cancellationToken);
+
         try
         {
             if (cancellationToken.IsCancellationRequested)
@@ -207,7 +215,7 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
 
             if (job.IsWaitingForReady)
             {
-                var ready = await job.CheckReadyAsync(cts.Token).ConfigureAwait(false);
+                var ready = await job.CheckReadyAsync(cts.Token);
                 if (ready == true)
                 {
                     job.OnReady();
@@ -215,7 +223,7 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
             }
             else
             {
-                var (hasMore, success, error) = await job.AdvanceAsync(cts.Token).ConfigureAwait(false);
+                var (hasMore, success, error) = await job.AdvanceAsync(cts.Token);
                 if (!hasMore)
                 {
                     if (!success)
@@ -223,7 +231,7 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
                         RecordJobFailure(key, error ?? "Unknown");
                     }
 
-                    await RemoveJobAsync(key).ConfigureAwait(false);
+                    await RemoveJobAsync(key);
                     if (success)
                     {
                         logger.LogInformation("Job completed for key {Key}", key);
@@ -232,20 +240,20 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
                 else if (!success)
                 {
                     RecordJobFailure(key, error ?? "Unknown");
-                    await RemoveJobAsync(key).ConfigureAwait(false);
+                    await RemoveJobAsync(key);
                 }
             }
         }
         catch (OperationCanceledException)
         {
             logger.LogInformation("Job cancelled for key {Key}", key);
-            await RemoveJobAsync(key).ConfigureAwait(false);
+            await RemoveJobAsync(key);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Job failed for key {Key}", key);
             RecordJobFailure(key, ex.Message);
-            await RemoveJobAsync(key).ConfigureAwait(false);
+            await RemoveJobAsync(key);
         }
         finally
         {

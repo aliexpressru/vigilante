@@ -8,7 +8,7 @@ namespace Vigilante.Services;
 /// <summary>
 /// Stream wrapper for WebSocket that reads binary data from a pod
 /// </summary>
-internal class WebSocketStream : Stream
+internal sealed class WebSocketStream : Stream
 {
     private readonly WebSocket _webSocket;
     private readonly ILogger _logger;
@@ -26,9 +26,13 @@ internal class WebSocketStream : Stream
     private long _totalWebSocketBytes;
 
     public override bool CanRead => true;
+
     public override bool CanSeek => false;
+
     public override bool CanWrite => false;
+
     public override long Length => throw new NotSupportedException();
+
     public override long Position
     {
         get => _totalBytesRead;
@@ -315,12 +319,12 @@ internal class WebSocketStream : Stream
                     _logger.LogInformation(
                         """
                         {Status} Download completed: {FilePath} from {PodName}
-                           Expected file size: {ExpectedSize} bytes ({ExpectedSizeFormatted})
-                           Data bytes (stdout only): {DataBytes} bytes ({FormattedDataSize})
-                           Total WebSocket bytes: {TotalWSBytes} bytes ({FormattedWSSize})
-                           Channel overhead: {Overhead} bytes ({OverheadPercent:F2}%)
-                           {ExtraStatus} Extra data read: {ExtraBytes} bytes ({ExtraSizeFormatted})
-                           Messages: stdout={StdoutCount}, stderr={StderrCount}, other={OtherCount}
+                            Expected file size: {ExpectedSize} bytes ({ExpectedSizeFormatted})
+                            Data bytes (stdout only): {DataBytes} bytes ({FormattedDataSize})
+                            Total WebSocket bytes: {TotalWSBytes} bytes ({FormattedWSSize})
+                            Channel overhead: {Overhead} bytes ({OverheadPercent:F2}%)
+                            {ExtraStatus} Extra data read: {ExtraBytes} bytes ({ExtraSizeFormatted})
+                            Messages: stdout={StdoutCount}, stderr={StderrCount}, other={OtherCount}
                         """,
                         status,
                         _filePath,
@@ -368,6 +372,7 @@ internal class WebSocketStream : Stream
             }
             _disposed = true;
         }
+
         base.Dispose(disposing);
     }
 }

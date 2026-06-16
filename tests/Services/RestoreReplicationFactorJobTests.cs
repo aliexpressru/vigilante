@@ -15,16 +15,6 @@ namespace Aer.Vigilante.Tests.Services;
 public class RestoreReplicationFactorJobTests
 {
     [Test]
-    public void GetRestoreShardReplicationFactorStartFailureMessage_WhenStatusHasError_ReturnsMessage()
-    {
-        var status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "boom" };
-
-        var msg = RestoreReplicationFactorJob.GetRestoreShardReplicationFactorStartFailureMessage(status);
-
-        msg.Should().Be("Failed to start restore replication factor: boom");
-    }
-
-    [Test]
     public void GetReplicationStepFailureMessage_WhenStatusNotSuccess_ReturnsFailedToStartMessage()
     {
         var replicateResponse = new ReplicateShardsToPeerResponse

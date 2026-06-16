@@ -37,7 +37,7 @@ public partial class SnapshotService(
     /// <summary>Excludes overlapping multi-node creates until the pending job is registered (same collection, case-insensitive).</summary>
     private readonly ConcurrentDictionary<string, byte> _snapshotCreateInFlight = new(StringComparer.OrdinalIgnoreCase);
 
-    public Task<SnapshotRecoveryStartResult> RequestRecoverAsync(
+    public async Task<SnapshotRecoveryStartResult> RequestRecoverAsync(
         string collectionName,
         string targetNodeUrl,
         Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
@@ -52,10 +52,26 @@ public partial class SnapshotService(
     {
         if (waitForResult)
         {
-            return ExecuteRecoverStartAsync(cancellationToken);
+            var (success, error) = await ExecuteRecoverAsync(
+                collectionName,
+                targetNodeUrl,
+                snapshotPriority,
+                waitForResult: true,
+                cancellationToken,
+                source,
+                snapshotName,
+                sourceCollectionName,
+                snapshotUrl,
+                snapshotChecksum
+            );
+
+            return success
+                ? new SnapshotRecoveryStartResult(false, false, $"Collection '{collectionName}' recovered successfully")
+                : new SnapshotRecoveryStartResult(true, false, error ?? "Recovery failed");
         }
 
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
         IJob job = new RecoverFromSnapshotJob(
             serviceProvider,
             collectionName,
@@ -71,42 +87,19 @@ public partial class SnapshotService(
         if (!jobRegistry.TryAddJob(job, cts))
         {
             cts.Dispose();
-            return Task.FromResult(
-                new SnapshotRecoveryStartResult(
-                    ApiError: false,
-                    AlreadyInProgress: true,
-                    Message: $"Recovery already in progress for collection '{collectionName}'"
-                )
-            );
-        }
 
-        return Task.FromResult(
-            new SnapshotRecoveryStartResult(
+            return new SnapshotRecoveryStartResult(
                 ApiError: false,
-                AlreadyInProgress: false,
-                Message: $"Recovery started for collection '{collectionName}'"
-            )
-        );
-
-        async Task<SnapshotRecoveryStartResult> ExecuteRecoverStartAsync(CancellationToken ct)
-        {
-            var (success, error) = await ExecuteRecoverAsync(
-                collectionName,
-                targetNodeUrl,
-                snapshotPriority,
-                waitForResult: true,
-                ct,
-                source,
-                snapshotName,
-                sourceCollectionName,
-                snapshotUrl,
-                snapshotChecksum
+                AlreadyInProgress: true,
+                Message: $"Recovery already in progress for collection '{collectionName}'"
             );
-
-            return success
-                ? new SnapshotRecoveryStartResult(false, false, $"Collection '{collectionName}' recovered successfully")
-                : new SnapshotRecoveryStartResult(true, false, error ?? "Recovery failed");
         }
+
+        return new SnapshotRecoveryStartResult(
+            ApiError: false,
+            AlreadyInProgress: false,
+            Message: $"Recovery started for collection '{collectionName}'"
+        );
     }
 
     public async Task<(bool Success, string? ErrorMessage)> ExecuteRecoverAsync(
