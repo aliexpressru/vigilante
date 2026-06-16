@@ -2,7 +2,7 @@ using Aer.QdrantClient.Http.Models.Responses.Base;
 
 namespace Vigilante.Extensions;
 
-public static class QdrantResponseExtensions
+internal static class QdrantResponseExtensions
 {
     extension<T>(QdrantResponseBase<T>? response)
     {

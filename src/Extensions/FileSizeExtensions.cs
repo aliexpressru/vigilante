@@ -1,6 +1,6 @@
 namespace Vigilante.Extensions;
 
-public static class FileSizeExtensions
+internal static class FileSizeExtensions
 {
     private static readonly string[] _sizeSuffixes = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
 

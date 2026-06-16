@@ -5,7 +5,7 @@ namespace Vigilante.Extensions;
 /// <summary>
 /// Extension methods for IQdrantClientFactory to simplify client creation.
 /// </summary>
-public static class QdrantClientFactoryExtensions
+internal static class QdrantClientFactoryExtensions
 {
     extension(IQdrantClientFactory factory)
     {

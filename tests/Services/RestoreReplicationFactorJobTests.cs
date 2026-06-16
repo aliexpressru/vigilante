@@ -159,9 +159,10 @@ public class RestoreReplicationFactorJobTests
         var client = Substitute.For<IQdrantHttpClient>();
         var job = CreateJobForTest(client, "col1", enumerator, plan, waitingForReady: false);
 
-        var advance = await job.AdvanceAsync(CancellationToken.None);
-        advance.Success.Should().BeTrue();
-        advance.HasMore.Should().BeTrue();
+        var (HasMore, Success, _) = await job.AdvanceAsync(CancellationToken.None);
+
+        Success.Should().BeTrue();
+        HasMore.Should().BeTrue();
 
         var metadata = job.GetMetadata();
         metadata.Should().NotBeNull();

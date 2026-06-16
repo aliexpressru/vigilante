@@ -33,11 +33,12 @@ public class RecoverFromSnapshotJobTests
             "snap1",
             "source-col");
 
-        var result = await job.AdvanceAsync(CancellationToken.None);
+        var (HasMore, Success, ErrorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        result.HasMore.Should().BeTrue();
-        result.Success.Should().BeTrue();
-        result.ErrorMessage.Should().BeNull();
+        HasMore.Should().BeTrue();
+        Success.Should().BeTrue();
+        ErrorMessage.Should().BeNull();
+
         job.IsWaitingForReady.Should().BeTrue();
     }
 
@@ -55,11 +56,11 @@ public class RecoverFromSnapshotJobTests
             "snap1",
             "source-col");
 
-        var result = await job.AdvanceAsync(CancellationToken.None);
+        var (HasMore, Success, ErrorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        result.HasMore.Should().BeFalse();
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Be("Failed to recover collection 'col1' from snapshot 'snap1' on http://node1:6333");
+        HasMore.Should().BeFalse();
+        Success.Should().BeFalse();
+        ErrorMessage.Should().Be("Failed to recover collection 'col1' from snapshot 'snap1' on http://node1:6333");
         job.IsWaitingForReady.Should().BeFalse();
     }
 
@@ -266,11 +267,11 @@ public class RecoverFromSnapshotJobTests
             .GetField("_timedOut", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
             .SetValue(job, true);
 
-        var result = await job.AdvanceAsync(CancellationToken.None);
+        var (HasMore, Success, ErrorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        result.HasMore.Should().BeFalse();
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Be("Recovery did not complete within timeout");
+        HasMore.Should().BeFalse();
+        Success.Should().BeFalse();
+        ErrorMessage.Should().Be("Recovery did not complete within timeout");
     }
 
     [Test]
@@ -289,11 +290,11 @@ public class RecoverFromSnapshotJobTests
             snapshotUrl: "https://s3.example.com/bucket/snap1.snapshot",
             snapshotChecksum: "abc123");
 
-        var result = await job.AdvanceAsync(CancellationToken.None);
+        var (HasMore, Success, ErrorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        result.HasMore.Should().BeTrue();
-        result.Success.Should().BeTrue();
-        result.ErrorMessage.Should().BeNull();
+        HasMore.Should().BeTrue();
+        Success.Should().BeTrue();
+        ErrorMessage.Should().BeNull();
         job.IsWaitingForReady.Should().BeTrue();
     }
 
@@ -323,9 +324,11 @@ public class RecoverFromSnapshotJobTests
             "snap1",
             "source-col");
 
-        var start = await job.AdvanceAsync(CancellationToken.None);
-        start.Success.Should().BeTrue();
-        start.HasMore.Should().BeTrue();
+        var (HasMore, Success, _) = await job.AdvanceAsync(CancellationToken.None);
+
+        Success.Should().BeTrue();
+        HasMore.Should().BeTrue();
+
         job.IsWaitingForReady.Should().BeTrue();
 
         return (job, clusterManager, snapshotService);

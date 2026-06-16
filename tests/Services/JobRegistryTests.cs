@@ -3,12 +3,13 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using FluentAssertions;
 using NUnit.Framework;
-using Vigilante.Models;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
 using Vigilante.Services.Jobs;
 
 namespace Aer.Vigilante.Tests.Services;
+
+#pragma warning disable CA2012 // Use ValueTasks correctly | Justification - ValueTask returned form DisposeAsync is inspected in tests;
 
 [TestFixture]
 public class JobRegistryTests
@@ -342,3 +343,5 @@ public class JobRegistryTests
         return job;
     }
 }
+
+#pragma warning restore CA2012 // Use ValueTasks correctly

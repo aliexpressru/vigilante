@@ -5,7 +5,7 @@ namespace Vigilante.Extensions;
 /// <summary>
 /// Extension methods for consistent node and collection sorting
 /// </summary>
-public static class NodeSortingExtensions
+internal static class NodeSortingExtensions
 {
     /// <summary>
     /// Gets the sort key for a node/collection based on PodName (preferred) or PeerId (fallback).
