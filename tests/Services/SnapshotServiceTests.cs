@@ -6,10 +6,12 @@ using NSubstitute;
 using NUnit.Framework;
 using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Responses;
+using Aer.QdrantClient.Http.Models.Responses.CompoundOperations;
 using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Configuration;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
+using Vigilante.Models.Requests;
 using Vigilante.Services.Interfaces;
 using Vigilante.Services.Snapshots;
 
@@ -38,8 +40,6 @@ public class SnapshotServiceTests
         _commandExecutor = Substitute.For<IPodCommandExecutor>();
         _dynamicConfigService = Substitute.For<IDynamicConfigService>();
         _jobRegistry = Substitute.For<IJobRegistry>();
-        var serviceProvider = new ServiceCollection().BuildServiceProvider();
-
         _options.Value.Returns(new QdrantOptions { HttpTimeoutSeconds = 5 });
 
         // Mock S3SnapshotService to avoid real S3 dependencies in tests
@@ -50,6 +50,9 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult(false));
         _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new DynamicConfig()));
+
+        // Logging registered so CreateAsync can resolve ILogger<RecoverFromMultipleSnapshotsJob>
+        var serviceProvider = new ServiceCollection().AddLogging().BuildServiceProvider();
 
         _snapshotManager = new SnapshotService(
             _nodesProvider,
@@ -399,12 +402,6 @@ public class SnapshotServiceTests
         // Arrange
         var collectionName = "test_collection";
         var snapshotName = "test-snapshot.snapshot";
-
-        var nodes = new[]
-        {
-            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" },
-            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" }
-        };
 
         // Mock S3 deletion
         _s3SnapshotService.DeleteSnapshotAsync(collectionName, snapshotName, Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -1159,16 +1156,218 @@ public class SnapshotServiceTests
 
     #endregion
 
+    #region RequestMultiRecoverAsync Tests
+
+    [Test]
+    public async Task RequestMultiRecoverAsync_S3Storage_WhenPresignedUrlFails_ReturnsApiError()
+    {
+        const string targetCollectionName = "target-col";
+        const string snapshotName = "snap.snapshot";
+        const string nodeUrl = "http://node1:6333";
+
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(Substitute.For<IQdrantHttpClient>());
+
+        _s3SnapshotService.GetPresignedDownloadUrlAsync(
+                Arg.Any<string>(), snapshotName, Arg.Any<TimeSpan>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(null));
+
+        var result = await _snapshotManager.RequestMultiRecoverAsync(
+            targetCollectionName,
+            [new V1MultiRecoverItem { TargetNodeUrl = nodeUrl, SnapshotName = snapshotName, SnapshotSource = "S3Storage" }],
+            SnapshotPriority.Snapshot,
+            CancellationToken.None);
+
+        result.ApiError.Should().BeTrue();
+        result.AlreadyInProgress.Should().BeFalse();
+        result.Message.Should().Contain(snapshotName);
+
+        await _s3SnapshotService.Received(1).GetPresignedDownloadUrlAsync(
+            Arg.Any<string>(), snapshotName, Arg.Any<TimeSpan>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RequestMultiRecoverAsync_S3Storage_UsesSourceCollectionNameForPresignedUrl()
+    {
+        const string sourceCollectionName = "source-col";
+        const string targetCollectionName = "target-col";
+        const string snapshotName = "snap.snapshot";
+        const string nodeUrl = "http://node1:6333";
+        const string presignedUrl = "https://s3.example.com/bucket/snap.snapshot?token=abc";
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient);
+
+        _s3SnapshotService.GetPresignedDownloadUrlAsync(
+                sourceCollectionName, snapshotName, Arg.Any<TimeSpan>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(presignedUrl));
+
+        mockClient.RecoverCollectionFromSnapshots(
+                Arg.Any<string>(), Arg.Any<IQdrantHttpClient[]>(), Arg.Any<Uri[]>(), Arg.Any<CancellationToken>(),
+                Arg.Any<ILogger>(), Arg.Any<SnapshotPriority?>(), Arg.Any<string[]>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new RecoverCollectionFromSnapshotsResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "test" }
+            }));
+
+        await _snapshotManager.RequestMultiRecoverAsync(
+            targetCollectionName,
+            [new V1MultiRecoverItem { TargetNodeUrl = nodeUrl, SnapshotName = snapshotName, SnapshotSource = "S3Storage" }],
+            SnapshotPriority.Snapshot,
+            CancellationToken.None,
+            sourceCollectionName: sourceCollectionName);
+
+        await _s3SnapshotService.Received(1).GetPresignedDownloadUrlAsync(
+            sourceCollectionName, snapshotName, Arg.Any<TimeSpan>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RequestMultiRecoverAsync_S3Storage_FallsBackToTargetCollectionName_WhenSourceIsNull()
+    {
+        const string targetCollectionName = "target-col";
+        const string snapshotName = "snap.snapshot";
+        const string nodeUrl = "http://node1:6333";
+        const string presignedUrl = "https://s3.example.com/bucket/snap.snapshot?token=abc";
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient);
+
+        _s3SnapshotService.GetPresignedDownloadUrlAsync(
+                targetCollectionName, snapshotName, Arg.Any<TimeSpan>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(presignedUrl));
+
+        mockClient.RecoverCollectionFromSnapshots(
+                Arg.Any<string>(), Arg.Any<IQdrantHttpClient[]>(), Arg.Any<Uri[]>(), Arg.Any<CancellationToken>(),
+                Arg.Any<ILogger>(), Arg.Any<SnapshotPriority?>(), Arg.Any<string[]>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new RecoverCollectionFromSnapshotsResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "test" }
+            }));
+
+        await _snapshotManager.RequestMultiRecoverAsync(
+            targetCollectionName,
+            [new V1MultiRecoverItem { TargetNodeUrl = nodeUrl, SnapshotName = snapshotName, SnapshotSource = "S3Storage" }],
+            SnapshotPriority.Snapshot,
+            CancellationToken.None,
+            sourceCollectionName: null);
+
+        await _s3SnapshotService.Received(1).GetPresignedDownloadUrlAsync(
+            targetCollectionName, snapshotName, Arg.Any<TimeSpan>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RequestMultiRecoverAsync_KubernetesStorage_UsesSourceCollectionNameInFileUri()
+    {
+        const string sourceCollectionName = "source-col";
+        const string targetCollectionName = "target-col";
+        const string snapshotName = "snap.snapshot";
+        const string nodeUrl = "http://node1:6333";
+        var expectedUri = new Uri($"file:///qdrant/snapshots/{sourceCollectionName}/{snapshotName}");
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient);
+
+        mockClient.RecoverCollectionFromSnapshots(
+                Arg.Any<string>(), Arg.Any<IQdrantHttpClient[]>(), Arg.Any<Uri[]>(), Arg.Any<CancellationToken>(),
+                Arg.Any<ILogger>(), Arg.Any<SnapshotPriority?>(), Arg.Any<string[]>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new RecoverCollectionFromSnapshotsResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "test" }
+            }));
+
+        await _snapshotManager.RequestMultiRecoverAsync(
+            targetCollectionName,
+            [new V1MultiRecoverItem { TargetNodeUrl = nodeUrl, SnapshotName = snapshotName, SnapshotSource = "KubernetesStorage" }],
+            SnapshotPriority.Snapshot,
+            CancellationToken.None,
+            sourceCollectionName: sourceCollectionName);
+
+        await mockClient.Received(1).RecoverCollectionFromSnapshots(
+            targetCollectionName,
+            Arg.Any<IQdrantHttpClient[]>(),
+            Arg.Is<Uri[]>(uris => uris.Length == 1 && uris[0] == expectedUri),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<ILogger>(),
+            Arg.Any<SnapshotPriority?>(),
+            Arg.Any<string[]>(),
+            Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task RequestMultiRecoverAsync_WhenQdrantApiCallFails_ReturnsApiError()
+    {
+        const string targetCollectionName = "target-col";
+        const string sourceCollectionName = "source-col";
+        const string snapshotName = "snap.snapshot";
+        const string nodeUrl = "http://node1:6333";
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient);
+
+        mockClient.RecoverCollectionFromSnapshots(
+                Arg.Any<string>(), Arg.Any<IQdrantHttpClient[]>(), Arg.Any<Uri[]>(), Arg.Any<CancellationToken>(),
+                Arg.Any<ILogger>(), Arg.Any<SnapshotPriority?>(), Arg.Any<string[]>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new RecoverCollectionFromSnapshotsResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "Qdrant error" }
+            }));
+
+        var result = await _snapshotManager.RequestMultiRecoverAsync(
+            targetCollectionName,
+            [new V1MultiRecoverItem { TargetNodeUrl = nodeUrl, SnapshotName = snapshotName, SnapshotSource = "KubernetesStorage" }],
+            SnapshotPriority.Snapshot,
+            CancellationToken.None,
+            sourceCollectionName: sourceCollectionName);
+
+        result.ApiError.Should().BeTrue();
+        result.AlreadyInProgress.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task RequestMultiRecoverAsync_WhenCollectionRecovererHasNoSteps_ReturnsSuccessWithNoStepsMessage()
+    {
+        const string targetCollectionName = "target-col";
+        const string sourceCollectionName = "source-col";
+        const string snapshotName = "snap.snapshot";
+        const string nodeUrl = "http://node1:6333";
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient);
+
+        mockClient.RecoverCollectionFromSnapshots(
+                Arg.Any<string>(), Arg.Any<IQdrantHttpClient[]>(), Arg.Any<Uri[]>(), Arg.Any<CancellationToken>(),
+                Arg.Any<ILogger>(), Arg.Any<SnapshotPriority?>(), Arg.Any<string[]>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new RecoverCollectionFromSnapshotsResponse
+            {
+                Result = null,
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var result = await _snapshotManager.RequestMultiRecoverAsync(
+            targetCollectionName,
+            [new V1MultiRecoverItem { TargetNodeUrl = nodeUrl, SnapshotName = snapshotName, SnapshotSource = "KubernetesStorage" }],
+            SnapshotPriority.Snapshot,
+            CancellationToken.None,
+            sourceCollectionName: sourceCollectionName);
+
+        result.ApiError.Should().BeFalse();
+        result.AlreadyInProgress.Should().BeFalse();
+        result.Message.Should().Contain("no recovery steps");
+    }
+
+    #endregion
+
     #region EnforceRetentionAsync Tests
 
     [Test]
     public async Task EnforceRetentionAsync_WhenCurrentClusterPeerIdsProvided_DeletesOrphanedPeerSnapshots()
     {
         // Arrange: S3 returns snapshots for collection "col1" from 3 peers: 111, 222 (current) and 999 (orphan)
-        var nodes = new[]
-        {
-            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
-        };
         _nodesProvider.BuildNodeInfoListAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new List<NodeInfo>
             {
@@ -1207,10 +1406,6 @@ public class SnapshotServiceTests
     public async Task EnforceRetentionAsync_WhenCurrentClusterPeerIdsProvided_AppliesRetainLastN_ToCurrentPeersOnly()
     {
         // Arrange: two snapshots for peer 111 (keep last 1), one for orphan 999 (delete all)
-        var nodes = new[]
-        {
-            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
-        };
         _nodesProvider.BuildNodeInfoListAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new List<NodeInfo>
             {
@@ -1255,10 +1450,6 @@ public class SnapshotServiceTests
     {
         // Arrange: one snapshot per peer (111, 222, 999). With null currentClusterPeerIds we only apply retain-last-N;
         // each group has 1 snapshot, retain 1 -> no deletion from retention. So no delete calls.
-        var nodes = new[]
-        {
-            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
-        };
         _nodesProvider.BuildNodeInfoListAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new List<NodeInfo>
             {
