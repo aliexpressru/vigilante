@@ -5,7 +5,7 @@ using FluentAssertions;
 using NUnit.Framework;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
+using Vigilante.Services.Jobs.Snapshots;
 
 namespace Aer.Vigilante.Tests.Services;
 

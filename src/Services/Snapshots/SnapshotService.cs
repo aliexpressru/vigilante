@@ -7,9 +7,10 @@ using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
+using Vigilante.Models.Requests;
 using Vigilante.Models.Snapshots;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
+using Vigilante.Services.Jobs.Snapshots;
 
 namespace Vigilante.Services.Snapshots;
 
@@ -102,6 +103,115 @@ public partial class SnapshotService(
         );
     }
 
+    public async Task<SnapshotRecoveryStartResult> RequestMultiRecoverAsync(
+        string targetCollectionName,
+        IReadOnlyList<V1MultiRecoverItem> recoveryItems,
+        Aer.QdrantClient.Http.Models.Shared.SnapshotPriority snapshotPriority,
+        CancellationToken cancellationToken,
+        string? sourceCollectionName = null
+    )
+    {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        var peerClients = new IQdrantHttpClient[recoveryItems.Count];
+        var snapshotUris = new Uri[recoveryItems.Count];
+        var targetNodeUrls = new string[recoveryItems.Count];
+
+        for (var i = 0; i < recoveryItems.Count; i++)
+        {
+            var item = recoveryItems[i];
+            peerClients[i] = clientFactory.CreateClientFromUrl(item.TargetNodeUrl, _options.ApiKey);
+            targetNodeUrls[i] = item.TargetNodeUrl;
+
+            _ = Enum.TryParse<SnapshotSource>(item.SnapshotSource, out var snapshotSource);
+
+            switch (snapshotSource)
+            {
+                case SnapshotSource.S3Storage:
+                {
+                    var sourceCollection = !string.IsNullOrWhiteSpace(sourceCollectionName)
+                        ? sourceCollectionName
+                        : targetCollectionName;
+
+                    var presignedUrl = await s3SnapshotService.GetPresignedDownloadUrlAsync(
+                        sourceCollection!,
+                        item.SnapshotName,
+                        TimeSpan.FromHours(2), // since recovery is done one node at a time - twice the expiration
+                        null,
+                        cancellationToken
+                    );
+
+                    if (string.IsNullOrWhiteSpace(presignedUrl))
+                    {
+                        cts.Dispose();
+                        return new SnapshotRecoveryStartResult(
+                            ApiError: true,
+                            AlreadyInProgress: false,
+                            Message: $"Failed to generate presigned URL for snapshot '{item.SnapshotName}' on item {i + 1}"
+                        );
+                    }
+
+                    snapshotUris[i] = new Uri(presignedUrl);
+                    break;
+                }
+
+                case SnapshotSource.KubernetesStorage or SnapshotSource.QdrantApi
+                    when !string.IsNullOrWhiteSpace(sourceCollectionName)
+                        && !string.Equals(sourceCollectionName, targetCollectionName, StringComparison.Ordinal):
+
+                    snapshotUris[i] = new Uri($"file:///qdrant/snapshots/{sourceCollectionName!}/{item.SnapshotName}");
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Can't restore collection {targetCollectionName} from source {snapshotSource}"
+                    );
+            }
+        }
+
+        var (job, errorMessage) = await RecoverFromMultipleSnapshotsJob.CreateAsync(
+            serviceProvider,
+            peerClients,
+            snapshotUris,
+            targetNodeUrls,
+            targetCollectionName,
+            snapshotPriority,
+            cancellationToken
+        );
+
+        if (errorMessage is not null)
+        {
+            cts.Dispose();
+            return new SnapshotRecoveryStartResult(ApiError: true, AlreadyInProgress: false, Message: errorMessage);
+        }
+
+        if (job is null)
+        {
+            cts.Dispose();
+            return new SnapshotRecoveryStartResult(
+                ApiError: false,
+                AlreadyInProgress: false,
+                Message: $"Collection '{targetCollectionName}' has no recovery steps to execute"
+            );
+        }
+
+        if (!jobRegistry.TryAddJob(job, cts))
+        {
+            cts.Dispose();
+            return new SnapshotRecoveryStartResult(
+                ApiError: false,
+                AlreadyInProgress: true,
+                Message: $"Multi-snapshot recovery already in progress for collection '{targetCollectionName}'"
+            );
+        }
+
+        return new SnapshotRecoveryStartResult(
+            ApiError: false,
+            AlreadyInProgress: false,
+            Message: $"Multi-snapshot recovery started for collection '{targetCollectionName}' on {recoveryItems.Count} node(s)"
+        );
+    }
+
     public async Task<(bool Success, string? ErrorMessage)> ExecuteRecoverAsync(
         string collectionName,
         string targetNodeUrl,
@@ -142,6 +252,7 @@ public partial class SnapshotService(
                     var sourceCollection = !string.IsNullOrWhiteSpace(sourceCollectionName)
                         ? sourceCollectionName
                         : collectionName;
+
                     var presignedUrl = await s3SnapshotService.GetPresignedDownloadUrlAsync(
                         sourceCollection!,
                         snapshotName!,
@@ -155,8 +266,10 @@ public partial class SnapshotService(
                     }
 
                     var qdrantClient = clientFactory.CreateClientFromUrl(targetNodeUrl, _options.ApiKey);
+
                     var presignedUri = new Uri(presignedUrl);
-                    var s3Result = await qdrantClient.RecoverCollectionFromSnapshot(
+
+                    var s3RecoverResult = await qdrantClient.RecoverCollectionFromSnapshot(
                         collectionName,
                         presignedUri,
                         cancellationToken,
@@ -164,21 +277,26 @@ public partial class SnapshotService(
                         snapshotPriority: snapshotPriority,
                         snapshotChecksum: null
                     );
-                    return s3Result.IsAcceptedOrSuccess()
+
+                    return s3RecoverResult.IsAcceptedOrSuccess()
                         ? (true, null)
                         : (
                             false,
                             $"Failed to recover collection '{collectionName}' from snapshot '{snapshotName}' on {targetNodeUrl}"
                         );
                 }
+
                 case SnapshotSource.KubernetesStorage
                     when !string.IsNullOrWhiteSpace(sourceCollectionName)
                         && !string.Equals(sourceCollectionName, collectionName, StringComparison.Ordinal):
                 {
                     var snapshotPath = $"file:///qdrant/snapshots/{sourceCollectionName}/{snapshotName}";
+
                     var qdrantClient = clientFactory.CreateClientFromUrl(targetNodeUrl, _options.ApiKey);
+
                     var snapshotPathUri = new Uri(snapshotPath);
-                    var pathResult = await qdrantClient.RecoverCollectionFromSnapshot(
+
+                    var pathRecoverResult = await qdrantClient.RecoverCollectionFromSnapshot(
                         collectionName,
                         snapshotPathUri,
                         cancellationToken,
@@ -186,7 +304,8 @@ public partial class SnapshotService(
                         snapshotPriority: snapshotPriority,
                         snapshotChecksum: null
                     );
-                    return pathResult.IsAcceptedOrSuccess()
+
+                    return pathRecoverResult.IsAcceptedOrSuccess()
                         ? (true, null)
                         : (
                             false,
@@ -203,6 +322,7 @@ public partial class SnapshotService(
                 isWaitForResult: waitForResult,
                 snapshotPriority: snapshotPriority
             );
+
             return regularResult.IsAcceptedOrSuccess()
                 ? (true, null)
                 : (false, $"Failed to recover collection '{collectionName}' from snapshot '{snapshotName}' on {targetNodeUrl}");

@@ -70,7 +70,7 @@ internal sealed class RestoreReplicationFactorJob : IJob
 
         if (response.Status.IsSuccess != true)
         {
-            return (null, $"Failed to start restore replication factor: {response.Status.GetErrorMessage() ?? "Unknown error"}");
+            return (null, $"Failed to start replication factor restoration: {response.Status.GetErrorMessage() ?? "Unknown error"}");
         }
 
         if (response.Result is null)

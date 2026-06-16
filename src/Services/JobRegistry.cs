@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using Vigilante.Models;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
+using Vigilante.Services.Jobs.Snapshots;
 
 namespace Vigilante.Services;
 

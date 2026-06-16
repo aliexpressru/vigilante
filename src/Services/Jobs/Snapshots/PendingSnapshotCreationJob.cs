@@ -4,7 +4,7 @@ using Vigilante.Models.Enums;
 using Vigilante.Models.Snapshots;
 using Vigilante.Services.Interfaces;
 
-namespace Vigilante.Services.Jobs;
+namespace Vigilante.Services.Jobs.Snapshots;
 
 /// <summary>
 /// Job that completes when new snapshots for the collection appear after the create request.

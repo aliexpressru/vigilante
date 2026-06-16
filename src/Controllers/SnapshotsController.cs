@@ -6,6 +6,7 @@ using Vigilante.Models.Enums;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
 using Vigilante.Services.Interfaces;
+using Vigilante.Models.Snapshots;
 
 namespace Vigilante.Controllers;
 
@@ -398,6 +399,66 @@ public class SnapshotsController(
             {
                 Success = false,
                 Message = "Internal server error during recovery",
+                Error = ex.Message
+            });
+        }
+    }
+
+    [HttpPost("recover-multi")]
+    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1RecoverFromSnapshotResponse>> RecoverFromMultipleSnapshots(
+        [FromBody] V1MultiRecoverRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var snapshotPriority = Enum.TryParse<SnapshotPriority>(request.SnapshotPriority, out var parsedPriority)
+                ? parsedPriority
+                : SnapshotPriority.Snapshot;
+
+            var result = await snapshotService.RequestMultiRecoverAsync(
+                request.TargetCollectionName,
+                request.Items,
+                snapshotPriority,
+                cancellationToken,
+                sourceCollectionName: request.SourceCollectionName);
+
+            if (result.AlreadyInProgress)
+            {
+                return Conflict(new V1RecoverFromSnapshotResponse
+                {
+                    Success = false,
+                    Message = result.Message,
+                    Error = "Already in progress"
+                });
+            }
+
+            if (result.ApiError)
+            {
+                return StatusCode(500, new V1RecoverFromSnapshotResponse
+                {
+                    Success = false,
+                    Message = result.Message,
+                    Error = "Recovery failed"
+                });
+            }
+
+            return Accepted(new V1RecoverFromSnapshotResponse
+            {
+                Success = true,
+                Message = result.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during multi-snapshot recovery");
+            return StatusCode(500, new V1RecoverFromSnapshotResponse
+            {
+                Success = false,
+                Message = "Internal server error during multi-snapshot recovery",
                 Error = ex.Message
             });
         }

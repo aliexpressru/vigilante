@@ -8,7 +8,7 @@ using Vigilante.Models;
 using Vigilante.Models.Snapshots;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
+using Vigilante.Services.Jobs.Snapshots;
 using Vigilante.Services.Snapshots;
 
 namespace Aer.Vigilante.Tests.Services;

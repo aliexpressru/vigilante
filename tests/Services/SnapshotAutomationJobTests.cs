@@ -8,10 +8,10 @@ using Vigilante.Constants;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
 using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Services.Snapshots;
 using Vigilante.Models.Snapshots;
+using Vigilante.Services.Jobs.Snapshots;
 
 namespace Aer.Vigilante.Tests.Services;
 

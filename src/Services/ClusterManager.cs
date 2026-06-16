@@ -6,7 +6,6 @@ using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -14,6 +13,7 @@ using Aer.QdrantClient.Http.Models.Shared;
 using System.Globalization;
 using ClusterInfoResult = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.ClusterInfo;
 using MessageSendFailureUnit = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.MessageSendFailureUnit;
+using Vigilante.Services.Jobs.Snapshots;
 
 namespace Vigilante.Services;
 

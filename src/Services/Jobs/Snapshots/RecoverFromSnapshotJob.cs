@@ -1,8 +1,9 @@
 using Vigilante.Constants;
+using Vigilante.Extensions;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
 
-namespace Vigilante.Services.Jobs;
+namespace Vigilante.Services.Jobs.Snapshots;
 
 public sealed class RecoverFromSnapshotJob(
     IServiceProvider serviceProvider,
@@ -13,7 +14,8 @@ public sealed class RecoverFromSnapshotJob(
     string? snapshotName = null,
     string? sourceCollectionName = null,
     string? snapshotUrl = null,
-    string? snapshotChecksum = null) : IJob
+    string? snapshotChecksum = null
+) : IJob
 {
     private bool _started;
     private bool _timedOut;
@@ -48,7 +50,8 @@ public sealed class RecoverFromSnapshotJob(
         var collections = await clusterManager.GetCollectionsInfoAsync(clearCache: true, cancellationToken);
         var nodeCollection = collections.FirstOrDefault(c =>
             string.Equals(c.CollectionName, collectionName, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(c.NodeUrl, targetNodeUrl, StringComparison.OrdinalIgnoreCase));
+            && string.Equals(c.NodeUrl, targetNodeUrl, StringComparison.OrdinalIgnoreCase)
+        );
 
         if (nodeCollection is null)
         {
@@ -57,7 +60,7 @@ public sealed class RecoverFromSnapshotJob(
 
         var metrics = nodeCollection.Metrics;
         var hasActiveTransfers = metrics.OutgoingTransfers is { Count: > 0 };
-        var currentShardsFingerprint = BuildShardsFingerprint(metrics.Shards);
+        var currentShardsFingerprint = metrics.Shards.BuildShardsFingerprint();
 
         if (hasActiveTransfers)
         {
@@ -111,7 +114,8 @@ public sealed class RecoverFromSnapshotJob(
                 snapshotName,
                 sourceCollectionName,
                 snapshotUrl,
-                snapshotChecksum);
+                snapshotChecksum
+            );
 
             if (!success)
             {
@@ -139,23 +143,9 @@ public sealed class RecoverFromSnapshotJob(
         return new Dictionary<string, object?>
         {
             [JobMetadataKeys.CurrentAction] = action,
-            [JobMetadataKeys.StartedAtUtc] = _startedAtUtc
+            [JobMetadataKeys.StartedAtUtc] = _startedAtUtc,
         };
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-
-    private static string BuildShardsFingerprint(IReadOnlyList<Vigilante.Models.ShardDetails>? shards)
-    {
-        if (shards is not { Count: > 0 })
-        {
-            return "no-shards";
-        }
-
-        return string.Join(
-            "|",
-            shards
-                .OrderBy(s => s.ShardId)
-                .Select(s => $"{s.ShardId}:{s.VectorsSizeBytes}:{s.PayloadsSizeBytes}"));
-    }
 }

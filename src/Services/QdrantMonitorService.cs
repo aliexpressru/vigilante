@@ -1,7 +1,7 @@
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
+using Vigilante.Services.Jobs.Snapshots;
 
 namespace Vigilante.Services;
 
