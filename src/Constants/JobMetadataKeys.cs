@@ -8,6 +8,7 @@ public static class JobMetadataKeys
     public const string CurrentAction = "CurrentAction";
     public const string StartedAtUtc = "StartedAtUtc";
     public const string ReplicationPlan = "ReplicationPlan";
+    public const string RecoveryPlan = "RecoveryPlan";
 
     public const string Phase = "Phase";
     public const string LastRunStartedUtc = "LastRunStartedUtc";

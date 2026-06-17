@@ -45,7 +45,7 @@ public static class KubernetesConstants
     /// Log message for missing namespace parameter
     /// </summary>
     public const string NamespaceNotProvidedForPodMessage = "Namespace not provided for pod {PodName}, using default '{DefaultNamespace}'";
-    
+
     /// <summary>
     /// Log message for missing namespace parameter for StatefulSet
     /// </summary>
@@ -56,7 +56,7 @@ public static class KubernetesConstants
     /// Description for rollout restart operation
     /// </summary>
     public const string RolloutRestartOperation = "rollout restart";
-    
+
     /// <summary>
     /// Format string for scale operation description
     /// </summary>
@@ -67,12 +67,12 @@ public static class KubernetesConstants
     /// Field selector for Warning type events
     /// </summary>
     public const string WarningEventFieldSelector = "type=Warning";
-    
+
     /// <summary>
     /// Limit for number of events to fetch
     /// </summary>
     public const int EventsFetchLimit = 20;
-    
+
     /// <summary>
     /// Timestamp format for events
     /// </summary>
@@ -83,17 +83,17 @@ public static class KubernetesConstants
     /// Default text when timestamp is not available
     /// </summary>
     public const string UnknownTime = "Unknown time";
-    
+
     /// <summary>
     /// Default text when involved object is not available
     /// </summary>
     public const string UnknownObject = "Unknown object";
-    
+
     /// <summary>
     /// Default text when event reason is not available
     /// </summary>
     public const string UnknownReason = "Unknown reason";
-    
+
     /// <summary>
     /// Default text when event message is not available
     /// </summary>
@@ -110,7 +110,7 @@ public static class KubernetesConstants
     /// Log message when Events v1 API is not available
     /// </summary>
     public const string EventsV1NotAvailableMessage = "Events v1 API not available or failed, falling back to CoreV1 Events";
-    
+
     /// <summary>
     /// RBAC permission error message template
     /// </summary>
@@ -123,12 +123,11 @@ public static class KubernetesConstants
     /// Text to identify Forbidden HTTP errors
     /// </summary>
     public const string ForbiddenError = "Forbidden";
-    
+
     /// <summary>
     /// HTTP status code for Forbidden errors
     /// </summary>
     public const string ForbiddenStatusCode = "403";
-
 
     // DateTime format for ISO 8601
     /// <summary>

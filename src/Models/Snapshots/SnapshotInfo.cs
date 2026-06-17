@@ -1,7 +1,7 @@
 using Vigilante.Extensions;
 using Vigilante.Models.Enums;
 
-namespace Vigilante.Models;
+namespace Vigilante.Models.Snapshots;
 
 public class SnapshotInfo
 {
@@ -9,7 +9,7 @@ public class SnapshotInfo
 
     public required string NodeUrl { get; set; }
 
-    public required string PeerId { get; set; }
+    public required ulong PeerId { get; set; }
 
     public required string CollectionName { get; set; }
 
@@ -18,9 +18,9 @@ public class SnapshotInfo
     public long SizeBytes { get; set; }
 
     public string PrettySize => SizeBytes.ToPrettySize();
-    
+
     public required string PodNamespace { get; set; }
-    
+
     /// <summary>
     /// Source where this snapshot information was retrieved from
     /// </summary>

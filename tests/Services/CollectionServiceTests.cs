@@ -1,8 +1,8 @@
 using System.Reflection;
 using Aer.QdrantClient.Http.Abstractions;
+using FluentAssertions;
 using Aer.QdrantClient.Http.Models.Requests.Public;
 using Aer.QdrantClient.Http.Models.Responses;
-using Aer.QdrantClient.Http.Models.Responses.Shared;
 using Aer.QdrantClient.Http.Models.Shared;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -40,19 +40,19 @@ public class CollectionServiceTests
         _clientFactory = Substitute.For<IQdrantClientFactory>();
         _options = Substitute.For<IOptions<QdrantOptions>>();
         _mockCommandExecutor = Substitute.For<IPodCommandExecutor>();
-        
+
         _options.Value.Returns(new QdrantOptions
         {
             HttpTimeoutSeconds = 5,
             ApiKey = "test-key",
-            Nodes = new List<QdrantNodeConfig>()
+            Nodes = []
         });
     }
-    
+
     /// <summary>
     /// Helper method to setup GetCollectionInfo mock for tests - works for any collection name
     /// </summary>
-    private void SetupGetCollectionInfoMock(IQdrantHttpClient mockClient)
+    private static void SetupGetCollectionInfoMock(IQdrantHttpClient mockClient)
     {
         mockClient.GetCollectionInfo(Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>())
             .Returns(callInfo => new GetCollectionInfoResponse
@@ -108,16 +108,16 @@ public class CollectionServiceTests
         var podName = "test-pod";
         var podNamespace = "test-ns";
         var nodeUrl = "http://test-node:6333";
-        var peerId = "peer1";
+        var peerId = 1UL;
 
         var collections = new List<string> { "collection1", "collection2" };
-        
+
         _mockCommandExecutor.ListDirectoriesAsync(podName, podNamespace, "/qdrant/storage/collections", Arg.Any<CancellationToken>())
             .Returns(collections);
-        
+
         _mockCommandExecutor.GetSizeAsync(podName, podNamespace, "/qdrant/storage/collections", "collection1", Arg.Any<CancellationToken>())
             .Returns(1000L);
-        
+
         _mockCommandExecutor.GetSizeAsync(podName, podNamespace, "/qdrant/storage/collections", "collection2", Arg.Any<CancellationToken>())
             .Returns(2000L);
 
@@ -128,11 +128,11 @@ public class CollectionServiceTests
 
         // Assert
         var sizes = result.ToList();
-        Assert.That(sizes, Has.Count.EqualTo(2));
-        Assert.That(sizes[0].CollectionName, Is.EqualTo("collection1"));
-        Assert.That(sizes[0].SizeBytes, Is.EqualTo(1000));
-        Assert.That(sizes[1].CollectionName, Is.EqualTo("collection2"));
-        Assert.That(sizes[1].SizeBytes, Is.EqualTo(2000));
+        sizes.Should().HaveCount(2);
+        sizes[0].CollectionName.Should().Be("collection1");
+        sizes[0].SizeBytes.Should().Be(1000);
+        sizes[1].CollectionName.Should().Be("collection2");
+        sizes[1].SizeBytes.Should().Be(2000);
     }
 
     [Test]
@@ -142,13 +142,13 @@ public class CollectionServiceTests
         var podName = "test-pod";
         var podNamespace = "test-ns";
         var nodeUrl = "http://test-node:6333";
-        var peerId = "peer1";
+        var peerId = 1UL;
 
         var collections = new List<string> { "collection1" };
-        
+
         _mockCommandExecutor.ListDirectoriesAsync(podName, podNamespace, "/qdrant/storage/collections", Arg.Any<CancellationToken>())
             .Returns(collections);
-        
+
         _mockCommandExecutor.GetSizeAsync(podName, podNamespace, "/qdrant/storage/collections", "collection1", Arg.Any<CancellationToken>())
             .Returns((long?)null);
 
@@ -158,7 +158,7 @@ public class CollectionServiceTests
         var result = await service.GetCollectionsSizesForPodAsync(podName, podNamespace, nodeUrl, peerId, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Empty);
+        result.Should().BeEmpty();
     }
 
     #endregion
@@ -174,11 +174,11 @@ public class CollectionServiceTests
         var collectionName = "test-collection";
 
         _mockCommandExecutor.DeleteAndVerifyAsync(
-                podName, 
-                podNamespace, 
-                "/qdrant/storage/collections/test-collection", 
-                true, 
-                "Collection test-collection", 
+                podName,
+                podNamespace,
+                "/qdrant/storage/collections/test-collection",
+                true,
+                "Collection test-collection",
                 Arg.Any<CancellationToken>())
             .Returns(true);
 
@@ -188,13 +188,13 @@ public class CollectionServiceTests
         var result = await service.DeleteCollectionFromDiskAsync(podName, podNamespace, collectionName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await _mockCommandExecutor.Received(1).DeleteAndVerifyAsync(
-            podName, 
-            podNamespace, 
-            "/qdrant/storage/collections/test-collection", 
-            true, 
-            "Collection test-collection", 
+            podName,
+            podNamespace,
+            "/qdrant/storage/collections/test-collection",
+            true,
+            "Collection test-collection",
             Arg.Any<CancellationToken>());
     }
 
@@ -207,19 +207,19 @@ public class CollectionServiceTests
     {
         // Arrange
         var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
-        
+
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = false }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = false }
         };
-        
-        var peerToPodMap = new Dictionary<string, string>();
+
+        var peerToPodMap = new Dictionary<ulong, string>();
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Empty);
+        result.Should().BeEmpty();
     }
 
     [Test]
@@ -234,10 +234,10 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
+                ]
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -245,32 +245,32 @@ public class CollectionServiceTests
 
         mockClient.ListCollections(Arg.Any<CancellationToken>())
             .Returns(collectionsResponse);
-        
+
         // Setup GetCollectionInfo mock
         SetupGetCollectionInfoMock(mockClient);
 
         var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
-        
+
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" },
-            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = false, PodName = "pod2" }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1" },
+            new() { Url = "http://node2:6333", PeerId = 1002, IsHealthy = false, PodName = "pod2" }
         };
-        
-        var peerToPodMap = new Dictionary<string, string>
+
+        var peerToPodMap = new Dictionary<ulong, string>
         {
-            { "1001", "pod1" },
-            { "1002", "pod2" }
+            { 1001, "pod1" },
+            { 1002, "pod2" }
         };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].CollectionName, Is.EqualTo("test_collection"));
-        Assert.That(result[0].NodeUrl, Is.EqualTo("http://node1:6333"));
-        
+        result.Should().HaveCount(1);
+        result[0].CollectionName.Should().Be("test_collection");
+        result[0].NodeUrl.Should().Be("http://node1:6333");
+
         // Verify only healthy node was queried
         await mockClient.Received(1).ListCollections(Arg.Any<CancellationToken>());
     }
@@ -285,10 +285,10 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -301,19 +301,19 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1", Namespace = "default" }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1", Namespace = "default" }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { 1001, "pod1" } };
 
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].Metrics.SizeBytes, Is.EqualTo(1073741824L));
-        Assert.That(result[0].Metrics.PrettySize, Is.EqualTo("1 GB"));
-        Assert.That(result[0].Metrics.RamBytes, Is.EqualTo(536870912L));
-        Assert.That(result[0].Metrics.MemoryReport, Is.Not.Null);
-        Assert.That(result[0].Metrics.MemoryReport!.Total.DiskBytes, Is.EqualTo(1073741824UL));
+        result.Should().HaveCount(1);
+        result[0].Metrics.SizeBytes.Should().Be(1073741824L);
+        result[0].Metrics.PrettySize.Should().Be("1 GB");
+        result[0].Metrics.RamBytes.Should().Be(536870912L);
+        result[0].Metrics.MemoryReport.Should().NotBeNull();
+        result[0].Metrics.MemoryReport!.Total.DiskBytes.Should().Be(1073741824UL);
     }
 
     [Test]
@@ -341,15 +341,15 @@ public class CollectionServiceTests
         var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1", Namespace = "default" }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1", Namespace = "default" }
         };
 
-        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, new Dictionary<string, string>(), CancellationToken.None);
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, [], CancellationToken.None);
 
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].Issues, Is.Empty);
-        Assert.That(result[0].Metrics.SizeBytes, Is.Null);
-        Assert.That(result[0].Metrics.RamBytes, Is.Null);
+        result.Should().HaveCount(1);
+        result[0].Issues.Should().BeEmpty();
+        result[0].Metrics.SizeBytes.Should().BeNull();
+        result[0].Metrics.RamBytes.Should().BeNull();
     }
 
     [Test]
@@ -373,14 +373,14 @@ public class CollectionServiceTests
         var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = null }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = null }
         };
 
-        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, new Dictionary<string, string>(), CancellationToken.None);
+        var result = await service.GetEnrichedCollectionsInfoAsync(nodes, [], CancellationToken.None);
 
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].Metrics.SizeBytes, Is.EqualTo(1073741824L));
-        Assert.That(result[0].Metrics.RamBytes, Is.EqualTo(536870912L));
+        result.Should().HaveCount(1);
+        result[0].Metrics.SizeBytes.Should().Be(1073741824L);
+        result[0].Metrics.RamBytes.Should().Be(536870912L);
     }
 
     [Test]
@@ -395,10 +395,10 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -445,20 +445,20 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = null }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = null }
         };
 
-        var peerToPodMap = new Dictionary<string, string>();
+        var peerToPodMap = new Dictionary<ulong, string>();
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].Warnings, Has.Count.EqualTo(1));
-        Assert.That(result[0].Warnings[0], Does.Contain("Running optimizations (1):"));
-        Assert.That(result[0].Warnings[0], Does.Contain("merge_optimizer"));
-        Assert.That(result[0].Warnings[0], Does.Contain("25/100"));
+        result.Should().HaveCount(1);
+        result[0].Warnings.Should().HaveCount(1);
+        result[0].Warnings[0].Should().Contain("Running optimizations (1):");
+        result[0].Warnings[0].Should().Contain("merge_optimizer");
+        result[0].Warnings[0].Should().Contain("25/100");
     }
 
     [Test]
@@ -473,11 +473,11 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection"),
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("products")
-                }
+                ]
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -487,8 +487,8 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = new[]
-                {
+                Aliases =
+                [
                     new ListCollectionAliasesResponse.CollectionAlias
                     {
                         AliasName = "test",
@@ -504,7 +504,7 @@ public class CollectionServiceTests
                         AliasName = "prod",
                         CollectionName = "products"
                     }
-                }
+                ]
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -514,34 +514,34 @@ public class CollectionServiceTests
             .Returns(collectionsResponse);
         mockClient.ListAllAliases(Arg.Any<CancellationToken>())
             .Returns(aliasesResponse);
-        
+
         // Setup GetCollectionInfo mock
         SetupGetCollectionInfoMock(mockClient);
 
         var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
-        
+
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1" }
         };
-        
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+
+        var peerToPodMap = new Dictionary<ulong, string> { { 1001, "pod1" } };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        
+        result.Should().HaveCount(2);
+
         var testCollection = result.First(c => c.CollectionName == "test_collection");
-        Assert.That(testCollection.Aliases, Has.Count.EqualTo(2));
-        Assert.That(testCollection.Aliases, Does.Contain("test"));
-        Assert.That(testCollection.Aliases, Does.Contain("test_alias"));
-        
+        testCollection.Aliases.Should().HaveCount(2);
+        testCollection.Aliases.Should().Contain("test");
+        testCollection.Aliases.Should().Contain("test_alias");
+
         var productsCollection = result.First(c => c.CollectionName == "products");
-        Assert.That(productsCollection.Aliases, Has.Count.EqualTo(1));
-        Assert.That(productsCollection.Aliases, Does.Contain("prod"));
-        
+        productsCollection.Aliases.Should().HaveCount(1);
+        productsCollection.Aliases.Should().Contain("prod");
+
         // Verify both methods were called
         await mockClient.Received(1).ListCollections(Arg.Any<CancellationToken>());
         await mockClient.Received(1).ListAllAliases(Arg.Any<CancellationToken>());
@@ -559,10 +559,10 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
+                ]
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -572,7 +572,7 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+                Aliases = []
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -582,25 +582,25 @@ public class CollectionServiceTests
             .Returns(collectionsResponse);
         mockClient.ListAllAliases(Arg.Any<CancellationToken>())
             .Returns(aliasesResponse);
-        
+
         // Setup GetCollectionInfo mock
         SetupGetCollectionInfoMock(mockClient);
 
         var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
-        
+
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true }
         };
-        
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+
+        var peerToPodMap = new Dictionary<ulong, string> { { 1001, "pod1" } };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].Aliases, Is.Empty);
+        result.Should().HaveCount(1);
+        result[0].Aliases.Should().BeEmpty();
     }
 
     [Test]
@@ -615,10 +615,10 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
+                ]
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -637,27 +637,27 @@ public class CollectionServiceTests
             .Returns(collectionsResponse);
         mockClient.ListAllAliases(Arg.Any<CancellationToken>())
             .Returns(aliasesResponse);
-        
+
         // Setup GetCollectionInfo mock
         SetupGetCollectionInfoMock(mockClient);
 
         var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
-        
+
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true }
         };
-        
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+
+        var peerToPodMap = new Dictionary<ulong, string> { { 1001, "pod1" } };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert - Should still return collection but with empty aliases
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].CollectionName, Is.EqualTo("test_collection"));
-        Assert.That(result[0].Aliases, Is.Empty);
-        
+        result.Should().HaveCount(1);
+        result[0].CollectionName.Should().Be("test_collection");
+        result[0].Aliases.Should().BeEmpty();
+
         // Verify both methods were called
         await mockClient.Received(1).ListCollections(Arg.Any<CancellationToken>());
         await mockClient.Received(1).ListAllAliases(Arg.Any<CancellationToken>());
@@ -675,10 +675,10 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
+                ]
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -689,26 +689,26 @@ public class CollectionServiceTests
         mockClient.ListAllAliases(Arg.Any<CancellationToken>())
             .Returns(Task.FromException<ListCollectionAliasesResponse>(
                 new Exception("Network error")));
-        
+
         // Setup GetCollectionInfo mock
         SetupGetCollectionInfoMock(mockClient);
 
         var service = new CollectionService(_logger, _meterService, _clientFactory, _options, _commandExecutorLogger);
-        
+
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true }
         };
-        
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+
+        var peerToPodMap = new Dictionary<ulong, string> { { 1001, "pod1" } };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert - Should still return collection but with empty aliases
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].CollectionName, Is.EqualTo("test_collection"));
-        Assert.That(result[0].Aliases, Is.Empty);
+        result.Should().HaveCount(1);
+        result[0].CollectionName.Should().Be("test_collection");
+        result[0].Aliases.Should().BeEmpty();
     }
 
     #endregion
@@ -736,10 +736,10 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
+                ]
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -748,7 +748,7 @@ public class CollectionServiceTests
         mockClient1.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         mockClient2.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         mockClient3.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
-        
+
         // Setup GetCollectionInfo mock for all clients
         SetupGetCollectionInfoMock(mockClient1);
         SetupGetCollectionInfoMock(mockClient2);
@@ -761,15 +761,15 @@ public class CollectionServiceTests
             {
                 PeerId = 1001,
                 ShardCount = 3,
-                LocalShards = new[]
-                {
+                LocalShards =
+                [
                     new GetCollectionClusteringInfoResponse.LocalShardInfo
                     {
                         ShardId = 0,
                         State = ShardState.Active
                     }
-                },
-                ShardTransfers = Array.Empty<ShardTransferInfo>()
+                ],
+                ShardTransfers = []
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -781,15 +781,15 @@ public class CollectionServiceTests
             {
                 PeerId = 1002,
                 ShardCount = 3,
-                LocalShards = new[]
-                {
+                LocalShards =
+                [
                     new GetCollectionClusteringInfoResponse.LocalShardInfo
                     {
                         ShardId = 1,
                         State = ShardState.Active
                     }
-                },
-                ShardTransfers = Array.Empty<ShardTransferInfo>()
+                ],
+                ShardTransfers = []
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -801,15 +801,15 @@ public class CollectionServiceTests
             {
                 PeerId = 1003,
                 ShardCount = 3,
-                LocalShards = new[]
-                {
+                LocalShards =
+                [
                     new GetCollectionClusteringInfoResponse.LocalShardInfo
                     {
                         ShardId = 2,
                         State = ShardState.Active
                     }
-                },
-                ShardTransfers = Array.Empty<ShardTransferInfo>()
+                ],
+                ShardTransfers = []
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -826,46 +826,46 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" },
-            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = "pod2" },
-            new() { Url = "http://node3:6333", PeerId = "1003", IsHealthy = true, PodName = "pod3" }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1" },
+            new() { Url = "http://node2:6333", PeerId = 1002, IsHealthy = true, PodName = "pod2" },
+            new() { Url = "http://node3:6333", PeerId = 1003, IsHealthy = true, PodName = "pod3" }
         };
 
-        var peerToPodMap = new Dictionary<string, string>
+        var peerToPodMap = new Dictionary<ulong, string>
         {
-            { "1001", "pod1" },
-            { "1002", "pod2" },
-            { "1003", "pod3" }
+            { 1001, "pod1" },
+            { 1002, "pod2" },
+            { 1003, "pod3" }
         };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(3), "Should have 3 collection entries (one per node)");
-        
+        result.Should().HaveCount(3, "Should have 3 collection entries (one per node)");
+
         // Verify each node has its own local shards
         var node1Collection = result.First(r => r.NodeUrl == "http://node1:6333");
         var node2Collection = result.First(r => r.NodeUrl == "http://node2:6333");
         var node3Collection = result.First(r => r.NodeUrl == "http://node3:6333");
 
         // Node 1 should have shard 0
-        Assert.That(node1Collection.Metrics.ContainsKey("shards"), Is.True, "Node 1 should have shards");
+        node1Collection.Metrics.ContainsKey("shards").Should().BeTrue("Node 1 should have shards");
         var node1Shards = node1Collection.Metrics.Shards!;
-        Assert.That(node1Shards, Has.Count.EqualTo(1), "Node 1 should have 1 shard");
-        Assert.That(node1Shards[0].ShardId, Is.EqualTo(0), "Node 1 should have shard 0");
+        node1Shards.Should().HaveCount(1, "Node 1 should have 1 shard");
+        node1Shards[0].ShardId.Should().Be(0u, "Node 1 should have shard 0");
 
         // Node 2 should have shard 1
-        Assert.That(node2Collection.Metrics.ContainsKey("shards"), Is.True, "Node 2 should have shards");
+        node2Collection.Metrics.ContainsKey("shards").Should().BeTrue("Node 2 should have shards");
         var node2Shards = node2Collection.Metrics.Shards!;
-        Assert.That(node2Shards, Has.Count.EqualTo(1), "Node 2 should have 1 shard");
-        Assert.That(node2Shards[0].ShardId, Is.EqualTo(1), "Node 2 should have shard 1");
+        node2Shards.Should().HaveCount(1, "Node 2 should have 1 shard");
+        node2Shards[0].ShardId.Should().Be(1u, "Node 2 should have shard 1");
 
         // Node 3 should have shard 2
-        Assert.That(node3Collection.Metrics.ContainsKey("shards"), Is.True, "Node 3 should have shards");
+        node3Collection.Metrics.ContainsKey("shards").Should().BeTrue("Node 3 should have shards");
         var node3Shards = node3Collection.Metrics.Shards!;
-        Assert.That(node3Shards, Has.Count.EqualTo(1), "Node 3 should have 1 shard");
-        Assert.That(node3Shards[0].ShardId, Is.EqualTo(2), "Node 3 should have shard 2");
+        node3Shards.Should().HaveCount(1, "Node 3 should have 1 shard");
+        node3Shards[0].ShardId.Should().Be(2u, "Node 3 should have shard 2");
 
         // Verify GetCollectionClusteringInfo was called for each node
         await mockClient1.Received(1).GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>());
@@ -889,10 +889,10 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
+                ]
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -900,7 +900,7 @@ public class CollectionServiceTests
 
         mockClient1.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         mockClient2.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
-        
+
         // Setup GetCollectionInfo mock for both clients
         SetupGetCollectionInfoMock(mockClient1);
         SetupGetCollectionInfoMock(mockClient2);
@@ -911,15 +911,15 @@ public class CollectionServiceTests
             {
                 PeerId = 1001,
                 ShardCount = 2,
-                LocalShards = new[]
-                {
+                LocalShards =
+                [
                     new GetCollectionClusteringInfoResponse.LocalShardInfo
                     {
                         ShardId = 0,
                         State = ShardState.Active
                     }
-                },
-                ShardTransfers = Array.Empty<ShardTransferInfo>()
+                ],
+                ShardTransfers = []
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -931,15 +931,15 @@ public class CollectionServiceTests
             {
                 PeerId = 1002,
                 ShardCount = 2,
-                LocalShards = new[]
-                {
+                LocalShards =
+                [
                     new GetCollectionClusteringInfoResponse.LocalShardInfo
                     {
                         ShardId = 1,
                         State = ShardState.Active
                     }
-                },
-                ShardTransfers = Array.Empty<ShardTransferInfo>()
+                ],
+                ShardTransfers = []
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -954,33 +954,33 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" },
-            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = "pod2" },
-            new() { Url = "http://node3:6333", PeerId = "1003", IsHealthy = false, PodName = "pod3" } // Unhealthy
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1" },
+            new() { Url = "http://node2:6333", PeerId = 1002, IsHealthy = true, PodName = "pod2" },
+            new() { Url = "http://node3:6333", PeerId = 1003, IsHealthy = false, PodName = "pod3" } // Unhealthy
         };
 
-        var peerToPodMap = new Dictionary<string, string>
+        var peerToPodMap = new Dictionary<ulong, string>
         {
-            { "1001", "pod1" },
-            { "1002", "pod2" },
-            { "1003", "pod3" }
+            { 1001, "pod1" },
+            { 1002, "pod2" },
+            { 1003, "pod3" }
         };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2), "Should only have collections from 2 healthy nodes");
-        
+        result.Should().HaveCount(2, "Should only have collections from 2 healthy nodes");
+
         // Verify only healthy nodes have shards
         var node1Collection = result.FirstOrDefault(r => r.NodeUrl == "http://node1:6333");
         var node2Collection = result.FirstOrDefault(r => r.NodeUrl == "http://node2:6333");
 
-        Assert.That(node1Collection, Is.Not.Null);
-        Assert.That(node2Collection, Is.Not.Null);
-        
-        Assert.That(node1Collection.Metrics.ContainsKey("shards"), Is.True);
-        Assert.That(node2Collection.Metrics.ContainsKey("shards"), Is.True);
+        node1Collection.Should().NotBeNull();
+        node2Collection.Should().NotBeNull();
+
+        node1Collection!.Metrics.ContainsKey("shards").Should().BeTrue();
+        node2Collection!.Metrics.ContainsKey("shards").Should().BeTrue();
 
         // Verify clustering info was only called for healthy nodes
         await mockClient1.Received(1).GetCollectionClusteringInfo("test_collection", Arg.Any<CancellationToken>());
@@ -1000,17 +1000,17 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
+                ]
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
         };
 
         mockClient.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
-        
+
         // Setup GetCollectionInfo mock
         SetupGetCollectionInfoMock(mockClient);
 
@@ -1021,8 +1021,8 @@ public class CollectionServiceTests
             {
                 PeerId = 1001,
                 ShardCount = 3,
-                LocalShards = new[]
-                {
+                LocalShards =
+                [
                     new GetCollectionClusteringInfoResponse.LocalShardInfo
                     {
                         ShardId = 0,
@@ -1038,8 +1038,8 @@ public class CollectionServiceTests
                         ShardId = 2,
                         State = ShardState.Initializing
                     }
-                },
-                ShardTransfers = Array.Empty<ShardTransferInfo>()
+                ],
+                ShardTransfers = []
             },
             Status = new QdrantStatus(
                 QdrantOperationStatusType.Ok)
@@ -1052,37 +1052,37 @@ public class CollectionServiceTests
 
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "pod1" }
+            new() { Url = "http://node1:6333", PeerId = 1001, IsHealthy = true, PodName = "pod1" }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { "1001", "pod1" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { 1001, "pod1" } };
 
         // Act
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        
+        result.Should().HaveCount(1);
+
         var collection = result[0];
-        Assert.That(collection.Metrics.ContainsKey("shards"), Is.True);
-        Assert.That(collection.Metrics.ContainsKey("shardStates"), Is.True);
+        collection.Metrics.ContainsKey("shards").Should().BeTrue();
+        collection.Metrics.ContainsKey("shardStates").Should().BeTrue();
 
         var shards = collection.Metrics.Shards!;
         var shardStates = collection.Metrics.ShardStates!;
 
-        Assert.That(shards, Has.Count.EqualTo(3));
-        Assert.That(shardStates, Has.Count.EqualTo(3));
-        
-        Assert.That(shards[0].ShardId, Is.EqualTo(0));
-        Assert.That(shards[0].State, Is.EqualTo("Active"));
-        Assert.That(shards[1].ShardId, Is.EqualTo(1));
-        Assert.That(shards[1].State, Is.EqualTo("Partial"));
-        Assert.That(shards[2].ShardId, Is.EqualTo(2));
-        Assert.That(shards[2].State, Is.EqualTo("Initializing"));
-        
-        Assert.That(shardStates["0"], Is.EqualTo("Active"));
-        Assert.That(shardStates["1"], Is.EqualTo("Partial"));
-        Assert.That(shardStates["2"], Is.EqualTo("Initializing"));
+        shards.Should().HaveCount(3);
+        shardStates.Should().HaveCount(3);
+
+        shards[0].ShardId.Should().Be(0u);
+        shards[0].State.Should().Be("Active");
+        shards[1].ShardId.Should().Be(1u);
+        shards[1].State.Should().Be("Partial");
+        shards[2].ShardId.Should().Be(2u);
+        shards[2].State.Should().Be("Initializing");
+
+        shardStates["0"].Should().Be("Active");
+        shardStates["1"].Should().Be("Partial");
+        shardStates["2"].Should().Be("Initializing");
     }
 
     #endregion
@@ -1095,9 +1095,9 @@ public class CollectionServiceTests
         // Arrange - Setup 3 nodes
         var nodes = new[]
         {
-            ("http://node1:6333", "peer1", (string?)"ns1", (string?)"pod1"),
-            ("http://node2:6333", "peer2", (string?)"ns1", (string?)"pod2"),
-            ("http://node3:6333", "peer3", (string?)"ns1", (string?)"pod3")
+            ("http://node1:6333", 1UL, (string?)"ns1", (string?)"pod1"),
+            ("http://node2:6333", 2UL, (string?)"ns1", (string?)"pod2"),
+            ("http://node3:6333", 3UL, (string?)"ns1", (string?)"pod3")
         };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
@@ -1108,22 +1108,22 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
         mockClient.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         SetupGetCollectionInfoMock(mockClient);
-        
+
         var aliasesResponse = new ListCollectionAliasesResponse
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+                Aliases = []
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1139,16 +1139,16 @@ public class CollectionServiceTests
             nodes, CancellationToken.None, clearCache: false);
 
         // Assert - Should return cached data
-        Assert.That(result, Has.Count.EqualTo(3)); // 3 nodes
-        Assert.That(isHealthy, Is.True);
-        Assert.That(error, Is.Null);
-        
+        result.Should().HaveCount(3); // 3 nodes
+        isHealthy.Should().BeTrue();
+        error.Should().BeNull();
+
         // Verify GetCollectionInfo was called only 3 times (from first call, not 6)
         await mockClient.Received(3).GetCollectionInfo(
-            "collection1", 
-            Arg.Any<CancellationToken>(), 
-            Arg.Any<uint>(), 
-            Arg.Any<TimeSpan?>(), 
+            "collection1",
+            Arg.Any<CancellationToken>(),
+            Arg.Any<uint>(),
+            Arg.Any<TimeSpan?>(),
             Arg.Any<Action<Exception, TimeSpan, int, uint>>());
     }
 
@@ -1156,8 +1156,8 @@ public class CollectionServiceTests
     public async Task GetCollectionsFromQdrantAsync_CacheIgnored_WhenContainsOnlyPartialNodes()
     {
         // Arrange
-        var singleNode = new[] { ("http://node1:6333", "peer1", (string?)"ns1", (string?)"pod1") };
-        
+        var singleNode = new[] { ("http://node1:6333", 1UL, (string?)"ns1", (string?)"pod1") };
+
         var mockClient = Substitute.For<IQdrantHttpClient>();
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
             .Returns(mockClient);
@@ -1166,22 +1166,22 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
         mockClient.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         SetupGetCollectionInfoMock(mockClient);
-        
+
         var aliasesResponse = new ListCollectionAliasesResponse
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+                Aliases = []
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1195,25 +1195,25 @@ public class CollectionServiceTests
         // Act - Request data from 3 nodes, cache should be ignored
         var allNodes = new[]
         {
-            ("http://node1:6333", "peer1", (string?)"ns1", (string?)"pod1"),
-            ("http://node2:6333", "peer2", (string?)"ns1", (string?)"pod2"),
-            ("http://node3:6333", "peer3", (string?)"ns1", (string?)"pod3")
+            ("http://node1:6333", 1UL, (string?)"ns1", (string?)"pod1"),
+            ("http://node2:6333", 2UL, (string?)"ns1", (string?)"pod2"),
+            ("http://node3:6333", 3UL, (string?)"ns1", (string?)"pod3")
         };
 
         var (result, isHealthy, error) = await service.GetCollectionsFromQdrantAsync(
             allNodes, CancellationToken.None, clearCache: false);
 
         // Assert - Should fetch fresh data from all 3 nodes
-        Assert.That(result, Has.Count.EqualTo(3)); // 3 nodes
-        Assert.That(isHealthy, Is.True);
-        Assert.That(error, Is.Null);
-        
+        result.Should().HaveCount(3); // 3 nodes
+        isHealthy.Should().BeTrue();
+        error.Should().BeNull();
+
         // Verify GetCollectionInfo was called 4 times: 1 for single node, 3 for all nodes
         await mockClient.Received(4).GetCollectionInfo(
-            "collection1", 
-            Arg.Any<CancellationToken>(), 
-            Arg.Any<uint>(), 
-            Arg.Any<TimeSpan?>(), 
+            "collection1",
+            Arg.Any<CancellationToken>(),
+            Arg.Any<uint>(),
+            Arg.Any<TimeSpan?>(),
             Arg.Any<Action<Exception, TimeSpan, int, uint>>());
     }
 
@@ -1223,9 +1223,9 @@ public class CollectionServiceTests
         // Arrange
         var allNodes = new[]
         {
-            ("http://node1:6333", "peer1", (string?)"ns1", (string?)"pod1"),
-            ("http://node2:6333", "peer2", (string?)"ns1", (string?)"pod2"),
-            ("http://node3:6333", "peer3", (string?)"ns1", (string?)"pod3")
+            ("http://node1:6333", 1UL, (string?)"ns1", (string?)"pod1"),
+            ("http://node2:6333", 2UL, (string?)"ns1", (string?)"pod2"),
+            ("http://node3:6333", 3UL, (string?)"ns1", (string?)"pod3")
         };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
@@ -1236,22 +1236,22 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
         mockClient.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         SetupGetCollectionInfoMock(mockClient);
-        
+
         var aliasesResponse = new ListCollectionAliasesResponse
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+                Aliases = []
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1265,24 +1265,24 @@ public class CollectionServiceTests
         // Act - Request only 2 nodes (subset), should use cache
         var subsetNodes = new[]
         {
-            ("http://node1:6333", "peer1", (string?)"ns1", (string?)"pod1"),
-            ("http://node2:6333", "peer2", (string?)"ns1", (string?)"pod2")
+            ("http://node1:6333", 1UL, (string?)"ns1", (string?)"pod1"),
+            ("http://node2:6333", 2UL, (string?)"ns1", (string?)"pod2")
         };
 
         var (result, isHealthy, error) = await service.GetCollectionsFromQdrantAsync(
             subsetNodes, CancellationToken.None, clearCache: false);
 
         // Assert - Should return cached data (contains all requested nodes)
-        Assert.That(result, Has.Count.EqualTo(3)); // Cache returns all 3 nodes
-        Assert.That(isHealthy, Is.True);
-        Assert.That(error, Is.Null);
-        
+        result.Should().HaveCount(3); // Cache returns all 3 nodes
+        isHealthy.Should().BeTrue();
+        error.Should().BeNull();
+
         // Verify GetCollectionInfo was called only 3 times (from first call)
         await mockClient.Received(3).GetCollectionInfo(
-            "collection1", 
-            Arg.Any<CancellationToken>(), 
-            Arg.Any<uint>(), 
-            Arg.Any<TimeSpan?>(), 
+            "collection1",
+            Arg.Any<CancellationToken>(),
+            Arg.Any<uint>(),
+            Arg.Any<TimeSpan?>(),
             Arg.Any<Action<Exception, TimeSpan, int, uint>>());
     }
 
@@ -1290,7 +1290,7 @@ public class CollectionServiceTests
     public async Task GetCollectionsFromQdrantAsync_CacheCleared_WhenClearCacheIsTrue()
     {
         // Arrange
-        var nodes = new[] { ("http://node1:6333", "peer1", (string?)"ns1", (string?)"pod1") };
+        var nodes = new[] { ("http://node1:6333", 1UL, (string?)"ns1", (string?)"pod1") };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string?>())
@@ -1300,22 +1300,22 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
         mockClient.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         SetupGetCollectionInfoMock(mockClient);
-        
+
         var aliasesResponse = new ListCollectionAliasesResponse
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+                Aliases = []
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1330,15 +1330,15 @@ public class CollectionServiceTests
             nodes, CancellationToken.None, clearCache: true);
 
         // Assert - Should fetch fresh data
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(isHealthy, Is.True);
-        
+        result.Should().HaveCount(1);
+        isHealthy.Should().BeTrue();
+
         // Verify GetCollectionInfo was called twice (once per call)
         await mockClient.Received(2).GetCollectionInfo(
-            "collection1", 
-            Arg.Any<CancellationToken>(), 
-            Arg.Any<uint>(), 
-            Arg.Any<TimeSpan?>(), 
+            "collection1",
+            Arg.Any<CancellationToken>(),
+            Arg.Any<uint>(),
+            Arg.Any<TimeSpan?>(),
             Arg.Any<Action<Exception, TimeSpan, int, uint>>());
     }
 
@@ -1352,16 +1352,16 @@ public class CollectionServiceTests
         // Arrange
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "qdrant-2" },
-            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = "qdrant-0" },
-            new() { Url = "http://node3:6333", PeerId = "1003", IsHealthy = true, PodName = "qdrant-1" }
+            new() { Url = "http://node1:6333", PeerId = 1001UL, IsHealthy = true, PodName = "qdrant-2" },
+            new() { Url = "http://node2:6333", PeerId = 1002UL, IsHealthy = true, PodName = "qdrant-0" },
+            new() { Url = "http://node3:6333", PeerId = 1003UL, IsHealthy = true, PodName = "qdrant-1" }
         };
 
-        var peerToPodMap = new Dictionary<string, string>
+        var peerToPodMap = new Dictionary<ulong, string>
         {
-            { "1001", "qdrant-2" },
-            { "1002", "qdrant-0" },
-            { "1003", "qdrant-1" }
+            { 1001UL, "qdrant-2" },
+            { 1002UL, "qdrant-0" },
+            { 1003UL, "qdrant-1" }
         };
 
         var mockClient1 = Substitute.For<IQdrantHttpClient>();
@@ -1372,8 +1372,16 @@ public class CollectionServiceTests
             .Returns(callInfo =>
             {
                 var uri = callInfo.ArgAt<Uri>(0);
-                if (uri.ToString().Contains("node1")) return mockClient1;
-                if (uri.ToString().Contains("node2")) return mockClient2;
+                if (uri.ToString().Contains("node1"))
+                {
+                    return mockClient1;
+                }
+
+                if (uri.ToString().Contains("node2"))
+                {
+                    return mockClient2;
+                }
+
                 return mockClient3;
             });
 
@@ -1386,7 +1394,7 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[] { new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test-collection") }
+                Collections = [new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test-collection")]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1395,7 +1403,7 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+                Aliases = []
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1403,10 +1411,10 @@ public class CollectionServiceTests
         // Setup ListCollections and ListAllAliases for all clients
         mockClient1.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         mockClient1.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
-        
+
         mockClient2.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         mockClient2.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
-        
+
         mockClient3.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         mockClient3.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
 
@@ -1421,13 +1429,13 @@ public class CollectionServiceTests
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert - collection nodes should be sorted by PodName
-        Assert.That(result, Has.Count.EqualTo(3));
-        Assert.That(result[0].PodName, Is.EqualTo("qdrant-0"));
-        Assert.That(result[0].PeerId, Is.EqualTo("1002"));
-        Assert.That(result[1].PodName, Is.EqualTo("qdrant-1"));
-        Assert.That(result[1].PeerId, Is.EqualTo("1003"));
-        Assert.That(result[2].PodName, Is.EqualTo("qdrant-2"));
-        Assert.That(result[2].PeerId, Is.EqualTo("1001"));
+        result.Should().HaveCount(3);
+        result[0].PodName.Should().Be("qdrant-0");
+        result[0].PeerId.Should().Be(1002);
+        result[1].PodName.Should().Be("qdrant-1");
+        result[1].PeerId.Should().Be(1003);
+        result[2].PodName.Should().Be("qdrant-2");
+        result[2].PeerId.Should().Be(1001);
     }
 
     [Test]
@@ -1436,12 +1444,12 @@ public class CollectionServiceTests
         // Arrange
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "3001", IsHealthy = true, PodName = null },
-            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = null },
-            new() { Url = "http://node3:6333", PeerId = "2003", IsHealthy = true, PodName = null }
+            new() { Url = "http://node1:6333", PeerId = 3001UL, IsHealthy = true, PodName = null },
+            new() { Url = "http://node2:6333", PeerId = 1002UL, IsHealthy = true, PodName = null },
+            new() { Url = "http://node3:6333", PeerId = 2003UL, IsHealthy = true, PodName = null }
         };
 
-        var peerToPodMap = new Dictionary<string, string>();
+        var peerToPodMap = new Dictionary<ulong, string>();
 
         var mockClient1 = Substitute.For<IQdrantHttpClient>();
         var mockClient2 = Substitute.For<IQdrantHttpClient>();
@@ -1451,8 +1459,16 @@ public class CollectionServiceTests
             .Returns(callInfo =>
             {
                 var uri = callInfo.ArgAt<Uri>(0);
-                if (uri.ToString().Contains("node1")) return mockClient1;
-                if (uri.ToString().Contains("node2")) return mockClient2;
+                if (uri.ToString().Contains("node1"))
+                {
+                    return mockClient1;
+                }
+
+                if (uri.ToString().Contains("node2"))
+                {
+                    return mockClient2;
+                }
+
                 return mockClient3;
             });
 
@@ -1465,7 +1481,7 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[] { new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test-collection") }
+                Collections = [new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test-collection")]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1474,7 +1490,7 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+                Aliases = []
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1482,10 +1498,10 @@ public class CollectionServiceTests
         // Setup ListCollections and ListAllAliases for all clients
         mockClient1.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         mockClient1.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
-        
+
         mockClient2.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         mockClient2.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
-        
+
         mockClient3.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         mockClient3.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
 
@@ -1500,10 +1516,10 @@ public class CollectionServiceTests
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert - collection nodes should be sorted by PeerId when PodName is not available
-        Assert.That(result, Has.Count.EqualTo(3));
-        Assert.That(result[0].PeerId, Is.EqualTo("1002"));
-        Assert.That(result[1].PeerId, Is.EqualTo("2003"));
-        Assert.That(result[2].PeerId, Is.EqualTo("3001"));
+        result.Should().HaveCount(3);
+        result[0].PeerId.Should().Be(1002);
+        result[1].PeerId.Should().Be(2003);
+        result[2].PeerId.Should().Be(3001);
     }
 
     [Test]
@@ -1512,16 +1528,16 @@ public class CollectionServiceTests
         // Arrange - two collections on nodes in different order
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "1001", IsHealthy = true, PodName = "qdrant-2" },
-            new() { Url = "http://node2:6333", PeerId = "1002", IsHealthy = true, PodName = "qdrant-0" },
-            new() { Url = "http://node3:6333", PeerId = "1003", IsHealthy = true, PodName = "qdrant-1" }
+            new() { Url = "http://node1:6333", PeerId = 1001UL, IsHealthy = true, PodName = "qdrant-2" },
+            new() { Url = "http://node2:6333", PeerId = 1002UL, IsHealthy = true, PodName = "qdrant-0" },
+            new() { Url = "http://node3:6333", PeerId = 1003UL, IsHealthy = true, PodName = "qdrant-1" }
         };
 
-        var peerToPodMap = new Dictionary<string, string>
+        var peerToPodMap = new Dictionary<ulong, string>
         {
-            { "1001", "qdrant-2" },
-            { "1002", "qdrant-0" },
-            { "1003", "qdrant-1" }
+            { 1001UL, "qdrant-2" },
+            { 1002UL, "qdrant-0" },
+            { 1003UL, "qdrant-1" }
         };
 
         var mockClient1 = Substitute.For<IQdrantHttpClient>();
@@ -1532,8 +1548,16 @@ public class CollectionServiceTests
             .Returns(callInfo =>
             {
                 var uri = callInfo.ArgAt<Uri>(0);
-                if (uri.ToString().Contains("node1")) return mockClient1;
-                if (uri.ToString().Contains("node2")) return mockClient2;
+                if (uri.ToString().Contains("node1"))
+                {
+                    return mockClient1;
+                }
+
+                if (uri.ToString().Contains("node2"))
+                {
+                    return mockClient2;
+                }
+
                 return mockClient3;
             });
 
@@ -1546,11 +1570,11 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection-a"),
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection-b")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1559,7 +1583,7 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+                Aliases = []
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1567,10 +1591,10 @@ public class CollectionServiceTests
         // Setup ListCollections and ListAllAliases for all clients
         mockClient1.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         mockClient1.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
-        
+
         mockClient2.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         mockClient2.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
-        
+
         mockClient3.ListCollections(Arg.Any<CancellationToken>()).Returns(collectionsResponse);
         mockClient3.ListAllAliases(Arg.Any<CancellationToken>()).Returns(aliasesResponse);
 
@@ -1585,23 +1609,23 @@ public class CollectionServiceTests
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert - 6 total entries (2 collections x 3 nodes), each collection sorted by node
-        Assert.That(result, Has.Count.EqualTo(6));
-        
+        result.Should().HaveCount(6);
+
         // First 3 should be collection-a sorted by pod name
-        Assert.That(result[0].CollectionName, Is.EqualTo("collection-a"));
-        Assert.That(result[0].PodName, Is.EqualTo("qdrant-0"));
-        Assert.That(result[1].CollectionName, Is.EqualTo("collection-a"));
-        Assert.That(result[1].PodName, Is.EqualTo("qdrant-1"));
-        Assert.That(result[2].CollectionName, Is.EqualTo("collection-a"));
-        Assert.That(result[2].PodName, Is.EqualTo("qdrant-2"));
-        
+        result[0].CollectionName.Should().Be("collection-a");
+        result[0].PodName.Should().Be("qdrant-0");
+        result[1].CollectionName.Should().Be("collection-a");
+        result[1].PodName.Should().Be("qdrant-1");
+        result[2].CollectionName.Should().Be("collection-a");
+        result[2].PodName.Should().Be("qdrant-2");
+
         // Next 3 should be collection-b sorted by pod name
-        Assert.That(result[3].CollectionName, Is.EqualTo("collection-b"));
-        Assert.That(result[3].PodName, Is.EqualTo("qdrant-0"));
-        Assert.That(result[4].CollectionName, Is.EqualTo("collection-b"));
-        Assert.That(result[4].PodName, Is.EqualTo("qdrant-1"));
-        Assert.That(result[5].CollectionName, Is.EqualTo("collection-b"));
-        Assert.That(result[5].PodName, Is.EqualTo("qdrant-2"));
+        result[3].CollectionName.Should().Be("collection-b");
+        result[3].PodName.Should().Be("qdrant-0");
+        result[4].CollectionName.Should().Be("collection-b");
+        result[4].PodName.Should().Be("qdrant-1");
+        result[5].CollectionName.Should().Be("collection-b");
+        result[5].PodName.Should().Be("qdrant-2");
     }
 
     #endregion
@@ -1619,19 +1643,19 @@ public class CollectionServiceTests
         var collectionName = "test_collection";
 
         var shardDirectories = new List<string> { "0", "1", "2" };
-        
+
         _mockCommandExecutor.ListDirectoriesAsync(
             podName, podNamespace, "/qdrant/storage/collections/test_collection", Arg.Any<CancellationToken>())
             .Returns(shardDirectories);
-        
+
         _mockCommandExecutor.GetSizeAsync(
             podName, podNamespace, "/qdrant/storage/collections/test_collection", "0", Arg.Any<CancellationToken>())
             .Returns(500000000L);
-        
+
         _mockCommandExecutor.GetSizeAsync(
             podName, podNamespace, "/qdrant/storage/collections/test_collection", "1", Arg.Any<CancellationToken>())
             .Returns(600000000L);
-        
+
         _mockCommandExecutor.GetSizeAsync(
             podName, podNamespace, "/qdrant/storage/collections/test_collection", "2", Arg.Any<CancellationToken>())
             .Returns(400000000L);
@@ -1644,18 +1668,18 @@ public class CollectionServiceTests
 
         // Assert
         var shardSizes = result.ToList();
-        Assert.That(shardSizes, Has.Count.EqualTo(3));
-        
-        Assert.That(shardSizes[0].ShardId, Is.EqualTo(0));
-        Assert.That(shardSizes[0].SizeBytes, Is.EqualTo(500000000));
-        Assert.That(shardSizes[0].PrettySize, Does.Contain("MB")); // Format depends on locale
-        Assert.That(shardSizes[0].CollectionName, Is.EqualTo(collectionName));
-        
-        Assert.That(shardSizes[1].ShardId, Is.EqualTo(1));
-        Assert.That(shardSizes[1].SizeBytes, Is.EqualTo(600000000));
-        
-        Assert.That(shardSizes[2].ShardId, Is.EqualTo(2));
-        Assert.That(shardSizes[2].SizeBytes, Is.EqualTo(400000000));
+        shardSizes.Should().HaveCount(3);
+
+        shardSizes[0].ShardId.Should().Be(0u);
+        shardSizes[0].SizeBytes.Should().Be(500000000);
+        shardSizes[0].PrettySize.Should().Contain("MB"); // Format depends on locale
+        shardSizes[0].CollectionName.Should().Be(collectionName);
+
+        shardSizes[1].ShardId.Should().Be(1u);
+        shardSizes[1].SizeBytes.Should().Be(600000000);
+
+        shardSizes[2].ShardId.Should().Be(2u);
+        shardSizes[2].SizeBytes.Should().Be(400000000);
     }
 
     [Test]
@@ -1669,12 +1693,12 @@ public class CollectionServiceTests
         var collectionName = "test_collection";
 
         var shardDirectories = new List<string> { "0", "1", "metadata", "snapshots", "2" };
-        
+
         _mockCommandExecutor.ListDirectoriesAsync(
             podName, podNamespace, "/qdrant/storage/collections/test_collection", Arg.Any<CancellationToken>())
             .Returns(shardDirectories);
-        
-        _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), 
+
+        _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
             Arg.Is<string>(s => s == "0" || s == "1" || s == "2"), Arg.Any<CancellationToken>())
             .Returns(100000L);
 
@@ -1686,8 +1710,8 @@ public class CollectionServiceTests
 
         // Assert
         var shardSizes = result.ToList();
-        Assert.That(shardSizes, Has.Count.EqualTo(3), "Should only include numeric shard directories");
-        Assert.That(shardSizes.Select(s => s.ShardId), Is.EquivalentTo(new uint[] { 0, 1, 2 }));
+        shardSizes.Should().HaveCount(3, "Should only include numeric shard directories");
+        shardSizes.Select(s => s.ShardId).Should().BeEquivalentTo(new uint[] { 0, 1, 2 });
     }
 
     [Test]
@@ -1706,14 +1730,14 @@ public class CollectionServiceTests
             "pod", "ns", "http://node:6333", "peer1", "collection", CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Empty);
+        result.Should().BeEmpty();
     }
 
     [Test]
     public async Task GetCollectionShardsSizesForPodAsync_ShouldHandleException_AndReturnEmpty()
     {
         // Arrange
-        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), 
+        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<CancellationToken>())
             .Returns<List<string>>(x => throw new Exception("Test exception"));
 
@@ -1724,7 +1748,7 @@ public class CollectionServiceTests
             "pod", "ns", "http://node:6333", "peer1", "collection", CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Empty);
+        result.Should().BeEmpty();
     }
 
     #endregion
@@ -1741,37 +1765,37 @@ public class CollectionServiceTests
         var peerId = "peer1";
 
         var collections = new List<string> { "collection1", "collection2" };
-        
+
         _mockCommandExecutor.ListDirectoriesAsync(
             podName, podNamespace, "/qdrant/storage/collections", Arg.Any<CancellationToken>())
             .Returns(collections);
-        
+
         // Collection1 has shards 0, 1
         _mockCommandExecutor.ListDirectoriesAsync(
             podName, podNamespace, "/qdrant/storage/collections/collection1", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "0", "1" });
-        
+            .Returns(["0", "1"]);
+
         _mockCommandExecutor.GetSizeAsync(
             podName, podNamespace, "/qdrant/storage/collections/collection1", "0", Arg.Any<CancellationToken>())
             .Returns(100000000L);
-        
+
         _mockCommandExecutor.GetSizeAsync(
             podName, podNamespace, "/qdrant/storage/collections/collection1", "1", Arg.Any<CancellationToken>())
             .Returns(200000000L);
-        
+
         // Collection2 has shards 0, 1, 2
         _mockCommandExecutor.ListDirectoriesAsync(
             podName, podNamespace, "/qdrant/storage/collections/collection2", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "0", "1", "2" });
-        
+            .Returns(["0", "1", "2"]);
+
         _mockCommandExecutor.GetSizeAsync(
             podName, podNamespace, "/qdrant/storage/collections/collection2", "0", Arg.Any<CancellationToken>())
             .Returns(150000000L);
-        
+
         _mockCommandExecutor.GetSizeAsync(
             podName, podNamespace, "/qdrant/storage/collections/collection2", "1", Arg.Any<CancellationToken>())
             .Returns(250000000L);
-        
+
         _mockCommandExecutor.GetSizeAsync(
             podName, podNamespace, "/qdrant/storage/collections/collection2", "2", Arg.Any<CancellationToken>())
             .Returns(350000000L);
@@ -1784,27 +1808,27 @@ public class CollectionServiceTests
 
         // Assert
         var allShardSizes = result.ToList();
-        Assert.That(allShardSizes, Has.Count.EqualTo(5), "Should have 2 shards from collection1 + 3 from collection2");
-        
+        allShardSizes.Should().HaveCount(5, "Should have 2 shards from collection1 + 3 from collection2");
+
         var collection1Shards = allShardSizes.Where(s => s.CollectionName == "collection1").ToList();
-        Assert.That(collection1Shards, Has.Count.EqualTo(2));
-        Assert.That(collection1Shards[0].SizeBytes, Is.EqualTo(100000000));
-        Assert.That(collection1Shards[1].SizeBytes, Is.EqualTo(200000000));
-        
+        collection1Shards.Should().HaveCount(2);
+        collection1Shards[0].SizeBytes.Should().Be(100000000);
+        collection1Shards[1].SizeBytes.Should().Be(200000000);
+
         var collection2Shards = allShardSizes.Where(s => s.CollectionName == "collection2").ToList();
-        Assert.That(collection2Shards, Has.Count.EqualTo(3));
-        Assert.That(collection2Shards[0].SizeBytes, Is.EqualTo(150000000));
-        Assert.That(collection2Shards[1].SizeBytes, Is.EqualTo(250000000));
-        Assert.That(collection2Shards[2].SizeBytes, Is.EqualTo(350000000));
+        collection2Shards.Should().HaveCount(3);
+        collection2Shards[0].SizeBytes.Should().Be(150000000);
+        collection2Shards[1].SizeBytes.Should().Be(250000000);
+        collection2Shards[2].SizeBytes.Should().Be(350000000);
     }
 
     [Test]
     public async Task GetAllShardsSizesForPodAsync_ShouldReturnEmpty_WhenNoCollections()
     {
         // Arrange
-        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), 
+        _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(),
             "/qdrant/storage/collections", Arg.Any<CancellationToken>())
-            .Returns(new List<string>());
+            .Returns([]);
 
         var service = CreateCollectionServiceWithMockExecutor(_mockCommandExecutor);
 
@@ -1813,7 +1837,7 @@ public class CollectionServiceTests
             "pod", "ns", "http://node:6333", "peer1", CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Empty);
+        result.Should().BeEmpty();
     }
 
     #endregion
@@ -1826,13 +1850,13 @@ public class CollectionServiceTests
         // Arrange
         var nodes = new List<NodeInfo>
         {
-            new() { Url = "http://node1:6333", PeerId = "peer1", IsHealthy = true, 
+            new() { Url = "http://node1:6333", PeerId = 1, IsHealthy = true,
                     PodName = "qdrant-0", Namespace = "default" }
         };
-        
-        var peerToPodMap = new Dictionary<string, string>
+
+        var peerToPodMap = new Dictionary<ulong, string>
         {
-            { "peer1", "qdrant-0" }
+            { 1, "qdrant-0" }
         };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
@@ -1844,10 +1868,10 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1856,7 +1880,7 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+                Aliases = []
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1870,13 +1894,13 @@ public class CollectionServiceTests
         {
             Result = new GetCollectionClusteringInfoResponse.CollectionClusteringInfo
             {
-                LocalShards = new[]
-                {
+                LocalShards =
+                [
                     new GetCollectionClusteringInfoResponse.LocalShardInfo { ShardId = 0, State = ShardState.Active },
                     new GetCollectionClusteringInfoResponse.LocalShardInfo { ShardId = 1, State = ShardState.Partial },
                     new GetCollectionClusteringInfoResponse.LocalShardInfo { ShardId = 2, State = ShardState.Initializing }
-                },
-                ShardTransfers = Array.Empty<ShardTransferInfo>()
+                ],
+                ShardTransfers = []
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1891,21 +1915,21 @@ public class CollectionServiceTests
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        
+        result.Should().HaveCount(1);
+
         var collection = result[0];
-        Assert.That(collection.CollectionName, Is.EqualTo("test_collection"));
-        Assert.That(collection.Metrics.ContainsKey("shards"), Is.True);
-        
+        collection.CollectionName.Should().Be("test_collection");
+        collection.Metrics.ContainsKey("shards").Should().BeTrue();
+
         var shards = collection.Metrics.Shards!;
-        Assert.That(shards, Has.Count.EqualTo(3));
-        
-        Assert.That(shards[0].ShardId, Is.EqualTo(0));
-        Assert.That(shards[0].State, Is.EqualTo("Active"));
-        Assert.That(shards[1].ShardId, Is.EqualTo(1));
-        Assert.That(shards[1].State, Is.EqualTo("Partial"));
-        Assert.That(shards[2].ShardId, Is.EqualTo(2));
-        Assert.That(shards[2].State, Is.EqualTo("Initializing"));
+        shards.Should().HaveCount(3);
+
+        shards[0].ShardId.Should().Be(0u);
+        shards[0].State.Should().Be("Active");
+        shards[1].ShardId.Should().Be(1u);
+        shards[1].State.Should().Be("Partial");
+        shards[2].ShardId.Should().Be(2u);
+        shards[2].State.Should().Be("Initializing");
     }
 
     #endregion
@@ -1917,22 +1941,21 @@ public class CollectionServiceTests
     {
         // Arrange: one node with numeric PeerId to match telemetry replica
         const string nodeUrl = "http://node1:6333";
-        const ulong peerIdUlong = 100;
-        var peerIdStr = peerIdUlong.ToString();
+        const ulong peerId = 100;
 
         var nodes = new List<NodeInfo>
         {
             new()
             {
                 Url = nodeUrl,
-                PeerId = peerIdStr,
+                PeerId = peerId,
                 IsHealthy = true,
                 PodName = "qdrant-0",
                 Namespace = "default"
             }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { peerIdStr, "qdrant-0" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { peerId, "qdrant-0" } };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
         _clientFactory.CreateClientFromUrl(nodeUrl, Arg.Any<string?>()).Returns(mockClient);
@@ -1941,10 +1964,10 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("test_collection")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1953,7 +1976,7 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = Array.Empty<ListCollectionAliasesResponse.CollectionAlias>()
+                Aliases = []
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -1966,11 +1989,11 @@ public class CollectionServiceTests
         {
             Result = new GetCollectionClusteringInfoResponse.CollectionClusteringInfo
             {
-                LocalShards = new[]
-                {
+                LocalShards =
+                [
                     new GetCollectionClusteringInfoResponse.LocalShardInfo { ShardId = 0, State = ShardState.Active }
-                },
-                ShardTransfers = Array.Empty<ShardTransferInfo>()
+                ],
+                ShardTransfers = []
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -2000,7 +2023,7 @@ public class CollectionServiceTests
                                 [
                                     new GetClusterTelemetryResponse.CollectionTelemetry.ShardInfo.ReplicaInfo
                                     {
-                                        PeerId = peerIdUlong,
+                                        PeerId = peerId,
                                         VectorsSizeBytes = vectorsSize,
                                         PayloadsSizeBytes = payloadsSize
                                     }
@@ -2021,17 +2044,19 @@ public class CollectionServiceTests
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
+        result.Should().HaveCount(1);
         var collection = result[0];
-        Assert.That(collection.Metrics.ContainsKey("shards"), Is.True);
+        collection.Metrics.ContainsKey("shards").Should().BeTrue();
 
         var shards = collection.Metrics.Shards!;
-        Assert.That(shards, Has.Count.EqualTo(1));
-        Assert.That(shards[0].ShardId, Is.EqualTo(0));
-        Assert.That(shards[0].VectorsSizeBytes, Is.EqualTo(vectorsSize));
-        Assert.That(shards[0].PayloadsSizeBytes, Is.EqualTo(payloadsSize));
-        Assert.That(shards[0].PrettyVectorsSize, Is.Not.Null.And.Contains("MB"));
-        Assert.That(shards[0].PrettyPayloadsSize, Is.Not.Null.And.Contains("MB"));
+        shards.Should().HaveCount(1);
+        shards[0].ShardId.Should().Be(0u);
+        shards[0].VectorsSizeBytes.Should().Be(vectorsSize);
+        shards[0].PayloadsSizeBytes.Should().Be(payloadsSize);
+        shards[0].PrettyVectorsSize.Should().NotBeNull();
+        shards[0].PrettyVectorsSize.Should().Contain("MB");
+        shards[0].PrettyPayloadsSize.Should().NotBeNull();
+        shards[0].PrettyPayloadsSize.Should().Contain("MB");
     }
 
     [Test]
@@ -2043,14 +2068,14 @@ public class CollectionServiceTests
             new()
             {
                 Url = "http://node1:6333",
-                PeerId = "1",
+                PeerId = 1,
                 IsHealthy = true,
                 PodName = "qdrant-0",
                 Namespace = "default"
             }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { "1", "qdrant-0" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { 1, "qdrant-0" } };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
         _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
@@ -2059,10 +2084,10 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("c1")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -2079,11 +2104,11 @@ public class CollectionServiceTests
         {
             Result = new GetCollectionClusteringInfoResponse.CollectionClusteringInfo
             {
-                LocalShards = new[]
-                {
+                LocalShards =
+                [
                     new GetCollectionClusteringInfoResponse.LocalShardInfo { ShardId = 0, State = ShardState.Active }
-                },
-                ShardTransfers = Array.Empty<ShardTransferInfo>()
+                ],
+                ShardTransfers = []
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -2098,11 +2123,11 @@ public class CollectionServiceTests
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert: flow completes, shards exist but telemetry fields are null
-        Assert.That(result, Has.Count.EqualTo(1));
+        result.Should().HaveCount(1);
         var shards = result[0].Metrics.Shards!;
-        Assert.That(shards, Has.Count.EqualTo(1));
-        Assert.That(shards[0].VectorsSizeBytes, Is.Null);
-        Assert.That(shards[0].PayloadsSizeBytes, Is.Null);
+        shards.Should().HaveCount(1);
+        shards[0].VectorsSizeBytes.Should().BeNull();
+        shards[0].PayloadsSizeBytes.Should().BeNull();
     }
 
     [Test]
@@ -2113,14 +2138,14 @@ public class CollectionServiceTests
             new()
             {
                 Url = "http://node1:6333",
-                PeerId = "1",
+                PeerId = 1,
                 IsHealthy = true,
                 PodName = "qdrant-0",
                 Namespace = "default"
             }
         };
 
-        var peerToPodMap = new Dictionary<string, string> { { "1", "qdrant-0" } };
+        var peerToPodMap = new Dictionary<ulong, string> { { 1, "qdrant-0" } };
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
         _clientFactory.CreateClientFromUrl("http://node1:6333", Arg.Any<string?>()).Returns(mockClient);
@@ -2129,7 +2154,7 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[] { new ListCollectionsResponse.CollectionNamesUnit.CollectionName("c1") }
+                Collections = [new ListCollectionsResponse.CollectionNamesUnit.CollectionName("c1")]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -2147,11 +2172,11 @@ public class CollectionServiceTests
             {
                 Result = new GetCollectionClusteringInfoResponse.CollectionClusteringInfo
                 {
-                    LocalShards = new[]
-                    {
+                    LocalShards =
+                    [
                         new GetCollectionClusteringInfoResponse.LocalShardInfo { ShardId = 0, State = ShardState.Active }
-                    },
-                    ShardTransfers = Array.Empty<ShardTransferInfo>()
+                    ],
+                    ShardTransfers = []
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
             });
@@ -2160,11 +2185,11 @@ public class CollectionServiceTests
 
         _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(), "/qdrant/storage/collections",
                 Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "c1" });
+            .Returns(["c1"]);
         _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(), "/qdrant/storage/collections", "c1",
                 Arg.Any<CancellationToken>()).Returns(100L);
         _mockCommandExecutor.ListDirectoriesAsync(Arg.Any<string>(), Arg.Any<string>(),
-                "/qdrant/storage/collections/c1", Arg.Any<CancellationToken>()).Returns(new List<string> { "0" });
+                "/qdrant/storage/collections/c1", Arg.Any<CancellationToken>()).Returns(["0"]);
         _mockCommandExecutor.GetSizeAsync(Arg.Any<string>(), Arg.Any<string>(),
                 "/qdrant/storage/collections/c1", "0", Arg.Any<CancellationToken>()).Returns(200L);
 
@@ -2174,10 +2199,10 @@ public class CollectionServiceTests
         var result = await service.GetEnrichedCollectionsInfoAsync(nodes, peerToPodMap, CancellationToken.None);
 
         // Assert: flow completes, shards have no telemetry
-        Assert.That(result, Has.Count.EqualTo(1));
+        result.Should().HaveCount(1);
         var shards = result[0].Metrics.Shards!;
-        Assert.That(shards[0].VectorsSizeBytes, Is.Null);
-        Assert.That(shards[0].PayloadsSizeBytes, Is.Null);
+        shards[0].VectorsSizeBytes.Should().BeNull();
+        shards[0].PayloadsSizeBytes.Should().BeNull();
     }
 
     #endregion
@@ -2194,14 +2219,14 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = new[]
-                {
+                Aliases =
+                [
                     new ListCollectionAliasesResponse.CollectionAlias
                     {
                         AliasName = "existing",
                         CollectionName = "my_collection"
                     }
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -2218,7 +2243,7 @@ public class CollectionServiceTests
 
         var result = await service.SetCollectionAliasAsync("http://node1:6333", "my_collection", "new_alias", CancellationToken.None);
 
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await mockClient.Received(1).ListAllAliases(Arg.Any<CancellationToken>());
         await mockClient.Received(1).UpdateCollectionsAliases(Arg.Is<UpdateCollectionAliasesRequest>(r => r.OperationsCount == 1), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
     }
@@ -2233,14 +2258,14 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = new[]
-                {
+                Aliases =
+                [
                     new ListCollectionAliasesResponse.CollectionAlias
                     {
                         AliasName = "my_alias",
                         CollectionName = "my_collection"
                     }
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -2250,7 +2275,7 @@ public class CollectionServiceTests
 
         var result = await service.SetCollectionAliasAsync("http://node1:6333", "my_collection", "my_alias", CancellationToken.None);
 
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await mockClient.Received(1).ListAllAliases(Arg.Any<CancellationToken>());
         await mockClient.DidNotReceive().UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
     }
@@ -2265,14 +2290,14 @@ public class CollectionServiceTests
         {
             Result = new ListCollectionAliasesResponse.CollectionAliasesResult
             {
-                Aliases = new[]
-                {
+                Aliases =
+                [
                     new ListCollectionAliasesResponse.CollectionAlias
                     {
                         AliasName = "taken_alias",
                         CollectionName = "other_collection"
                     }
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
@@ -2282,7 +2307,7 @@ public class CollectionServiceTests
 
         var result = await service.SetCollectionAliasAsync("http://node1:6333", "my_collection", "taken_alias", CancellationToken.None);
 
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
         await mockClient.Received(1).ListAllAliases(Arg.Any<CancellationToken>());
         await mockClient.DidNotReceive().UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
     }
@@ -2303,7 +2328,7 @@ public class CollectionServiceTests
 
         var result = await service.SetCollectionAliasAsync("http://node1:6333", "my_collection", "new_alias", CancellationToken.None);
 
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
         await mockClient.DidNotReceive().UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
     }
 
@@ -2328,7 +2353,7 @@ public class CollectionServiceTests
 
         var result = await service.RenameCollectionAliasAsync("http://node1:6333", "old_alias", "new_alias", CancellationToken.None);
 
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await mockClient.Received(1).UpdateCollectionsAliases(Arg.Is<UpdateCollectionAliasesRequest>(r => r.OperationsCount == 1), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
     }
 
@@ -2342,7 +2367,7 @@ public class CollectionServiceTests
 
         var result = await service.RenameCollectionAliasAsync("http://node1:6333", "same_alias", "same_alias", CancellationToken.None);
 
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await mockClient.DidNotReceive().UpdateCollectionsAliases(Arg.Any<UpdateCollectionAliasesRequest>(), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
     }
 
@@ -2363,7 +2388,7 @@ public class CollectionServiceTests
 
         var result = await service.RenameCollectionAliasAsync("http://node1:6333", "old_alias", "new_alias", CancellationToken.None);
 
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
     }
 
     #endregion
@@ -2387,7 +2412,7 @@ public class CollectionServiceTests
 
         var result = await service.DeleteCollectionAliasAsync("http://node1:6333", "my_alias", CancellationToken.None);
 
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await mockClient.Received(1).UpdateCollectionsAliases(Arg.Is<UpdateCollectionAliasesRequest>(r => r.OperationsCount == 1), Arg.Any<CancellationToken>(), Arg.Any<TimeSpan?>(), Arg.Any<uint>(), Arg.Any<TimeSpan?>(), Arg.Any<Action<Exception, TimeSpan, int, uint>>(), Arg.Any<string>());
     }
 
@@ -2408,7 +2433,7 @@ public class CollectionServiceTests
 
         var result = await service.DeleteCollectionAliasAsync("http://node1:6333", "my_alias", CancellationToken.None);
 
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
     }
 
     #endregion
@@ -2426,26 +2451,26 @@ public class CollectionServiceTests
             _commandExecutorLogger);
 
         // Use reflection to set the private readonly _commandExecutor field
-        var fieldInfo = typeof(CollectionService).GetField("_commandExecutor", 
+        var fieldInfo = typeof(CollectionService).GetField("_commandExecutor",
             BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         if (fieldInfo == null)
         {
             // Try to find it by all fields
             var allFields = typeof(CollectionService).GetFields(
-                BindingFlags.NonPublic | 
-                BindingFlags.Instance | 
+                BindingFlags.NonPublic |
+                BindingFlags.Instance |
                 BindingFlags.Public);
-            
+
             fieldInfo = allFields.FirstOrDefault(f => f.FieldType == typeof(IPodCommandExecutor));
-            
+
             if (fieldInfo == null)
             {
                 var fieldNames = string.Join(", ", allFields.Select(f => f.Name));
                 throw new InvalidOperationException($"Could not find _commandExecutor field. Available fields: {fieldNames}");
             }
         }
-        
+
         fieldInfo.SetValue(service, mockExecutor);
 
         return service;

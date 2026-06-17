@@ -1,13 +1,13 @@
 using Aer.QdrantClient.Http.Models.Shared;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Vigilante.Constants;
 using Vigilante.Models;
+using Vigilante.Models.Snapshots;
 using Vigilante.Services.Interfaces;
+using Vigilante.Services.Snapshots;
 using ISnapshotAutomationStatus = Vigilante.Services.Interfaces.ISnapshotAutomationStatus;
-using SnapshotInfo = Vigilante.Models.SnapshotInfo;
+using SnapshotInfo = Vigilante.Models.Snapshots.SnapshotInfo;
 
-namespace Vigilante.Services.Jobs;
+namespace Vigilante.Services.Jobs.Snapshots;
 
 /// <summary>
 /// One-shot job: runs snapshot automation (scheduled snapshots + orphaned cleanup) once per tick.
@@ -17,7 +17,8 @@ public sealed class SnapshotAutomationJob : IJob
 {
     public const string JobKey = "snapshot-automation";
     private const int AbortMultipartUploadsOlderThanMinutes = 24 * 60;
-    private static readonly TimeSpan MultipartCleanupTimeout = TimeSpan.FromSeconds(30);
+
+    private static readonly TimeSpan _multipartCleanupTimeout = TimeSpan.FromSeconds(30);
 
     public static class Actions
     {
@@ -27,23 +28,21 @@ public sealed class SnapshotAutomationJob : IJob
         public const string CleaningMultipartUploads = "Cleaning multipart uploads...";
 
         public static string CreatingSnapshot(string collection, int nodeCount) =>
-            $"Creating snapshot «{collection}» on {nodeCount} node(s)...";
+            $"Creating snapshot '{collection}' on {nodeCount} node(s)...";
     }
 
     private readonly IServiceProvider _serviceProvider;
     private readonly IReadOnlyList<NodeInfo> _nodes;
     private readonly DynamicConfig _config;
     private readonly DateTime _startedAtUtc;
-    private readonly object _actionLock = new();
+    private readonly Lock _actionLock = new();
     private volatile string? _currentAction;
 
     public string Key => JobKey;
+
     public bool IsWaitingForReady => false;
 
-    public SnapshotAutomationJob(
-        IServiceProvider serviceProvider,
-        IReadOnlyList<NodeInfo> nodes,
-        DynamicConfig config)
+    public SnapshotAutomationJob(IServiceProvider serviceProvider, IReadOnlyList<NodeInfo> nodes, DynamicConfig config)
     {
         _serviceProvider = serviceProvider;
         _nodes = nodes;
@@ -64,156 +63,206 @@ public sealed class SnapshotAutomationJob : IJob
         var logger = _serviceProvider.GetRequiredService<ILogger<SnapshotAutomationJob>>();
 
         var snapshotCfg = _config.Snapshot;
-        var anyScheduleEnabled = snapshotCfg.Schedule.Enabled
-            || snapshotCfg.CollectionOverrides?.Values.Any(s => s.Enabled) == true;
+        var anyScheduleEnabled =
+            snapshotCfg.Schedule.Enabled || snapshotCfg.CollectionOverrides?.Values.Any(s => s.Enabled) == true;
         var multipartCleanupEnabled = AbortMultipartUploadsOlderThanMinutes > 0;
 
-        if (!anyScheduleEnabled
-            && !snapshotCfg.DeleteOrphanedAfterMinutes.HasValue
-            && !multipartCleanupEnabled)
+        if (!anyScheduleEnabled && !snapshotCfg.DeleteOrphanedAfterMinutes.HasValue && !multipartCleanupEnabled)
+        {
             return (false, true, null);
+        }
 
         var automationStatus = _serviceProvider.GetRequiredService<ISnapshotAutomationStatus>();
         automationStatus.BeginRun();
         try
         {
             SetCurrentAction(Actions.LoadingCollections);
-            var collections = await clusterManager.GetCollectionsInfoAsync(clearCache: true, cancellationToken)
+            var collections = await clusterManager
+                .GetCollectionsInfoAsync(clearCache: true, cancellationToken)
                 .ConfigureAwait(false);
 
-            await PruneStaleCollectionOverridesIfNeededAsync(automationStatus, logger, cancellationToken)
-                .ConfigureAwait(false);
+            await PruneStaleCollectionOverridesIfNeededAsync(automationStatus, logger, cancellationToken).ConfigureAwait(false);
 
             SetCurrentAction(Actions.LoadingSnapshots);
 
-        var byCollection = collections
-            .GroupBy(c => c.CollectionName)
-            .ToDictionary(g => g.Key, g => (IReadOnlyList<CollectionInfo>)g.ToList());
+            var byCollection = collections
+                .GroupBy(c => c.CollectionName)
+                .ToDictionary(g => g.Key, g => (IReadOnlyList<CollectionInfo>)[.. g]);
 
-        var currentNames = byCollection.Keys.ToHashSet();
-        var healthyNodeUrls = _nodes
-            .Where(n => n.IsHealthy)
-            .Select(n => n.Url)
-            .ToList();
+            var currentNames = byCollection.Keys.ToHashSet();
+            var healthyNodeUrls = _nodes.Where(n => n.IsHealthy).Select(n => n.Url).ToList();
 
-        var existingSnapshots = await snapshotService.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: cancellationToken, nodesToUse: _nodes);
-        var snapshotsByCollection = existingSnapshots
-            .GroupBy(s => s.CollectionName)
-            .ToDictionary(g => g.Key, g => g.ToList());
+            var existingSnapshots = await snapshotService.GetSnapshotsInfoAsync(
+                clearCache: false,
+                cancellationToken: cancellationToken,
+                nodesToUse: _nodes
+            );
+            var snapshotsByCollection = existingSnapshots
+                .GroupBy(s => s.CollectionName)
+                .ToDictionary(g => g.Key, g => g.ToList());
 
-        var snapshotCreatePrefix = PendingSnapshotCreationJob.KeyPrefix;
-        var startedSnapshotForAnyCollection = false;
-        foreach (var (collectionName, infos) in byCollection)
-        {
-            var hasPendingSnapshotCreate = jobRegistry
-                .GetPendingJobs()
-                .Any(p =>
-                    p.Job.Key.Length > snapshotCreatePrefix.Length
-                    && p.Job.Key.StartsWith(snapshotCreatePrefix, StringComparison.Ordinal));
-            if (hasPendingSnapshotCreate)
+            var snapshotCreatePrefix = PendingSnapshotCreationJob.KeyPrefix;
+            var startedSnapshotForAnyCollection = false;
+            foreach (var (collectionName, infos) in byCollection)
             {
-                logger.LogInformation(
-                    "Skipping auto-snapshot for {CollectionName}: another collection snapshot create is already pending",
-                    collectionName);
-                continue;
-            }
-
-            var schedule = snapshotCfg.GetEffectiveSchedule(collectionName);
-            if (!schedule.Enabled)
-            {
-                continue;
-            }
-
-            var isReadyForSnapshot = IsCollectionReadyForSnapshot(infos);
-            if (!isReadyForSnapshot)
-            {
-                var statusSummary = string.Join(", ", infos
-                    .Select(i => i.Status?.ToString() ?? "null")
-                    .Distinct());
-                var minHnsw = infos.Min(i => i.HnswM ?? 0UL);
-                var hasActiveTransfers = infos.Any(c =>
-                    c.Warnings.Any(w => w.Contains(CollectionWarningConstants.ActiveTransfersWarning, StringComparison.OrdinalIgnoreCase)));
-                var hasRunningOptimizations = infos.Any(c =>
-                    c.RunningOptimizations.Count > 0
-                    || c.Warnings.Any(w => w.Contains(CollectionWarningConstants.RunningOptimizationsPrefix, StringComparison.OrdinalIgnoreCase)));
-
-                logger.LogInformation(
-                    "Skipping auto-snapshot for {CollectionName}: not ready (statuses={Statuses}, minHnswM={MinHnswM}, activeTransfers={HasActiveTransfers}, runningOptimizations={HasRunningOptimizations})",
-                    collectionName,
-                    statusSummary,
-                    minHnsw,
-                    hasActiveTransfers,
-                    hasRunningOptimizations);
-            }
-
-            if (schedule.IntervalMinutes is null)
-            {
-                if (isReadyForSnapshot)
+                var hasPendingSnapshotCreate = jobRegistry
+                    .GetPendingJobs()
+                    .Any(p =>
+                        p.Job.Key.Length > snapshotCreatePrefix.Length
+                        && p.Job.Key.StartsWith(snapshotCreatePrefix, StringComparison.Ordinal)
+                    );
+                if (hasPendingSnapshotCreate)
                 {
+                    logger.LogInformation(
+                        "Skipping auto-snapshot for {CollectionName}: another collection snapshot create is already pending",
+                        collectionName
+                    );
+                    continue;
+                }
+
+                var schedule = snapshotCfg.GetEffectiveSchedule(collectionName);
+                if (!schedule.Enabled)
+                {
+                    continue;
+                }
+
+                var isReadyForSnapshot = IsCollectionReadyForSnapshot(infos);
+                if (!isReadyForSnapshot)
+                {
+                    var statusSummary = string.Join(", ", infos.Select(i => i.Status?.ToString() ?? "null").Distinct());
+                    var minHnsw = infos.Min(i => i.HnswM ?? 0UL);
+                    var hasActiveTransfers = infos.Any(c =>
+                        c.Warnings.Any(w =>
+                            w.Contains(CollectionWarningConstants.ActiveTransfersWarning, StringComparison.OrdinalIgnoreCase)
+                        )
+                    );
+                    var hasRunningOptimizations = infos.Any(c =>
+                        c.RunningOptimizations.Count > 0
+                        || c.Warnings.Any(w =>
+                            w.Contains(CollectionWarningConstants.RunningOptimizationsPrefix, StringComparison.OrdinalIgnoreCase)
+                        )
+                    );
+
+                    logger.LogInformation(
+                        "Skipping auto-snapshot for {CollectionName}: not ready (statuses={Statuses}, minHnswM={MinHnswM}, activeTransfers={HasActiveTransfers}, runningOptimizations={HasRunningOptimizations})",
+                        collectionName,
+                        statusSummary,
+                        minHnsw,
+                        hasActiveTransfers,
+                        hasRunningOptimizations
+                    );
+                }
+
+                if (schedule.IntervalMinutes is null)
+                {
+                    if (isReadyForSnapshot)
+                    {
+                        var existingSnaps = snapshotsByCollection.GetValueOrDefault(collectionName) ?? [];
+                        var missingNodeUrls = healthyNodeUrls
+                            .Where(url =>
+                            {
+                                var peerId = _nodes.FirstOrDefault(n => n.Url == url)?.PeerId ?? 0;
+
+                                if (peerId == 0)
+                                {
+                                    return true;
+                                }
+
+                                return !existingSnaps.Any(s =>
+                                    s.SnapshotName.Contains(value: peerId.ToString(), StringComparison.OrdinalIgnoreCase)
+                                );
+                            })
+                            .ToList();
+
+                        if (missingNodeUrls.Count > 0)
+                        {
+                            logger.LogInformation(
+                                "Collection {CollectionName} is Green with HNSW; taking auto-snapshot on {MissingCount}/{TotalCount} nodes missing a snapshot",
+                                collectionName,
+                                missingNodeUrls.Count,
+                                healthyNodeUrls.Count
+                            );
+                            startedSnapshotForAnyCollection = await TakeAutoSnapshotAsync(
+                                snapshotService,
+                                clusterManager,
+                                logger,
+                                automationStatus,
+                                collectionName,
+                                missingNodeUrls,
+                                schedule,
+                                cancellationToken
+                            );
+                        }
+                    }
+                }
+                else if (isReadyForSnapshot)
+                {
+                    var now = DateTime.UtcNow;
                     var existingSnaps = snapshotsByCollection.GetValueOrDefault(collectionName) ?? [];
-                    var missingNodeUrls = healthyNodeUrls
+                    var dueNodeUrls = healthyNodeUrls
                         .Where(url =>
                         {
-                            var peerId = _nodes.FirstOrDefault(n => n.Url == url)?.PeerId;
-                            if (string.IsNullOrEmpty(peerId))
+                            var peerId = _nodes.FirstOrDefault(n => n.Url == url)?.PeerId ?? 0;
+
+                            if (peerId == 0)
+                            {
                                 return true;
-                            return !existingSnaps.Any(s =>
-                                s.SnapshotName.Contains(peerId, StringComparison.OrdinalIgnoreCase));
+                            }
+
+                            var lastCreatedAt = existingSnaps
+                                .Where(s =>
+                                    s.SnapshotName.Contains(peerId.ToString(), StringComparison.OrdinalIgnoreCase)
+                                    && s.CreatedAt.HasValue
+                                )
+                                .Max(s => s.CreatedAt);
+
+                            return IsIntervalSnapshotDue(now, lastCreatedAt, schedule.IntervalMinutes.Value, schedule.StartAt);
                         })
                         .ToList();
 
-                    if (missingNodeUrls.Count > 0)
+                    if (dueNodeUrls.Count > 0)
                     {
                         logger.LogInformation(
-                            "Collection {CollectionName} is Green with HNSW; taking auto-snapshot on {MissingCount}/{TotalCount} nodes missing a snapshot",
-                            collectionName, missingNodeUrls.Count, healthyNodeUrls.Count);
-                        startedSnapshotForAnyCollection = await TakeAutoSnapshotAsync(snapshotService, clusterManager, logger, automationStatus, collectionName, missingNodeUrls, schedule, cancellationToken);
+                            "Interval snapshot due for collection {CollectionName} on {DueCount}/{TotalCount} nodes (every {Minutes} min)",
+                            collectionName,
+                            dueNodeUrls.Count,
+                            healthyNodeUrls.Count,
+                            schedule.IntervalMinutes.Value
+                        );
+                        startedSnapshotForAnyCollection = await TakeAutoSnapshotAsync(
+                            snapshotService,
+                            clusterManager,
+                            logger,
+                            automationStatus,
+                            collectionName,
+                            dueNodeUrls,
+                            schedule,
+                            cancellationToken
+                        );
                     }
                 }
-            }
-            else if (isReadyForSnapshot)
-            {
-                var now = DateTime.UtcNow;
-                var existingSnaps = snapshotsByCollection.GetValueOrDefault(collectionName) ?? [];
-                var dueNodeUrls = healthyNodeUrls
-                    .Where(url =>
-                    {
-                        var peerId = _nodes.FirstOrDefault(n => n.Url == url)?.PeerId;
-                        if (string.IsNullOrEmpty(peerId))
-                            return true;
-                        var lastCreatedAt = existingSnaps
-                            .Where(s => s.SnapshotName.Contains(peerId, StringComparison.OrdinalIgnoreCase) && s.CreatedAt.HasValue)
-                            .Max(s => s.CreatedAt);
-                        return IsIntervalSnapshotDue(
-                            now,
-                            lastCreatedAt,
-                            schedule.IntervalMinutes.Value,
-                            schedule.StartAt);
-                    })
-                    .ToList();
 
-                if (dueNodeUrls.Count > 0)
+                if (startedSnapshotForAnyCollection)
                 {
-                    logger.LogInformation(
-                        "Interval snapshot due for collection {CollectionName} on {DueCount}/{TotalCount} nodes (every {Minutes} min)",
-                        collectionName, dueNodeUrls.Count, healthyNodeUrls.Count, schedule.IntervalMinutes.Value);
-                    startedSnapshotForAnyCollection = await TakeAutoSnapshotAsync(snapshotService, clusterManager, logger, automationStatus, collectionName, dueNodeUrls, schedule, cancellationToken);
+                    break;
                 }
             }
 
-            if (startedSnapshotForAnyCollection)
-                break;
-        }
+            if (snapshotCfg.DeleteOrphanedAfterMinutes.HasValue)
+            {
+                await ProcessOrphanedCollectionsAsync(
+                    snapshotService,
+                    orphanedState,
+                    logger,
+                    automationStatus,
+                    currentNames,
+                    snapshotsByCollection,
+                    snapshotCfg.DeleteOrphanedAfterMinutes.Value,
+                    cancellationToken
+                );
+            }
 
-        if (snapshotCfg.DeleteOrphanedAfterMinutes.HasValue)
-        {
-            await ProcessOrphanedCollectionsAsync(snapshotService, orphanedState, logger, automationStatus, currentNames, snapshotsByCollection, snapshotCfg.DeleteOrphanedAfterMinutes.Value, cancellationToken);
-        }
-
-        await CleanupIncompleteMultipartUploadsAsync(
-            logger,
-            automationStatus,
-            cancellationToken);
+            await CleanupIncompleteMultipartUploadsAsync(logger, automationStatus, cancellationToken);
 
             SetCurrentAction(null);
             automationStatus.EndRun(true);
@@ -244,7 +293,8 @@ public sealed class SnapshotAutomationJob : IJob
         HashSet<string> currentNames,
         Dictionary<string, List<SnapshotInfo>> snapshotsByCollection,
         int deleteAfterMinutes,
-        CancellationToken token)
+        CancellationToken token
+    )
     {
         var now = DateTime.UtcNow;
         var orphanedAt = orphanedState.OrphanedAt;
@@ -255,7 +305,10 @@ public sealed class SnapshotAutomationJob : IJob
             if (currentNames.Contains(name))
             {
                 if (orphanedAt.Remove(name))
+                {
                     logger.LogInformation("Collection {CollectionName} exists again, cancelling orphaned snapshot cleanup", name);
+                }
+
                 continue;
             }
 
@@ -264,18 +317,24 @@ public sealed class SnapshotAutomationJob : IJob
                 orphanedAt[name] = now;
                 logger.LogInformation(
                     "Collection {CollectionName} has snapshots but does not exist in cluster, scheduling cleanup in {Minutes} minutes",
-                    name, deleteAfterMinutes);
+                    name,
+                    deleteAfterMinutes
+                );
             }
         }
 
         foreach (var (name, detectedAt) in orphanedAt.ToList())
         {
             if ((now - detectedAt).TotalMinutes < deleteAfterMinutes)
+            {
                 continue;
+            }
 
             logger.LogInformation(
                 "Deleting orphaned snapshots for collection {CollectionName} (missing for {Minutes} min)",
-                name, (int)(now - detectedAt).TotalMinutes);
+                name,
+                (int)(now - detectedAt).TotalMinutes
+            );
 
             var toDelete = snapshotsByCollection.GetValueOrDefault(name) ?? [];
             SetCurrentAction(Actions.DeletingOrphanedSnapshotsPrefix + name);
@@ -290,11 +349,14 @@ public sealed class SnapshotAutomationJob : IJob
                         nodeUrl: snapshot.NodeUrl,
                         podName: snapshot.PodName,
                         podNamespace: snapshot.PodNamespace,
-                        cancellationToken: token);
+                        cancellationToken: token
+                    );
                 }
 
                 if (toDelete.Count > 0)
+                {
                     automationStatus.AppendRunNote($"Orphan cleanup «{name}»: deleted {toDelete.Count} snapshot(s)");
+                }
             }
             catch (Exception ex)
             {
@@ -313,37 +375,43 @@ public sealed class SnapshotAutomationJob : IJob
         string collectionName,
         List<string> nodeUrls,
         Schedule schedule,
-        CancellationToken token)
+        CancellationToken token
+    )
     {
         if (nodeUrls.Count == 0)
         {
-            logger.LogWarning("No healthy nodes available to create auto-snapshot for collection {CollectionName}", collectionName);
+            logger.LogWarning(
+                "No healthy nodes available to create auto-snapshot for collection {CollectionName}",
+                collectionName
+            );
             return false;
         }
 
         try
         {
-            var retentionPeerIds = _nodes
-                .Where(n => !string.IsNullOrEmpty(n.PeerId))
-                .Select(n => n.PeerId!)
-                .ToHashSet();
+            var retentionPeerIds = _nodes.Where(n => n.PeerId != 0).Select(n => n.PeerId).ToHashSet();
 
             SetCurrentAction(Actions.CreatingSnapshot(collectionName, nodeUrls.Count));
-            var batch = await snapshotService.CreateCollectionSnapshotAsync(
+
+            var batch = await snapshotService
+                .CreateCollectionSnapshotAsync(
                     collectionName,
                     nodeUrls,
                     token,
                     waitForResult: false,
                     retainLastNAfterVisible: schedule.RetainLastN,
-                    retentionClusterPeerIds: retentionPeerIds)
+                    retentionClusterPeerIds: retentionPeerIds
+                )
                 .ConfigureAwait(false);
             if (batch.SkippedDuplicatePending)
             {
                 logger.LogInformation(
                     "Auto-snapshot skipped for {CollectionName}: snapshot create already pending or in flight",
-                    collectionName);
+                    collectionName
+                );
                 automationStatus.AppendRunNote(
-                    $"Snapshot «{collectionName}»: skipped — previous snapshot create still in progress");
+                    $"Snapshot «{collectionName}»: skipped — previous snapshot create still in progress"
+                );
                 SetCurrentAction($"Snapshot «{collectionName}»: skipped (create already in progress)");
                 return false;
             }
@@ -354,14 +422,18 @@ public sealed class SnapshotAutomationJob : IJob
 
             logger.LogInformation(
                 "Auto-snapshot for collection {CollectionName}: {SuccessCount}/{TotalCount} nodes accepted (async completion)",
-                collectionName, succeededCount, results.Count);
+                collectionName,
+                succeededCount,
+                results.Count
+            );
 
             if (failedCount > 0)
             {
                 var failedNodes = string.Join(", ", results.Where(kv => kv.Value is null).Select(kv => kv.Key));
                 clusterManager.ReportIssue(
                     IssueKeyConstants.Snapshot(collectionName),
-                    $"Snapshot failed on {failedCount}/{results.Count} nodes: {failedNodes}");
+                    $"Snapshot failed on {failedCount}/{results.Count} nodes: {failedNodes}"
+                );
                 automationStatus.AppendRunNote($"Snapshot «{collectionName}»: failed on {failedCount}/{results.Count} nodes");
             }
             else
@@ -372,12 +444,16 @@ public sealed class SnapshotAutomationJob : IJob
             if (succeededCount > 0)
             {
                 automationStatus.AppendRunNote(
-                    $"Snapshot «{collectionName}»: started on {succeededCount}/{results.Count} node(s) (appears when ready)");
+                    $"Snapshot «{collectionName}»: started on {succeededCount}/{results.Count} node(s) (appears when ready)"
+                );
                 SetCurrentAction($"Snapshot «{collectionName}» started ({succeededCount} node(s)); waiting for files…");
                 return true;
             }
             else if (failedCount == results.Count && results.Count > 0)
+            {
                 SetCurrentAction($"Snapshot «{collectionName}» failed on all nodes");
+            }
+
             return false;
         }
         catch (Exception ex)
@@ -392,38 +468,44 @@ public sealed class SnapshotAutomationJob : IJob
     private async Task CleanupIncompleteMultipartUploadsAsync(
         ILogger<SnapshotAutomationJob> logger,
         ISnapshotAutomationStatus automationStatus,
-        CancellationToken token)
+        CancellationToken token
+    )
     {
         var s3SnapshotService = _serviceProvider.GetService<IS3SnapshotService>();
         if (s3SnapshotService is null)
+        {
             return;
+        }
 
         SetCurrentAction(Actions.CleaningMultipartUploads);
-        var ns = _nodes.FirstOrDefault()?.Namespace;
+
+        var ns = _nodes.Count > 0 ? _nodes[0].Namespace : null;
+
         logger.LogInformation(
             "Starting multipart cleanup (olderThanMinutes={OlderThanMinutes}, timeoutSeconds={TimeoutSeconds})",
             AbortMultipartUploadsOlderThanMinutes,
-            MultipartCleanupTimeout.TotalSeconds);
+            _multipartCleanupTimeout.TotalSeconds
+        );
 
         (int found, int aborted, int failed) cleanupResult;
+
         try
         {
             using var cleanupCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-            cleanupCts.CancelAfter(MultipartCleanupTimeout);
+            cleanupCts.CancelAfter(_multipartCleanupTimeout);
             cleanupResult = await s3SnapshotService
-                .CleanupIncompleteMultipartUploadsAsync(
-                    AbortMultipartUploadsOlderThanMinutes,
-                    ns,
-                    cleanupCts.Token)
+                .CleanupIncompleteMultipartUploadsAsync(AbortMultipartUploadsOlderThanMinutes, ns, cleanupCts.Token)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
         {
             logger.LogWarning(
                 "Multipart cleanup exceeded timeout of {TimeoutSeconds}s and was skipped for this run",
-                MultipartCleanupTimeout.TotalSeconds);
+                _multipartCleanupTimeout.TotalSeconds
+            );
             automationStatus.AppendRunNote(
-                $"Multipart uploads: skipped (timeout after {(int)MultipartCleanupTimeout.TotalSeconds}s)");
+                $"Multipart uploads: skipped (timeout after {(int)_multipartCleanupTimeout.TotalSeconds}s)"
+            );
             return;
         }
 
@@ -441,7 +523,8 @@ public sealed class SnapshotAutomationJob : IJob
                 "Multipart cleanup completed with errors: found={Found}, aborted={Aborted}, failed={Failed}",
                 found,
                 aborted,
-                failed);
+                failed
+            );
         }
         else
         {
@@ -449,7 +532,8 @@ public sealed class SnapshotAutomationJob : IJob
                 "Multipart cleanup completed: found={Found}, aborted={Aborted}, failed={Failed}",
                 found,
                 aborted,
-                failed);
+                failed
+            );
         }
     }
 
@@ -460,18 +544,21 @@ public sealed class SnapshotAutomationJob : IJob
     private async Task PruneStaleCollectionOverridesIfNeededAsync(
         ISnapshotAutomationStatus automationStatus,
         ILogger<SnapshotAutomationJob> logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var overrides = _config.Snapshot.CollectionOverrides;
         if (overrides is not { Count: > 0 })
+        {
             return;
+        }
 
-        var nodesTuple = _nodes
-            .Where(n => n.IsHealthy)
-            .Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName))
-            .ToList();
+        var nodesTuple = _nodes.Where(n => n.IsHealthy).Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName)).ToList();
+
         if (nodesTuple.Count == 0)
+        {
             return;
+        }
 
         var collectionService = _serviceProvider.GetRequiredService<ICollectionService>();
         var (rawList, listingHealthy, _) = await collectionService
@@ -486,34 +573,47 @@ public sealed class SnapshotAutomationJob : IJob
         var live = rawList.Select(c => c.CollectionName).ToHashSet(StringComparer.Ordinal);
         var stale = overrides.Keys.Where(k => !live.Contains(k)).ToList();
         if (stale.Count == 0)
+        {
             return;
+        }
 
         var dynamicConfigService = _serviceProvider.GetRequiredService<IDynamicConfigService>();
         var fullConfig = await dynamicConfigService.GetConfigAsync(cancellationToken).ConfigureAwait(false);
         var snap = fullConfig.Snapshot;
         if (snap.CollectionOverrides is null)
+        {
             return;
+        }
 
         foreach (var k in stale)
+        {
             snap.CollectionOverrides.Remove(k);
+        }
 
         if (snap.CollectionOverrides.Count == 0)
+        {
             snap.CollectionOverrides = null;
+        }
 
         await dynamicConfigService.UpdateConfigAsync(fullConfig, cancellationToken).ConfigureAwait(false);
         automationStatus.AppendRunNote($"Removed overrides (collections gone): {string.Join(", ", stale)}");
         logger.LogInformation(
             "Removed snapshot collection overrides for collections no longer in cluster: {Collections}",
-            string.Join(", ", stale));
+            string.Join(", ", stale)
+        );
     }
 
     private static bool IsCollectionReadyForSnapshot(IReadOnlyList<CollectionInfo> infos)
     {
         var hasActiveTransfers = infos.Any(c =>
-            c.Warnings.Any(w => w.Contains(CollectionWarningConstants.ActiveTransfersWarning, StringComparison.OrdinalIgnoreCase)));
+            c.Warnings.Any(w => w.Contains(CollectionWarningConstants.ActiveTransfersWarning, StringComparison.OrdinalIgnoreCase))
+        );
         var hasRunningOptimizations = infos.Any(c =>
             c.RunningOptimizations.Count > 0
-            || c.Warnings.Any(w => w.Contains(CollectionWarningConstants.RunningOptimizationsPrefix, StringComparison.OrdinalIgnoreCase)));
+            || c.Warnings.Any(w =>
+                w.Contains(CollectionWarningConstants.RunningOptimizationsPrefix, StringComparison.OrdinalIgnoreCase)
+            )
+        );
 
         return infos.Count > 0
             && infos.All(c => c.Status == QdrantCollectionStatus.Green)
@@ -526,20 +626,22 @@ public sealed class SnapshotAutomationJob : IJob
         DateTime nowUtc,
         DateTime? lastCreatedAtUtc,
         int intervalMinutes,
-        DateTimeOffset? startAt)
+        DateTimeOffset? startAt
+    )
     {
         // Backward-compatible mode: no anchor time configured.
         if (startAt is null)
         {
-            return lastCreatedAtUtc is null
-                || (nowUtc - lastCreatedAtUtc.Value).TotalMinutes >= intervalMinutes;
+            return lastCreatedAtUtc is null || (nowUtc - lastCreatedAtUtc.Value).TotalMinutes >= intervalMinutes;
         }
 
         var interval = TimeSpan.FromMinutes(intervalMinutes);
         var startTime = startAt.Value.UtcDateTime.TimeOfDay;
         var anchor = nowUtc.Date.Add(startTime);
         if (nowUtc < anchor)
+        {
             anchor = anchor.AddDays(-1);
+        }
 
         var elapsed = nowUtc - anchor;
         var periodsSinceAnchor = (long)Math.Floor(elapsed.Ticks / (double)interval.Ticks);
@@ -554,11 +656,14 @@ public sealed class SnapshotAutomationJob : IJob
         lock (_actionLock)
         {
             if (string.IsNullOrEmpty(_currentAction))
+            {
                 return null;
+            }
+
             return new Dictionary<string, object?>
             {
                 [JobMetadataKeys.CurrentAction] = _currentAction,
-                [JobMetadataKeys.StartedAtUtc] = _startedAtUtc
+                [JobMetadataKeys.StartedAtUtc] = _startedAtUtc,
             };
         }
     }

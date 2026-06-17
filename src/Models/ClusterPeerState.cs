@@ -1,19 +1,17 @@
-using System.Collections.Concurrent;
-
 namespace Vigilante.Models;
 
 public class ClusterPeerState
 {
-    private HashSet<string> _majorityPeerIds = new();
+    private HashSet<ulong> _majorityPeerIds = [];
     private readonly Lock _syncLock = new();
-    
-    public IReadOnlySet<string> MajorityPeerIds => _majorityPeerIds;
+
+    public IReadOnlySet<ulong> MajorityPeerIds => _majorityPeerIds;
 
     public bool TryUpdateMajorityState(IEnumerable<NodeInfo> nodes)
     {
         // Materialize the list of healthy nodes once
         var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
-        if (!healthyNodes.Any())
+        if (healthyNodes.Count == 0)
         {
             return false;
         }
@@ -21,12 +19,12 @@ public class ClusterPeerState
         // Group nodes by their peer lists to find the predominant set
         var peerGroups = healthyNodes
             .GroupBy(n => string.Join(",", n.CurrentPeerIds.OrderBy(p => p)))
-            .Select(g => new { PeerSet = new HashSet<string>(g.First().CurrentPeerIds), Count = g.Count() })
+            .Select(g => new { PeerSet = new HashSet<ulong>(g.First().CurrentPeerIds), Count = g.Count() })
             .OrderByDescending(g => g.Count)
             .ToList();
 
         var majorityGroup = peerGroups.First();
-        
+
         // Check if the predominant peer set is present in the majority of nodes
         if (majorityGroup.Count > healthyNodes.Count / 2)
         {
@@ -55,26 +53,26 @@ public class ClusterPeerState
     public bool IsNodeConsistentWithMajority(NodeInfo node, out string? inconsistencyReason)
     {
         inconsistencyReason = null;
-        
+
         lock (_syncLock)
         {
-            if (!_majorityPeerIds.Any())
+            if (_majorityPeerIds.Count == 0)
             {
                 // If we don't have an established majority state yet, consider the node consistent
                 return true;
             }
 
-            var expectedPeers = new HashSet<string>(_majorityPeerIds);
+            var expectedPeers = new HashSet<ulong>(_majorityPeerIds);
             expectedPeers.Remove(node.PeerId); // Remove self from expected list
 
-            var currentPeers = new HashSet<string>(node.CurrentPeerIds);
+            var currentPeers = new HashSet<ulong>(node.CurrentPeerIds);
             currentPeers.Remove(node.PeerId); // Remove self from current list
 
             // Check differences between expected and current state
             var unexpectedPeers = currentPeers.Except(expectedPeers).ToList();
             var missingPeers = expectedPeers.Except(currentPeers).ToList();
 
-            if (unexpectedPeers.Any() || missingPeers.Any())
+            if (unexpectedPeers.Count != 0 || missingPeers.Count != 0)
             {
                 inconsistencyReason = BuildInconsistencyReason(unexpectedPeers, missingPeers);
                 return false;
@@ -84,16 +82,16 @@ public class ClusterPeerState
         }
     }
 
-    private string BuildInconsistencyReason(List<string> unexpectedPeers, List<string> missingPeers)
+    private static string BuildInconsistencyReason(List<ulong> unexpectedPeers, List<ulong> missingPeers)
     {
-        var reasons = new List<string>();
-        
-        if (unexpectedPeers.Any())
+        var reasons = new List<string>(2);
+
+        if (unexpectedPeers.Count != 0)
         {
             reasons.Add($"Unexpected peers: {string.Join(", ", unexpectedPeers)}");
         }
-        
-        if (missingPeers.Any())
+
+        if (missingPeers.Count != 0)
         {
             reasons.Add($"Missing peers: {string.Join(", ", missingPeers)}");
         }

@@ -1,4 +1,5 @@
 using Aer.QdrantClient.Http.Models.Shared;
+using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -8,8 +9,9 @@ using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
+using Vigilante.Models.Snapshots;
 using Vigilante.Services.Interfaces;
-using SnapshotInfo = Vigilante.Models.SnapshotInfo;
+using SnapshotInfo = Vigilante.Models.Snapshots.SnapshotInfo;
 
 namespace Aer.Vigilante.Tests.Controllers;
 
@@ -29,7 +31,7 @@ public class SnapshotsControllerTests
         _s3SnapshotService = Substitute.For<IS3SnapshotService>();
         _clusterManager = Substitute.For<IClusterManager>();
         _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())
-            .Returns(new ClusterState { Nodes = new List<NodeInfo>() });
+            .Returns(new ClusterState { Nodes = [] });
         _logger = Substitute.For<ILogger<SnapshotsController>>();
         _controller = new SnapshotsController(_snapshotService, _s3SnapshotService, _clusterManager, _logger);
     }
@@ -46,7 +48,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 SnapshotName = "collection1-peer1-snapshot1.snapshot",
                 SizeBytes = 1024,
@@ -57,7 +59,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod2",
                 NodeUrl = "http://node2:6333",
-                PeerId = "peer2",
+                PeerId = 2,
                 CollectionName = "collection2",
                 SnapshotName = "collection2-peer2-snapshot2.snapshot",
                 SizeBytes = 2048,
@@ -66,7 +68,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -80,13 +82,13 @@ public class SnapshotsControllerTests
         var result = await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1GetSnapshotsInfoPaginatedResponse;
-        Assert.That(response, Is.Not.Null);
-        Assert.That(response!.GroupedSnapshots, Has.Length.EqualTo(2));
-        Assert.That(response.Pagination.TotalItems, Is.EqualTo(2));
-        Assert.That(response.Pagination.CurrentPage, Is.EqualTo(1));
+        response.Should().NotBeNull();
+        response!.GroupedSnapshots.Should().HaveCount(2);
+        response.Pagination.TotalItems.Should().Be(2);
+        response.Pagination.CurrentPage.Should().Be(1);
     }
 
     [Test]
@@ -99,7 +101,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "test_collection",
                 SnapshotName = "test_collection-peer1-snapshot.snapshot",
                 SizeBytes = 1024,
@@ -110,7 +112,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod2",
                 NodeUrl = "http://node2:6333",
-                PeerId = "peer2",
+                PeerId = 2,
                 CollectionName = "other_collection",
                 SnapshotName = "other_collection-peer2-snapshot.snapshot",
                 SizeBytes = 2048,
@@ -119,7 +121,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -134,12 +136,12 @@ public class SnapshotsControllerTests
         var result = await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1GetSnapshotsInfoPaginatedResponse;
-        Assert.That(response, Is.Not.Null);
-        Assert.That(response!.GroupedSnapshots, Has.Length.EqualTo(1));
-        Assert.That(response.GroupedSnapshots[0].CollectionName, Is.EqualTo("test_collection"));
+        response.Should().NotBeNull();
+        response!.GroupedSnapshots.Should().HaveCount(1);
+        response.GroupedSnapshots[0].CollectionName.Should().Be("test_collection");
     }
 
     [Test]
@@ -150,7 +152,7 @@ public class SnapshotsControllerTests
         {
             PodName = $"pod{i}",
             NodeUrl = $"http://node{i}:6333",
-            PeerId = $"peer{i}",
+            PeerId = (ulong)i,
             CollectionName = $"collection{i}",
             SnapshotName = $"collection{i}-peer{i}-snapshot.snapshot",
             SizeBytes = 1024 * i,
@@ -158,7 +160,7 @@ public class SnapshotsControllerTests
             Source = SnapshotSource.KubernetesStorage
         }).ToList();
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -172,15 +174,15 @@ public class SnapshotsControllerTests
         var result = await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1GetSnapshotsInfoPaginatedResponse;
-        Assert.That(response, Is.Not.Null);
-        Assert.That(response!.GroupedSnapshots, Has.Length.EqualTo(5));
-        Assert.That(response.Pagination.CurrentPage, Is.EqualTo(2));
-        Assert.That(response.Pagination.PageSize, Is.EqualTo(5));
-        Assert.That(response.Pagination.TotalPages, Is.EqualTo(3));
-        Assert.That(response.Pagination.TotalItems, Is.EqualTo(15));
+        response.Should().NotBeNull();
+        response!.GroupedSnapshots.Should().HaveCount(5);
+        response.Pagination.CurrentPage.Should().Be(2);
+        response.Pagination.PageSize.Should().Be(5);
+        response.Pagination.TotalPages.Should().Be(3);
+        response.Pagination.TotalItems.Should().Be(15);
     }
 
     [Test]
@@ -188,7 +190,7 @@ public class SnapshotsControllerTests
     {
         // Arrange
         var snapshots = new List<SnapshotInfo>();
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -202,15 +204,15 @@ public class SnapshotsControllerTests
         await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        await _snapshotService.Received(1).GetSnapshotsInfoAsync(true, Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), true, Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     [Test]
     public async Task GetSnapshotsInfo_WhenExceptionThrown_Returns500()
     {
         // Arrange
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(Task.FromException<IReadOnlyList<SnapshotInfo>>(new Exception("Test error")));
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns(Task.FromException<IReadOnlyCollection<SnapshotInfo>>(new Exception("Test error")));
 
         var request = new V1GetSnapshotsInfoRequest
         {
@@ -222,9 +224,9 @@ public class SnapshotsControllerTests
         var result = await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     #endregion
@@ -238,7 +240,7 @@ public class SnapshotsControllerTests
         var request = new V1CreateSnapshotRequest
         {
             CollectionName = "test_collection",
-            NodeUrls = new List<string> { "http://node1:6333" }
+            NodeUrls = ["http://node1:6333"]
         };
 
         var results = new Dictionary<string, string?>
@@ -260,10 +262,10 @@ public class SnapshotsControllerTests
         var result = await _controller.CreateSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1CreateSnapshotResponse;
-        Assert.That(response!.Success, Is.True);
+        response!.Success.Should().BeTrue();
     }
 
     [Test]
@@ -273,7 +275,7 @@ public class SnapshotsControllerTests
         var request = new V1CreateSnapshotRequest
         {
             CollectionName = "test_collection",
-            NodeUrls = new List<string> { "http://node1:6333" }
+            NodeUrls = ["http://node1:6333"]
         };
 
         var results = new Dictionary<string, string?>
@@ -295,9 +297,9 @@ public class SnapshotsControllerTests
         var result = await _controller.CreateSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     [Test]
@@ -306,7 +308,7 @@ public class SnapshotsControllerTests
         var request = new V1CreateSnapshotRequest
         {
             CollectionName = "test_collection",
-            NodeUrls = new List<string> { "http://node1:6333" }
+            NodeUrls = ["http://node1:6333"]
         };
 
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -317,12 +319,12 @@ public class SnapshotsControllerTests
 
         var result = await _controller.CreateSnapshot(request, CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<ConflictObjectResult>());
+        result.Result.Should().BeAssignableTo<ConflictObjectResult>();
         var conflict = (ConflictObjectResult)result.Result!;
-        Assert.That(conflict.StatusCode, Is.EqualTo(409));
+        conflict.StatusCode.Should().Be(409);
         var response = conflict.Value as V1CreateSnapshotResponse;
-        Assert.That(response!.Success, Is.False);
-        Assert.That(response.Message, Does.Contain("already in progress"));
+        response!.Success.Should().BeFalse();
+        response.Message.Should().Contain("already in progress");
     }
 
     [Test]
@@ -332,7 +334,7 @@ public class SnapshotsControllerTests
         var request = new V1CreateSnapshotRequest
         {
             CollectionName = "test_collection",
-            NodeUrls = new List<string> { "http://node1:6333", "http://node2:6333" }
+            NodeUrls = ["http://node1:6333", "http://node2:6333"]
         };
 
         var results = new Dictionary<string, string?>
@@ -355,11 +357,11 @@ public class SnapshotsControllerTests
         var result = await _controller.CreateSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1CreateSnapshotResponse;
-        Assert.That(response!.Success, Is.True);
-        Assert.That(response.Message, Does.Contain("2/2"));
+        response!.Success.Should().BeTrue();
+        response.Message.Should().Contain("2/2");
     }
 
     #endregion
@@ -375,7 +377,7 @@ public class SnapshotsControllerTests
             CollectionName = "test_collection",
             SnapshotName = "snapshot.snapshot",
             Source = SnapshotSource.QdrantApi,
-            NodeUrls = new List<string> { "http://node1:6333" }
+            NodeUrls = ["http://node1:6333"]
         };
 
         var results = new Dictionary<string, bool>
@@ -394,7 +396,7 @@ public class SnapshotsControllerTests
         var result = await _controller.DeleteSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
     }
 
     [Test]
@@ -406,10 +408,10 @@ public class SnapshotsControllerTests
             CollectionName = "test_collection",
             SnapshotName = "snapshot.snapshot",
             Source = SnapshotSource.KubernetesStorage,
-            Pods = new List<V1DeleteSnapshotRequest.PodSpecification>
-            {
+            Pods =
+            [
                 new() { PodName = "pod1", PodNamespace = "default" }
-            }
+            ]
         };
 
         var results = new Dictionary<string, bool>
@@ -428,7 +430,7 @@ public class SnapshotsControllerTests
         var result = await _controller.DeleteSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
     }
 
     [Test]
@@ -440,7 +442,7 @@ public class SnapshotsControllerTests
             CollectionName = "test_collection",
             SnapshotName = "snapshot.snapshot",
             Source = SnapshotSource.QdrantApi,
-            NodeUrls = new List<string> { "http://node1:6333", "http://node2:6333" }
+            NodeUrls = ["http://node1:6333", "http://node2:6333"]
         };
 
         var results = new Dictionary<string, bool>
@@ -460,10 +462,10 @@ public class SnapshotsControllerTests
         var result = await _controller.DeleteSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1DeleteSnapshotResponse;
-        Assert.That(response!.Success, Is.True);
+        response!.Success.Should().BeTrue();
     }
 
     #endregion
@@ -483,23 +485,23 @@ public class SnapshotsControllerTests
             PodNamespace = "default"
         };
 
-        var stream = new MemoryStream(new byte[] { 1, 2, 3 });
+        var stream = new MemoryStream([1, 2, 3]);
         _snapshotService.DownloadSnapshotWithFallbackAsync(
             request.NodeUrl,
             request.CollectionName,
             request.SnapshotName,
+            Arg.Any<CancellationToken>(),
             request.PodName,
-            request.PodNamespace,
-            Arg.Any<CancellationToken>())
+            request.PodNamespace)
             .Returns(stream);
 
         // Act
         var result = await _controller.DownloadSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<FileStreamResult>());
+        result.Should().BeAssignableTo<FileStreamResult>();
         var fileResult = (FileStreamResult)result;
-        Assert.That(fileResult.FileDownloadName, Is.EqualTo(request.SnapshotName));
+        fileResult.FileDownloadName.Should().Be(request.SnapshotName);
     }
 
     [Test]
@@ -519,18 +521,18 @@ public class SnapshotsControllerTests
             Arg.Any<string>(),
             Arg.Any<string>(),
             Arg.Any<string>(),
+            Arg.Any<CancellationToken>(),
             Arg.Any<string?>(),
-            Arg.Any<string?>(),
-            Arg.Any<CancellationToken>())
+            Arg.Any<string?>())
             .Returns((Stream?)null);
 
         // Act
         var result = await _controller.DownloadSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     #endregion
@@ -554,12 +556,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 SnapshotSource.KubernetesStorage,
                 request.SnapshotName,
                 request.SourceCollectionName,
                 null,
-                null,
-                Arg.Any<CancellationToken>())
+                null)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: false,
@@ -569,10 +571,10 @@ public class SnapshotsControllerTests
         var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var ok = (OkObjectResult)result.Result!;
         var response = ok.Value as V1RecoverFromSnapshotResponse;
-        Assert.That(response!.Success, Is.True);
+        response!.Success.Should().BeTrue();
     }
 
     [Test]
@@ -592,12 +594,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 SnapshotSource.KubernetesStorage,
                 request.SnapshotName,
                 request.SourceCollectionName,
                 null,
-                null,
-                Arg.Any<CancellationToken>())
+                null)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: true,
@@ -607,9 +609,9 @@ public class SnapshotsControllerTests
         var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(409));
+        objectResult.StatusCode.Should().Be(409);
     }
 
     [Test]
@@ -630,12 +632,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 SnapshotSource.S3Storage,
                 request.SnapshotName,
                 request.SourceCollectionName,
                 null,
-                null,
-                Arg.Any<CancellationToken>())
+                null)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: false,
@@ -645,19 +647,19 @@ public class SnapshotsControllerTests
         var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
-        
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
+
         await _snapshotService.Received(1).RequestRecoverAsync(
             request.CollectionName,
             request.TargetNodeUrl,
             Arg.Any<SnapshotPriority>(),
             request.WaitForResult,
+            Arg.Any<CancellationToken>(),
             SnapshotSource.S3Storage,
             request.SnapshotName,
             request.SourceCollectionName,
             null,
-            null,
-            Arg.Any<CancellationToken>());
+            null);
     }
 
     [Test]
@@ -678,12 +680,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 SnapshotSource.S3Storage,
                 request.SnapshotName,
                 request.SourceCollectionName,
                 null,
-                null,
-                Arg.Any<CancellationToken>())
+                null)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: false,
@@ -693,19 +695,19 @@ public class SnapshotsControllerTests
         var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
-        
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
+
         await _snapshotService.Received(1).RequestRecoverAsync(
             request.CollectionName,
             request.TargetNodeUrl,
             Arg.Any<SnapshotPriority>(),
             request.WaitForResult,
+            Arg.Any<CancellationToken>(),
             SnapshotSource.S3Storage,
             request.SnapshotName,
             request.SourceCollectionName,
             null,
-            null,
-            Arg.Any<CancellationToken>());
+            null);
     }
 
     [Test]
@@ -726,12 +728,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 SnapshotSource.KubernetesStorage,
                 request.SnapshotName,
                 request.SourceCollectionName,
                 null,
-                null,
-                Arg.Any<CancellationToken>())
+                null)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: false,
@@ -741,7 +743,7 @@ public class SnapshotsControllerTests
         var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<AcceptedResult>());
+        result.Result.Should().BeAssignableTo<AcceptedResult>();
     }
 
     #endregion
@@ -758,7 +760,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 SnapshotName = "collection1-peer1-snapshot1.snapshot",
                 SizeBytes = 1024,
@@ -767,7 +769,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -780,7 +782,7 @@ public class SnapshotsControllerTests
         await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        await _snapshotService.Received(1).GetSnapshotsInfoAsync(true, Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), true, Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     [Test]
@@ -793,7 +795,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 SnapshotName = "collection1-peer1-snapshot1.snapshot",
                 SizeBytes = 1024,
@@ -802,7 +804,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -815,7 +817,7 @@ public class SnapshotsControllerTests
         await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        await _snapshotService.Received(1).GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), false, Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     [Test]
@@ -828,7 +830,7 @@ public class SnapshotsControllerTests
             {
                 PodName = "pod1",
                 NodeUrl = "http://node1:6333",
-                PeerId = "peer1",
+                PeerId = 1,
                 CollectionName = "collection1",
                 SnapshotName = "collection1-peer1-snapshot1.snapshot",
                 SizeBytes = 1024,
@@ -837,7 +839,7 @@ public class SnapshotsControllerTests
             }
         };
 
-        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var request = new V1GetSnapshotsInfoRequest
@@ -849,7 +851,7 @@ public class SnapshotsControllerTests
         await _controller.GetSnapshotsInfo(request, CancellationToken.None);
 
         // Assert
-        await _snapshotService.Received(1).GetSnapshotsInfoAsync(false, Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
+        await _snapshotService.Received(1).GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), false, Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     #endregion
@@ -874,12 +876,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 null,
                 null,
                 null,
                 request.SnapshotUrl,
-                request.SnapshotChecksum,
-                Arg.Any<CancellationToken>())
+                request.SnapshotChecksum)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: false,
@@ -889,11 +891,11 @@ public class SnapshotsControllerTests
         var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result.Result!;
         var response = okResult.Value as V1RecoverFromSnapshotResponse;
-        Assert.That(response!.Success, Is.True);
-        Assert.That(response.Message, Does.Contain(request.SnapshotUrl));
+        response!.Success.Should().BeTrue();
+        response.Message.Should().Contain(request.SnapshotUrl);
     }
 
     [Test]
@@ -912,12 +914,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 null,
                 null,
                 null,
                 request.SnapshotUrl,
-                request.SnapshotChecksum,
-                Arg.Any<CancellationToken>())
+                request.SnapshotChecksum)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: true,
                 AlreadyInProgress: false,
@@ -927,9 +929,9 @@ public class SnapshotsControllerTests
         var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     [Test]
@@ -949,12 +951,12 @@ public class SnapshotsControllerTests
                 request.TargetNodeUrl,
                 Arg.Any<SnapshotPriority>(),
                 request.WaitForResult,
+                Arg.Any<CancellationToken>(),
                 null,
                 null,
                 null,
                 request.SnapshotUrl,
-                request.SnapshotChecksum,
-                Arg.Any<CancellationToken>())
+                request.SnapshotChecksum)
             .Returns(new SnapshotRecoveryStartResult(
                 ApiError: false,
                 AlreadyInProgress: false,
@@ -964,7 +966,7 @@ public class SnapshotsControllerTests
         var result = await _controller.RecoverFromSnapshot(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result.Result, Is.InstanceOf<AcceptedResult>());
+        result.Result.Should().BeAssignableTo<AcceptedResult>();
     }
 
     #endregion

@@ -12,11 +12,11 @@ public class MeterService : IMeterService
     private int _clusterNeedsAttention;
     private readonly ConcurrentDictionary<(string Pod, string Collection), (long Size, DateTime LastUpdated)> _collectionSizes = new();
     private readonly TimeSpan _staleDataThreshold = TimeSpan.FromMinutes(5);
-    
+
     public MeterService(IMeterFactory meterFactory)
     {
         var meter = meterFactory.Create(MeterName);
-        
+
         meter.CreateObservableGauge(
             name: $"{MeterName}_healthy_nodes",
             observeValue: () => _aliveNodesCount,
@@ -44,21 +44,20 @@ public class MeterService : IMeterService
             .Where(pair => now - pair.Value.LastUpdated > _staleDataThreshold)
             .Select(pair => pair.Key)
             .ToList();
-        
+
         foreach (var key in staleKeys)
         {
             _collectionSizes.TryRemove(key, out _);
         }
-        
+
         return _collectionSizes.Select(pair => new Measurement<long>(
             pair.Value.Size,
-            new KeyValuePair<string, object?>[]
-            {
+            [
                 new("pod", pair.Key.Pod),
                 new("collection", pair.Key.Collection)
-            }));
+            ]));
     }
-    
+
     public void UpdateAliveNodes(int count)
     {
         Interlocked.Exchange(ref _aliveNodesCount, count);
@@ -71,7 +70,7 @@ public class MeterService : IMeterService
 
     public void UpdateCollectionSize(CollectionSize collectionSize)
     {
-        _collectionSizes[(collectionSize.PodName, collectionSize.CollectionName)] = 
+        _collectionSizes[(collectionSize.PodName, collectionSize.CollectionName)] =
             (collectionSize.SizeBytes, DateTime.UtcNow);
     }
 }

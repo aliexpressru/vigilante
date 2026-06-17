@@ -45,7 +45,6 @@ public interface IPodCommandExecutor
         string itemDescription,
         CancellationToken cancellationToken);
 
-
     /// <summary>
     /// Gets exact file size in bytes using stat command
     /// </summary>

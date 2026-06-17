@@ -17,7 +17,9 @@ public class CollectionService : ICollectionService
 {
     private readonly ILogger<CollectionService> _logger;
     private readonly IMeterService _meterService;
+#pragma warning disable CA1859 // Use concrete types when possible for improved performance | Justification : Should stay IPodCommandExecutor for testing purposes
     private readonly IPodCommandExecutor? _commandExecutor;
+#pragma warning restore CA1859 // Use concrete types when possible for improved performance
     private readonly QdrantOptions _options;
     private readonly IQdrantClientFactory _clientFactory;
     private List<CollectionInfo>? _cachedCollections;
@@ -74,7 +76,7 @@ public class CollectionService : ICollectionService
             var result = await qdrantClient.ReplicateShards(
                 sourcePeerId: sourcePeerId,
                 targetPeerId: targetPeerId,
-                collectionNamesToReplicate: new[] { collectionName },
+                collectionNamesToReplicate: [collectionName],
                 shardIdsToReplicate: shardIds,
                 isMoveShards: isMove,
                 shardTransferMethod: transferMethod,
@@ -156,7 +158,7 @@ public class CollectionService : ICollectionService
         string podName,
         string podNamespace,
         string nodeUrl,
-        string peerId,
+        ulong peerId,
         CancellationToken cancellationToken)
     {
         if (_commandExecutor == null)
@@ -212,7 +214,7 @@ public class CollectionService : ICollectionService
     {
         // This method is kept for backward compatibility with old code that passes IQdrantHttpClient
         // It performs a simple health check without caching
-        
+
         try
         {
             var collectionsResponse = await client.ListCollections(cancellationToken);
@@ -227,7 +229,7 @@ public class CollectionService : ICollectionService
             }
 
             // If there are collections, check each one in parallel
-            if (collectionsResponse.Result?.Collections != null && collectionsResponse.Result.Collections.Any())
+            if (collectionsResponse.Result?.Collections != null && collectionsResponse.Result.Collections.Length != 0)
             {
                 var collections = collectionsResponse.Result.Collections;
 
@@ -255,11 +257,11 @@ public class CollectionService : ICollectionService
                 var results = await Task.WhenAll(checkTasks);
 
                 // Check if any collection failed
-                var failedCollection = results.FirstOrDefault(r => !r.IsHealthy);
-                if (failedCollection.CollectionName != null)
+                var (IsHealthy, CollectionName, Error) = results.FirstOrDefault(r => !r.IsHealthy);
+                if (CollectionName != null)
                 {
                     return (false,
-                        $"Failed to get info for collection '{failedCollection.CollectionName}': {failedCollection.Error}");
+                        $"Failed to get info for collection '{CollectionName}': {Error}");
                 }
             }
 
@@ -335,9 +337,8 @@ public class CollectionService : ICollectionService
             cancellationToken);
     }
 
-
     public async Task<(List<CollectionInfo> Collections, bool IsHealthy, string? ErrorMessage)> GetCollectionsFromQdrantAsync(
-        IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
+        IEnumerable<(string Url, ulong PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken,
         bool clearCache = false)
     {
@@ -346,7 +347,7 @@ public class CollectionService : ICollectionService
         if (nodesList.Count == 0)
         {
             _logger.LogWarning("No nodes provided to GetCollectionsFromQdrantAsync");
-            return (new List<CollectionInfo>(), true, null);
+            return ([], true, null);
         }
 
         // Check cache first if not clearing
@@ -359,7 +360,7 @@ public class CollectionService : ICollectionService
                     // Check if cache contains data from all requested nodes
                     var cachedNodeUrls = _cachedCollections.Select(c => c.NodeUrl).Distinct().ToHashSet();
                     var requestedNodeUrls = nodesList.Select(n => n.Url).ToHashSet();
-                    
+
                     // If cache contains all requested nodes, return cached data
                     if (requestedNodeUrls.All(url => cachedNodeUrls.Contains(url)))
                     {
@@ -377,7 +378,6 @@ public class CollectionService : ICollectionService
             }
         }
 
-
         var nodeResults = await Task.WhenAll(
             nodesList.Select(node => GetCollectionsFromSingleNodeAsync(node, cancellationToken)));
 
@@ -389,7 +389,9 @@ public class CollectionService : ICollectionService
         {
             result.AddRange(collections);
             if (!isHealthy)
+            {
                 overallHealthy = false;
+            }
         }
 
         // Cache the result if successful
@@ -405,7 +407,7 @@ public class CollectionService : ICollectionService
     }
 
     private async Task<(List<CollectionInfo> Collections, bool IsHealthy)> GetCollectionsFromSingleNodeAsync(
-        (string Url, string PeerId, string? Namespace, string? PodName) node,
+        (string Url, ulong PeerId, string? Namespace, string? PodName) node,
         CancellationToken cancellationToken)
     {
         try
@@ -422,9 +424,11 @@ public class CollectionService : ICollectionService
 
             var collections = collectionsResponse.Result.Collections;
             if (collections.Length == 0)
+            {
                 return ([], true);
+            }
 
-            Dictionary<string, List<string>> collectionAliases = new();
+            Dictionary<string, List<string>> collectionAliases = [];
             try
             {
                 var aliasesResponse = await qdrantClient.ListAllAliases(cancellationToken);
@@ -454,7 +458,7 @@ public class CollectionService : ICollectionService
 
                     var aliases = collectionAliases.TryGetValue(collection.Name, out var aliasList)
                         ? aliasList
-                        : new List<string>();
+                        : [];
 
                     List<CollectionOptimizationInfo> runningOptimizations = [];
                     try
@@ -512,7 +516,7 @@ public class CollectionService : ICollectionService
 
     public async Task<IReadOnlyList<CollectionInfo>> GetEnrichedCollectionsInfoAsync(
         IReadOnlyList<NodeInfo> nodes,
-        Dictionary<string, string> peerToPodMap,
+        Dictionary<ulong, string> peerToPodMap,
         CancellationToken cancellationToken,
         bool clearCache = false)
     {
@@ -523,7 +527,7 @@ public class CollectionService : ICollectionService
         {
             _logger.LogWarning("No healthy nodes available to get collections from");
 
-            return new List<CollectionInfo>();
+            return [];
         }
 
         var (collections, _, _) = await GetCollectionsFromQdrantAsync(
@@ -550,10 +554,9 @@ public class CollectionService : ICollectionService
 
         // Sort collection shards by node within each collection:
         // Group by collection name, sort nodes within each group, then flatten back
-        collections = collections
+        collections = [.. collections
             .GroupBy(c => c.CollectionName)
-            .SelectMany(group => group.OrderBy(c => NodeSortingExtensions.GetNodeSortKey(c.PodName, c.PeerId)))
-            .ToList();
+            .SelectMany(group => group.OrderBy(c => NodeSortingExtensions.GetNodeSortKey(c.PodName, c.PeerId)))];
 
         // Log summary with unique collection names
         return collections;
@@ -790,7 +793,7 @@ public class CollectionService : ICollectionService
             return [];
         }
 
-        return running
+        return [.. running
             .Select(r =>
             {
                 return new CollectionOptimizationInfo
@@ -800,8 +803,7 @@ public class CollectionService : ICollectionService
                     Done = r.Progress?.Done,
                     Total = r.Progress?.Total
                 };
-            })
-            .ToList();
+            })];
     }
 
     private static void PopulateCollectionWarnings(List<CollectionInfo> collections)
@@ -860,9 +862,9 @@ public class CollectionService : ICollectionService
                     string.Join("; ", formattedOptimizations));
             }
 
-            var finalWarnings = warnings.Count == 0
-                ? new List<string>()
-                : new List<string> { string.Join("; ", warnings) };
+            List<string> finalWarnings = warnings.Count == 0
+                ? []
+                : [string.Join("; ", warnings)];
 
             foreach (var nodeCollection in collectionGroup)
             {
@@ -874,7 +876,7 @@ public class CollectionService : ICollectionService
     private async Task EnrichWithClusteringInfoAsync(
         string healthyNodeUrl,
         IList<CollectionInfo> collectionInfos,
-        Dictionary<string, string> peerToPodMap,
+        Dictionary<ulong, string> peerToPodMap,
         CancellationToken cancellationToken)
     {
         try
@@ -884,7 +886,7 @@ public class CollectionService : ICollectionService
             var healthyNodePeerId = collectionInfos
                 .FirstOrDefault(c => c.NodeUrl == healthyNodeUrl)?.PeerId;
 
-            if (string.IsNullOrEmpty(healthyNodePeerId))
+            if (healthyNodePeerId == 0)
             {
                 _logger.LogWarning("Could not find peer ID for node {NodeUrl}", healthyNodeUrl);
 
@@ -908,7 +910,7 @@ public class CollectionService : ICollectionService
                 {
                     _logger.LogError(ex, "Failed to get clustering info for collection {Collection} on node {NodeUrl}",
                         collectionName, healthyNodeUrl);
-                    return (collectionName, (Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse?)null);
+                    return (collectionName, (GetCollectionClusteringInfoResponse?)null);
                 }
             });
 
@@ -916,13 +918,17 @@ public class CollectionService : ICollectionService
             foreach (var (collectionName, clusteringInfo) in clusteringResults)
             {
                 if (clusteringInfo?.Status?.IsSuccess != true || clusteringInfo.Result == null)
+                {
                     continue;
+                }
 
                 var info = collectionInfos.FirstOrDefault(c =>
                     c.CollectionName == collectionName && c.NodeUrl == healthyNodeUrl);
 
                 if (info == null)
+                {
                     continue;
+                }
 
                 UpdateShardMetrics(info, clusteringInfo.Result);
                 UpdateTransferMetrics(info, clusteringInfo.Result, peerToPodMap);
@@ -934,12 +940,14 @@ public class CollectionService : ICollectionService
         }
     }
 
-    private void UpdateShardMetrics(CollectionInfo info,
-        Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+    private static void UpdateShardMetrics(CollectionInfo info,
+        GetCollectionClusteringInfoResponse.CollectionClusteringInfo
             clusteringResult)
     {
         if (clusteringResult.LocalShards == null)
+        {
             return;
+        }
 
         var shardDetails = new List<ShardDetails>();
         var shardStates = new Dictionary<string, string>();
@@ -961,21 +969,23 @@ public class CollectionService : ICollectionService
         }
     }
 
-    private void UpdateTransferMetrics(
+    private static void UpdateTransferMetrics(
         CollectionInfo info,
-        Aer.QdrantClient.Http.Models.Responses.GetCollectionClusteringInfoResponse.CollectionClusteringInfo
+        GetCollectionClusteringInfoResponse.CollectionClusteringInfo
             clusteringResult,
-        Dictionary<string, string> peerToPodMap)
+        Dictionary<ulong, string> peerToPodMap)
     {
         if (clusteringResult.ShardTransfers == null)
+        {
             return;
+        }
 
         var outgoingTransfers = clusteringResult.ShardTransfers
-            .Where(t => t.From.ToString() == info.PeerId)
+            .Where(t => t.From == info.PeerId)
             .Select(t => new OutgoingTransferInfo
             {
                 ShardId = t.ShardId,
-                To = peerToPodMap.TryGetValue(t.To.ToString(), out var podName) ? podName : t.To.ToString(),
+                To = peerToPodMap.TryGetValue(t.To, out var podName) ? podName : t.To.ToString(),
                 ToPeerId = t.To.ToString(),
                 IsSync = t.Sync,
                 Method = t.Method.ToString()
@@ -988,18 +998,19 @@ public class CollectionService : ICollectionService
         }
     }
 
-
     /// <summary>
     /// Enriches collection metrics with cluster-wide disk/RAM usage from Qdrant memory report API.
     /// Any healthy node returns the same report for the whole collection.
     /// </summary>
     private async Task EnrichCollectionsWithMemoryReportAsync(
-        IReadOnlyList<NodeInfo> nodes,
+        List<NodeInfo> nodes,
         List<CollectionInfo> collections,
         CancellationToken cancellationToken)
     {
         if (collections.Count == 0)
+        {
             return;
+        }
 
         try
         {
@@ -1033,7 +1044,9 @@ public class CollectionService : ICollectionService
             foreach (var (collectionName, report) in reports)
             {
                 if (report == null)
+                {
                     continue;
+                }
 
                 var diskBytes = (long)report.Total.DiskBytes;
                 var ramBytes = (long)report.Total.RamBytes;
@@ -1076,7 +1089,9 @@ public class CollectionService : ICollectionService
     {
         var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
         if (healthyNodes.Count == 0)
+        {
             return;
+        }
 
         try
         {
@@ -1084,32 +1099,43 @@ public class CollectionService : ICollectionService
             var response = await qdrantClient.GetClusterTelemetry(cancellationToken);
 
             if (response?.Status?.IsSuccess != true || response.Result?.Collections == null)
+            {
                 return;
+            }
 
             foreach (var (collectionName, collTel) in response.Result.Collections)
             {
                 if (collTel?.Shards == null)
+                {
                     continue;
+                }
 
                 foreach (var shard in collTel.Shards)
                 {
                     if (shard.Replicas == null)
+                    {
                         continue;
+                    }
 
                     foreach (var replica in shard.Replicas)
                     {
-                        var peerIdStr = replica.PeerId.ToString();
                         var info = collections.FirstOrDefault(c =>
-                            c.CollectionName == collectionName && c.PeerId == peerIdStr);
+                            c.CollectionName == collectionName && c.PeerId == replica.PeerId);
                         if (info == null)
+                        {
                             continue;
+                        }
 
                         if (info.Metrics.Shards is not { } shardDetails)
+                        {
                             continue;
+                        }
 
                         var detail = shardDetails.FirstOrDefault(s => s.ShardId == shard.Id);
                         if (detail == null)
+                        {
                             continue;
+                        }
 
                         detail.VectorsSizeBytes = replica.VectorsSizeBytes;
                         detail.PayloadsSizeBytes = replica.PayloadsSizeBytes;
@@ -1141,7 +1167,7 @@ public class CollectionService : ICollectionService
         try
         {
             var collectionPath = $"{QdrantConstants.StoragePath}/{collectionName}";
-            
+
             var shardDirectories = await _commandExecutor.ListDirectoriesAsync(
                 podName,
                 podNamespace,
@@ -1184,8 +1210,8 @@ public class CollectionService : ICollectionService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, 
-                "Failed to get shard sizes for collection {Collection} on pod {PodName}", 
+            _logger.LogError(ex,
+                "Failed to get shard sizes for collection {Collection} on pod {PodName}",
                 collectionName, podName);
         }
 
@@ -1246,7 +1272,7 @@ public class CollectionService : ICollectionService
     private async Task EnrichCollectionsWithClusteringInfoAsync(
         IReadOnlyList<NodeInfo> nodes,
         List<CollectionInfo> collections,
-        Dictionary<string, string> peerToPodMap,
+        Dictionary<ulong, string> peerToPodMap,
         CancellationToken cancellationToken)
     {
         // Get clustering info from each healthy node to get their local shards
@@ -1258,7 +1284,6 @@ public class CollectionService : ICollectionService
 
             return;
         }
-
 
         await Task.WhenAll(
             healthyNodes.Select(node => EnrichWithClusteringInfoAsync(node.Url, collections, peerToPodMap, cancellationToken)));

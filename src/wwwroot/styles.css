@@ -1766,10 +1766,35 @@ html[data-theme="dark"] .modal-dialog .form-input,
 html[data-theme="dark"] .modal-dialog .form-select,
 html[data-theme="dark"] .modal-dialog .manage-aliases-list,
 html[data-theme="dark"] .modal-dialog .manage-aliases-item,
-html[data-theme="dark"] .modal-dialog .manage-aliases-rename-input {
+html[data-theme="dark"] .modal-dialog .manage-aliases-rename-input,
+html[data-theme="dark"] .modal-dialog .multi-recover-list {
     background: #1f2937;
     border-color: #4b5563;
     color: #e5e7eb;
+}
+
+html[data-theme="dark"] .modal-dialog .multi-recover-list-item {
+    border-color: #374151;
+}
+
+html[data-theme="dark"] .modal-dialog .multi-recover-item-label:hover {
+    background: #374151;
+}
+
+html[data-theme="dark"] .modal-dialog .multi-recover-item-origin {
+    color: #9ca3af;
+}
+
+html[data-theme="dark"] .modal-dialog .multi-recover-count-hint {
+    color: #9ca3af;
+}
+
+html[data-theme="dark"] .modal-dialog .multi-recover-count-hint--ok {
+    color: #4ade80;
+}
+
+html[data-theme="dark"] .modal-dialog .multi-recover-count-hint--error {
+    color: #f87171;
 }
 
 html[data-theme="dark"] .modal-dialog .manage-aliases-btn {
@@ -4275,6 +4300,144 @@ html[data-theme="dark"] #leaderNode {
     field-sizing: content;
     min-width: 100%;
     width: auto;
+}
+
+.modal-dialog--multi-recover {
+    max-width: min(700px, 92vw);
+}
+
+.multi-recover-list {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow-y: auto;
+}
+
+.multi-recover-snapshot-list {
+    max-height: 220px;
+}
+
+.multi-recover-nodes-list {
+    max-height: 160px;
+}
+
+.multi-recover-nodes-list .multi-recover-list-item {
+    border-bottom: none;
+}
+
+.multi-recover-nodes-list .multi-recover-item-label {
+    padding: 3px 10px;
+    gap: 8px;
+}
+
+.multi-recover-nodes-list .multi-recover-item-name {
+    font-size: 0.85rem;
+}
+
+.multi-recover-nodes-list .multi-recover-item-origin {
+    font-size: 0.75rem;
+}
+
+.multi-recover-list-item {
+    border-bottom: 1px solid #eee;
+}
+
+.multi-recover-list-item:last-child {
+    border-bottom: none;
+}
+
+.multi-recover-item-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.multi-recover-item-label:hover {
+    background: #f5f5f5;
+}
+
+.multi-recover-item-label input[type="checkbox"] {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.multi-recover-item-text {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+}
+
+.multi-recover-item-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.9rem;
+}
+
+.multi-recover-item-origin {
+    flex-shrink: 0;
+    font-size: 0.8rem;
+    color: #888;
+}
+
+.multi-recover-source-badge {
+    flex-shrink: 0;
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.multi-recover-source-badge--s3 {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+.multi-recover-source-badge--k8s {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
+.multi-recover-source-badge--api {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.multi-recover-count-hint {
+    margin: 4px 0 0;
+    font-size: 0.875rem;
+    min-height: 1.2em;
+    color: #666;
+}
+
+.multi-recover-count-hint--ok {
+    color: #2e7d32;
+}
+
+.multi-recover-count-hint--error {
+    color: #c62828;
+    font-weight: 500;
+}
+
+.multi-recover-empty {
+    margin: 6px 0 0;
+    color: #888;
+    font-size: 0.9rem;
 }
 
 .checkbox-label {

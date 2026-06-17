@@ -1,12 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using FluentAssertions;
 using NUnit.Framework;
 using Vigilante.Controllers;
 using Vigilante.Models;
 using Vigilante.Models.Requests;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
+using Vigilante.Models.Snapshots;
+using Vigilante.Services.Jobs.Snapshots;
 
 namespace Aer.Vigilante.Tests.Controllers;
 
@@ -35,15 +37,15 @@ public class JobsControllerTests
     public async Task GetJobsStatus_WhenNoJobs_Returns200EmptyList()
     {
         _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>(), Arg.Any<IReadOnlySet<string>?>()).Returns(Task.CompletedTask);
-        _jobRegistry.GetJobInfos().Returns(Array.Empty<JobInfoDto>());
+        _jobRegistry.GetJobInfos().Returns([]);
 
         var result = await _controller.GetJobsStatus(CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var ok = (OkObjectResult)result.Result!;
         var list = ok.Value as IReadOnlyList<JobInfoDto>;
-        Assert.That(list, Is.Not.Null);
-        Assert.That(list!, Is.Empty);
+        list.Should().NotBeNull();
+        list!.Should().BeEmpty();
         await _jobRegistry.Received(1).ProcessPendingJobsAsync(
             Arg.Any<CancellationToken>(),
             Arg.Is<IReadOnlySet<string>?>(s => s != null && s.Contains(SnapshotAutomationJob.JobKey)));
@@ -62,14 +64,14 @@ public class JobsControllerTests
 
         var result = await _controller.GetJobsStatus(CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
+        result.Result.Should().BeAssignableTo<OkObjectResult>();
         var ok = (OkObjectResult)result.Result!;
         var list = ok.Value as IReadOnlyList<JobInfoDto>;
-        Assert.That(list, Is.Not.Null);
-        Assert.That(list!.Count, Is.EqualTo(2));
-        Assert.That(list[0].Key, Is.EqualTo("job1"));
-        Assert.That(list[1].Key, Is.EqualTo("job2"));
-        Assert.That(list[1].ErrorMessage, Is.EqualTo("error"));
+        list.Should().NotBeNull();
+        list!.Count.Should().Be(2);
+        list[0].Key.Should().Be("job1");
+        list[1].Key.Should().Be("job2");
+        list[1].ErrorMessage.Should().Be("error");
         await _jobRegistry.Received(1).ProcessPendingJobsAsync(
             Arg.Any<CancellationToken>(),
             Arg.Is<IReadOnlySet<string>?>(s => s != null && s.Contains(SnapshotAutomationJob.JobKey)));
@@ -83,16 +85,16 @@ public class JobsControllerTests
 
         var result = await _controller.GetJobsStatus(CancellationToken.None);
 
-        Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
+        result.Result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result.Result!;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     [Test]
     public async Task GetJobsStatus_WhenSnapshotAutomationEnabled_IncludesSnapshotAutomationRow()
     {
         _jobRegistry.ProcessPendingJobsAsync(Arg.Any<CancellationToken>(), Arg.Any<IReadOnlySet<string>?>()).Returns(Task.CompletedTask);
-        _jobRegistry.GetJobInfos().Returns(Array.Empty<JobInfoDto>());
+        _jobRegistry.GetJobInfos().Returns([]);
         _dynamicConfig.GetConfigAsync(Arg.Any<CancellationToken>()).Returns(new DynamicConfig
         {
             Snapshot = new SnapshotConfiguration { Schedule = new Schedule { Enabled = true } }
@@ -108,9 +110,9 @@ public class JobsControllerTests
 
         var ok = (OkObjectResult)result.Result!;
         var list = (IReadOnlyList<JobInfoDto>)ok.Value!;
-        Assert.That(list, Has.Count.EqualTo(1));
-        Assert.That(list[0].Key, Is.EqualTo("snapshot-automation"));
-        Assert.That(list[0].Metadata!["phase"], Is.EqualTo("idle"));
+        list.Should().HaveCount(1);
+        list[0].Key.Should().Be("snapshot-automation");
+        list[0].Metadata!["phase"].Should().Be("idle");
     }
 
     [Test]
@@ -118,7 +120,7 @@ public class JobsControllerTests
     {
         var result = await _controller.CancelJob(new V1CancelJobRequest { Key = " " }, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
+        result.Should().BeAssignableTo<BadRequestObjectResult>();
     }
 
     [Test]
@@ -128,7 +130,7 @@ public class JobsControllerTests
 
         var result = await _controller.CancelJob(new V1CancelJobRequest { Key = "job1" }, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         await _jobRegistry.Received(1).CancelJobAsync("job1", Arg.Any<CancellationToken>());
     }
 
@@ -139,7 +141,7 @@ public class JobsControllerTests
 
         var result = await _controller.CancelJob(new V1CancelJobRequest { Key = "missing" }, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<NotFoundObjectResult>());
+        result.Should().BeAssignableTo<NotFoundObjectResult>();
         await _jobRegistry.Received(1).CancelJobAsync("missing", Arg.Any<CancellationToken>());
     }
 
@@ -151,8 +153,8 @@ public class JobsControllerTests
 
         var result = await _controller.CancelJob(new V1CancelJobRequest { Key = "job1" }, CancellationToken.None);
 
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 }

@@ -13,7 +13,7 @@ public interface ICollectionService
         string podName,
         string podNamespace,
         string nodeUrl,
-        string peerId,
+        ulong peerId,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -49,7 +49,6 @@ public interface ICollectionService
     Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client,
         CancellationToken cancellationToken = default);
 
-
     /// <summary>
     /// Deletes a collection via Qdrant API
     /// </summary>
@@ -66,7 +65,7 @@ public interface ICollectionService
         string podNamespace,
         string collectionName,
         CancellationToken cancellationToken);
-    
+
     /// <summary>
     /// Checks if a collection exists on a specific node
     /// </summary>
@@ -77,17 +76,17 @@ public interface ICollectionService
     /// <param name="clearCache">If true, clears the cache and fetches fresh data</param>
     /// <returns>Tuple containing list of collections, health status, and error message if any</returns>
     Task<(List<CollectionInfo> Collections, bool IsHealthy, string? ErrorMessage)> GetCollectionsFromQdrantAsync(
-        IEnumerable<(string Url, string PeerId, string? Namespace, string? PodName)> nodes,
+        IEnumerable<(string Url, ulong PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken,
         bool clearCache = false);
-    
+
     /// <summary>
     /// Gets enriched collections information from healthy nodes with storage and clustering data
     /// </summary>
     /// <param name="clearCache">If true, clears the cache and fetches fresh data</param>
     Task<IReadOnlyList<CollectionInfo>> GetEnrichedCollectionsInfoAsync(
         IReadOnlyList<NodeInfo> nodes,
-        Dictionary<string, string> peerToPodMap,
+        Dictionary<ulong, string> peerToPodMap,
         CancellationToken cancellationToken,
         bool clearCache = false);
 

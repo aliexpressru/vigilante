@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using FluentAssertions;
 using NUnit.Framework;
 using Vigilante.Configuration;
 using Vigilante.Services;
@@ -37,7 +38,7 @@ public class QdrantNodesProviderTests
     private static IConfiguration CreateConfiguration(List<QdrantNodeConfig>? nodes = null)
     {
         var builder = new ConfigurationBuilder();
-        
+
         if (nodes != null && nodes.Count > 0)
         {
             var inMemorySettings = new Dictionary<string, string?>();
@@ -48,7 +49,7 @@ public class QdrantNodesProviderTests
             }
             builder.AddInMemoryCollection(inMemorySettings);
         }
-        
+
         return builder.Build();
     }
 
@@ -59,7 +60,7 @@ public class QdrantNodesProviderTests
     {
         // Arrange
         var configuration = CreateConfiguration();
-        
+
         _provider = new QdrantNodesProvider(
             configuration,
             _kubernetes,
@@ -72,7 +73,7 @@ public class QdrantNodesProviderTests
         var result = await _provider.GetStatefulSetNameAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Null);
+        result.Should().BeNull();
     }
 
     [Test]
@@ -80,7 +81,7 @@ public class QdrantNodesProviderTests
     {
         // Arrange
         var configuration = CreateConfiguration();
-        
+
         _provider = new QdrantNodesProvider(
             configuration,
             _kubernetes,
@@ -96,7 +97,7 @@ public class QdrantNodesProviderTests
         var result = await _provider.GetStatefulSetNameAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.EqualTo(statefulSetName));
+        result.Should().Be(statefulSetName);
     }
 
     [Test]
@@ -104,7 +105,7 @@ public class QdrantNodesProviderTests
     {
         // Arrange
         var configuration = CreateConfiguration();
-        
+
         _provider = new QdrantNodesProvider(
             configuration,
             _kubernetes,
@@ -114,7 +115,8 @@ public class QdrantNodesProviderTests
             _logger);
 
         // Act & Assert
-        Assert.Throws<ArgumentException>(() => _provider.SetStatefulSetName(""));
+        Action act = () => _provider.SetStatefulSetName("");
+        act.Should().Throw<ArgumentException>();
     }
 
     [Test]
@@ -122,7 +124,7 @@ public class QdrantNodesProviderTests
     {
         // Arrange
         var configuration = CreateConfiguration();
-        
+
         _provider = new QdrantNodesProvider(
             configuration,
             _kubernetes,
@@ -132,7 +134,8 @@ public class QdrantNodesProviderTests
             _logger);
 
         // Act & Assert
-        Assert.Throws<ArgumentException>(() => _provider.SetStatefulSetName("   "));
+        Action act = () => _provider.SetStatefulSetName("   ");
+        act.Should().Throw<ArgumentException>();
     }
 
     [Test]
@@ -140,7 +143,7 @@ public class QdrantNodesProviderTests
     {
         // Arrange
         var configuration = CreateConfiguration();
-        
+
         _provider = new QdrantNodesProvider(
             configuration,
             _kubernetes,
@@ -155,7 +158,7 @@ public class QdrantNodesProviderTests
         var result = await _provider.GetStatefulSetNameAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.EqualTo("qdrant2"));
+        result.Should().Be("qdrant2");
     }
 
     #endregion
@@ -168,8 +171,8 @@ public class QdrantNodesProviderTests
         // Arrange
         var nodes = new List<QdrantNodeConfig>
         {
-            new QdrantNodeConfig { Host = "localhost", Port = 6333 },
-            new QdrantNodeConfig { Host = "localhost", Port = 6334 }
+            new() { Host = "localhost", Port = 6333 },
+            new() { Host = "localhost", Port = 6334 }
         };
         var configuration = CreateConfiguration(nodes);
 
@@ -185,9 +188,9 @@ public class QdrantNodesProviderTests
         var result = await _provider.GetNodesAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result[0].Host, Is.EqualTo("localhost"));
-        Assert.That(result[0].Port, Is.EqualTo(6333));
+        result.Should().HaveCount(2);
+        result[0].Host.Should().Be("localhost");
+        result[0].Port.Should().Be(6333);
     }
 
     [Test]
@@ -208,7 +211,7 @@ public class QdrantNodesProviderTests
         var result = await _provider.GetNodesAsync(CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Empty);
+        result.Should().BeEmpty();
     }
 
     #endregion

@@ -1,3 +1,4 @@
+using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -49,9 +50,9 @@ public class KubernetesControllerTests
         var result = await _controller.DeletePodAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        Assert.That(okResult.StatusCode, Is.EqualTo(200));
+        okResult.StatusCode.Should().Be(200);
     }
 
     [Test]
@@ -68,7 +69,7 @@ public class KubernetesControllerTests
         var result = await _controller.DeletePodAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
+        result.Should().BeAssignableTo<BadRequestObjectResult>();
     }
 
     [Test]
@@ -91,9 +92,9 @@ public class KubernetesControllerTests
         var result = await _controller.DeletePodAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     [Test]
@@ -116,9 +117,9 @@ public class KubernetesControllerTests
         var result = await _controller.DeletePodAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     #endregion
@@ -146,7 +147,7 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         await _kubernetesManager.Received(1).RolloutRestartStatefulSetAsync(
             request.StatefulSetName,
             request.Namespace,
@@ -174,9 +175,9 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     #endregion
@@ -206,7 +207,7 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         await _kubernetesManager.Received(1).ScaleStatefulSetAsync(
             request.StatefulSetName,
             request.Replicas.Value,
@@ -237,7 +238,7 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
     }
 
     [Test]
@@ -256,7 +257,7 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
+        result.Should().BeAssignableTo<BadRequestObjectResult>();
     }
 
     [Test]
@@ -275,7 +276,7 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
+        result.Should().BeAssignableTo<BadRequestObjectResult>();
     }
 
     [Test]
@@ -293,7 +294,7 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<BadRequestObjectResult>());
+        result.Should().BeAssignableTo<BadRequestObjectResult>();
     }
 
     [Test]
@@ -317,9 +318,9 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
     }
 
     #endregion
@@ -347,7 +348,7 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         _nodesProvider.Received(1).SetStatefulSetName("qdrant1");
     }
 
@@ -374,7 +375,7 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         _nodesProvider.Received(1).SetStatefulSetName("qdrant2");
     }
 
@@ -401,7 +402,7 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<OkObjectResult>());
+        result.Should().BeAssignableTo<OkObjectResult>();
         _nodesProvider.Received(1).SetStatefulSetName("qdrant-test");
     }
 
@@ -426,9 +427,9 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         var objectResult = (ObjectResult)result;
-        Assert.That(objectResult.StatusCode, Is.EqualTo(500));
+        objectResult.StatusCode.Should().Be(500);
         _nodesProvider.DidNotReceive().SetStatefulSetName(Arg.Any<string>());
     }
 
@@ -455,7 +456,7 @@ public class KubernetesControllerTests
         var result = await _controller.ManageStatefulSetAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.InstanceOf<ObjectResult>());
+        result.Should().BeAssignableTo<ObjectResult>();
         _nodesProvider.DidNotReceive().SetStatefulSetName(Arg.Any<string>());
     }
 

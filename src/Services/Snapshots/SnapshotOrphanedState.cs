@@ -1,4 +1,4 @@
-namespace Vigilante.Services;
+namespace Vigilante.Services.Snapshots;
 
 /// <summary>
 /// Holds orphaned-snapshot state across snapshot-automation job runs (collection name -> first detected missing at).
@@ -6,5 +6,5 @@ namespace Vigilante.Services;
 /// </summary>
 public class SnapshotOrphanedState
 {
-    internal readonly Dictionary<string, DateTime> OrphanedAt = [];
+    internal Dictionary<string, DateTime> OrphanedAt { get; } = [];
 }

@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Vigilante.Models;
 using Vigilante.Models.Requests;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
+using Vigilante.Services.Jobs.Snapshots;
 
 namespace Vigilante.Controllers;
 
@@ -15,7 +15,7 @@ public class JobsController(
     ILogger<JobsController> logger) : ControllerBase
 {
     /// <summary>Do not drain snapshot-automation on status poll — otherwise the HTTP call blocks until the run ends and the UI only ever sees idle.</summary>
-    private static readonly IReadOnlySet<string> ExcludeSnapshotAutomationOnStatusPoll =
+    private static readonly IReadOnlySet<string> _excludeSnapshotAutomationOnStatusPoll =
         new HashSet<string> { SnapshotAutomationJob.JobKey };
 
     /// <summary>
@@ -31,11 +31,14 @@ public class JobsController(
     {
         try
         {
-            await jobRegistry.ProcessPendingJobsAsync(cancellationToken, ExcludeSnapshotAutomationOnStatusPoll);
+            await jobRegistry.ProcessPendingJobsAsync(cancellationToken, _excludeSnapshotAutomationOnStatusPoll);
             var config = await dynamicConfigService.GetConfigAsync(cancellationToken);
             var infos = jobRegistry.GetJobInfos();
             if (IsSnapshotAutomationConfigured(config))
+            {
                 infos = MergeSnapshotAutomationRow(infos, snapshotAutomationStatus);
+            }
+
             return Ok(infos);
         }
         catch (Exception ex)
@@ -57,13 +60,17 @@ public class JobsController(
     public async Task<IActionResult> CancelJob([FromBody] V1CancelJobRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Key))
+        {
             return BadRequest(new { error = "Job key is required" });
+        }
 
         try
         {
             var cancelled = await jobRegistry.CancelJobAsync(request.Key, cancellationToken);
             if (!cancelled)
+            {
                 return NotFound(new { error = $"Job with key '{request.Key}' was not found" });
+            }
 
             return Ok(new { success = true, message = $"Job '{request.Key}' was removed" });
         }
@@ -78,9 +85,15 @@ public class JobsController(
     {
         var s = config.Snapshot;
         if (s.DeleteOrphanedAfterMinutes.HasValue)
+        {
             return true;
+        }
+
         if (s.Schedule.Enabled)
+        {
             return true;
+        }
+
         return s.CollectionOverrides?.Values.Any(o => o.Enabled) == true;
     }
 
@@ -101,7 +114,10 @@ public class JobsController(
             foreach (var kv in fromRegistry)
             {
                 if (kv.Value is null && merged.ContainsKey(kv.Key))
+                {
                     continue;
+                }
+
                 merged[kv.Key] = kv.Value;
             }
         }

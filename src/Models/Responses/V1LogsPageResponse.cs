@@ -5,7 +5,7 @@ namespace Vigilante.Models.Responses;
 /// </summary>
 public class V1LogsPageResponse : BaseOperationResponse
 {
-    public IReadOnlyList<V1LogEntry> Logs { get; init; } = Array.Empty<V1LogEntry>();
+    public IReadOnlyList<V1LogEntry> Logs { get; init; } = [];
 
     public string? Continuation { get; init; }
 

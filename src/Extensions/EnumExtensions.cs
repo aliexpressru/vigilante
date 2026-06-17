@@ -3,7 +3,7 @@ namespace Vigilante.Extensions;
 /// <summary>
 /// Extension methods for enum parsing and validation
 /// </summary>
-public static class EnumExtensions
+internal static class EnumExtensions
 {
     /// <summary>
     /// Tries to parse a string value to an enum of type T.
@@ -13,7 +13,7 @@ public static class EnumExtensions
     /// <param name="value">The string value to parse</param>
     /// <param name="ignoreCase">Whether to ignore case when parsing. Default is true.</param>
     /// <returns>The parsed enum value or null if parsing fails</returns>
-    public static TEnum? TryParseEnum<TEnum>(this string? value, bool ignoreCase = true) 
+    public static TEnum? TryParseEnum<TEnum>(this string? value, bool ignoreCase = true)
         where TEnum : struct, Enum
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -38,7 +38,7 @@ public static class EnumExtensions
     /// <param name="defaultValue">The default value to return if parsing fails</param>
     /// <param name="ignoreCase">Whether to ignore case when parsing. Default is true.</param>
     /// <returns>The parsed enum value or default value if parsing fails</returns>
-    public static TEnum ParseEnumOrDefault<TEnum>(this string? value, TEnum defaultValue, bool ignoreCase = true) 
+    public static TEnum ParseEnumOrDefault<TEnum>(this string? value, TEnum defaultValue, bool ignoreCase = true)
         where TEnum : struct, Enum
     {
         return value.TryParseEnum<TEnum>(ignoreCase) ?? defaultValue;

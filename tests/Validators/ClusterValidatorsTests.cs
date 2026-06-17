@@ -24,7 +24,7 @@ public class V1DropShardsFromPeerRequestValidatorTests
         {
             CollectionName = "test_collection",
             PeerId = 123456789,
-            ShardIds = new uint[] { 1, 2, 3 },
+            ShardIds = [1, 2, 3],
             IsDryRun = false
         };
 
@@ -43,7 +43,7 @@ public class V1DropShardsFromPeerRequestValidatorTests
         {
             CollectionName = "test_collection",
             PeerId = 123456789,
-            ShardIds = new uint[] { 1 },
+            ShardIds = [1],
             IsDryRun = true
         };
 
@@ -62,7 +62,7 @@ public class V1DropShardsFromPeerRequestValidatorTests
         {
             CollectionName = "",
             PeerId = 123456789,
-            ShardIds = new uint[] { 1, 2 }
+            ShardIds = [1, 2]
         };
 
         // Act
@@ -81,7 +81,7 @@ public class V1DropShardsFromPeerRequestValidatorTests
         {
             CollectionName = null!,
             PeerId = 123456789,
-            ShardIds = new uint[] { 1, 2 }
+            ShardIds = [1, 2]
         };
 
         // Act
@@ -99,7 +99,7 @@ public class V1DropShardsFromPeerRequestValidatorTests
         {
             CollectionName = "test_collection",
             PeerId = null,
-            ShardIds = new uint[] { 1, 2 }
+            ShardIds = [1, 2]
         };
 
         // Act
@@ -118,7 +118,7 @@ public class V1DropShardsFromPeerRequestValidatorTests
         {
             CollectionName = "test_collection",
             PeerId = 123456789,
-            ShardIds = Array.Empty<uint>()
+            ShardIds = []
         };
 
         // Act
@@ -155,7 +155,7 @@ public class V1DropShardsFromPeerRequestValidatorTests
         {
             CollectionName = "",
             PeerId = null,
-            ShardIds = Array.Empty<uint>()
+            ShardIds = []
         };
 
         // Act
@@ -175,7 +175,7 @@ public class V1DropShardsFromPeerRequestValidatorTests
         {
             CollectionName = "test_collection",
             PeerId = 987654321,
-            ShardIds = new uint[] { 5 }
+            ShardIds = [5]
         };
 
         // Act
@@ -193,7 +193,7 @@ public class V1DropShardsFromPeerRequestValidatorTests
         {
             CollectionName = "test_collection",
             PeerId = 111111111,
-            ShardIds = Enumerable.Range(0, 100).Select(x => (uint)x).ToArray()
+            ShardIds = [.. Enumerable.Range(0, 100).Select(x => (uint)x)]
         };
 
         // Act
@@ -224,7 +224,7 @@ public class V1ReplicateShardsRequestValidatorTests
             SourcePeerId = 123456789,
             TargetPeerId = 987654321,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 1, 2, 3 },
+            ShardIdsToReplicate = [1, 2, 3],
             IsMoveShards = false
         };
 
@@ -244,7 +244,7 @@ public class V1ReplicateShardsRequestValidatorTests
             SourcePeerId = null,
             TargetPeerId = 987654321,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 1, 2, 3 }
+            ShardIdsToReplicate = [1, 2, 3]
         };
 
         // Act
@@ -263,7 +263,7 @@ public class V1ReplicateShardsRequestValidatorTests
             SourcePeerId = 123456789,
             TargetPeerId = null,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 1, 2, 3 }
+            ShardIdsToReplicate = [1, 2, 3]
         };
 
         // Act
@@ -282,7 +282,7 @@ public class V1ReplicateShardsRequestValidatorTests
             SourcePeerId = 123456789,
             TargetPeerId = 123456789,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 1, 2, 3 }
+            ShardIdsToReplicate = [1, 2, 3]
         };
 
         // Act
@@ -302,7 +302,7 @@ public class V1ReplicateShardsRequestValidatorTests
             SourcePeerId = 123456789,
             TargetPeerId = 987654321,
             CollectionName = "",
-            ShardIdsToReplicate = new uint[] { 1, 2, 3 }
+            ShardIdsToReplicate = [1, 2, 3]
         };
 
         // Act
@@ -321,7 +321,7 @@ public class V1ReplicateShardsRequestValidatorTests
             SourcePeerId = 123456789,
             TargetPeerId = 987654321,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = Array.Empty<uint>()
+            ShardIdsToReplicate = []
         };
 
         // Act
@@ -340,7 +340,7 @@ public class V1ReplicateShardsRequestValidatorTests
             SourcePeerId = 123456789,
             TargetPeerId = 987654321,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 1, 2, 3 },
+            ShardIdsToReplicate = [1, 2, 3],
             ShardTransferMethod = "Snapshot"
         };
 
@@ -360,7 +360,7 @@ public class V1ReplicateShardsRequestValidatorTests
             SourcePeerId = 123456789,
             TargetPeerId = 987654321,
             CollectionName = "test_collection",
-            ShardIdsToReplicate = new uint[] { 1, 2, 3 },
+            ShardIdsToReplicate = [1, 2, 3],
             ShardTransferMethod = "InvalidMethod"
         };
 

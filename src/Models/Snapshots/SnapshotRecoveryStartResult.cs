@@ -1,4 +1,4 @@
-namespace Vigilante.Models;
+namespace Vigilante.Models.Snapshots;
 
 public sealed record SnapshotRecoveryStartResult(
     bool ApiError,

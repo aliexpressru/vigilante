@@ -8,11 +8,14 @@ public class ClusterHealth
 
     public int HealthyNodes { get; set; }
 
-    public string Leader { get; set; } = string.Empty;
+    /// <summary>
+    /// Leader node peer id.
+    /// </summary>
+    public ulong Leader { get; set; } = 0;
 
-    public List<string> Issues { get; set; } = new();
+    public List<string> Issues { get; set; } = [];
 
-    public List<string> Warnings { get; set; } = new();
+    public List<string> Warnings { get; set; } = [];
 
     public double HealthPercentage => TotalNodes > 0 ? (double)HealthyNodes / TotalNodes * 100 : 0;
 

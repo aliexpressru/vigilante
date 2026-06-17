@@ -1,11 +1,10 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Vigilante.Constants;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
+using Vigilante.Models.Snapshots;
 using Vigilante.Services.Interfaces;
 
-namespace Vigilante.Services.Jobs;
+namespace Vigilante.Services.Jobs.Snapshots;
 
 /// <summary>
 /// Job that completes when new snapshots for the collection appear after the create request.
@@ -24,10 +23,11 @@ public sealed class PendingSnapshotCreationJob : IJob
     private readonly DateTime _requestedAtUtc;
     private readonly HashSet<string> _baselineSnapshotKeys;
     private readonly int? _retainLastNAfterVisible;
-    private readonly IReadOnlySet<string>? _retentionClusterPeerIds;
+    private readonly IReadOnlySet<ulong>? _retentionClusterPeerIds;
     private readonly TimeSpan _timeout;
 
     public string Key => KeyPrefix + _collectionName;
+
     public bool IsWaitingForReady => false;
 
     public PendingSnapshotCreationJob(
@@ -37,7 +37,7 @@ public sealed class PendingSnapshotCreationJob : IJob
         DateTime requestedAtUtc,
         IReadOnlySet<string> baselineSnapshotKeys,
         int? retainLastNAfterVisible = null,
-        IReadOnlySet<string>? retentionClusterPeerIds = null,
+        IReadOnlySet<ulong>? retentionClusterPeerIds = null,
         TimeSpan? timeout = null)
     {
         _serviceProvider = serviceProvider;
@@ -55,11 +55,15 @@ public sealed class PendingSnapshotCreationJob : IJob
     {
         if (s.Source == SnapshotSource.S3Storage
             || string.Equals(s.NodeUrl, S3Constants.StorageIdentifier, StringComparison.OrdinalIgnoreCase))
+        {
             return "s3:" + s.SnapshotName;
+        }
+
         return "n:" + s.NodeUrl + "|" + s.SnapshotName;
     }
 
     public Task<bool?> CheckReadyAsync(CancellationToken cancellationToken) => Task.FromResult<bool?>(true);
+
     public void OnReady() { }
 
     public async Task<(bool HasMore, bool Success, string? ErrorMessage)> AdvanceAsync(CancellationToken cancellationToken)
@@ -72,18 +76,20 @@ public sealed class PendingSnapshotCreationJob : IJob
             var timeoutText = _timeout.TotalMinutes >= 1
                 ? $"{(int)_timeout.TotalMinutes} minute(s)"
                 : $"{(int)_timeout.TotalSeconds} second(s)";
+
             logger.LogWarning(
                 "Snapshot creation job timed out for collection {CollectionName}: snapshots did not appear within {Timeout}",
                 _collectionName, timeoutText);
+
             return (false, false, $"Snapshot did not appear within {timeoutText}");
         }
 
-        IReadOnlyList<SnapshotInfo> snapshots;
+        IReadOnlyCollection<SnapshotInfo> snapshots;
         try
         {
             snapshots = await snapshotService.GetSnapshotsInfoAsync(
-                clearCache: true,
                 cancellationToken,
+                clearCache: true,
                 nodesToUse: _requestedNodes);
         }
         catch (Exception ex)
@@ -138,9 +144,15 @@ public sealed class PendingSnapshotCreationJob : IJob
     {
         var t0 = _requestedAtUtc.AddSeconds(-15);
         if (s.S3StorageModifiedUtc is { } sm && sm >= t0)
+        {
             return true;
+        }
+
         if (s.CreatedAt is { } ca && ca >= t0)
+        {
             return true;
+        }
+
         return false;
     }
 
@@ -157,8 +169,8 @@ public sealed class PendingSnapshotCreationJob : IJob
                     .EnforceRetentionAsync(
                         _collectionName,
                         _retainLastNAfterVisible.Value,
-                        _retentionClusterPeerIds,
-                        cancellationToken)
+                        cancellationToken,
+                        _retentionClusterPeerIds)
                     .ConfigureAwait(false);
                 logger.LogInformation(
                     "Retention (last {N}) applied for {Collection} after snapshots became visible",

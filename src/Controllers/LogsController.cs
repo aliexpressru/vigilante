@@ -70,9 +70,7 @@ public class LogsController(ILogReader logReader, ILogger<LogsController> logger
             Success = page.Success,
             Error = page.Error,
             Message = page.Error ?? string.Empty,
-            Logs = page.Logs
-                .Select(e => new V1LogEntry(e.Timestamp, e.Message, e.Source))
-                .ToArray(),
+            Logs = [.. page.Logs.Select(e => new V1LogEntry(e.Timestamp, e.Message, e.Source))],
             Continuation = page.Continuation,
             Truncated = page.Truncated
         };

@@ -928,6 +928,203 @@ class VigilanteDashboard {
         // Legacy stub — kept for compatibility; recovery now uses a dynamic modal
     }
 
+    openMultiRecoveryModal(collection) {
+        const snapshots = collection.snapshots || [];
+        const nodes = this.clusterNodes || [];
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-dialog modal-dialog--multi-recover';
+
+        const buildSnapshotItem = (snapshot, index) => {
+            const sourceBadge = snapshot.source === 'S3Storage'
+                ? '<span class="multi-recover-source-badge multi-recover-source-badge--s3">S3</span>'
+                : snapshot.source === 'KubernetesStorage'
+                    ? '<span class="multi-recover-source-badge multi-recover-source-badge--k8s">K8s</span>'
+                    : '<span class="multi-recover-source-badge multi-recover-source-badge--api">API</span>';
+            const origin = snapshot.source === 'S3Storage'
+                ? 'S3'
+                : (snapshot.podName && snapshot.podName !== 'unknown' ? snapshot.podName : snapshot.nodeUrl);
+            return `
+                <li class="multi-recover-list-item">
+                    <label class="multi-recover-item-label">
+                        <input type="checkbox" class="multi-recover-snapshot-cb" data-index="${index}" />
+                        <span class="multi-recover-item-text">
+                            ${sourceBadge}
+                            <span class="multi-recover-item-name" title="${this.escapeHtml(snapshot.snapshotName)}">${this.escapeHtml(snapshot.snapshotName)}</span>
+                            <span class="multi-recover-item-origin">${this.escapeHtml(origin)}</span>
+                        </span>
+                    </label>
+                </li>`;
+        };
+
+        const buildNodeItem = (node, index) => {
+            const url = node.nodeUrl || node.url || '';
+            const label = (node.podName && node.podName !== 'unknown')
+                ? node.podName
+                : url;
+            const peerId = node.peerId ? String(node.peerId) : '';
+            return `
+                <li class="multi-recover-list-item">
+                    <label class="multi-recover-item-label">
+                        <input type="checkbox" class="multi-recover-node-cb" data-url="${this.escapeHtml(url)}" checked />
+                        <span class="multi-recover-item-text">
+                            <span class="multi-recover-item-name">${this.escapeHtml(label)}</span>
+                            ${peerId ? `<span class="multi-recover-item-origin">${this.escapeHtml(peerId)}</span>` : ''}
+                        </span>
+                    </label>
+                </li>`;
+        };
+
+        modal.innerHTML = `
+            <div class="modal-header">
+                <h3><i class="fas fa-layer-group"></i> Recover Collection from Multiple Snapshots</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="multiRecoverCollectionName">Target collection name:</label>
+                    <input type="text" id="multiRecoverCollectionName" class="form-input" value="${this.escapeHtml(collection.collectionName)}" required />
+                </div>
+                <div class="form-group">
+                    <label>Select source snapshots (one per target node):</label>
+                    ${snapshots.length === 0
+                        ? '<p class="multi-recover-empty">No snapshots available for this collection.</p>'
+                        : `<ul class="multi-recover-list multi-recover-snapshot-list">${snapshots.map(buildSnapshotItem).join('')}</ul>`
+                    }
+                </div>
+                <div class="form-group">
+                    <label>Select target nodes:</label>
+                    ${nodes.length === 0
+                        ? '<p class="multi-recover-empty">No cluster nodes available.</p>'
+                        : `<ul class="multi-recover-list multi-recover-nodes-list">${nodes.map(buildNodeItem).join('')}</ul>`
+                    }
+                </div>
+                <div class="form-group">
+                    <label for="multiRecoverPriority">Snapshot Priority:</label>
+                    <select id="multiRecoverPriority" class="form-select">
+                        <option value="Snapshot" selected>Snapshot (prefer snapshot data)</option>
+                        <option value="Replica">Replica (prefer existing data)</option>
+                        <option value="NoSync">NoSync (restore without sync)</option>
+                    </select>
+                </div>
+                <p class="multi-recover-count-hint" id="multiRecoverCountHint"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary modal-cancel">Cancel</button>
+                <button class="btn-primary modal-submit"><i class="fas fa-layer-group"></i> Start Recovery</button>
+            </div>
+        `;
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        const closeModal = () => {
+            overlay.classList.add('closing');
+            setTimeout(() => overlay.remove(), 300);
+        };
+
+        modal.querySelector('.modal-close').addEventListener('click', closeModal);
+        modal.querySelector('.modal-cancel').addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+        setTimeout(() => modal.querySelector('#multiRecoverCollectionName')?.focus(), 100);
+
+        const hintEl = modal.querySelector('#multiRecoverCountHint');
+
+        const updateHint = () => {
+            const selectedSnapshots = modal.querySelectorAll('.multi-recover-snapshot-cb:checked').length;
+            const selectedNodes = modal.querySelectorAll('.multi-recover-node-cb:checked').length;
+            if (selectedSnapshots === 0 && selectedNodes === 0) {
+                hintEl.textContent = '';
+                hintEl.className = 'multi-recover-count-hint';
+                return;
+            }
+            const match = selectedSnapshots === selectedNodes;
+            hintEl.textContent = `${selectedSnapshots} snapshot${selectedSnapshots !== 1 ? 's' : ''} / ${selectedNodes} node${selectedNodes !== 1 ? 's' : ''} selected${match ? '' : ' — counts must match'}`;
+            hintEl.className = 'multi-recover-count-hint' + (match ? ' multi-recover-count-hint--ok' : ' multi-recover-count-hint--error');
+        };
+
+        modal.querySelectorAll('.multi-recover-snapshot-cb, .multi-recover-node-cb').forEach(cb => {
+            cb.addEventListener('change', updateHint);
+        });
+        updateHint();
+
+        let isSubmitting = false;
+        const submitButton = modal.querySelector('.modal-submit');
+
+        submitButton.addEventListener('click', async () => {
+            if (isSubmitting) return;
+
+            const targetCollectionName = modal.querySelector('#multiRecoverCollectionName').value.trim();
+            if (!targetCollectionName) {
+                this.showToast('Target collection name is required.', 'error', null, 8000);
+                modal.querySelector('#multiRecoverCollectionName').focus();
+                return;
+            }
+
+            const selectedSnapshotCbs = [...modal.querySelectorAll('.multi-recover-snapshot-cb:checked')];
+            const selectedNodeCbs = [...modal.querySelectorAll('.multi-recover-node-cb:checked')];
+
+            if (selectedSnapshotCbs.length === 0) {
+                this.showToast('Select at least one snapshot.', 'error', null, 8000);
+                return;
+            }
+            if (selectedNodeCbs.length === 0) {
+                this.showToast('Select at least one target node.', 'error', null, 8000);
+                return;
+            }
+            if (selectedSnapshotCbs.length !== selectedNodeCbs.length) {
+                this.showToast(`Number of selected snapshots (${selectedSnapshotCbs.length}) must equal number of target nodes (${selectedNodeCbs.length}).`, 'error', null, 10000);
+                return;
+            }
+
+            const priority = modal.querySelector('#multiRecoverPriority').value;
+
+            const items = selectedNodeCbs.map((nodeCb, i) => {
+                const idx = parseInt(selectedSnapshotCbs[i].dataset.index, 10);
+                const snapshot = snapshots[idx];
+                return {
+                    TargetNodeUrl: nodeCb.dataset.url,
+                    SnapshotName: snapshot.snapshotName,
+                    SnapshotSource: snapshot.source
+                };
+            });
+
+            isSubmitting = true;
+            submitButton.disabled = true;
+            closeModal();
+
+            const toastId = this.showToast(`Starting multi-snapshot recovery for '${targetCollectionName}'...`, 'info', null, 0, true);
+            try {
+                const response = await apiFetch('/api/v1/snapshots/recover-multi', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        TargetCollectionName: targetCollectionName,
+                        SourceCollectionName: collection.collectionName,
+                        SnapshotPriority: priority,
+                        Items: items
+                    })
+                });
+                const result = await response.json();
+                this.removeToast(toastId);
+                if (response.status === 409) {
+                    this.showToast(`Recovery already in progress for '${targetCollectionName}'.`, 'warning', null, 10000);
+                } else if (!response.ok) {
+                    this.showToast(`Recovery failed: ${result.message || result.detail || 'Unknown error'}`, 'error', null, 15000);
+                } else {
+                    this.showToast(`Multi-snapshot recovery started for '${targetCollectionName}'.`, 'success', null, 8000);
+                }
+            } catch (error) {
+                this.removeToast(toastId);
+                this.showToast(`Recovery request failed: ${this.getErrorMessage(error)}`, 'error', null, 15000);
+            }
+        });
+    }
+
     showManageAliasesModal(collection) {
         const collectionName = collection.name;
         let aliases = [...(collection.aliases || [])];
@@ -1293,7 +1490,7 @@ class VigilanteDashboard {
             const startedAtRaw = meta.StartedAtUtc ?? null;
             const startedAt = startedAtRaw ? new Date(startedAtRaw).toLocaleString() : '';
             const metaRest = Object.entries(meta).filter(([k]) =>
-                !['CurrentAction', 'StartedAtUtc', 'LastRunSummary', 'Phase', 'LastRunStartedUtc', 'LastCompletedUtc', 'LastRunSuccess', 'ReplicationPlan'].includes(k));
+                !['CurrentAction', 'StartedAtUtc', 'LastRunSummary', 'Phase', 'LastRunStartedUtc', 'LastCompletedUtc', 'LastRunSuccess', 'ReplicationPlan', 'RecoveryPlan'].includes(k));
             const rawSummary = meta.LastRunSummary;
             const lastRunSummary = rawSummary != null && String(rawSummary).trim() !== ''
                 ? String(rawSummary)
@@ -1320,6 +1517,7 @@ class VigilanteDashboard {
             const currentActionBlock = currentAction ? `<div class="job-current-action">${this.escapeHtml(currentAction)}</div>` : '';
             const startedAtBlock = startedAt ? `<div class="job-meta">Started: ${this.escapeHtml(startedAt)}</div>` : '';
             const replicationPlanBlock = this.renderReplicationPlan(meta);
+            const recoveryPlanBlock = this.renderRecoveryPlan(meta);
             const lastRunSummaryBlock = lastRunSummary
                 ? `<div class="job-last-run-summary"><span class="job-last-run-label">Last run:</span> ${this.escapeHtml(lastRunSummary)}</div>`
                 : '';
@@ -1344,6 +1542,7 @@ class VigilanteDashboard {
                     ${currentActionBlock}
                     ${startedAtBlock}
                     ${replicationPlanBlock}
+                    ${recoveryPlanBlock}
                     ${errorBlock}
                     ${metaBlock}
                 </div>
@@ -1412,6 +1611,25 @@ class VigilanteDashboard {
         }).join('');
 
         return `<div class="job-meta"><strong>Replication plan (${normalized.length}):</strong></div>${itemsHtml}`;
+    }
+
+    renderRecoveryPlan(meta) {
+        const rawPlan = meta.RecoveryPlan;
+        if (!Array.isArray(rawPlan) || rawPlan.length === 0) {
+            return '';
+        }
+
+        const itemsHtml = rawPlan.map(step => {
+            const stepNum = step?.stepNumber ?? step?.StepNumber ?? '?';
+            const nodeUrl = step?.targetNodeUrl ?? step?.TargetNodeUrl ?? '?';
+            const snapshotUri = step?.snapshotUri ?? step?.SnapshotUri ?? null;
+            const checksum = step?.snapshotChecksum ?? step?.SnapshotChecksum ?? null;
+            const snapshotPart = snapshotUri ? ` · ${this.escapeHtml(String(snapshotUri))}` : '';
+            const checksumPart = checksum ? ` · checksum: ${this.escapeHtml(String(checksum))}` : '';
+            return `<div class="job-meta">#${stepNum} · ${this.escapeHtml(String(nodeUrl))}${snapshotPart}${checksumPart}</div>`;
+        }).join('');
+
+        return `<div class="job-meta"><strong>Recovery plan (${rawPlan.length}):</strong></div>${itemsHtml}`;
     }
 
     async loadCollectionSizes(clearCache = false) {
@@ -2831,6 +3049,20 @@ class VigilanteDashboard {
             const snapshotCollectionDropdown = document.createElement('div');
             snapshotCollectionDropdown.className = 'snapshot-collection-dropdown';
             
+            // Recover from Multiple Snapshots action
+            const multiRecoverAction = document.createElement('button');
+            multiRecoverAction.className = 'snapshot-collection-action-item';
+            multiRecoverAction.innerHTML = '<i class="fas fa-layer-group"></i> Recover from Multiple Snapshots';
+            multiRecoverAction.title = 'Recover this collection on multiple nodes from selected snapshots';
+            multiRecoverAction.addEventListener('click', (e) => {
+                e.stopPropagation();
+                snapshotCollectionDropdown.classList.remove('show');
+                snapshotCollectionMenuButton.classList.remove('active');
+                this.openSnapshotCollectionMenus.delete(collection.collectionName);
+                this.openMultiRecoveryModal(collection);
+            });
+            snapshotCollectionDropdown.appendChild(multiRecoverAction);
+
             // Delete All Snapshots action
             const deleteAllAction = document.createElement('button');
             deleteAllAction.className = 'snapshot-collection-action-item snapshot-collection-action-item-danger';

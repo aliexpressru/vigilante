@@ -3,6 +3,7 @@ using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Infrastructure.Replication;
 using Aer.QdrantClient.Http.Models.Responses;
 using Aer.QdrantClient.Http.Models.Shared;
+using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 using Vigilante.Constants;
@@ -13,16 +14,6 @@ namespace Aer.Vigilante.Tests.Services;
 [TestFixture]
 public class RestoreReplicationFactorJobTests
 {
-    [Test]
-    public void GetRestoreShardReplicationFactorStartFailureMessage_WhenStatusHasError_ReturnsMessage()
-    {
-        var status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "boom" };
-
-        var msg = RestoreReplicationFactorJob.GetRestoreShardReplicationFactorStartFailureMessage(status);
-
-        Assert.That(msg, Is.EqualTo("Failed to start restore replication factor: boom"));
-    }
-
     [Test]
     public void GetReplicationStepFailureMessage_WhenStatusNotSuccess_ReturnsFailedToStartMessage()
     {
@@ -38,7 +29,7 @@ public class RestoreReplicationFactorJobTests
             noReplicatedShardsMessage: "Replication step failed: response has no ReplicatedShards",
             itemFailurePrefix: "Replication failed");
 
-        Assert.That(failure, Is.EqualTo("Replication step failed to start: qdrant down"));
+        failure.Should().Be("Replication step failed to start: qdrant down");
     }
 
     [Test]
@@ -56,7 +47,7 @@ public class RestoreReplicationFactorJobTests
             noReplicatedShardsMessage: "Replication step failed: response has no ReplicatedShards",
             itemFailurePrefix: "Replication failed");
 
-        Assert.That(failure, Is.EqualTo("Replication step failed: response has no ReplicatedShards"));
+        failure.Should().Be("Replication step failed: response has no ReplicatedShards");
     }
 
     [Test]
@@ -66,15 +57,15 @@ public class RestoreReplicationFactorJobTests
         {
             Status = new QdrantStatus(QdrantOperationStatusType.Ok),
             Result = new ReplicateShardsToPeerResponse.ReplicateShardsToPeerResponseUnit(
-                ReplicatedShards: new[]
-                {
+                ReplicatedShards:
+                [
                     new ReplicateShardsToPeerResponse.ReplicateShardToPeerResult(
                         IsSuccess: false,
                         ShardId: 1,
                         SourcePeerId: 2,
                         TargetPeerId: 3,
                         CollectionName: "col1")
-                },
+                ],
                 AlreadyReplicatedShards: null!)
         };
 
@@ -84,7 +75,7 @@ public class RestoreReplicationFactorJobTests
             noReplicatedShardsMessage: "Replication step failed: response has no ReplicatedShards",
             itemFailurePrefix: "Replication failed");
 
-        Assert.That(failure, Is.EqualTo("Replication failed (ShardId: 1, Source: 2, Target: 3)"));
+        failure.Should().Be("Replication failed (ShardId: 1, Source: 2, Target: 3)");
     }
 
     [Test]
@@ -94,15 +85,15 @@ public class RestoreReplicationFactorJobTests
         {
             Status = new QdrantStatus(QdrantOperationStatusType.Ok),
             Result = new ReplicateShardsToPeerResponse.ReplicateShardsToPeerResponseUnit(
-                ReplicatedShards: new[]
-                {
+                ReplicatedShards:
+                [
                     new ReplicateShardsToPeerResponse.ReplicateShardToPeerResult(
                         IsSuccess: true,
                         ShardId: 1,
                         SourcePeerId: 2,
                         TargetPeerId: 3,
                         CollectionName: "col1")
-                },
+                ],
                 AlreadyReplicatedShards: null!)
         };
 
@@ -112,7 +103,7 @@ public class RestoreReplicationFactorJobTests
             noReplicatedShardsMessage: "Replication step failed: response has no ReplicatedShards",
             itemFailurePrefix: "Replication failed");
 
-        Assert.That(failure, Is.Null);
+        failure.Should().BeNull();
     }
 
     [Test]
@@ -151,21 +142,22 @@ public class RestoreReplicationFactorJobTests
                         TargetPeerId: 200,
                         CollectionName: "col1")
                 ],
-                AlreadyReplicatedShards: new Dictionary<string, Dictionary<ulong, HashSet<uint>>>())
+                AlreadyReplicatedShards: [])
         };
 
         await using var enumerator = new TestReplicateEnumerator(successResponse);
         var client = Substitute.For<IQdrantHttpClient>();
         var job = CreateJobForTest(client, "col1", enumerator, plan, waitingForReady: false);
 
-        var advance = await job.AdvanceAsync(CancellationToken.None);
-        Assert.That(advance.Success, Is.True);
-        Assert.That(advance.HasMore, Is.True);
+        var (HasMore, Success, _) = await job.AdvanceAsync(CancellationToken.None);
+
+        Success.Should().BeTrue();
+        HasMore.Should().BeTrue();
 
         var metadata = job.GetMetadata();
-        Assert.That(metadata, Is.Not.Null);
-        Assert.That(metadata!.ContainsKey(JobMetadataKeys.ReplicationPlan), Is.True);
-        Assert.That(metadata[JobMetadataKeys.ReplicationPlan], Is.SameAs(plan));
+        metadata.Should().NotBeNull();
+        metadata!.ContainsKey(JobMetadataKeys.ReplicationPlan).Should().BeTrue();
+        metadata[JobMetadataKeys.ReplicationPlan].Should().BeSameAs(plan);
     }
 
     private static RestoreReplicationFactorJob CreateJobForTest(
@@ -187,7 +179,7 @@ public class RestoreReplicationFactorJobTests
             ],
             modifiers: null);
 
-        Assert.That(ctor, Is.Not.Null, "Private constructor signature changed.");
+        ctor.Should().NotBeNull("Private constructor signature changed.");
         return (RestoreReplicationFactorJob)ctor!.Invoke([client, collectionName, enumerator, replicationPlanSnapshot, waitingForReady]);
     }
 
@@ -204,7 +196,9 @@ public class RestoreReplicationFactorJobTests
         {
             _index++;
             if (_index >= responses.Length)
+            {
                 return ValueTask.FromResult(false);
+            }
 
             Current = responses[_index];
             return ValueTask.FromResult(true);

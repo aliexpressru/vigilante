@@ -6,6 +6,7 @@ using Vigilante.Models.Enums;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
 using Vigilante.Services.Interfaces;
+using Vigilante.Models.Snapshots;
 
 namespace Vigilante.Controllers;
 
@@ -29,14 +30,14 @@ public class SnapshotsController(
         try
         {
             var state = await clusterManager.GetClusterStateAsync(cancellationToken);
-            var result = await snapshotService.GetSnapshotsInfoAsync(request.ClearCache, cancellationToken, state.Nodes);
+            var result = await snapshotService.GetSnapshotsInfoAsync(cancellationToken, request.ClearCache, state.Nodes);
 
             var snapshotDtos = result
                 .Select(snapshot => new V1GetSnapshotsInfoPaginatedResponse.SnapshotInfoDto
                 {
                     PodName = snapshot.PodName,
                     NodeUrl = snapshot.NodeUrl,
-                    PeerId = snapshot.PeerId,
+                    PeerId = snapshot.PeerId.ToString(),
                     CollectionName = snapshot.CollectionName,
                     SnapshotName = snapshot.SnapshotName,
                     SizeBytes = snapshot.SizeBytes,
@@ -56,7 +57,7 @@ public class SnapshotsController(
                     CollectionName = g.Key,
                     TotalSize = g.Sum(s => s.SizeBytes),
                     PrettyTotalSize = g.Sum(s => s.SizeBytes).ToPrettySize(),
-                    Snapshots = g.ToArray()
+                    Snapshots = [.. g]
                 })
                 .OrderBy(g => g.CollectionName)
                 .ToList();
@@ -64,9 +65,7 @@ public class SnapshotsController(
             // Apply name filter if provided
             if (!string.IsNullOrWhiteSpace(request.NameFilter))
             {
-                collectionGroups = collectionGroups
-                    .Where(g => g.CollectionName.Contains(request.NameFilter, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                collectionGroups = [.. collectionGroups.Where(g => g.CollectionName.Contains(request.NameFilter, StringComparison.OrdinalIgnoreCase))];
             }
 
             // Calculate pagination on unique collection groups
@@ -182,7 +181,7 @@ public class SnapshotsController(
                         {
                             Success = false,
                             Message = "NodeUrls list is required for QdrantApi source",
-                            Results = new Dictionary<string, NodeSnapshotDeletionResult>()
+                            Results = []
                         });
                     }
 
@@ -202,7 +201,7 @@ public class SnapshotsController(
                         {
                             Success = false,
                             Message = "Pods list is required for KubernetesStorage source",
-                            Results = new Dictionary<string, NodeSnapshotDeletionResult>()
+                            Results = []
                         });
                     }
 
@@ -231,7 +230,7 @@ public class SnapshotsController(
                     {
                         Success = false,
                         Message = $"Unknown snapshot source: {request.Source}",
-                        Results = new Dictionary<string, NodeSnapshotDeletionResult>()
+                        Results = []
                     });
             }
 
@@ -300,9 +299,9 @@ public class SnapshotsController(
                     request.NodeUrl!,
                     request.CollectionName,
                     request.SnapshotName,
+                    cancellationToken,
                     request.PodName ?? string.Empty,
-                    request.PodNamespace ?? string.Empty,
-                    cancellationToken);
+                    request.PodNamespace ?? string.Empty);
             }
 
             if (snapshotStream == null)
@@ -338,7 +337,7 @@ public class SnapshotsController(
             SnapshotSource? source = null;
             if (!isUrlRecovery)
             {
-                Enum.TryParse<SnapshotSource>(request.Source, out var parsedSource);
+                _ = Enum.TryParse<SnapshotSource>(request.Source, out var parsedSource);
                 source = parsedSource;
             }
 
@@ -347,12 +346,12 @@ public class SnapshotsController(
                 request.TargetNodeUrl,
                 snapshotPriority,
                 request.WaitForResult,
+                cancellationToken,
                 source: source,
                 snapshotName: request.SnapshotName,
                 sourceCollectionName: request.SourceCollectionName,
                 snapshotUrl: request.SnapshotUrl,
-                snapshotChecksum: request.SnapshotChecksum,
-                cancellationToken);
+                snapshotChecksum: request.SnapshotChecksum);
 
             if (result.AlreadyInProgress)
             {
@@ -405,6 +404,66 @@ public class SnapshotsController(
         }
     }
 
+    [HttpPost("recover-multi")]
+    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1RecoverFromSnapshotResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1RecoverFromSnapshotResponse>> RecoverFromMultipleSnapshots(
+        [FromBody] V1MultiRecoverRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var snapshotPriority = Enum.TryParse<SnapshotPriority>(request.SnapshotPriority, out var parsedPriority)
+                ? parsedPriority
+                : SnapshotPriority.Snapshot;
+
+            var result = await snapshotService.RequestMultiRecoverAsync(
+                request.TargetCollectionName,
+                request.Items,
+                snapshotPriority,
+                cancellationToken,
+                sourceCollectionName: request.SourceCollectionName);
+
+            if (result.AlreadyInProgress)
+            {
+                return Conflict(new V1RecoverFromSnapshotResponse
+                {
+                    Success = false,
+                    Message = result.Message,
+                    Error = "Already in progress"
+                });
+            }
+
+            if (result.ApiError)
+            {
+                return StatusCode(500, new V1RecoverFromSnapshotResponse
+                {
+                    Success = false,
+                    Message = result.Message,
+                    Error = "Recovery failed"
+                });
+            }
+
+            return Accepted(new V1RecoverFromSnapshotResponse
+            {
+                Success = true,
+                Message = result.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during multi-snapshot recovery");
+            return StatusCode(500, new V1RecoverFromSnapshotResponse
+            {
+                Success = false,
+                Message = "Internal server error during multi-snapshot recovery",
+                Error = ex.Message
+            });
+        }
+    }
+
     [HttpPost("get-download-url")]
     [ProducesResponseType(typeof(V1GetDownloadUrlResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -449,6 +508,5 @@ public class SnapshotsController(
             });
         }
     }
-
 }
 

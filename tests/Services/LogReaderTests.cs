@@ -1,5 +1,5 @@
-using System.IO;
 using System.Text;
+using FluentAssertions;
 using k8s;
 using k8s.Autorest;
 using Microsoft.AspNetCore.Hosting;
@@ -63,11 +63,11 @@ public class LogReaderTests
 
         var page = await reader.GetQdrantPodLogsAsync("pod-1", query, CancellationToken.None);
 
-        Assert.That(page.Success, Is.True);
-        Assert.That(page.Logs.Count, Is.EqualTo(2));
-        Assert.That(page.Logs[0].Message, Is.EqualTo("first"));
-        Assert.That(page.Logs[0].Source, Is.EqualTo("pod-1"));
-        Assert.That(page.Truncated, Is.False);
+        page.Success.Should().BeTrue();
+        page.Logs.Count.Should().Be(2);
+        page.Logs[0].Message.Should().Be("first");
+        page.Logs[0].Source.Should().Be("pod-1");
+        page.Truncated.Should().BeFalse();
     }
 
     [Test]
@@ -96,9 +96,9 @@ public class LogReaderTests
             new LogQuery("custom-ns", 10, Levels: LogLevelFilter.Info),
             CancellationToken.None);
 
-        Assert.That(page.Success, Is.True);
-        Assert.That(page.Logs.Count, Is.EqualTo(1));
-        Assert.That(page.Logs[0].Message, Does.Contain("INFO keep"));
+        page.Success.Should().BeTrue();
+        page.Logs.Count.Should().Be(1);
+        page.Logs[0].Message.Should().Contain("INFO keep");
     }
 
     [Test]
@@ -127,9 +127,9 @@ public class LogReaderTests
             new LogQuery("custom-ns", 10, Levels: LogLevelFilter.Error),
             CancellationToken.None);
 
-        Assert.That(page.Success, Is.True);
-        Assert.That(page.Logs.Count, Is.EqualTo(1));
-        Assert.That(page.Logs[0].Message, Does.Contain("[09:49:33 ERR]"));
+        page.Success.Should().BeTrue();
+        page.Logs.Count.Should().Be(1);
+        page.Logs[0].Message.Should().Contain("[09:49:33 ERR]");
     }
 
     [Test]
@@ -158,9 +158,9 @@ public class LogReaderTests
             new LogQuery("custom-ns", 10, SearchText: "SECOND"),
             CancellationToken.None);
 
-        Assert.That(page.Success, Is.True);
-        Assert.That(page.Logs.Count, Is.EqualTo(1));
-        Assert.That(page.Logs[0].Message, Is.EqualTo("second line"));
+        page.Success.Should().BeTrue();
+        page.Logs.Count.Should().Be(1);
+        page.Logs[0].Message.Should().Be("second line");
     }
 
     [Test]
@@ -189,8 +189,8 @@ public class LogReaderTests
             new LogQuery("custom-ns", 10, Levels: LogLevelFilter.None),
             CancellationToken.None);
 
-        Assert.That(page.Success, Is.True);
-        Assert.That(page.Logs.Count, Is.EqualTo(2));
+        page.Success.Should().BeTrue();
+        page.Logs.Count.Should().Be(2);
     }
 
     [Test]
@@ -227,13 +227,13 @@ public class LogReaderTests
         var continuation = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{cursorTs:o}|pod-1"));
         var page = await reader.GetQdrantPodLogsAsync("pod-1", new LogQuery("ns", 1, continuation), CancellationToken.None);
 
-        Assert.That(receivedSinceSeconds, Is.Not.Null);
-        Assert.That(receivedSinceSeconds, Is.GreaterThan(0));
-        Assert.That(receivedTail, Is.EqualTo(2)); // limit+1
-        Assert.That(page.Logs.Count, Is.EqualTo(1));
-        Assert.That(page.Logs[0].Message, Is.EqualTo("new"));
-        Assert.That(page.Truncated, Is.True);
-        Assert.That(page.Continuation, Is.Not.Null);
+        receivedSinceSeconds.Should().NotBeNull();
+        receivedSinceSeconds.Should().BeGreaterThan(0);
+        receivedTail.Should().Be(2); // limit+1
+        page.Logs.Count.Should().Be(1);
+        page.Logs[0].Message.Should().Be("new");
+        page.Truncated.Should().BeTrue();
+        page.Continuation.Should().NotBeNull();
     }
 
     [Test]
@@ -247,9 +247,9 @@ public class LogReaderTests
 
         var page = await reader.GetQdrantPodLogsAsync("pod-1", new LogQuery(null, 10), CancellationToken.None);
 
-        Assert.That(page.Success, Is.False);
-        Assert.That(page.Logs, Is.Empty);
-        Assert.That(page.Error, Does.Contain("Kubernetes"));
+        page.Success.Should().BeFalse();
+        page.Logs.Should().BeEmpty();
+        page.Error.Should().Contain("Kubernetes");
     }
 
     [Test]
@@ -280,7 +280,7 @@ public class LogReaderTests
 
         await reader.GetQdrantPodLogsAsync("pod-1", new LogQuery(null, 1), CancellationToken.None);
 
-        Assert.That(capturedNs, Is.EqualTo(KubernetesConstants.DefaultNamespace));
+        capturedNs.Should().Be(KubernetesConstants.DefaultNamespace);
     }
 
     [Test]
@@ -311,7 +311,7 @@ public class LogReaderTests
 
         await reader.GetQdrantPodLogsAsync("pod-1", new LogQuery("ns", 5, "not-base64"), CancellationToken.None);
 
-        Assert.That(receivedSinceSeconds, Is.EqualTo(1));
+        receivedSinceSeconds.Should().Be(1);
     }
 
     [Test]
@@ -333,12 +333,12 @@ public class LogReaderTests
                 Arg.Any<bool?>(),
                 Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<string>>>(),
                 Arg.Any<CancellationToken>())
-            .ReturnsForAnyArgs(Task.FromResult(new HttpOperationResponse<Stream> { Body = null }));
+            .ReturnsForAnyArgs(Task.FromResult(new HttpOperationResponse<Stream> { Body = null! }));
 
         var page = await reader.GetQdrantPodLogsAsync("pod-1", new LogQuery("ns", 1), CancellationToken.None);
 
-        Assert.That(page.Success, Is.False);
-        Assert.That(page.Error, Does.Contain("empty response body"));
+        page.Success.Should().BeFalse();
+        page.Error.Should().Contain("empty response body");
     }
 
     [Test]
@@ -364,7 +364,7 @@ public class LogReaderTests
 
         var page = await reader.GetQdrantPodLogsAsync("pod-1", new LogQuery("ns", 1), CancellationToken.None);
 
-        Assert.That(page.Success, Is.False);
-        Assert.That(page.Error, Does.Contain("boom"));
+        page.Success.Should().BeFalse();
+        page.Error.Should().Contain("boom");
     }
 }

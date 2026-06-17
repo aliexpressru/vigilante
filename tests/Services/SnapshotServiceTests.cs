@@ -1,17 +1,19 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Responses;
+using Aer.QdrantClient.Http.Models.Responses.CompoundOperations;
 using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Configuration;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
-using Vigilante.Services;
+using Vigilante.Models.Requests;
 using Vigilante.Services.Interfaces;
-using SnapshotInfo = Vigilante.Models.SnapshotInfo;
+using Vigilante.Services.Snapshots;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -38,18 +40,19 @@ public class SnapshotServiceTests
         _commandExecutor = Substitute.For<IPodCommandExecutor>();
         _dynamicConfigService = Substitute.For<IDynamicConfigService>();
         _jobRegistry = Substitute.For<IJobRegistry>();
-        var serviceProvider = new ServiceCollection().BuildServiceProvider();
-
         _options.Value.Returns(new QdrantOptions { HttpTimeoutSeconds = 5 });
 
         // Mock S3SnapshotService to avoid real S3 dependencies in tests
         _s3SnapshotService = Substitute.For<IS3SnapshotService>();
 
         // Default: S3 is not available (tests can override this)
-        _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _s3SnapshotService.CheckIsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(false));
         _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new DynamicConfig()));
+
+        // Logging registered so CreateAsync can resolve ILogger<RecoverFromMultipleSnapshotsJob>
+        var serviceProvider = new ServiceCollection().AddLogging().BuildServiceProvider();
 
         _snapshotManager = new SnapshotService(
             _nodesProvider,
@@ -66,13 +69,13 @@ public class SnapshotServiceTests
     /// <summary>
     /// Helper to setup BuildNodeInfoListAsync mock from GetNodesAsync result
     /// </summary>
-    private void SetupNodeInfoList(IReadOnlyList<QdrantNodeConfig> nodes, Dictionary<string, string>? peerIds = null)
+    private void SetupNodeInfoList(IReadOnlyList<QdrantNodeConfig> nodes, Dictionary<string, ulong>? peerIds = null)
     {
         var nodeInfos = nodes.Select(n =>
         {
             var nodeUrl = $"http://{n.Host}:{n.Port}";
-            var peerId = peerIds?.GetValueOrDefault(nodeUrl) ?? string.Empty;
-            
+            var peerId = peerIds?.GetValueOrDefault(nodeUrl) ?? 0;
+
             return new NodeInfo
             {
                 Url = nodeUrl,
@@ -119,13 +122,13 @@ public class SnapshotServiceTests
             collectionName,
             snapshotName,
             SnapshotSource.KubernetesStorage,
+            CancellationToken.None,
             nodeUrl: null,
             podName: podName,
-            podNamespace: podNamespace,
-            CancellationToken.None);
+            podNamespace: podNamespace);
 
         // Assert
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await _commandExecutor.Received(1).DeleteAndVerifyAsync(
             podName,
             podNamespace,
@@ -147,13 +150,13 @@ public class SnapshotServiceTests
             collectionName,
             snapshotName,
             SnapshotSource.KubernetesStorage,
+            CancellationToken.None,
             nodeUrl: null,
             podName: null,
-            podNamespace: "test-namespace",
-            CancellationToken.None);
+            podNamespace: "test-namespace");
 
         // Assert
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
         await _commandExecutor.DidNotReceive().DeleteAndVerifyAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -184,13 +187,13 @@ public class SnapshotServiceTests
             collectionName,
             snapshotName,
             SnapshotSource.QdrantApi,
+            CancellationToken.None,
             nodeUrl: nodeUrl,
             podName: null,
-            podNamespace: null,
-            CancellationToken.None);
+            podNamespace: null);
 
         // Assert
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await mockClient.Received(1).DeleteCollectionSnapshot(
             collectionName, snapshotName, Arg.Any<CancellationToken>(), false);
     }
@@ -207,13 +210,13 @@ public class SnapshotServiceTests
             collectionName,
             snapshotName,
             SnapshotSource.QdrantApi,
+            CancellationToken.None,
             nodeUrl: null,
             podName: null,
-            podNamespace: null,
-            CancellationToken.None);
+            podNamespace: null);
 
         // Assert
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
         // No need to verify collectionService since we're using snapshotService's own method now
     }
 
@@ -244,13 +247,13 @@ public class SnapshotServiceTests
             collectionName,
             snapshotName,
             SnapshotSource.QdrantApi,
+            CancellationToken.None,
             nodeUrl: nodeUrl,
             podName: null,
-            podNamespace: null,
-            CancellationToken.None);
+            podNamespace: null);
 
         // Assert
-        Assert.That(result, Is.False);
+        result.Should().BeFalse();
         await mockClient.Received(1).DeleteCollectionSnapshot(
             collectionName, snapshotName, Arg.Any<CancellationToken>(), false);
     }
@@ -312,15 +315,15 @@ public class SnapshotServiceTests
 
         // Act
         var batch = await _snapshotManager.CreateCollectionSnapshotAsync(
-            collectionName, 
-            nodeUrls, 
+            collectionName,
+            nodeUrls,
             CancellationToken.None);
 
         // Assert
-        Assert.That(batch.SkippedDuplicatePending, Is.False);
-        Assert.That(batch.Results, Has.Count.EqualTo(2));
-        Assert.That(batch.Results["http://node1:6333"], Is.EqualTo("snapshot1.snapshot"));
-        Assert.That(batch.Results["http://node2:6333"], Is.EqualTo("snapshot2.snapshot"));
+        batch.SkippedDuplicatePending.Should().BeFalse();
+        batch.Results.Should().HaveCount(2);
+        batch.Results["http://node1:6333"].Should().Be("snapshot1.snapshot");
+        batch.Results["http://node2:6333"].Should().Be("snapshot2.snapshot");
     }
 
     [Test]
@@ -340,17 +343,17 @@ public class SnapshotServiceTests
 
         var batch = await _snapshotManager.CreateCollectionSnapshotAsync(
             collectionName,
-            new[] { "http://node1:6333" },
+            ["http://node1:6333"],
             CancellationToken.None);
 
-        Assert.That(batch.SkippedDuplicatePending, Is.True);
+        batch.SkippedDuplicatePending.Should().BeTrue();
         await mockClient.DidNotReceive()
             .CreateCollectionSnapshot(Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>());
         _jobRegistry.DidNotReceive().TryAddJob(Arg.Any<IJob>(), Arg.Any<CancellationTokenSource>());
     }
 
     #endregion
-    
+
     #region DeleteCollectionSnapshotOnAllNodesAsync Tests
 
     [Test]
@@ -359,7 +362,7 @@ public class SnapshotServiceTests
         // Arrange
         var collectionName = "test_collection";
         var snapshotName = "test-snapshot.snapshot";
-        
+
         var nodes = new[]
         {
             new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" },
@@ -369,7 +372,7 @@ public class SnapshotServiceTests
         // Mock commandExecutor for Kubernetes storage deletion (since nodes have pod names)
         _commandExecutor.DeleteAndVerifyAsync("pod1", "ns1", "/qdrant/snapshots/test_collection/test-snapshot.snapshot", false, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(true);
-        
+
         _commandExecutor.DeleteAndVerifyAsync("pod2", "ns1", "/qdrant/snapshots/test_collection/test-snapshot.snapshot", false, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
@@ -377,33 +380,28 @@ public class SnapshotServiceTests
 
         // Act
         var result = await _snapshotManager.DeleteSnapshotFromDiskAsync(
-            collectionName, 
-            snapshotName, 
-            pods, 
+            collectionName,
+            snapshotName,
+            pods,
             CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result.Values.All(v => v), Is.True);
-        Assert.That(result["pod1"], Is.True);
-        Assert.That(result["pod2"], Is.True);
-        
+        result.Should().HaveCount(2);
+        result.Values.All(v => v).Should().BeTrue();
+        result["pod1"].Should().BeTrue();
+        result["pod2"].Should().BeTrue();
+
         // Verify it used Kubernetes storage (DeleteAndVerifyAsync)
         await _commandExecutor.Received(1).DeleteAndVerifyAsync("pod1", "ns1", "/qdrant/snapshots/test_collection/test-snapshot.snapshot", false, Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _commandExecutor.Received(1).DeleteAndVerifyAsync("pod2", "ns1", "/qdrant/snapshots/test_collection/test-snapshot.snapshot", false, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
+
     [Test]
     public async Task DeleteCollectionSnapshotOnAllNodesAsync_UsesS3WhenAvailable()
     {
         // Arrange
         var collectionName = "test_collection";
         var snapshotName = "test-snapshot.snapshot";
-        
-        var nodes = new[]
-        {
-            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" },
-            new QdrantNodeConfig { Host = "node2", Port = 6333, Namespace = "ns1", PodName = "pod2" }
-        };
 
         // Mock S3 deletion
         _s3SnapshotService.DeleteSnapshotAsync(collectionName, snapshotName, Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -413,14 +411,14 @@ public class SnapshotServiceTests
 
         // Act - using S3 directly for all nodes
         var result = await _snapshotManager.DeleteCollectionSnapshotApiAsync(
-            collectionName, 
-            snapshotName, 
-            nodeUrls, 
+            collectionName,
+            snapshotName,
+            nodeUrls,
             CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        
+        result.Should().HaveCount(2);
+
         // Note: This test now tests the API deletion method specifically
         // For S3 deletion, we would use DeleteSnapshotAsync with S3 source
     }
@@ -431,7 +429,7 @@ public class SnapshotServiceTests
         // Arrange
         var collectionName = "test_collection";
         var snapshotName = "test-snapshot.snapshot";
-        
+
         var nodes = new[]
         {
             new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "" },
@@ -440,7 +438,7 @@ public class SnapshotServiceTests
 
         _nodesProvider.GetNodesAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
-        _s3SnapshotService.IsAvailableAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _s3SnapshotService.CheckIsAvailableAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(false));
 
         // Mock Qdrant clients for API deletion
@@ -468,15 +466,15 @@ public class SnapshotServiceTests
 
         // Act
         var result = await _snapshotManager.DeleteCollectionSnapshotApiAsync(
-            collectionName, 
-            snapshotName, 
-            nodeUrls, 
+            collectionName,
+            snapshotName,
+            nodeUrls,
             CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result.Values.All(v => v), Is.True);
-        
+        result.Should().HaveCount(2);
+        result.Values.All(v => v).Should().BeTrue();
+
         // Verify it used Qdrant API
         await mockClient1.Received(1).DeleteCollectionSnapshot(collectionName, snapshotName, Arg.Any<CancellationToken>(), false);
         await mockClient2.Received(1).DeleteCollectionSnapshot(collectionName, snapshotName, Arg.Any<CancellationToken>(), false);
@@ -499,19 +497,19 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var pod1Id = 1001UL;
-        SetupNodeInfoList(nodes, new Dictionary<string, string> { ["http://node1:6333"] = pod1Id.ToString() });
+        SetupNodeInfoList(nodes, new Dictionary<string, ulong> { ["http://node1:6333"] = pod1Id });
         var mockClient = Substitute.For<IQdrantHttpClient>();
-        
+
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(mockClient);
-            
+
         mockClient.GetClusterInfo(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new GetClusterInfoResponse
             {
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -519,11 +517,11 @@ public class SnapshotServiceTests
 
         // Mock commandExecutor to return collection folders and snapshot files
         _commandExecutor.ListFilesAsync("pod1", "ns1", "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "collection1" });
-        
+            .Returns(["collection1"]);
+
         _commandExecutor.ListFilesAsync("pod1", "ns1", "/qdrant/snapshots/collection1", "*.snapshot", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "snapshot1.snapshot" });
-        
+            .Returns(["snapshot1.snapshot"]);
+
         _commandExecutor.GetSizeAsync("pod1", "ns1", "/qdrant/snapshots/collection1", "snapshot1.snapshot", Arg.Any<CancellationToken>())
             .Returns(1024L);
 
@@ -531,10 +529,13 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result.First().Source, Is.EqualTo(SnapshotSource.KubernetesStorage));
-        Assert.That(result.First().SnapshotName, Is.EqualTo("snapshot1.snapshot"));
-        Assert.That(result.First().CollectionName, Is.EqualTo("collection1"));
+        result.Should().HaveCount(1);
+
+        var firstSnapshot = result.First();
+
+        firstSnapshot.Source.Should().Be(SnapshotSource.KubernetesStorage);
+        firstSnapshot.SnapshotName.Should().Be("snapshot1.snapshot");
+        firstSnapshot.CollectionName.Should().Be("collection1");
     }
 
     [Test]
@@ -550,10 +551,10 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var pod1Id = 1001UL;
-        SetupNodeInfoList(nodes, new Dictionary<string, string> { ["http://node1:6333"] = pod1Id.ToString() });
-        
+        SetupNodeInfoList(nodes, new Dictionary<string, ulong> { ["http://node1:6333"] = pod1Id });
+
         var mockClient = Substitute.For<IQdrantHttpClient>();
-        
+
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(mockClient);
 
@@ -563,7 +564,7 @@ public class SnapshotServiceTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -574,24 +575,24 @@ public class SnapshotServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
-        
+
         mockClient.ListCollections(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(listCollectionsResponse));
 
         // Mock ListCollectionSnapshots response
         var listSnapshotsResponse = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "collection1-1001-snapshot.snapshot", Size = 2048 }
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -602,10 +603,13 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result.First().Source, Is.EqualTo(SnapshotSource.QdrantApi));
-        Assert.That(result.First().SnapshotName, Is.EqualTo("collection1-1001-snapshot.snapshot"));
-        Assert.That(result.First().SizeBytes, Is.EqualTo(2048));
+        result.Should().HaveCount(1);
+
+        var firstSnapshot = result.First();
+
+        firstSnapshot.Source.Should().Be(SnapshotSource.QdrantApi);
+        firstSnapshot.SnapshotName.Should().Be("collection1-1001-snapshot.snapshot");
+        firstSnapshot.SizeBytes.Should().Be(2048);
     }
 
     [Test]
@@ -621,10 +625,10 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var pod1Id = 1001UL;
-        SetupNodeInfoList(nodes, new Dictionary<string, string> { ["http://node1:6333"] = pod1Id.ToString() });
-        
+        SetupNodeInfoList(nodes, new Dictionary<string, ulong> { ["http://node1:6333"] = pod1Id });
+
         var mockClient = Substitute.For<IQdrantHttpClient>();
-        
+
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(mockClient);
 
@@ -634,7 +638,7 @@ public class SnapshotServiceTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -642,31 +646,31 @@ public class SnapshotServiceTests
 
         // Disk returns empty (no collection folders)
         _commandExecutor.ListFilesAsync("pod1", "ns1", "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
-            .Returns(new List<string>());
+            .Returns([]);
 
         // Mock ListCollections response
         var listCollectionsResponse = new ListCollectionsResponse
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
-        
+
         mockClient.ListCollections(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(listCollectionsResponse));
 
         // Mock ListCollectionSnapshots response
         var listSnapshotsResponse = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "collection1-1001-snapshot.snapshot", Size = 2048 }
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -677,8 +681,11 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result.First().Source, Is.EqualTo(SnapshotSource.QdrantApi));
+        result.Should().HaveCount(1);
+
+        var firstSnapshot = result.First();
+
+        firstSnapshot.Source.Should().Be(SnapshotSource.QdrantApi);
     }
 
     [Test]
@@ -694,10 +701,11 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var pod1Id = 1001UL;
-        SetupNodeInfoList(nodes, new Dictionary<string, string> { ["http://node1:6333"] = pod1Id.ToString() });
-        
+
+        SetupNodeInfoList(nodes, new Dictionary<string, ulong> { ["http://node1:6333"] = pod1Id });
+
         var mockClient = Substitute.For<IQdrantHttpClient>();
-        
+
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(mockClient);
 
@@ -707,7 +715,7 @@ public class SnapshotServiceTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -718,26 +726,26 @@ public class SnapshotServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
-        
+
         mockClient.ListCollections(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(listCollectionsResponse));
 
         // Mock ListCollectionSnapshots response - return snapshots from multiple nodes (simulating S3 storage)
         var listSnapshotsResponse = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "collection1-1001-snapshot.snapshot", Size = 2048 }, // Matches node1's PeerId
                 new() { Name = "collection1-1002-snapshot.snapshot", Size = 2048 }, // Different PeerId - should be filtered out
                 new() { Name = "collection1-1003-snapshot.snapshot", Size = 2048 }  // Different PeerId - should be filtered out
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -748,9 +756,12 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert - should only return the snapshot matching this node's PeerId
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result.First().SnapshotName, Is.EqualTo("collection1-1001-snapshot.snapshot"));
-        Assert.That(result.First().PeerId, Is.EqualTo("1001"));
+        result.Should().HaveCount(1);
+
+        var firstSnapshot = result.First();
+
+        firstSnapshot.SnapshotName.Should().Be("collection1-1001-snapshot.snapshot");
+        firstSnapshot.PeerId.Should().Be(1001);
     }
 
     [Test]
@@ -766,10 +777,10 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var pod1Id = 1001UL;
-        SetupNodeInfoList(nodes, new Dictionary<string, string> { ["http://node1:6333"] = pod1Id.ToString() });
-        
+        SetupNodeInfoList(nodes, new Dictionary<string, ulong> { ["http://node1:6333"] = pod1Id });
+
         var mockClient = Substitute.For<IQdrantHttpClient>();
-        
+
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(mockClient);
 
@@ -779,7 +790,7 @@ public class SnapshotServiceTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -790,25 +801,25 @@ public class SnapshotServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1"),
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection2")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
-        
+
         mockClient.ListCollections(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(listCollectionsResponse));
 
         // Mock ListCollectionSnapshots for collection1
         var listSnapshots1Response = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "collection1-1001-snapshot.snapshot", Size = 2048 }
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -818,10 +829,10 @@ public class SnapshotServiceTests
         // Mock ListCollectionSnapshots for collection2
         var listSnapshots2Response = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "collection2-1001-snapshot.snapshot", Size = 4096 }
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -832,9 +843,9 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result.Count(s => s.CollectionName == "collection1"), Is.EqualTo(1));
-        Assert.That(result.Count(s => s.CollectionName == "collection2"), Is.EqualTo(1));
+        result.Should().HaveCount(2);
+        result.Count(s => s.CollectionName == "collection1").Should().Be(1);
+        result.Count(s => s.CollectionName == "collection2").Should().Be(1);
     }
 
     [Test]
@@ -850,10 +861,10 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult<IReadOnlyList<QdrantNodeConfig>>(nodes));
 
         var pod1Id = 1001UL;
-        SetupNodeInfoList(nodes, new Dictionary<string, string> { ["http://node1:6333"] = pod1Id.ToString() });
-        
+        SetupNodeInfoList(nodes, new Dictionary<string, ulong> { ["http://node1:6333"] = pod1Id });
+
         var mockClient = Substitute.For<IQdrantHttpClient>();
-        
+
         _clientFactory.CreateClient(Arg.Any<Uri>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<ILogger>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(mockClient);
 
@@ -863,7 +874,7 @@ public class SnapshotServiceTests
                 Result = new GetClusterInfoResponse.ClusterInfo
                 {
                     PeerId = pod1Id,
-                    Peers = new Dictionary<string, GetClusterInfoResponse.PeerInfoUint>(),
+                    Peers = [],
                     RaftInfo = new GetClusterInfoResponse.RaftInfoUnit { Leader = pod1Id, Term = 1, Commit = 1 }
                 },
                 Status = new QdrantStatus(QdrantOperationStatusType.Ok)
@@ -873,15 +884,15 @@ public class SnapshotServiceTests
         {
             Result = new ListCollectionsResponse.CollectionNamesUnit
             {
-                Collections = new[]
-                {
+                Collections =
+                [
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection1"),
                     new ListCollectionsResponse.CollectionNamesUnit.CollectionName("collection2")
-                }
+                ]
             },
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
-        
+
         mockClient.ListCollections(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(listCollectionsResponse));
 
@@ -892,10 +903,10 @@ public class SnapshotServiceTests
         // collection2 succeeds
         var listSnapshots2Response = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "collection2-1001-snapshot.snapshot", Size = 4096 }
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -906,8 +917,11 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetSnapshotsInfoAsync(clearCache: false, cancellationToken: CancellationToken.None);
 
         // Assert - should still get snapshots from collection2
-        Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result.First().CollectionName, Is.EqualTo("collection2"));
+        result.Should().HaveCount(1);
+
+        var firstSnapshot = result.First();
+
+        firstSnapshot.CollectionName.Should().Be("collection2");
     }
 
     #endregion
@@ -928,11 +942,11 @@ public class SnapshotServiceTests
 
         var listSnapshotsResponse = new ListSnapshotsResponse
         {
-            Result = new List<Aer.QdrantClient.Http.Models.Shared.SnapshotInfo>
-            {
+            Result =
+            [
                 new() { Name = "snapshot1.snapshot", Size = 1000 },
                 new() { Name = "snapshot2.snapshot", Size = 2000 }
-            },
+            ],
             Status = new QdrantStatus(QdrantOperationStatusType.Ok)
         };
 
@@ -943,11 +957,11 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetCollectionSnapshotsWithSizeAsync(nodeUrl, collectionName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result[0].Name, Is.EqualTo("snapshot1.snapshot"));
-        Assert.That(result[0].Size, Is.EqualTo(1000));
-        Assert.That(result[1].Name, Is.EqualTo("snapshot2.snapshot"));
-        Assert.That(result[1].Size, Is.EqualTo(2000));
+        result.Should().HaveCount(2);
+        result[0].Name.Should().Be("snapshot1.snapshot");
+        result[0].Size.Should().Be(1000);
+        result[1].Name.Should().Be("snapshot2.snapshot");
+        result[1].Size.Should().Be(2000);
     }
 
     [Test]
@@ -975,7 +989,7 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.GetCollectionSnapshotsWithSizeAsync(nodeUrl, collectionName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Empty);
+        result.Should().BeEmpty();
     }
 
     #endregion
@@ -991,8 +1005,8 @@ public class SnapshotServiceTests
         var snapshotName = "test-snapshot.snapshot";
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
-        var mockStream = new MemoryStream(new byte[] { 1, 2, 3, 4, 5 });
-        
+        var mockStream = new MemoryStream([1, 2, 3, 4, 5]);
+
         var downloadResponse = new DownloadSnapshotResponse(
             snapshotName,
             mockStream,
@@ -1010,8 +1024,8 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.DownloadCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result, Is.SameAs(mockStream));
+        result.Should().NotBeNull();
+        result.Should().BeSameAs(mockStream);
     }
 
     [Test]
@@ -1023,7 +1037,7 @@ public class SnapshotServiceTests
         var snapshotName = "test-snapshot.snapshot";
 
         var mockClient = Substitute.For<IQdrantHttpClient>();
-        
+
         var downloadResponse = new DownloadSnapshotResponse(
             snapshotName,
             null!,
@@ -1041,7 +1055,7 @@ public class SnapshotServiceTests
         var result = await _snapshotManager.DownloadCollectionSnapshotAsync(nodeUrl, collectionName, snapshotName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Null);
+        result.Should().BeNull();
     }
 
     #endregion
@@ -1055,17 +1069,17 @@ public class SnapshotServiceTests
         var podName = "test-pod";
         var podNamespace = "test-ns";
         var nodeUrl = "http://node1:6333";
-        var peerId = "peer1";
+        var peerId = 1UL;
 
         var collectionName = "test-collection";
         var snapshotFileName = "test-snapshot.snapshot";
         var snapshotSize = 1500000L;
 
         _commandExecutor.ListFilesAsync(podName, podNamespace, "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { collectionName });
+            .Returns([collectionName]);
 
         _commandExecutor.ListFilesAsync(podName, podNamespace, $"/qdrant/snapshots/{collectionName}", "*.snapshot", Arg.Any<CancellationToken>())
-            .Returns(new List<string> { snapshotFileName });
+            .Returns([snapshotFileName]);
 
         _commandExecutor.GetSizeAsync(podName, podNamespace, $"/qdrant/snapshots/{collectionName}", snapshotFileName, Arg.Any<CancellationToken>())
             .Returns(snapshotSize);
@@ -1075,13 +1089,13 @@ public class SnapshotServiceTests
 
         // Assert
         var snapshots = result.ToList();
-        Assert.That(snapshots, Has.Count.EqualTo(1));
-        Assert.That(snapshots[0].PodName, Is.EqualTo(podName));
-        Assert.That(snapshots[0].NodeUrl, Is.EqualTo(nodeUrl));
-        Assert.That(snapshots[0].PeerId, Is.EqualTo(peerId));
-        Assert.That(snapshots[0].CollectionName, Is.EqualTo(collectionName));
-        Assert.That(snapshots[0].SnapshotName, Is.EqualTo(snapshotFileName));
-        Assert.That(snapshots[0].SizeBytes, Is.EqualTo(snapshotSize));
+        snapshots.Should().HaveCount(1);
+        snapshots[0].PodName.Should().Be(podName);
+        snapshots[0].NodeUrl.Should().Be(nodeUrl);
+        snapshots[0].PeerId.Should().Be(peerId);
+        snapshots[0].CollectionName.Should().Be(collectionName);
+        snapshots[0].SnapshotName.Should().Be(snapshotFileName);
+        snapshots[0].SizeBytes.Should().Be(snapshotSize);
     }
 
     [Test]
@@ -1091,16 +1105,16 @@ public class SnapshotServiceTests
         var podName = "test-pod";
         var podNamespace = "test-ns";
         var nodeUrl = "http://node1:6333";
-        var peerId = "peer1";
+        var peerId = 1UL;
 
         _commandExecutor.ListFilesAsync(podName, podNamespace, "/qdrant/snapshots", "*/", Arg.Any<CancellationToken>())
-            .Returns(new List<string>());
+            .Returns([]);
 
         // Act
         var result = await _snapshotManager.GetSnapshotsFromDiskForPodAsync(podName, podNamespace, nodeUrl, peerId, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.Empty);
+        result.Should().BeEmpty();
     }
 
     #endregion
@@ -1117,11 +1131,11 @@ public class SnapshotServiceTests
         var snapshotName = "test-snapshot.snapshot";
 
         _commandExecutor.DeleteAndVerifyAsync(
-                podName, 
-                podNamespace, 
-                "/qdrant/snapshots/test-collection/test-snapshot.snapshot", 
-                false, 
-                "Snapshot test-snapshot.snapshot", 
+                podName,
+                podNamespace,
+                "/qdrant/snapshots/test-collection/test-snapshot.snapshot",
+                false,
+                "Snapshot test-snapshot.snapshot",
                 Arg.Any<CancellationToken>())
             .Returns(true);
 
@@ -1130,14 +1144,220 @@ public class SnapshotServiceTests
             podName, podNamespace, collectionName, snapshotName, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.True);
+        result.Should().BeTrue();
         await _commandExecutor.Received(1).DeleteAndVerifyAsync(
-            podName, 
-            podNamespace, 
-            "/qdrant/snapshots/test-collection/test-snapshot.snapshot", 
-            false, 
-            "Snapshot test-snapshot.snapshot", 
+            podName,
+            podNamespace,
+            "/qdrant/snapshots/test-collection/test-snapshot.snapshot",
+            false,
+            "Snapshot test-snapshot.snapshot",
             Arg.Any<CancellationToken>());
+    }
+
+    #endregion
+
+    #region RequestMultiRecoverAsync Tests
+
+    [Test]
+    public async Task RequestMultiRecoverAsync_S3Storage_WhenPresignedUrlFails_ReturnsApiError()
+    {
+        const string targetCollectionName = "target-col";
+        const string snapshotName = "snap.snapshot";
+        const string nodeUrl = "http://node1:6333";
+
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(Substitute.For<IQdrantHttpClient>());
+
+        _s3SnapshotService.GetPresignedDownloadUrlAsync(
+                Arg.Any<string>(), snapshotName, Arg.Any<TimeSpan>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(null));
+
+        var result = await _snapshotManager.RequestMultiRecoverAsync(
+            targetCollectionName,
+            [new V1MultiRecoverItem { TargetNodeUrl = nodeUrl, SnapshotName = snapshotName, SnapshotSource = "S3Storage" }],
+            SnapshotPriority.Snapshot,
+            CancellationToken.None);
+
+        result.ApiError.Should().BeTrue();
+        result.AlreadyInProgress.Should().BeFalse();
+        result.Message.Should().Contain(snapshotName);
+
+        await _s3SnapshotService.Received(1).GetPresignedDownloadUrlAsync(
+            Arg.Any<string>(), snapshotName, Arg.Any<TimeSpan>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RequestMultiRecoverAsync_S3Storage_UsesSourceCollectionNameForPresignedUrl()
+    {
+        const string sourceCollectionName = "source-col";
+        const string targetCollectionName = "target-col";
+        const string snapshotName = "snap.snapshot";
+        const string nodeUrl = "http://node1:6333";
+        const string presignedUrl = "https://s3.example.com/bucket/snap.snapshot?token=abc";
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient);
+
+        _s3SnapshotService.GetPresignedDownloadUrlAsync(
+                sourceCollectionName, snapshotName, Arg.Any<TimeSpan>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(presignedUrl));
+
+        mockClient.RecoverCollectionFromSnapshots(
+                Arg.Any<string>(), Arg.Any<IQdrantHttpClient[]>(), Arg.Any<Uri[]>(), Arg.Any<CancellationToken>(),
+                Arg.Any<ILogger>(), Arg.Any<SnapshotPriority?>(), Arg.Any<string[]>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new RecoverCollectionFromSnapshotsResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "test" }
+            }));
+
+        await _snapshotManager.RequestMultiRecoverAsync(
+            targetCollectionName,
+            [new V1MultiRecoverItem { TargetNodeUrl = nodeUrl, SnapshotName = snapshotName, SnapshotSource = "S3Storage" }],
+            SnapshotPriority.Snapshot,
+            CancellationToken.None,
+            sourceCollectionName: sourceCollectionName);
+
+        await _s3SnapshotService.Received(1).GetPresignedDownloadUrlAsync(
+            sourceCollectionName, snapshotName, Arg.Any<TimeSpan>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RequestMultiRecoverAsync_S3Storage_FallsBackToTargetCollectionName_WhenSourceIsNull()
+    {
+        const string targetCollectionName = "target-col";
+        const string snapshotName = "snap.snapshot";
+        const string nodeUrl = "http://node1:6333";
+        const string presignedUrl = "https://s3.example.com/bucket/snap.snapshot?token=abc";
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient);
+
+        _s3SnapshotService.GetPresignedDownloadUrlAsync(
+                targetCollectionName, snapshotName, Arg.Any<TimeSpan>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(presignedUrl));
+
+        mockClient.RecoverCollectionFromSnapshots(
+                Arg.Any<string>(), Arg.Any<IQdrantHttpClient[]>(), Arg.Any<Uri[]>(), Arg.Any<CancellationToken>(),
+                Arg.Any<ILogger>(), Arg.Any<SnapshotPriority?>(), Arg.Any<string[]>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new RecoverCollectionFromSnapshotsResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "test" }
+            }));
+
+        await _snapshotManager.RequestMultiRecoverAsync(
+            targetCollectionName,
+            [new V1MultiRecoverItem { TargetNodeUrl = nodeUrl, SnapshotName = snapshotName, SnapshotSource = "S3Storage" }],
+            SnapshotPriority.Snapshot,
+            CancellationToken.None,
+            sourceCollectionName: null);
+
+        await _s3SnapshotService.Received(1).GetPresignedDownloadUrlAsync(
+            targetCollectionName, snapshotName, Arg.Any<TimeSpan>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RequestMultiRecoverAsync_KubernetesStorage_UsesSourceCollectionNameInFileUri()
+    {
+        const string sourceCollectionName = "source-col";
+        const string targetCollectionName = "target-col";
+        const string snapshotName = "snap.snapshot";
+        const string nodeUrl = "http://node1:6333";
+        var expectedUri = new Uri($"file:///qdrant/snapshots/{sourceCollectionName}/{snapshotName}");
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient);
+
+        mockClient.RecoverCollectionFromSnapshots(
+                Arg.Any<string>(), Arg.Any<IQdrantHttpClient[]>(), Arg.Any<Uri[]>(), Arg.Any<CancellationToken>(),
+                Arg.Any<ILogger>(), Arg.Any<SnapshotPriority?>(), Arg.Any<string[]>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new RecoverCollectionFromSnapshotsResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "test" }
+            }));
+
+        await _snapshotManager.RequestMultiRecoverAsync(
+            targetCollectionName,
+            [new V1MultiRecoverItem { TargetNodeUrl = nodeUrl, SnapshotName = snapshotName, SnapshotSource = "KubernetesStorage" }],
+            SnapshotPriority.Snapshot,
+            CancellationToken.None,
+            sourceCollectionName: sourceCollectionName);
+
+        await mockClient.Received(1).RecoverCollectionFromSnapshots(
+            targetCollectionName,
+            Arg.Any<IQdrantHttpClient[]>(),
+            Arg.Is<Uri[]>(uris => uris.Length == 1 && uris[0] == expectedUri),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<ILogger>(),
+            Arg.Any<SnapshotPriority?>(),
+            Arg.Any<string[]>(),
+            Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task RequestMultiRecoverAsync_WhenQdrantApiCallFails_ReturnsApiError()
+    {
+        const string targetCollectionName = "target-col";
+        const string sourceCollectionName = "source-col";
+        const string snapshotName = "snap.snapshot";
+        const string nodeUrl = "http://node1:6333";
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient);
+
+        mockClient.RecoverCollectionFromSnapshots(
+                Arg.Any<string>(), Arg.Any<IQdrantHttpClient[]>(), Arg.Any<Uri[]>(), Arg.Any<CancellationToken>(),
+                Arg.Any<ILogger>(), Arg.Any<SnapshotPriority?>(), Arg.Any<string[]>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new RecoverCollectionFromSnapshotsResponse
+            {
+                Status = new QdrantStatus(QdrantOperationStatusType.Error) { Error = "Qdrant error" }
+            }));
+
+        var result = await _snapshotManager.RequestMultiRecoverAsync(
+            targetCollectionName,
+            [new V1MultiRecoverItem { TargetNodeUrl = nodeUrl, SnapshotName = snapshotName, SnapshotSource = "KubernetesStorage" }],
+            SnapshotPriority.Snapshot,
+            CancellationToken.None,
+            sourceCollectionName: sourceCollectionName);
+
+        result.ApiError.Should().BeTrue();
+        result.AlreadyInProgress.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task RequestMultiRecoverAsync_WhenCollectionRecovererHasNoSteps_ReturnsSuccessWithNoStepsMessage()
+    {
+        const string targetCollectionName = "target-col";
+        const string sourceCollectionName = "source-col";
+        const string snapshotName = "snap.snapshot";
+        const string nodeUrl = "http://node1:6333";
+
+        var mockClient = Substitute.For<IQdrantHttpClient>();
+        _clientFactory.CreateClient(Arg.Is<Uri>(u => u.Host == "node1" && u.Port == 6333), Arg.Any<string>())
+            .Returns(mockClient);
+
+        mockClient.RecoverCollectionFromSnapshots(
+                Arg.Any<string>(), Arg.Any<IQdrantHttpClient[]>(), Arg.Any<Uri[]>(), Arg.Any<CancellationToken>(),
+                Arg.Any<ILogger>(), Arg.Any<SnapshotPriority?>(), Arg.Any<string[]>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new RecoverCollectionFromSnapshotsResponse
+            {
+                Result = null,
+                Status = new QdrantStatus(QdrantOperationStatusType.Ok)
+            }));
+
+        var result = await _snapshotManager.RequestMultiRecoverAsync(
+            targetCollectionName,
+            [new V1MultiRecoverItem { TargetNodeUrl = nodeUrl, SnapshotName = snapshotName, SnapshotSource = "KubernetesStorage" }],
+            SnapshotPriority.Snapshot,
+            CancellationToken.None,
+            sourceCollectionName: sourceCollectionName);
+
+        result.ApiError.Should().BeFalse();
+        result.AlreadyInProgress.Should().BeFalse();
+        result.Message.Should().Contain("no recovery steps");
     }
 
     #endregion
@@ -1148,17 +1368,13 @@ public class SnapshotServiceTests
     public async Task EnforceRetentionAsync_WhenCurrentClusterPeerIdsProvided_DeletesOrphanedPeerSnapshots()
     {
         // Arrange: S3 returns snapshots for collection "col1" from 3 peers: 111, 222 (current) and 999 (orphan)
-        var nodes = new[]
-        {
-            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
-        };
         _nodesProvider.BuildNodeInfoListAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new List<NodeInfo>
             {
-                new() { Url = "http://node1:6333", PeerId = "111", Namespace = "ns1", PodName = "pod1", LastSeen = DateTime.UtcNow }
+                new() { Url = "http://node1:6333", PeerId = 111, Namespace = "ns1", PodName = "pod1", LastSeen = DateTime.UtcNow }
             }));
 
-        _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _s3SnapshotService.CheckIsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
         var s3Snapshots = new List<(string CollectionName, string SnapshotName, long SizeBytes, DateTime LastModifiedUtc)>
@@ -1173,10 +1389,10 @@ public class SnapshotServiceTests
         _s3SnapshotService.DeleteSnapshotAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
-        var currentClusterPeerIds = new HashSet<string> { "111", "222" };
+        var currentClusterPeerIds = new HashSet<ulong> { 111, 222 };
 
         // Act
-        await _snapshotManager.EnforceRetentionAsync("col1", retainLastN: 1, currentClusterPeerIds, CancellationToken.None);
+        await _snapshotManager.EnforceRetentionAsync("col1", retainLastN: 1, CancellationToken.None, currentClusterPeerIds);
 
         // Assert: orphan peer 999 snapshot must be deleted
         await _s3SnapshotService.Received(1).DeleteSnapshotAsync(
@@ -1190,17 +1406,13 @@ public class SnapshotServiceTests
     public async Task EnforceRetentionAsync_WhenCurrentClusterPeerIdsProvided_AppliesRetainLastN_ToCurrentPeersOnly()
     {
         // Arrange: two snapshots for peer 111 (keep last 1), one for orphan 999 (delete all)
-        var nodes = new[]
-        {
-            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
-        };
         _nodesProvider.BuildNodeInfoListAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new List<NodeInfo>
             {
-                new() { Url = "http://node1:6333", PeerId = "111", Namespace = "ns1", PodName = "pod1", LastSeen = DateTime.UtcNow }
+                new() { Url = "http://node1:6333", PeerId = 111, Namespace = "ns1", PodName = "pod1", LastSeen = DateTime.UtcNow }
             }));
 
-        _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _s3SnapshotService.CheckIsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
         var s3Snapshots = new List<(string CollectionName, string SnapshotName, long SizeBytes, DateTime LastModifiedUtc)>
@@ -1215,10 +1427,10 @@ public class SnapshotServiceTests
         _s3SnapshotService.DeleteSnapshotAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
-        var currentClusterPeerIds = new HashSet<string> { "111" };
+        var currentClusterPeerIds = new HashSet<ulong> { 111 };
 
         // Act
-        await _snapshotManager.EnforceRetentionAsync("col1", retainLastN: 1, currentClusterPeerIds, CancellationToken.None);
+        await _snapshotManager.EnforceRetentionAsync("col1", retainLastN: 1, CancellationToken.None, currentClusterPeerIds);
 
         // Assert: delete older 111 snapshot (10:00) and all 999 snapshots
         await _s3SnapshotService.Received(1).DeleteSnapshotAsync(
@@ -1238,17 +1450,13 @@ public class SnapshotServiceTests
     {
         // Arrange: one snapshot per peer (111, 222, 999). With null currentClusterPeerIds we only apply retain-last-N;
         // each group has 1 snapshot, retain 1 -> no deletion from retention. So no delete calls.
-        var nodes = new[]
-        {
-            new QdrantNodeConfig { Host = "node1", Port = 6333, Namespace = "ns1", PodName = "pod1" }
-        };
         _nodesProvider.BuildNodeInfoListAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new List<NodeInfo>
             {
-                new() { Url = "http://node1:6333", PeerId = "111", Namespace = "ns1", PodName = "pod1", LastSeen = DateTime.UtcNow }
+                new() { Url = "http://node1:6333", PeerId = 111, Namespace = "ns1", PodName = "pod1", LastSeen = DateTime.UtcNow }
             }));
 
-        _s3SnapshotService.IsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _s3SnapshotService.CheckIsAvailableAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
         var s3Snapshots = new List<(string CollectionName, string SnapshotName, long SizeBytes, DateTime LastModifiedUtc)>
@@ -1263,7 +1471,7 @@ public class SnapshotServiceTests
             .Returns(Task.FromResult(true));
 
         // Act: null currentClusterPeerIds -> no orphan rule, retain 1 per group; each has 1 so nothing to delete
-        await _snapshotManager.EnforceRetentionAsync("col1", retainLastN: 1, currentClusterPeerIds: null, CancellationToken.None);
+        await _snapshotManager.EnforceRetentionAsync("col1", retainLastN: 1, CancellationToken.None, currentClusterPeerIds: null);
 
         // Assert: no deletions (each group has 1 snapshot, we keep 1)
         await _s3SnapshotService.DidNotReceive().DeleteSnapshotAsync(

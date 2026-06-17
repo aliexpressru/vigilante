@@ -1,49 +1,51 @@
+using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
-using Amazon.Runtime;
 using Vigilante.Configuration;
 using Vigilante.Constants;
 using Vigilante.Services.Interfaces;
 using Vigilante.Utilities;
 
-namespace Vigilante.Services;
+namespace Vigilante.Services.Snapshots;
 
 /// <summary>
 /// Service for managing Qdrant snapshots in S3-compatible storage.
-/// 
+///
 /// Configuration:
 /// - Bucket name is configurable via appsettings.json under Qdrant:S3:BucketName
 /// - The bucket can have any name (e.g., "snapshots", "qdrant-backups", etc.)
 /// - Inside the bucket, snapshots are stored under the "snapshots/" folder prefix (S3Constants.SnapshotsFolder)
-/// 
+///
 /// Path structure in S3:
 /// {BucketName}/{SnapshotsFolder}/{collection-name}/{snapshot-file}
-/// 
+///
 /// Example with BucketName="my-backups":
 /// my-backups/snapshots/some-vectors~~20251210/some-vectors-3372865182647577-2025-12-10-11-18-48.snapshot
 /// </summary>
-public class S3SnapshotService(
-    IS3ConfigurationProvider configProvider,
-    ILogger<S3SnapshotService> logger) : IS3SnapshotService, IDisposable
+public sealed class S3SnapshotService(IS3ConfigurationProvider configProvider, ILogger<S3SnapshotService> logger)
+    : IS3SnapshotService,
+        IDisposable
 {
-    private IAmazonS3? _s3Client;
-    private S3Options? _currentConfig;
-    private readonly SemaphoreSlim _lock = new(1, 1);
+    private AmazonS3Client? _cachedS3Client;
+
+    // These are set upon S3Client creation
+    private S3Options? _cachedS3Options;
+    private readonly SemaphoreSlim _createClientSyncRoot = new(1, 1);
 
     /// <summary>
     /// Lists ALL snapshots from S3 storage
     /// Returns list of tuples: (collectionName, snapshotName, sizeBytes)
     /// This includes snapshots for deleted/old collection versions
     /// </summary>
-    public async Task<List<(string CollectionName, string SnapshotName, long SizeBytes, DateTime LastModifiedUtc)>> ListAllSnapshotsAsync(
-        string? namespaceParameter = null,
-        CancellationToken cancellationToken = default)
+    public async Task<
+        List<(string CollectionName, string SnapshotName, long SizeBytes, DateTime LastModifiedUtc)>
+    > ListAllSnapshotsAsync(string? namespaceParameter = null, CancellationToken cancellationToken = default)
     {
         var client = await GetOrCreateS3ClientAsync(namespaceParameter, cancellationToken);
         if (client == null)
         {
             logger.LogWarning("S3 client is not available, cannot list snapshots");
-            return new List<(string, string, long, DateTime)>();
+            return [];
         }
 
         try
@@ -52,43 +54,40 @@ public class S3SnapshotService(
             // Objects are stored under '{SnapshotsFolder}/' prefix in the bucket
             var prefix = $"{S3Constants.SnapshotsFolder}/";
 
-            var request = new ListObjectsV2Request
-            {
-                BucketName = _currentConfig!.BucketName,
-                Prefix = prefix
-            };
+            var request = new ListObjectsV2Request { BucketName = _cachedS3Options!.BucketName, Prefix = prefix };
 
             var response = await client.ListObjectsV2Async(request, cancellationToken);
 
             if (response.S3Objects == null || response.KeyCount == 0)
             {
-                return new List<(string, string, long, DateTime)>();
+                return [];
             }
 
             var snapshots = new List<(string, string, long, DateTime)>();
 
-            foreach (var obj in response.S3Objects)
+            // Skip folder markers (objects ending with /)
+            foreach (var snapshotObject in response.S3Objects.Where(o => !o.Key.EndsWith('/')))
             {
-                // Skip folder markers (objects ending with /)
-                if (obj.Key.EndsWith("/"))
-                    continue;
-
                 // Parse key: {SnapshotsFolder}/{collection-name}/{snapshot-filename}
-                var parts = obj.Key.Split('/');
-                if (parts.Length != 3)
-                    continue;
+                var snapshotKeyParts = snapshotObject.Key.Split('/');
 
-                // Decode collection name and snapshot name (replace %7E back to ~)
-                // parts[0] = SnapshotsFolder (e.g., "snapshots")
-                // parts[1] = collection name (may be URL-encoded)
-                // parts[2] = snapshot filename (may be URL-encoded)
-                var encodedCollectionName = parts[1];
+                if (snapshotKeyParts.Length != 3)
+                {
+                    continue;
+                }
+
+                // Extract and URL-decode collection name and snapshot name (replace %7E back to ~) from snapshot file key
+
+                // snapshotKeyParts[0] = SnapshotsFolder (e.g., "snapshots")
+                // snapshotKeyParts[1] = collection name (may be URL-encoded)
+                // snapshotKeyParts[2] = snapshot filename (may be URL-encoded)
+                var encodedCollectionName = snapshotKeyParts[1];
                 var collectionName = Uri.UnescapeDataString(encodedCollectionName);
-                
-                var encodedSnapshotName = parts[2];
+
+                var encodedSnapshotName = snapshotKeyParts[2];
                 var snapshotName = Uri.UnescapeDataString(encodedSnapshotName); // Decode the snapshot filename too
-                var sizeBytes = obj.Size ?? 0L;
-                var lm = obj.LastModified;
+                var sizeBytes = snapshotObject.Size ?? 0L;
+                var lm = snapshotObject.LastModified;
                 var modifiedUtc = lm.HasValue
                     ? (lm.Value.Kind == DateTimeKind.Utc ? lm.Value : lm.Value.ToUniversalTime())
                     : DateTime.UtcNow;
@@ -103,7 +102,7 @@ public class S3SnapshotService(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to list all snapshots from S3");
-            return new List<(string, string, long, DateTime)>();
+            return [];
         }
     }
 
@@ -114,13 +113,14 @@ public class S3SnapshotService(
     public async Task<List<(string Name, long SizeBytes)>> ListSnapshotsAsync(
         string collectionName,
         string? namespaceParameter = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var client = await GetOrCreateS3ClientAsync(namespaceParameter, cancellationToken);
         if (client == null)
         {
             logger.LogWarning("S3 client is not available, cannot list snapshots");
-            return new List<(string, long)>();
+            return [];
         }
 
         try
@@ -129,46 +129,47 @@ public class S3SnapshotService(
             // Important: In S3, ONLY tildes (~) are URL-encoded as %7E
             // Other special characters like dots, underscores remain as-is
             // This matches how Qdrant stores snapshots in S3
-            
+
             // Use full collection name (including version) for searching
             // Path in S3: {SnapshotsFolder}/{full-collection-name-with-version}/{snapshot-files}
             // URL-encode the collection name properly
             // NOTE: Uri.EscapeDataString() does NOT encode tildes (~), but S3 stores them as %7E
             var encodedCollectionName = Uri.EscapeDataString(collectionName).Replace("~", "%7E");
-            
+
             var prefix = $"{S3Constants.SnapshotsFolder}/{encodedCollectionName}";
 
-            var request = new ListObjectsV2Request
-            {
-                BucketName = _currentConfig!.BucketName,
-                Prefix = prefix
-            };
+            var request = new ListObjectsV2Request { BucketName = _cachedS3Options!.BucketName, Prefix = prefix };
 
             var response = await client.ListObjectsV2Async(request, cancellationToken);
 
             if (response.S3Objects == null || response.KeyCount == 0)
             {
-                return new List<(string, long)>();
+                return [];
             }
 
             // Extract snapshot name and size from S3 objects
-            var snapshots = response.S3Objects
-                .Select(obj => (
-                    Name: Path.GetFileName(obj.Key),
-                    SizeBytes: obj.Size ?? 0L // S3Object.Size is long?, use 0 if null
-                ))
+            var snapshots = response
+                .S3Objects.Select(obj =>
+                    (
+                        Name: Path.GetFileName(obj.Key),
+                        SizeBytes: obj.Size ?? 0L // S3Object.Size is long?, use 0 if null
+                    )
+                )
                 .Where(s => !string.IsNullOrEmpty(s.Name))
                 .ToList();
 
-            logger.LogInformation("Found {Count} snapshots for collection {CollectionName} in S3", 
-                snapshots.Count, collectionName);
+            logger.LogInformation(
+                "Found {Count} snapshots for collection {CollectionName} in S3",
+                snapshots.Count,
+                collectionName
+            );
 
             return snapshots;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to list snapshots for collection {CollectionName} from S3", collectionName);
-            return new List<(string, long)>();
+            return [];
         }
     }
 
@@ -179,7 +180,8 @@ public class S3SnapshotService(
         string collectionName,
         string snapshotName,
         string? namespaceParameter = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var client = await GetOrCreateS3ClientAsync(namespaceParameter, cancellationToken);
         if (client == null)
@@ -196,29 +198,35 @@ public class S3SnapshotService(
             var encodedSnapshotName = Uri.EscapeDataString(snapshotName).Replace("~", "%7E");
             var key = $"{S3Constants.SnapshotsFolder}/{encodedCollectionName}/{encodedSnapshotName}";
 
-            var request = new GetObjectRequest
-            {
-                BucketName = _currentConfig!.BucketName,
-                Key = key
-            };
+            var request = new GetObjectRequest { BucketName = _cachedS3Options!.BucketName, Key = key };
 
             var response = await client.GetObjectAsync(request, cancellationToken);
-            
-            logger.LogInformation("Downloaded snapshot {SnapshotName} for collection {CollectionName} from S3", 
-                snapshotName, collectionName);
+
+            logger.LogInformation(
+                "Downloaded snapshot {SnapshotName} for collection {CollectionName} from S3",
+                snapshotName,
+                collectionName
+            );
 
             return response.ResponseStream;
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
-            logger.LogWarning("Snapshot {SnapshotName} for collection {CollectionName} not found in S3", 
-                snapshotName, collectionName);
+            logger.LogWarning(
+                "Snapshot {SnapshotName} for collection {CollectionName} not found in S3",
+                snapshotName,
+                collectionName
+            );
             return null;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to download snapshot {SnapshotName} for collection {CollectionName} from S3", 
-                snapshotName, collectionName);
+            logger.LogError(
+                ex,
+                "Failed to download snapshot {SnapshotName} for collection {CollectionName} from S3",
+                snapshotName,
+                collectionName
+            );
             return null;
         }
     }
@@ -230,7 +238,8 @@ public class S3SnapshotService(
         string collectionName,
         string snapshotName,
         string? namespaceParameter = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var client = await GetOrCreateS3ClientAsync(namespaceParameter, cancellationToken);
         if (client == null)
@@ -247,23 +256,26 @@ public class S3SnapshotService(
             var encodedSnapshotName = Uri.EscapeDataString(snapshotName).Replace("~", "%7E");
             var key = $"{S3Constants.SnapshotsFolder}/{encodedCollectionName}/{encodedSnapshotName}";
 
-            var request = new DeleteObjectRequest
-            {
-                BucketName = _currentConfig!.BucketName,
-                Key = key
-            };
+            var request = new DeleteObjectRequest { BucketName = _cachedS3Options!.BucketName, Key = key };
 
             await client.DeleteObjectAsync(request, cancellationToken);
-            
-            logger.LogInformation("Deleted snapshot {SnapshotName} for collection {CollectionName} from S3", 
-                snapshotName, collectionName);
+
+            logger.LogInformation(
+                "Deleted snapshot {SnapshotName} for collection {CollectionName} from S3",
+                snapshotName,
+                collectionName
+            );
 
             return true;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to delete snapshot {SnapshotName} for collection {CollectionName} from S3", 
-                snapshotName, collectionName);
+            logger.LogError(
+                ex,
+                "Failed to delete snapshot {SnapshotName} for collection {CollectionName} from S3",
+                snapshotName,
+                collectionName
+            );
             return false;
         }
     }
@@ -271,9 +283,10 @@ public class S3SnapshotService(
     /// <summary>
     /// Checks if S3 storage is configured and available
     /// </summary>
-    public async Task<bool> IsAvailableAsync(
+    public async Task<bool> CheckIsAvailableAsync(
         string? namespaceParameter = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var client = await GetOrCreateS3ClientAsync(namespaceParameter, cancellationToken);
         return client != null;
@@ -287,7 +300,8 @@ public class S3SnapshotService(
         string snapshotName,
         TimeSpan expiration,
         string? namespaceParameter = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var s3Options = await configProvider.GetS3ConfigurationAsync(namespaceParameter, cancellationToken);
         if (s3Options == null || !s3Options.IsConfigured())
@@ -301,7 +315,7 @@ public class S3SnapshotService(
             // IMPORTANT: S3 keys are stored with URL-encoded tildes (%7E)
             // We need to find the actual key as stored in S3, then use it for the presigned URL
             // The collectionName and snapshotName from the API may or may not be encoded
-            
+
             // First, decode inputs in case they're already encoded
             var decodedCollectionName = Uri.UnescapeDataString(collectionName);
             var decodedSnapshotName = Uri.UnescapeDataString(snapshotName);
@@ -313,7 +327,7 @@ public class S3SnapshotService(
                 logger.LogWarning("S3 client not available, cannot generate presigned URL");
                 return null;
             }
-            
+
             // Encode the collection name for searching (tildes become %7E)
             // NOTE: Uri.EscapeDataString() does NOT encode tildes (~) because they are unreserved characters in RFC 3986
             // But S3 stores them as %7E, so we need to manually encode them
@@ -324,17 +338,17 @@ public class S3SnapshotService(
             {
                 BucketName = s3Options.BucketName,
                 Prefix = searchPrefix,
-                MaxKeys = 100
+                MaxKeys = 100,
             };
-            
+
             var listResponse = await client.ListObjectsV2Async(listRequest, cancellationToken);
 
             // Find the actual key in S3 - it should have the encoded collection name
             string? actualKey = null;
-            foreach (var obj in listResponse.S3Objects ?? new List<S3Object>())
+            foreach (var obj in listResponse.S3Objects ?? [])
             {
                 var fileName = Path.GetFileName(obj.Key);
-                
+
                 // The filename in S3 might have encoded tildes (%7E), so we need to:
                 // 1. Decode both the S3 filename and the requested snapshot name
                 // 2. Compare the decoded versions
@@ -346,49 +360,61 @@ public class S3SnapshotService(
                     break;
                 }
             }
-            
+
             if (actualKey == null)
             {
-                var availableFiles = (listResponse.S3Objects ?? new List<S3Object>())
-                    .Select(o => {
+                var availableFiles = (listResponse.S3Objects ?? [])
+                    .Select(o =>
+                    {
                         var fn = Path.GetFileName(o.Key);
                         return $"{fn} (decoded: {Uri.UnescapeDataString(fn)})";
                     })
                     .ToArray();
-                    
-                logger.LogWarning("Snapshot '{SnapshotName}' not found in S3 for collection '{CollectionName}'. Search prefix: '{SearchPrefix}'. Available files ({Count}): {AvailableFiles}", 
-                    decodedSnapshotName, 
+
+                logger.LogWarning(
+                    "Snapshot '{SnapshotName}' not found in S3 for collection '{CollectionName}'. Search prefix: '{SearchPrefix}'. Available files ({Count}): {AvailableFiles}",
+                    decodedSnapshotName,
                     decodedCollectionName,
                     searchPrefix,
                     availableFiles.Length,
-                    string.Join(", ", availableFiles));
+                    string.Join(", ", availableFiles)
+                );
                 return null;
             }
 
             // The actualKey is like: "snapshots/collection%7E%7Eversion/file.snapshot"
             // For the presigned URL, we need to pass the full key including "snapshots/"
             // The AwsSignatureV4 utility will URL-encode it properly (so %7E becomes %257E)
-            
+
             // Use manual AWS Signature V4 implementation for S3-compatible storage
             // AWS SDK doesn't work correctly with custom endpoints for presigned URLs
             var url = AwsSignatureV4.GeneratePresignedUrl(
                 s3Options.EndpointUrl!,
                 s3Options.BucketName!,
                 actualKey, // Use the full key as stored in S3
-                s3Options.AccessKey!.Trim(),
-                s3Options.SecretKey!.Trim(),
+                s3Options.AccessKey!,
+                s3Options.SecretKey!,
                 s3Options.Region ?? S3Constants.DefaultRegion,
-                (int)expiration.TotalSeconds);
-            
-            logger.LogInformation("Generated presigned URL for snapshot {SnapshotName} in collection {CollectionName}, expires in {Expiration}",
-                decodedSnapshotName, decodedCollectionName, expiration);
+                (int)expiration.TotalSeconds
+            );
+
+            logger.LogInformation(
+                "Generated presigned URL for snapshot {SnapshotName} in collection {CollectionName}, expires in {Expiration}",
+                decodedSnapshotName,
+                decodedCollectionName,
+                expiration
+            );
 
             return url;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to generate presigned URL for snapshot {SnapshotName} in collection {CollectionName}", 
-                snapshotName, collectionName);
+            logger.LogError(
+                ex,
+                "Failed to generate presigned URL for snapshot {SnapshotName} in collection {CollectionName}",
+                snapshotName,
+                collectionName
+            );
             return null;
         }
     }
@@ -396,7 +422,8 @@ public class S3SnapshotService(
     public async Task<(int Found, int Aborted, int Failed)> CleanupIncompleteMultipartUploadsAsync(
         int olderThanMinutes,
         string? namespaceParameter = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var cleanupStartedAt = DateTime.UtcNow;
         var client = await GetOrCreateS3ClientAsync(namespaceParameter, cancellationToken);
@@ -408,9 +435,7 @@ public class S3SnapshotService(
 
         if (olderThanMinutes <= 0)
         {
-            logger.LogWarning(
-                "Invalid multipart cleanup threshold {OlderThanMinutes}; expected > 0 minutes",
-                olderThanMinutes);
+            logger.LogWarning("Invalid multipart cleanup threshold {OlderThanMinutes}; expected > 0 minutes", olderThanMinutes);
             return (0, 0, 0);
         }
 
@@ -439,7 +464,8 @@ public class S3SnapshotService(
             {
                 logger.LogWarning(
                     "Stopping multipart cleanup pagination after {MaxPages} pages to avoid infinite loop",
-                    maxPages);
+                    maxPages
+                );
                 break;
             }
 
@@ -447,10 +473,10 @@ public class S3SnapshotService(
             var requestUploadIdMarker = uploadIdMarker;
             var listRequest = new ListMultipartUploadsRequest
             {
-                BucketName = _currentConfig!.BucketName,
+                BucketName = _cachedS3Options!.BucketName,
                 Prefix = $"{S3Constants.SnapshotsFolder}/",
                 KeyMarker = requestKeyMarker,
-                UploadIdMarker = requestUploadIdMarker
+                UploadIdMarker = requestUploadIdMarker,
             };
 
             ListMultipartUploadsResponse listResponse;
@@ -466,42 +492,56 @@ public class S3SnapshotService(
                     logger.LogWarning(
                         "Timed out listing multipart uploads after {TimeoutSeconds}s on page {Page}; finishing cleanup with partial results",
                         requestTimeout.TotalSeconds,
-                        page);
+                        page
+                    );
                     break;
                 }
             }
+
             var staleUploads = (listResponse.MultipartUploads ?? [])
                 .Where(u => u.Initiated.HasValue && u.Initiated.Value.ToUniversalTime() <= thresholdUtc)
                 .ToList();
+
             scannedUploads += listResponse.MultipartUploads?.Count ?? 0;
             hasMorePages = listResponse.IsTruncated == true;
 
             found += staleUploads.Count;
+
             foreach (var upload in staleUploads)
             {
                 if (!string.IsNullOrEmpty(upload.Key) && !string.IsNullOrEmpty(upload.UploadId))
+                {
                     staleCandidates.Add((upload.Key, upload.UploadId));
+                }
             }
 
             if (cancelled)
+            {
                 break;
+            }
 
             keyMarker = listResponse.NextKeyMarker;
             uploadIdMarker = listResponse.NextUploadIdMarker;
-            if (listResponse.IsTruncated == true
+            if (
+                listResponse.IsTruncated == true
                 && string.Equals(requestKeyMarker, keyMarker, StringComparison.Ordinal)
-                && string.Equals(requestUploadIdMarker, uploadIdMarker, StringComparison.Ordinal))
+                && string.Equals(requestUploadIdMarker, uploadIdMarker, StringComparison.Ordinal)
+            )
             {
                 logger.LogWarning(
                     "Stopping multipart cleanup pagination because markers did not advance (keyMarker={KeyMarker}, uploadIdMarker={UploadIdMarker})",
                     keyMarker,
-                    uploadIdMarker);
+                    uploadIdMarker
+                );
                 break;
             }
 
             if (listResponse.IsTruncated != true)
+            {
                 break;
+            }
         } while (true);
+
         fullyCounted = !hasMorePages && !cancelled;
 
         foreach (var (key, uploadId) in staleCandidates)
@@ -516,9 +556,9 @@ public class S3SnapshotService(
             {
                 var abortRequest = new AbortMultipartUploadRequest
                 {
-                    BucketName = _currentConfig.BucketName,
+                    BucketName = _cachedS3Options!.BucketName,
                     Key = key,
-                    UploadId = uploadId
+                    UploadId = uploadId,
                 };
 
                 using var abortCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -533,7 +573,8 @@ public class S3SnapshotService(
                     "Timed out aborting multipart upload for key {Key} (uploadId: {UploadId}) after {TimeoutSeconds}s",
                     key,
                     uploadId,
-                    requestTimeout.TotalSeconds);
+                    requestTimeout.TotalSeconds
+                );
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -543,11 +584,7 @@ public class S3SnapshotService(
             catch (Exception ex)
             {
                 failed++;
-                logger.LogWarning(
-                    ex,
-                    "Failed to abort multipart upload for key {Key} (uploadId: {UploadId})",
-                    key,
-                    uploadId);
+                logger.LogWarning(ex, "Failed to abort multipart upload for key {Key} (uploadId: {UploadId})", key, uploadId);
             }
         }
 
@@ -561,82 +598,91 @@ public class S3SnapshotService(
             cancelled,
             hasMorePages,
             fullyCounted,
-            (int)(DateTime.UtcNow - cleanupStartedAt).TotalMilliseconds);
+            (int)(DateTime.UtcNow - cleanupStartedAt).TotalMilliseconds
+        );
         if (hasMorePages || cancelled)
         {
             logger.LogInformation(
                 "Multipart cleanup was partial for this run: totalMultipartAtLeast={ScannedUploads}, staleFoundInScannedPages={Found}, aborted={Aborted}, remaining uploads likely still exist",
                 scannedUploads,
                 found,
-                aborted);
+                aborted
+            );
         }
 
         return (found, aborted, failed);
     }
 
-    private async Task<IAmazonS3?> GetOrCreateS3ClientAsync(
-        string? namespaceParameter,
-        CancellationToken cancellationToken)
+    private async Task<IAmazonS3?> GetOrCreateS3ClientAsync(string? namespaceParameter, CancellationToken cancellationToken)
     {
-        var s3Options = await configProvider.GetS3ConfigurationAsync(namespaceParameter, cancellationToken);
+        var newS3Options = await configProvider.GetS3ConfigurationAsync(namespaceParameter, cancellationToken);
 
-        if (s3Options == null || !s3Options.IsConfigured())
+        if (newS3Options == null || !newS3Options.IsConfigured())
         {
             return null;
         }
 
         // Return existing client if config hasn't changed
-        if (_s3Client != null && _currentConfig != null &&
-            _currentConfig.BucketName == s3Options.BucketName &&
-            _currentConfig.EndpointUrl == s3Options.EndpointUrl &&
-            _currentConfig.Region == s3Options.Region)
+        if (
+            _cachedS3Client != null
+            && _cachedS3Options != null
+            && _cachedS3Options.BucketName == newS3Options.BucketName
+            && _cachedS3Options.EndpointUrl == newS3Options.EndpointUrl
+            && _cachedS3Options.Region == newS3Options.Region
+        )
         {
-            return _s3Client;
+            return _cachedS3Client;
         }
 
-        await _lock.WaitAsync(cancellationToken);
+        await _createClientSyncRoot.WaitAsync(cancellationToken);
         try
         {
             // Recheck after acquiring lock
-            var currentOptions = await configProvider.GetS3ConfigurationAsync(namespaceParameter, cancellationToken);
-            if (currentOptions == null || !currentOptions.IsConfigured())
+            var reacquiredNewS3Options = await configProvider.GetS3ConfigurationAsync(namespaceParameter, cancellationToken);
+            if (reacquiredNewS3Options == null || !reacquiredNewS3Options.IsConfigured())
             {
                 return null;
             }
 
-            s3Options = currentOptions;
+            newS3Options = reacquiredNewS3Options;
 
-            if (_s3Client != null && _currentConfig != null &&
-                _currentConfig.BucketName == s3Options.BucketName &&
-                _currentConfig.EndpointUrl == s3Options.EndpointUrl &&
-                _currentConfig.Region == s3Options.Region)
+            if (
+                _cachedS3Client != null
+                && _cachedS3Options != null
+                && _cachedS3Options.BucketName == newS3Options.BucketName
+                && _cachedS3Options.EndpointUrl == newS3Options.EndpointUrl
+                && _cachedS3Options.Region == newS3Options.Region
+            )
             {
-                return _s3Client;
+                return _cachedS3Client;
             }
 
-            if (_s3Client != null)
+            if (_cachedS3Client != null)
             {
-                logger.LogInformation("S3 config changed (bucket: {Old} → {New}), recreating S3 client",
-                    _currentConfig?.BucketName, s3Options.BucketName);
-                _s3Client.Dispose();
-                _s3Client = null;
+                logger.LogInformation(
+                    "S3 config changed (bucket: {Old} → {New}), recreating S3 client",
+                    _cachedS3Options?.BucketName,
+                    newS3Options.BucketName
+                );
+                _cachedS3Client.Dispose();
+                _cachedS3Client = null;
             }
 
-            _currentConfig = s3Options;
+            _cachedS3Options = newS3Options;
 
             var config = new AmazonS3Config
             {
-                ServiceURL = s3Options.EndpointUrl,
+                ServiceURL = newS3Options.EndpointUrl,
                 ForcePathStyle = true, // Required for S3-compatible storage (MinIO, Ceph, etc.)
-                UseHttp = s3Options.EndpointUrl?.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ?? false,
+                UseHttp = newS3Options.EndpointUrl?.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ?? false,
                 // For S3-compatible storage, only set AuthenticationRegion, NOT RegionEndpoint
                 // Setting RegionEndpoint causes AWS-specific auth that breaks custom S3 storage
-                AuthenticationRegion = s3Options.Region ?? S3Constants.DefaultRegion
+                AuthenticationRegion = newS3Options.Region ?? S3Constants.DefaultRegion,
             };
 
-            var accessKey = s3Options.AccessKey?.Trim();
-            var secretKey = s3Options.SecretKey?.Trim();
-            
+            var accessKey = newS3Options.AccessKey;
+            var secretKey = newS3Options.SecretKey;
+
             if (string.IsNullOrEmpty(accessKey) || string.IsNullOrEmpty(secretKey))
             {
                 logger.LogError("AccessKey or SecretKey is null or empty after trimming");
@@ -645,23 +691,22 @@ public class S3SnapshotService(
 
             // Use BasicAWSCredentials for S3-compatible storage
             var credentials = new BasicAWSCredentials(accessKey, secretKey);
-            
-            _s3Client = new AmazonS3Client(credentials, config);
 
-            logger.LogInformation("S3 client created for endpoint {EndpointUrl}", s3Options.EndpointUrl);
+            _cachedS3Client = new AmazonS3Client(credentials, config);
 
-            return _s3Client;
+            logger.LogInformation("S3 client created for endpoint {EndpointUrl}", newS3Options.EndpointUrl);
+
+            return _cachedS3Client;
         }
         finally
         {
-            _lock.Release();
+            _createClientSyncRoot.Release();
         }
     }
 
     public void Dispose()
     {
-        _s3Client?.Dispose();
-        _lock.Dispose();
+        _cachedS3Client?.Dispose();
+        _createClientSyncRoot.Dispose();
     }
 }
-

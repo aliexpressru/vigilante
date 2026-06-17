@@ -1,13 +1,15 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using FluentAssertions;
 using NUnit.Framework;
-using Vigilante.Models;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
+using Vigilante.Services.Jobs.Snapshots;
 
 namespace Aer.Vigilante.Tests.Services;
+
+#pragma warning disable CA2012 // Use ValueTasks correctly | Justification - ValueTask returned form DisposeAsync is inspected in tests;
 
 [TestFixture]
 public class JobRegistryTests
@@ -29,10 +31,10 @@ public class JobRegistryTests
 
         var added = _registry.TryAddJob(job, cts);
 
-        Assert.That(added, Is.True);
+        added.Should().BeTrue();
         var pending = _registry.GetPendingJobs();
-        Assert.That(pending, Has.Count.EqualTo(1));
-        Assert.That(pending[0].Job.Key, Is.EqualTo("job1"));
+        pending.Should().HaveCount(1);
+        pending[0].Job.Key.Should().Be("job1");
     }
 
     [Test]
@@ -46,10 +48,10 @@ public class JobRegistryTests
         var first = _registry.TryAddJob(job1, cts1);
         var second = _registry.TryAddJob(job2, cts2);
 
-        Assert.That(first, Is.True);
-        Assert.That(second, Is.False);
+        first.Should().BeTrue();
+        second.Should().BeFalse();
         var pending = _registry.GetPendingJobs();
-        Assert.That(pending, Has.Count.EqualTo(1));
+        pending.Should().HaveCount(1);
         cts2.Dispose();
     }
 
@@ -59,9 +61,9 @@ public class JobRegistryTests
         var job = CreateFakeJob(PendingSnapshotCreationJob.KeyPrefix + "MyCollection");
         _registry.TryAddJob(job, new CancellationTokenSource());
 
-        Assert.That(_registry.HasPendingSnapshotCreationForCollection("mycollection"), Is.True);
-        Assert.That(_registry.HasPendingSnapshotCreationForCollection("MyCollection"), Is.True);
-        Assert.That(_registry.HasPendingSnapshotCreationForCollection("other"), Is.False);
+        _registry.HasPendingSnapshotCreationForCollection("mycollection").Should().BeTrue();
+        _registry.HasPendingSnapshotCreationForCollection("MyCollection").Should().BeTrue();
+        _registry.HasPendingSnapshotCreationForCollection("other").Should().BeFalse();
     }
 
     [Test]
@@ -76,7 +78,7 @@ public class JobRegistryTests
         _registry.TryAddJob(job2, cts2);
 
         var pending = _registry.GetPendingJobs();
-        Assert.That(pending, Has.Count.EqualTo(2));
+        pending.Should().HaveCount(2);
     }
 
     [Test]
@@ -88,7 +90,7 @@ public class JobRegistryTests
 
         await _registry.RemoveJobAsync("job1");
 
-        Assert.That(_registry.GetPendingJobs(), Has.Count.EqualTo(0));
+        _registry.GetPendingJobs().Should().HaveCount(0);
         await job.Received(1).DisposeAsync();
     }
 
@@ -96,7 +98,7 @@ public class JobRegistryTests
     public async Task RemoveJobAsync_WhenKeyMissing_DoesNotThrow()
     {
         await _registry.RemoveJobAsync("missing");
-        Assert.That(_registry.GetPendingJobs(), Has.Count.EqualTo(0));
+        _registry.GetPendingJobs().Should().HaveCount(0);
     }
 
     [Test]
@@ -108,15 +110,15 @@ public class JobRegistryTests
 
         var cancelled = await _registry.CancelJobAsync("job1");
 
-        Assert.That(cancelled, Is.True);
-        Assert.That(_registry.GetPendingJobs(), Has.Count.EqualTo(0));
+        cancelled.Should().BeTrue();
+        _registry.GetPendingJobs().Should().HaveCount(0);
     }
 
     [Test]
     public async Task CancelJobAsync_WhenKeyMissing_ReturnsFalse()
     {
         var cancelled = await _registry.CancelJobAsync("missing");
-        Assert.That(cancelled, Is.False);
+        cancelled.Should().BeFalse();
     }
 
     [Test]
@@ -126,9 +128,9 @@ public class JobRegistryTests
 
         var errors = _registry.GetActiveErrorsAndPruneExpired(DateTime.UtcNow, TimeSpan.FromMinutes(5));
 
-        Assert.That(errors, Has.Count.EqualTo(1));
-        Assert.That(errors[0].Key, Is.EqualTo("job1"));
-        Assert.That(errors[0].Message, Is.EqualTo("error message"));
+        errors.Should().HaveCount(1);
+        errors[0].Key.Should().Be("job1");
+        errors[0].Message.Should().Be("error message");
     }
 
     [Test]
@@ -138,7 +140,7 @@ public class JobRegistryTests
         var now = DateTime.UtcNow;
         var errors = _registry.GetActiveErrorsAndPruneExpired(now.AddMinutes(10), TimeSpan.FromMinutes(5));
 
-        Assert.That(errors, Has.Count.EqualTo(0));
+        errors.Should().HaveCount(0);
     }
 
     [Test]
@@ -153,13 +155,13 @@ public class JobRegistryTests
         var infos = _registry.GetJobInfos();
 
         // job1 is active; job2 is recently failed (no job in registry) — both are returned so frontend can show them
-        Assert.That(infos, Has.Count.EqualTo(2));
+        infos.Should().HaveCount(2);
         var job1Info = infos.Single(i => i.Key == "job1");
-        Assert.That(job1Info.ErrorMessage, Is.Null);
-        Assert.That(job1Info.Metadata, Is.Not.Null);
+        job1Info.ErrorMessage.Should().BeNull();
+        job1Info.Metadata.Should().NotBeNull();
         var job2Info = infos.Single(i => i.Key == "job2");
-        Assert.That(job2Info.ErrorMessage, Is.EqualTo("job2 failed"));
-        Assert.That(job2Info.Metadata, Is.Null);
+        job2Info.ErrorMessage.Should().Be("job2 failed");
+        job2Info.Metadata.Should().BeNull();
     }
 
     [Test]
@@ -172,8 +174,8 @@ public class JobRegistryTests
 
         var infos = _registry.GetJobInfos();
 
-        Assert.That(infos, Has.Count.EqualTo(1));
-        Assert.That(infos[0].ErrorMessage, Is.EqualTo("failed"));
+        infos.Should().HaveCount(1);
+        infos[0].ErrorMessage.Should().Be("failed");
     }
 
     [Test]
@@ -185,7 +187,7 @@ public class JobRegistryTests
 
         await _registry.ProcessPendingJobsAsync(CancellationToken.None);
 
-        Assert.That(_registry.GetPendingJobs(), Has.Count.EqualTo(0));
+        _registry.GetPendingJobs().Should().HaveCount(0);
         await job.Received(1).AdvanceAsync(Arg.Any<CancellationToken>());
     }
 
@@ -200,9 +202,9 @@ public class JobRegistryTests
 
         await _registry.ProcessPendingJobsAsync(CancellationToken.None);
 
-        Assert.That(_registry.GetPendingJobs(), Is.Empty);
+        _registry.GetPendingJobs().Should().BeEmpty();
         var infos = _registry.GetJobInfos();
-        Assert.That(infos.Any(i => i.Key == "job1" && i.ErrorMessage == "timeout"), Is.True);
+        infos.Any(i => i.Key == "job1" && i.ErrorMessage == "timeout").Should().BeTrue();
     }
 
     [Test]
@@ -214,7 +216,7 @@ public class JobRegistryTests
 
         await _registry.ProcessPendingJobsAsync(CancellationToken.None, new HashSet<string> { "snapshot-automation" });
 
-        Assert.That(_registry.GetPendingJobs(), Has.Count.EqualTo(1));
+        _registry.GetPendingJobs().Should().HaveCount(1);
         await job.DidNotReceive().AdvanceAsync(Arg.Any<CancellationToken>());
     }
 
@@ -249,17 +251,17 @@ public class JobRegistryTests
 
         var process1 = _registry.ProcessPendingJobsAsync(CancellationToken.None);
         await Task.Delay(100);
-        Assert.That(advanceStarted, Is.EqualTo(1), "first processor should be inside AdvanceAsync");
+        advanceStarted.Should().Be(1, "first processor should be inside AdvanceAsync");
 
         var process2 = _registry.ProcessPendingJobsAsync(CancellationToken.None);
         await Task.Delay(100);
-        Assert.That(advanceStarted, Is.EqualTo(1), "second call must wait on gate, not run AdvanceAsync in parallel");
+        advanceStarted.Should().Be(1, "second call must wait on gate, not run AdvanceAsync in parallel");
 
         unblock.SetResult();
         await Task.WhenAll(process1, process2);
 
-        Assert.That(advanceStarted, Is.EqualTo(1));
-        Assert.That(_registry.GetPendingJobs(), Is.Empty);
+        advanceStarted.Should().Be(1);
+        _registry.GetPendingJobs().Should().BeEmpty();
         await job.Received(1).AdvanceAsync(Arg.Any<CancellationToken>());
     }
 
@@ -289,8 +291,9 @@ public class JobRegistryTests
         await Task.Delay(50);
         step.SetResult();
 
-        Assert.DoesNotThrowAsync(async () => await Task.WhenAll(a, b));
-        Assert.That(_registry.GetPendingJobs(), Is.Empty);
+        Func<Task> act = async () => await Task.WhenAll(a, b);
+        await act.Should().NotThrowAsync();
+        _registry.GetPendingJobs().Should().BeEmpty();
     }
 
     [Test]
@@ -322,7 +325,7 @@ public class JobRegistryTests
         await _registry.ProcessPendingJobsAsync(CancellationToken.None);
         sw.Stop();
 
-        Assert.That(sw.ElapsedMilliseconds, Is.LessThan(250),
+        sw.ElapsedMilliseconds.Should().BeLessThan(250,
             "jobs with different keys should not serialize each other");
         await jobA.Received(1).AdvanceAsync(Arg.Any<CancellationToken>());
         await jobB.Received(1).AdvanceAsync(Arg.Any<CancellationToken>());
@@ -340,3 +343,5 @@ public class JobRegistryTests
         return job;
     }
 }
+
+#pragma warning restore CA2012 // Use ValueTasks correctly

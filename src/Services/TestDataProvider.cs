@@ -3,6 +3,7 @@ using Vigilante.Configuration;
 using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models;
+using Vigilante.Models.Snapshots;
 
 namespace Vigilante.Services;
 
@@ -25,38 +26,38 @@ public class TestDataProvider
         // Only return test data in Development environment
         if (!_environment.IsDevelopment())
         {
-            return new List<CollectionInfo>();
+            return [];
         }
 
         var testData = new List<CollectionInfo>();
-        var testCollections = new[] 
-        { 
-            "test_collection", 
-            "products", 
+        var testCollections = new[]
+        {
+            "test_collection",
+            "products",
             "embeddings",
             // Long collection names to test UI overflow handling
             "super_long_collection_name_with_multiple_underscores_and_segments_to_test_horizontal_overflow_behavior_even_longer_for_test_purposes",
             "analytics_data_warehouse_user_behavior_tracking_embeddings_v2_production_quantized_optimized_2024"
         };
-        
+
         // Generate test peers from actual Qdrant configuration
-        var testPeers = _options.Nodes.Select((node, index) => 
+        var testPeers = _options.Nodes.Select((node, index) =>
             (
-                peerId: $"peer{index + 1}",
+                peerId: (ulong)(index + 1),
                 podName: $"qdrant-{index}",
                 url: $"http://{node.Host}:{node.Port}"
             )
         ).ToList();
-        
+
         // If no nodes configured, use defaults
         if (testPeers.Count == 0)
         {
-            testPeers = new List<(string peerId, string podName, string url)>
-            {
-                ("peer1", "qdrant-0", "http://localhost:6333"),
-                ("peer2", "qdrant-1", "http://localhost:6334"),
-                ("peer3", "qdrant-2", "http://localhost:6335")
-            };
+            testPeers =
+            [
+                (1U, "qdrant-0", "http://localhost:6333"),
+                (2U, "qdrant-1", "http://localhost:6334"),
+                (3U, "qdrant-2", "http://localhost:6335")
+            ];
         }
 
         // Define different sizes for different collections to make it more realistic
@@ -80,7 +81,7 @@ public class TestDataProvider
         foreach (var collection in testCollections)
         {
             var (prettySize, sizeBytes, ramBytes) = collectionSizes.GetValueOrDefault(collection, ("1.0 GB", 1073741824L, 400000000L));
-            
+
             foreach (var (peerId, podName, _) in testPeers)
             {
                 var shards = new List<ShardDetails>();
@@ -88,36 +89,36 @@ public class TestDataProvider
                 var shardStates = new Dictionary<string, string>();
 
                 // Distribute shards among peers with different states
-                if (peerId == "peer1")
+                if (peerId == 1U)
                 {
                     shards.Add(new ShardDetails { ShardId = 0, State = "Active", VectorsSizeBytes = 200000000, PayloadsSizeBytes = 100000000 });
                     shards.Add(new ShardDetails { ShardId = 1, State = "Initializing", VectorsSizeBytes = 250000000, PayloadsSizeBytes = 100000000 });
                     shards.Add(new ShardDetails { ShardId = 2, State = "PartialSnapshot", VectorsSizeBytes = 220000000, PayloadsSizeBytes = 100000000 });
                     transfers.Add(new { isSync = true, shardId = 2, to = "pod-2", toPeerId = "peer2", method = "Snapshot" });
-                    
+
                     // States for the first peer
                     shardStates["0"] = "Active";          // Active shard
                     shardStates["1"] = "Initializing";    // Being initialized
                     shardStates["2"] = "PartialSnapshot"; // Being transferred
                 }
-                else if (peerId == "peer2")
+                else if (peerId == 2U)
                 {
                     shards.Add(new ShardDetails { ShardId = 3, State = "Listener", VectorsSizeBytes = 180000000, PayloadsSizeBytes = 100000000 });
                     shards.Add(new ShardDetails { ShardId = 4, State = "Dead", VectorsSizeBytes = 190000000, PayloadsSizeBytes = 100000000 });
                     shards.Add(new ShardDetails { ShardId = 5, State = "Recovery", VectorsSizeBytes = 210000000, PayloadsSizeBytes = 100000000 });
-                    
+
                     // States for the second peer
                     shardStates["3"] = "Listener";        // In listener mode
                     shardStates["4"] = "Dead";           // Inaccessible
                     shardStates["5"] = "Recovery";       // Being recovered
                 }
-                else if (peerId == "peer3")
+                else if (peerId == 3U)
                 {
                     shards.Add(new ShardDetails { ShardId = 6, State = "Resharding", VectorsSizeBytes = 230000000, PayloadsSizeBytes = 100000000 });
                     shards.Add(new ShardDetails { ShardId = 7, State = "ReshardingScaleDown", VectorsSizeBytes = 170000000, PayloadsSizeBytes = 100000000 });
                     shards.Add(new ShardDetails { ShardId = 8, State = "Partial", VectorsSizeBytes = 240000000, PayloadsSizeBytes = 100000000 });
                     transfers.Add(new { isSync = false, shardId = 8, to = "pod-1", toPeerId = "peer1", method = "StreamRecords" });
-                    
+
                     // States for the third peer
                     shardStates["6"] = "Resharding";             // Being resharded
                     shardStates["7"] = "ReshardingScaleDown";   // Being scaled down
@@ -135,7 +136,7 @@ public class TestDataProvider
                     { MetricConstants.ShardStatesKey, shardStates }
                 };
 
-                var aliases = collectionAliases.GetValueOrDefault(collection, new List<string>());
+                var aliases = collectionAliases.GetValueOrDefault(collection, []);
 
                 testData.Add(new CollectionInfo
                 {
@@ -166,7 +167,7 @@ public class TestDataProvider
         // Generate test peers from actual Qdrant configuration
         var testPeers = _options.Nodes.Select((node, index) =>
             (
-                peerId: $"peer{index + 1}",
+                peerId: (ulong)(index + 1),
                 podName: $"qdrant-{index}",
                 url: $"http://{node.Host}:{node.Port}",
                 index
@@ -176,12 +177,12 @@ public class TestDataProvider
         // If no nodes configured, use defaults
         if (testPeers.Count == 0)
         {
-            testPeers = new List<(string peerId, string podName, string url, int index)>
-            {
-                ("peer1", "qdrant-0", "http://localhost:6333", 0),
-                ("peer2", "qdrant-1", "http://localhost:6334", 1),
-                ("peer3", "qdrant-2", "http://localhost:6335", 2)
-            };
+            testPeers =
+            [
+                (1U, "qdrant-0", "http://localhost:6333", 0),
+                (2U, "qdrant-1", "http://localhost:6334", 1),
+                (3U, "qdrant-2", "http://localhost:6335", 2)
+            ];
         }
 
         // Generate snapshots with unique names per node for each collection
@@ -217,7 +218,7 @@ public class TestDataProvider
                 else
                 {
                     // Generate synthetic ID for other collections or unknown nodes
-                    uniqueId = (375902039176772L + index * 123456789L).ToString();
+                    uniqueId = (375902039176772L + (index * 123456789L)).ToString();
                 }
 
                 var timestamp = "2025-11-06-08-41-36";

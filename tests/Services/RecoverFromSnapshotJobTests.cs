@@ -1,6 +1,7 @@
 using Aer.QdrantClient.Http.Models.Shared;
 using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Responses;
+using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -9,9 +10,9 @@ using Vigilante.Extensions;
 using Vigilante.Configuration;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
-using Vigilante.Services;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
+using Vigilante.Services.Snapshots;
+using Vigilante.Services.Jobs.Snapshots;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -32,12 +33,13 @@ public class RecoverFromSnapshotJobTests
             "snap1",
             "source-col");
 
-        var result = await job.AdvanceAsync(CancellationToken.None);
+        var (HasMore, Success, ErrorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(result.HasMore, Is.True);
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.ErrorMessage, Is.Null);
-        Assert.That(job.IsWaitingForReady, Is.True);
+        HasMore.Should().BeTrue();
+        Success.Should().BeTrue();
+        ErrorMessage.Should().BeNull();
+
+        job.IsWaitingForReady.Should().BeTrue();
     }
 
     [Test]
@@ -54,12 +56,12 @@ public class RecoverFromSnapshotJobTests
             "snap1",
             "source-col");
 
-        var result = await job.AdvanceAsync(CancellationToken.None);
+        var (HasMore, Success, ErrorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(result.HasMore, Is.False);
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.ErrorMessage, Is.EqualTo("Failed to recover collection 'col1' from snapshot 'snap1' on http://node1:6333"));
-        Assert.That(job.IsWaitingForReady, Is.False);
+        HasMore.Should().BeFalse();
+        Success.Should().BeFalse();
+        ErrorMessage.Should().Be("Failed to recover collection 'col1' from snapshot 'snap1' on http://node1:6333");
+        job.IsWaitingForReady.Should().BeFalse();
     }
 
     [Test]
@@ -77,7 +79,7 @@ public class RecoverFromSnapshotJobTests
 
         var ready = await job.CheckReadyAsync(CancellationToken.None);
 
-        Assert.That(ready, Is.Null);
+        ready.Should().BeNull();
     }
 
     [Test]
@@ -152,9 +154,9 @@ public class RecoverFromSnapshotJobTests
         var secondCheck = await job.CheckReadyAsync(CancellationToken.None);
         var thirdCheck = await job.CheckReadyAsync(CancellationToken.None);
 
-        Assert.That(firstCheck, Is.False);
-        Assert.That(secondCheck, Is.False);
-        Assert.That(thirdCheck, Is.True);
+        firstCheck.Should().BeFalse();
+        secondCheck.Should().BeFalse();
+        thirdCheck.Should().BeTrue();
     }
 
     [Test]
@@ -191,8 +193,8 @@ public class RecoverFromSnapshotJobTests
         var firstCheck = await job.CheckReadyAsync(CancellationToken.None);
         var secondCheck = await job.CheckReadyAsync(CancellationToken.None);
 
-        Assert.That(firstCheck, Is.False);
-        Assert.That(secondCheck, Is.False);
+        firstCheck.Should().BeFalse();
+        secondCheck.Should().BeFalse();
     }
 
     [Test]
@@ -247,8 +249,8 @@ public class RecoverFromSnapshotJobTests
         var firstCheck = await job.CheckReadyAsync(CancellationToken.None);
         var secondCheck = await job.CheckReadyAsync(CancellationToken.None);
 
-        Assert.That(firstCheck, Is.False);
-        Assert.That(secondCheck, Is.True);
+        firstCheck.Should().BeFalse();
+        secondCheck.Should().BeTrue();
     }
 
     [Test]
@@ -265,11 +267,11 @@ public class RecoverFromSnapshotJobTests
             .GetField("_timedOut", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
             .SetValue(job, true);
 
-        var result = await job.AdvanceAsync(CancellationToken.None);
+        var (HasMore, Success, ErrorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(result.HasMore, Is.False);
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.ErrorMessage, Is.EqualTo("Recovery did not complete within timeout"));
+        HasMore.Should().BeFalse();
+        Success.Should().BeFalse();
+        ErrorMessage.Should().Be("Recovery did not complete within timeout");
     }
 
     [Test]
@@ -288,12 +290,12 @@ public class RecoverFromSnapshotJobTests
             snapshotUrl: "https://s3.example.com/bucket/snap1.snapshot",
             snapshotChecksum: "abc123");
 
-        var result = await job.AdvanceAsync(CancellationToken.None);
+        var (HasMore, Success, ErrorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(result.HasMore, Is.True);
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.ErrorMessage, Is.Null);
-        Assert.That(job.IsWaitingForReady, Is.True);
+        HasMore.Should().BeTrue();
+        Success.Should().BeTrue();
+        ErrorMessage.Should().BeNull();
+        job.IsWaitingForReady.Should().BeTrue();
     }
 
     private static async Task<(RecoverFromSnapshotJob Job, IClusterManager ClusterManager, SnapshotService SnapshotService)> CreateStartedJobAsync(
@@ -322,10 +324,12 @@ public class RecoverFromSnapshotJobTests
             "snap1",
             "source-col");
 
-        var start = await job.AdvanceAsync(CancellationToken.None);
-        Assert.That(start.Success, Is.True);
-        Assert.That(start.HasMore, Is.True);
-        Assert.That(job.IsWaitingForReady, Is.True);
+        var (HasMore, Success, _) = await job.AdvanceAsync(CancellationToken.None);
+
+        Success.Should().BeTrue();
+        HasMore.Should().BeTrue();
+
+        job.IsWaitingForReady.Should().BeTrue();
 
         return (job, clusterManager, snapshotService);
     }

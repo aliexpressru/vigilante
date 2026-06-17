@@ -1,9 +1,7 @@
-using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.DependencyInjection;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using System.Text.RegularExpressions;
-using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.OpenApi;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -12,6 +10,8 @@ using Vigilante.Middleware;
 using Vigilante.Services;
 using Vigilante.Services.Interfaces;
 using Vigilante.Validators;
+using Vigilante.Services.Snapshots;
+using System.Globalization;
 
 namespace Vigilante;
 
@@ -25,7 +25,7 @@ public partial class Startup(IConfiguration configuration)
         services.AddDataProtection();
 
         // Kubernetes client - only available when running in cluster
-        services.AddSingleton<k8s.IKubernetes>(sp => 
+        services.AddSingleton<k8s.IKubernetes>(sp =>
         {
             try
             {
@@ -47,11 +47,11 @@ public partial class Startup(IConfiguration configuration)
 
         // Metrics service
         services.AddSingleton<IMeterService, MeterService>();
-        
+
         // Qdrant client setup
         services.AddSingleton<IQdrantNodesProvider, QdrantNodesProvider>();
         services.AddQdrantClientFactory();
-        
+
         // Core services
         services.AddSingleton<IJobRegistry, JobRegistry>();
         services.AddSingleton<ISnapshotAutomationStatus, SnapshotAutomationStatus>();
@@ -61,14 +61,14 @@ public partial class Startup(IConfiguration configuration)
         services.AddSingleton<SnapshotOrphanedState>();
         services.AddSingleton<IClusterManager, ClusterManager>();
         services.AddSingleton<ILogReader, LogReader>();
-        
+
         // Test data provider for local development
         services.AddSingleton<TestDataProvider>();
-        
+
         // S3 services
         services.AddSingleton<IS3ConfigurationProvider, S3ConfigurationProvider>();
         services.AddSingleton<IS3SnapshotService, S3SnapshotService>();
-        
+
         services.AddHostedService<QdrantMonitorService>();
 
         // OpenTelemetry with Prometheus exporter
@@ -133,7 +133,8 @@ public partial class Startup(IConfiguration configuration)
         }
         else
         {
-            app.UseExceptionHandler(options => {
+            app.UseExceptionHandler(options =>
+            {
                 options.Run(async context =>
                 {
                     context.Response.StatusCode = StatusCodes.Status500InternalServerError;
@@ -217,10 +218,10 @@ public partial class Startup(IConfiguration configuration)
                 await next();
             }
         });
-        
+
         // Static files for dashboard - order is important!
         app.UseDefaultFiles(); // This must come before UseStaticFiles
-        
+
         // Configure static files with cache control
         var staticFileOptions = new StaticFileOptions
         {
@@ -241,9 +242,9 @@ public partial class Startup(IConfiguration configuration)
             }
         };
         app.UseStaticFiles(staticFileOptions);
-        
+
         app.UseRouting();
-        
+
         // Simple CORS policy for all environments
         app.UseCors(policy => policy
             .AllowAnyOrigin()
@@ -260,9 +261,9 @@ public partial class Startup(IConfiguration configuration)
 
         // Graceful shutdown logging
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
-        lifetime.ApplicationStopping.Register(() => 
+        lifetime.ApplicationStopping.Register(() =>
             app.Logger.LogInformation("Vigilante is shutting down gracefully..."));
-        lifetime.ApplicationStopped.Register(() => 
+        lifetime.ApplicationStopped.Register(() =>
             app.Logger.LogInformation("Vigilante has stopped. Cluster is no longer monitored."));
     }
 
@@ -289,10 +290,12 @@ public partial class Startup(IConfiguration configuration)
         {
             var p = Path.Combine(webRoot, name);
             if (File.Exists(p))
+            {
                 xor ^= File.GetLastWriteTimeUtc(p).Ticks;
+            }
         }
 
-        return xor == 0 ? "0" : (xor & 0xFFFFFFFFFFFFL).ToString("x", System.Globalization.CultureInfo.InvariantCulture);
+        return xor == 0 ? "0" : (xor & 0xFFFFFFFFFFFFL).ToString("x", CultureInfo.InvariantCulture);
     }
 
     [GeneratedRegex(@"href\s*=\s*[""']styles\.css(\?[^""']*)?[""']", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]

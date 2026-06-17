@@ -1,12 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 using Vigilante.Constants;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
+using Vigilante.Models.Snapshots;
+using Vigilante.Services.Jobs.Snapshots;
 
 namespace Aer.Vigilante.Tests.Services;
 
@@ -32,15 +33,15 @@ public class PendingSnapshotCreationJobTests
         (_serviceProvider as IDisposable)?.Dispose();
     }
 
-    private static IReadOnlyList<NodeInfo> NodeList(params string[] urls) =>
-        urls.Select(url => new NodeInfo { Url = url }).ToList();
+    private static List<NodeInfo> NodeList(params string[] urls) =>
+        [.. urls.Select(url => new NodeInfo { Url = url })];
 
     private static SnapshotInfo Snapshot(string collectionName, string nodeUrl, DateTime createdAt, SnapshotSource source = SnapshotSource.QdrantApi) =>
         new()
         {
             PodName = "pod-1",
             NodeUrl = nodeUrl,
-            PeerId = "peer-1",
+            PeerId = 1,
             CollectionName = collectionName,
             SnapshotName = "snap-1",
             SizeBytes = 0,
@@ -58,7 +59,7 @@ public class PendingSnapshotCreationJobTests
         {
             PodName = S3Constants.StorageIdentifier,
             NodeUrl = S3Constants.StorageIdentifier,
-            PeerId = S3Constants.StorageIdentifier,
+            PeerId = 1,
             CollectionName = collectionName,
             SnapshotName = snapshotName,
             SizeBytes = 0,
@@ -74,7 +75,7 @@ public class PendingSnapshotCreationJobTests
         DateTime? requestedAtUtc = null,
         IReadOnlySet<string>? baselineSnapshotKeys = null,
         int? retainLastNAfterVisible = null,
-        IReadOnlySet<string>? retentionClusterPeerIds = null,
+        IReadOnlySet<ulong>? retentionClusterPeerIds = null,
         TimeSpan? timeout = null)
     {
         return new PendingSnapshotCreationJob(
@@ -93,14 +94,14 @@ public class PendingSnapshotCreationJobTests
     {
         var job = CreateJob("my-collection");
 
-        Assert.That(job.Key, Is.EqualTo(PendingSnapshotCreationJob.KeyPrefix + "my-collection"));
+        job.Key.Should().Be(PendingSnapshotCreationJob.KeyPrefix + "my-collection");
     }
 
     [Test]
     public void IsWaitingForReady_ReturnsFalse()
     {
         var job = CreateJob("c");
-        Assert.That(job.IsWaitingForReady, Is.False);
+        job.IsWaitingForReady.Should().BeFalse();
     }
 
     [Test]
@@ -111,9 +112,9 @@ public class PendingSnapshotCreationJobTests
 
         var metadata = job.GetMetadata();
 
-        Assert.That(metadata, Is.Not.Null);
-        Assert.That(metadata![JobMetadataKeys.CurrentAction], Is.EqualTo("Waiting for snapshot: my-collection"));
-        Assert.That(metadata[JobMetadataKeys.StartedAtUtc], Is.EqualTo(requestedAt));
+        metadata.Should().NotBeNull();
+        metadata![JobMetadataKeys.CurrentAction].Should().Be("Waiting for snapshot: my-collection");
+        metadata[JobMetadataKeys.StartedAtUtc].Should().Be(requestedAt);
     }
 
     [Test]
@@ -128,14 +129,14 @@ public class PendingSnapshotCreationJobTests
             Snapshot("col", "http://node1:6333", requestedAt.AddSeconds(1))
         };
         _snapshotService
-            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(hasMore, Is.False);
-        Assert.That(success, Is.True);
-        Assert.That(errorMessage, Is.Null);
+        hasMore.Should().BeFalse();
+        success.Should().BeTrue();
+        errorMessage.Should().BeNull();
     }
 
     [Test]
@@ -150,14 +151,14 @@ public class PendingSnapshotCreationJobTests
             Snapshot("col", "http://node1:6333", requestedAt.AddSeconds(1))
         };
         _snapshotService
-            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(hasMore, Is.True);
-        Assert.That(success, Is.True);
-        Assert.That(errorMessage, Is.Null);
+        hasMore.Should().BeTrue();
+        success.Should().BeTrue();
+        errorMessage.Should().BeNull();
     }
 
     [Test]
@@ -168,11 +169,11 @@ public class PendingSnapshotCreationJobTests
 
         var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(hasMore, Is.False);
-        Assert.That(success, Is.False);
-        Assert.That(errorMessage, Does.Contain("Snapshot did not appear within"));
+        hasMore.Should().BeFalse();
+        success.Should().BeFalse();
+        errorMessage.Should().Contain("Snapshot did not appear within");
         await _snapshotService.DidNotReceive()
-            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
+            .GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>());
     }
 
     [Test]
@@ -181,14 +182,14 @@ public class PendingSnapshotCreationJobTests
         var requestedAt = DateTime.UtcNow.AddSeconds(-35);
         var job = CreateJob("col", requestedAtUtc: requestedAt, timeout: TimeSpan.FromSeconds(60));
         _snapshotService
-            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(new List<SnapshotInfo>());
+            .GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns([]);
 
         var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(hasMore, Is.True);
-        Assert.That(success, Is.True);
-        Assert.That(errorMessage, Is.Null);
+        hasMore.Should().BeTrue();
+        success.Should().BeTrue();
+        errorMessage.Should().BeNull();
     }
 
     [Test]
@@ -196,14 +197,14 @@ public class PendingSnapshotCreationJobTests
     {
         var job = CreateJob("col");
         _snapshotService
-            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
-            .Returns(Task.FromException<IReadOnlyList<SnapshotInfo>>(new InvalidOperationException("Node unavailable")));
+            .GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns(Task.FromException<IReadOnlyCollection<SnapshotInfo>>(new InvalidOperationException("Node unavailable")));
 
         var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(hasMore, Is.False);
-        Assert.That(success, Is.False);
-        Assert.That(errorMessage, Is.EqualTo("Node unavailable"));
+        hasMore.Should().BeFalse();
+        success.Should().BeFalse();
+        errorMessage.Should().Be("Node unavailable");
     }
 
     [Test]
@@ -219,14 +220,14 @@ public class PendingSnapshotCreationJobTests
             Snapshot("col", "http://node1:6333", requestedAt.AddSeconds(-20))
         };
         _snapshotService
-            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(hasMore, Is.True);
-        Assert.That(success, Is.True);
-        Assert.That(errorMessage, Is.Null);
+        hasMore.Should().BeTrue();
+        success.Should().BeTrue();
+        errorMessage.Should().BeNull();
     }
 
     [Test]
@@ -243,14 +244,14 @@ public class PendingSnapshotCreationJobTests
             S3Snapshot("col", requestedAt.AddSeconds(3), "col-peer3-3.snapshot", requestedAt.AddSeconds(3))
         };
         _snapshotService
-            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(hasMore, Is.False);
-        Assert.That(success, Is.True);
-        Assert.That(errorMessage, Is.Null);
+        hasMore.Should().BeFalse();
+        success.Should().BeTrue();
+        errorMessage.Should().BeNull();
     }
 
     [Test]
@@ -266,14 +267,14 @@ public class PendingSnapshotCreationJobTests
             S3Snapshot("col", requestedAt.AddSeconds(2), "col-peer2-2.snapshot")
         };
         _snapshotService
-            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(hasMore, Is.True);
-        Assert.That(success, Is.True);
-        Assert.That(errorMessage, Is.Null);
+        hasMore.Should().BeTrue();
+        success.Should().BeTrue();
+        errorMessage.Should().BeNull();
     }
 
     [Test]
@@ -292,13 +293,13 @@ public class PendingSnapshotCreationJobTests
             S3Snapshot("col", oldNameTime, "col-333-2026-03-18-10-00-00.snapshot", uploadTime)
         };
         _snapshotService
-            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var (hasMore, success, _) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(hasMore, Is.False);
-        Assert.That(success, Is.True);
+        hasMore.Should().BeFalse();
+        success.Should().BeTrue();
     }
 
     [Test]
@@ -325,13 +326,13 @@ public class PendingSnapshotCreationJobTests
             S3Snapshot("col", requestedAt.AddHours(-5), "col-p3-new.snapshot", uploadAfter)
         };
         _snapshotService
-            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var (hasMore, success, _) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(hasMore, Is.False);
-        Assert.That(success, Is.True);
+        hasMore.Should().BeFalse();
+        success.Should().BeTrue();
     }
 
     [Test]
@@ -339,7 +340,7 @@ public class PendingSnapshotCreationJobTests
     {
         var requestedAt = DateTime.UtcNow.AddSeconds(-10);
         var nodes = NodeList("http://node1:6333");
-        var peerIds = new HashSet<string> { "p1" };
+        var peerIds = new HashSet<ulong> { 1 };
         var job = CreateJob(
             "col",
             nodes,
@@ -353,13 +354,14 @@ public class PendingSnapshotCreationJobTests
             Snapshot("col", "http://node1:6333", requestedAt.AddSeconds(1))
         };
         _snapshotService
-            .GetSnapshotsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(snapshots);
 
         var (hasMore, success, errorMessage) = await job.AdvanceAsync(CancellationToken.None);
 
-        Assert.That(hasMore, Is.False);
-        Assert.That(success, Is.True);
-        await _snapshotService.Received(1).EnforceRetentionAsync("col", 3, peerIds, Arg.Any<CancellationToken>());
+        hasMore.Should().BeFalse();
+        success.Should().BeTrue();
+        errorMessage.Should().BeNull();
+        await _snapshotService.Received(1).EnforceRetentionAsync("col", 3, Arg.Any<CancellationToken>(), peerIds);
     }
 }

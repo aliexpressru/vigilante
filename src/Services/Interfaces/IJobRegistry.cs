@@ -52,5 +52,5 @@ public interface IJobRegistry
     /// Call from monitor tick and on frontend refresh so jobs like PendingSnapshotCreationJob progress without waiting for the full monitor interval.
     /// </summary>
     /// <param name="excludeJobKeys">Keys not to advance (e.g. snapshot-automation on GET jobs/status so the request does not block until the run finishes and the UI can show Running).</param>
-    Task ProcessPendingJobsAsync(CancellationToken cancellationToken = default, IReadOnlySet<string>? excludeJobKeys = null);
+    Task ProcessPendingJobsAsync(CancellationToken cancellationToken, IReadOnlySet<string>? excludeJobKeys = null);
 }

@@ -1,8 +1,7 @@
 using System.Collections.Concurrent;
-using Microsoft.Extensions.Logging;
 using Vigilante.Models;
 using Vigilante.Services.Interfaces;
-using Vigilante.Services.Jobs;
+using Vigilante.Services.Jobs.Snapshots;
 
 namespace Vigilante.Services;
 
@@ -21,6 +20,13 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
     /// </summary>
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _jobExecutionGates = new();
 
+    private readonly ConcurrentDictionary<string, (string Message, DateTime RecordedAt)> _jobErrors = new();
+
+    /// <summary>
+    /// How long to keep and return failed job errors after the job was removed (so the frontend can show them).
+    /// </summary>
+    private static readonly TimeSpan _failedJobErrorTtl = TimeSpan.FromMinutes(5);
+
     public bool TryAddJob(IJob job, CancellationTokenSource cts)
     {
         return _jobs.TryAdd(job.Key, (job, cts));
@@ -32,9 +38,14 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
         foreach (var key in _jobs.Keys)
         {
             if (key.Length <= prefix.Length || !key.StartsWith(prefix, StringComparison.Ordinal))
+            {
                 continue;
+            }
+
             if (string.Equals(key[prefix.Length..], collectionName, StringComparison.OrdinalIgnoreCase))
+            {
                 return true;
+            }
         }
 
         return false;
@@ -42,13 +53,16 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
 
     public IReadOnlyList<PendingJob> GetPendingJobs()
     {
-        return _jobs.Select(kv => new PendingJob(kv.Value.Job, kv.Value.Cts)).ToList();
+        return [.. _jobs.Select(kv => new PendingJob(kv.Value.Job, kv.Value.Cts))];
     }
 
     public async Task RemoveJobAsync(string key)
     {
         if (!_jobs.TryRemove(key, out var entry))
+        {
             return;
+        }
+
         try
         {
             entry.Cts.Cancel();
@@ -81,8 +95,6 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
         return _jobErrors.TryRemove(key, out _);
     }
 
-    private readonly ConcurrentDictionary<string, (string Message, DateTime RecordedAt)> _jobErrors = new();
-
     public void RecordJobFailure(string key, string message)
     {
         _jobErrors[key] = (message, DateTime.UtcNow);
@@ -92,22 +104,25 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
     {
         var result = new List<(string Key, string Message)>();
         var expired = new List<string>();
+
         foreach (var (key, (message, recordedAt)) in _jobErrors)
         {
             if (now - recordedAt <= ttl)
+            {
                 result.Add((key, message));
+            }
             else
+            {
                 expired.Add(key);
+            }
         }
         foreach (var key in expired)
+        {
             _jobErrors.TryRemove(key, out _);
+        }
+
         return result;
     }
-
-    /// <summary>
-    /// How long to keep and return failed job errors after the job was removed (so the frontend can show them).
-    /// </summary>
-    private static readonly TimeSpan FailedJobErrorTtl = TimeSpan.FromMinutes(5);
 
     public IReadOnlyList<JobInfoDto> GetJobInfos()
     {
@@ -115,12 +130,13 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
         var list = new List<JobInfoDto>();
         var jobKeys = new HashSet<string>();
 
-        foreach (var (key, (job, cts)) in _jobs)
+        foreach (var (key, (job, _)) in _jobs)
         {
             jobKeys.Add(key);
             var error = _jobErrors.TryGetValue(key, out var err) ? err.Message : null;
             var errorRecordedAt = _jobErrors.TryGetValue(key, out var err2) ? err2.RecordedAt : (DateTime?)null;
             var metadata = job.GetMetadata();
+
             list.Add(new JobInfoDto(key, error, errorRecordedAt, metadata));
         }
 
@@ -129,8 +145,11 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
         foreach (var (key, (message, recordedAt)) in _jobErrors)
         {
             if (jobKeys.Contains(key))
+            {
                 continue;
-            if (now - recordedAt > FailedJobErrorTtl)
+            }
+
+            if (now - recordedAt > _failedJobErrorTtl)
             {
                 toPrune.Add(key);
                 continue;
@@ -138,18 +157,29 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
             list.Add(new JobInfoDto(key, message, recordedAt, null));
         }
         foreach (var key in toPrune)
+        {
             _jobErrors.TryRemove(key, out _);
+        }
 
         return list;
     }
 
-    public async Task ProcessPendingJobsAsync(CancellationToken cancellationToken = default, IReadOnlySet<string>? excludeJobKeys = null)
+    public async Task ProcessPendingJobsAsync(
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<string>? excludeJobKeys = null
+    )
     {
         var jobs = GetPendingJobs();
+
         if (excludeJobKeys is { Count: > 0 })
-            jobs = jobs.Where(p => !excludeJobKeys.Contains(p.Job.Key)).ToList();
+        {
+            jobs = [.. jobs.Where(p => !excludeJobKeys.Contains(p.Job.Key))];
+        }
+
         if (jobs.Count == 0)
+        {
             return;
+        }
 
         var tasks = jobs.Select(pending => ProcessOneJobAsync(pending, cancellationToken));
         await Task.WhenAll(tasks);
@@ -159,14 +189,20 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
     {
         var key = pending.Job.Key;
         var gate = _jobExecutionGates.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        await gate.WaitAsync(cancellationToken);
+
         try
         {
             if (cancellationToken.IsCancellationRequested)
+            {
                 return;
+            }
 
             if (!_jobs.TryGetValue(key, out var entry))
+            {
                 return;
+            }
 
             var job = entry.Job;
             var cts = entry.Cts;
@@ -179,38 +215,45 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
 
             if (job.IsWaitingForReady)
             {
-                var ready = await job.CheckReadyAsync(cts.Token).ConfigureAwait(false);
+                var ready = await job.CheckReadyAsync(cts.Token);
                 if (ready == true)
+                {
                     job.OnReady();
+                }
             }
             else
             {
-                var (hasMore, success, error) = await job.AdvanceAsync(cts.Token).ConfigureAwait(false);
+                var (hasMore, success, error) = await job.AdvanceAsync(cts.Token);
                 if (!hasMore)
                 {
                     if (!success)
+                    {
                         RecordJobFailure(key, error ?? "Unknown");
-                    await RemoveJobAsync(key).ConfigureAwait(false);
+                    }
+
+                    await RemoveJobAsync(key);
                     if (success)
+                    {
                         logger.LogInformation("Job completed for key {Key}", key);
+                    }
                 }
                 else if (!success)
                 {
                     RecordJobFailure(key, error ?? "Unknown");
-                    await RemoveJobAsync(key).ConfigureAwait(false);
+                    await RemoveJobAsync(key);
                 }
             }
         }
         catch (OperationCanceledException)
         {
             logger.LogInformation("Job cancelled for key {Key}", key);
-            await RemoveJobAsync(key).ConfigureAwait(false);
+            await RemoveJobAsync(key);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Job failed for key {Key}", key);
             RecordJobFailure(key, ex.Message);
-            await RemoveJobAsync(key).ConfigureAwait(false);
+            await RemoveJobAsync(key);
         }
         finally
         {
