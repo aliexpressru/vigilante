@@ -3096,6 +3096,24 @@ class VigilanteDashboard {
             snapshotCollectionMenuContainer.appendChild(snapshotCollectionDropdown);
             
             // Add click handler to the menu button
+            const positionCollectionDropdown = (btn, dropdown) => {
+                const rect = btn.getBoundingClientRect();
+                const estimatedHeight = 100;
+                const opensAbove = (window.innerHeight - rect.bottom) < estimatedHeight && rect.top > estimatedHeight;
+                dropdown.style.position = 'fixed';
+                dropdown.style.left = 'auto';
+                dropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                if (opensAbove) {
+                    dropdown.style.top = 'auto';
+                    dropdown.style.bottom = (window.innerHeight - rect.top) + 'px';
+                    dropdown.classList.add('opens-above');
+                } else {
+                    dropdown.style.top = rect.bottom + 'px';
+                    dropdown.style.bottom = 'auto';
+                    dropdown.classList.remove('opens-above');
+                }
+            };
+
             snapshotCollectionMenuButton.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const wasOpen = snapshotCollectionMenuButton.classList.contains('active');
@@ -3119,14 +3137,10 @@ class VigilanteDashboard {
                         }
                     }
                 });
-                
+
                 if (!wasOpen) {
                     snapshotCollectionMenuButton.classList.add('active');
-                    const rect = snapshotCollectionMenuButton.getBoundingClientRect();
-                    snapshotCollectionDropdown.style.position = 'fixed';
-                    snapshotCollectionDropdown.style.top = rect.bottom + 'px';
-                    snapshotCollectionDropdown.style.right = (window.innerWidth - rect.right) + 'px';
-                    snapshotCollectionDropdown.style.left = 'auto';
+                    positionCollectionDropdown(snapshotCollectionMenuButton, snapshotCollectionDropdown);
                     snapshotCollectionDropdown.classList.add('show');
                     this.openSnapshotCollectionMenus.add(collection.collectionName);
                 } else {
@@ -3146,13 +3160,7 @@ class VigilanteDashboard {
             // Restore menu state if it was open before refresh
             if (this.openSnapshotCollectionMenus.has(collection.collectionName)) {
                 snapshotCollectionMenuButton.classList.add('active');
-                requestAnimationFrame(() => {
-                    const rect = snapshotCollectionMenuButton.getBoundingClientRect();
-                    snapshotCollectionDropdown.style.position = 'fixed';
-                    snapshotCollectionDropdown.style.top = rect.bottom + 'px';
-                    snapshotCollectionDropdown.style.right = (window.innerWidth - rect.right) + 'px';
-                    snapshotCollectionDropdown.style.left = 'auto';
-                });
+                requestAnimationFrame(() => positionCollectionDropdown(snapshotCollectionMenuButton, snapshotCollectionDropdown));
                 snapshotCollectionDropdown.classList.add('show');
             }
             

@@ -6455,6 +6455,10 @@ html[data-theme="dark"] #leaderNode {
     overflow: hidden;
 }
 
+.snapshot-collection-dropdown.opens-above {
+    transform: translateY(10px);
+}
+
 .snapshot-collection-dropdown.show {
     opacity: 1;
     visibility: visible;
