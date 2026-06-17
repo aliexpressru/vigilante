@@ -117,7 +117,7 @@ public sealed class PendingSnapshotCreationJob : IJob
                 logger.LogInformation(
                     "Snapshot creation job completed for collection {CollectionName}: {Count} new snapshot(s) after baseline (S3), expected {RequestedCount} node(s)",
                     _collectionName, qualifiedNew.Count, _requestedNodes.Count);
-                return await CompleteSuccessAsync(snapshotService, logger, cancellationToken).ConfigureAwait(false);
+                return await CompleteSuccessAsync(snapshotService, logger, cancellationToken);
             }
 
             return (true, true, null);
@@ -133,7 +133,7 @@ public sealed class PendingSnapshotCreationJob : IJob
             logger.LogInformation(
                 "Snapshot creation job completed for collection {CollectionName}: new snapshots on all {Count} nodes",
                 _collectionName, _requestedNodes.Count);
-            return await CompleteSuccessAsync(snapshotService, logger, cancellationToken).ConfigureAwait(false);
+            return await CompleteSuccessAsync(snapshotService, logger, cancellationToken);
         }
 
         return (true, true, null);
@@ -170,8 +170,8 @@ public sealed class PendingSnapshotCreationJob : IJob
                         _collectionName,
                         _retainLastNAfterVisible.Value,
                         cancellationToken,
-                        _retentionClusterPeerIds)
-                    .ConfigureAwait(false);
+                        _retentionClusterPeerIds);
+
                 logger.LogInformation(
                     "Retention (last {N}) applied for {Collection} after snapshots became visible",
                     _retainLastNAfterVisible, _collectionName);

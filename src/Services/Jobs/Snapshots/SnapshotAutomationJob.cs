@@ -77,11 +77,10 @@ public sealed class SnapshotAutomationJob : IJob
         try
         {
             SetCurrentAction(Actions.LoadingCollections);
-            var collections = await clusterManager
-                .GetCollectionsInfoAsync(clearCache: true, cancellationToken)
-                .ConfigureAwait(false);
 
-            await PruneStaleCollectionOverridesIfNeededAsync(automationStatus, logger, cancellationToken).ConfigureAwait(false);
+            var collections = await clusterManager.GetCollectionsInfoAsync(clearCache: true, cancellationToken);
+
+            await PruneStaleCollectionOverridesIfNeededAsync(automationStatus, logger, cancellationToken);
 
             SetCurrentAction(Actions.LoadingSnapshots);
 
@@ -111,10 +110,20 @@ public sealed class SnapshotAutomationJob : IJob
                         p.Job.Key.Length > snapshotCreatePrefix.Length
                         && p.Job.Key.StartsWith(snapshotCreatePrefix, StringComparison.Ordinal)
                     );
+
                 if (hasPendingSnapshotCreate)
                 {
                     logger.LogInformation(
                         "Skipping auto-snapshot for {CollectionName}: another collection snapshot create is already pending",
+                        collectionName
+                    );
+                    continue;
+                }
+
+                if (jobRegistry.HasPendingMultiSnapshotRecoveryForCollection(collectionName))
+                {
+                    logger.LogInformation(
+                        "Skipping auto-snapshot for {CollectionName}: multi-snapshot recovery is in progress",
                         collectionName
                     );
                     continue;
@@ -131,11 +140,13 @@ public sealed class SnapshotAutomationJob : IJob
                 {
                     var statusSummary = string.Join(", ", infos.Select(i => i.Status?.ToString() ?? "null").Distinct());
                     var minHnsw = infos.Min(i => i.HnswM ?? 0UL);
+
                     var hasActiveTransfers = infos.Any(c =>
                         c.Warnings.Any(w =>
                             w.Contains(CollectionWarningConstants.ActiveTransfersWarning, StringComparison.OrdinalIgnoreCase)
                         )
                     );
+
                     var hasRunningOptimizations = infos.Any(c =>
                         c.RunningOptimizations.Count > 0
                         || c.Warnings.Any(w =>
@@ -158,6 +169,7 @@ public sealed class SnapshotAutomationJob : IJob
                     if (isReadyForSnapshot)
                     {
                         var existingSnaps = snapshotsByCollection.GetValueOrDefault(collectionName) ?? [];
+
                         var missingNodeUrls = healthyNodeUrls
                             .Where(url =>
                             {
@@ -182,6 +194,7 @@ public sealed class SnapshotAutomationJob : IJob
                                 missingNodeUrls.Count,
                                 healthyNodeUrls.Count
                             );
+
                             startedSnapshotForAnyCollection = await TakeAutoSnapshotAsync(
                                 snapshotService,
                                 clusterManager,
@@ -199,6 +212,7 @@ public sealed class SnapshotAutomationJob : IJob
                 {
                     var now = DateTime.UtcNow;
                     var existingSnaps = snapshotsByCollection.GetValueOrDefault(collectionName) ?? [];
+
                     var dueNodeUrls = healthyNodeUrls
                         .Where(url =>
                         {
@@ -229,6 +243,7 @@ public sealed class SnapshotAutomationJob : IJob
                             healthyNodeUrls.Count,
                             schedule.IntervalMinutes.Value
                         );
+
                         startedSnapshotForAnyCollection = await TakeAutoSnapshotAsync(
                             snapshotService,
                             clusterManager,
@@ -266,6 +281,7 @@ public sealed class SnapshotAutomationJob : IJob
 
             SetCurrentAction(null);
             automationStatus.EndRun(true);
+
             return (false, true, null);
         }
         catch (Exception)
@@ -338,6 +354,7 @@ public sealed class SnapshotAutomationJob : IJob
 
             var toDelete = snapshotsByCollection.GetValueOrDefault(name) ?? [];
             SetCurrentAction(Actions.DeletingOrphanedSnapshotsPrefix + name);
+
             try
             {
                 foreach (var snapshot in toDelete)
@@ -393,26 +410,28 @@ public sealed class SnapshotAutomationJob : IJob
 
             SetCurrentAction(Actions.CreatingSnapshot(collectionName, nodeUrls.Count));
 
-            var batch = await snapshotService
-                .CreateCollectionSnapshotAsync(
-                    collectionName,
-                    nodeUrls,
-                    token,
-                    waitForResult: false,
-                    retainLastNAfterVisible: schedule.RetainLastN,
-                    retentionClusterPeerIds: retentionPeerIds
-                )
-                .ConfigureAwait(false);
+            var batch = await snapshotService.CreateCollectionSnapshotAsync(
+                collectionName,
+                nodeUrls,
+                token,
+                waitForResult: false,
+                retainLastNAfterVisible: schedule.RetainLastN,
+                retentionClusterPeerIds: retentionPeerIds
+            );
+
             if (batch.SkippedDuplicatePending)
             {
                 logger.LogInformation(
                     "Auto-snapshot skipped for {CollectionName}: snapshot create already pending or in flight",
                     collectionName
                 );
+
                 automationStatus.AppendRunNote(
                     $"Snapshot «{collectionName}»: skipped — previous snapshot create still in progress"
                 );
+
                 SetCurrentAction($"Snapshot «{collectionName}»: skipped (create already in progress)");
+
                 return false;
             }
 
@@ -493,9 +512,11 @@ public sealed class SnapshotAutomationJob : IJob
         {
             using var cleanupCts = CancellationTokenSource.CreateLinkedTokenSource(token);
             cleanupCts.CancelAfter(_multipartCleanupTimeout);
-            cleanupResult = await s3SnapshotService
-                .CleanupIncompleteMultipartUploadsAsync(AbortMultipartUploadsOlderThanMinutes, ns, cleanupCts.Token)
-                .ConfigureAwait(false);
+            cleanupResult = await s3SnapshotService.CleanupIncompleteMultipartUploadsAsync(
+                AbortMultipartUploadsOlderThanMinutes,
+                ns,
+                cleanupCts.Token
+            );
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
         {
@@ -503,9 +524,11 @@ public sealed class SnapshotAutomationJob : IJob
                 "Multipart cleanup exceeded timeout of {TimeoutSeconds}s and was skipped for this run",
                 _multipartCleanupTimeout.TotalSeconds
             );
+
             automationStatus.AppendRunNote(
                 $"Multipart uploads: skipped (timeout after {(int)_multipartCleanupTimeout.TotalSeconds}s)"
             );
+
             return;
         }
 
@@ -561,9 +584,9 @@ public sealed class SnapshotAutomationJob : IJob
         }
 
         var collectionService = _serviceProvider.GetRequiredService<ICollectionService>();
+
         var (rawList, listingHealthy, _) = await collectionService
-            .GetCollectionsFromQdrantAsync(nodesTuple, cancellationToken, clearCache: false)
-            .ConfigureAwait(false);
+            .GetCollectionsFromQdrantAsync(nodesTuple, cancellationToken, clearCache: false);
 
         if (!listingHealthy)
         {
@@ -578,7 +601,7 @@ public sealed class SnapshotAutomationJob : IJob
         }
 
         var dynamicConfigService = _serviceProvider.GetRequiredService<IDynamicConfigService>();
-        var fullConfig = await dynamicConfigService.GetConfigAsync(cancellationToken).ConfigureAwait(false);
+        var fullConfig = await dynamicConfigService.GetConfigAsync(cancellationToken);
         var snap = fullConfig.Snapshot;
         if (snap.CollectionOverrides is null)
         {
@@ -595,7 +618,7 @@ public sealed class SnapshotAutomationJob : IJob
             snap.CollectionOverrides = null;
         }
 
-        await dynamicConfigService.UpdateConfigAsync(fullConfig, cancellationToken).ConfigureAwait(false);
+        await dynamicConfigService.UpdateConfigAsync(fullConfig, cancellationToken);
         automationStatus.AppendRunNote($"Removed overrides (collections gone): {string.Join(", ", stale)}");
         logger.LogInformation(
             "Removed snapshot collection overrides for collections no longer in cluster: {Collections}",

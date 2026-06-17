@@ -155,7 +155,8 @@ public partial class SnapshotService(
                     break;
                 }
 
-                case SnapshotSource.KubernetesStorage or SnapshotSource.QdrantApi
+                case SnapshotSource.KubernetesStorage
+                or SnapshotSource.QdrantApi
                     when !string.IsNullOrWhiteSpace(sourceCollectionName)
                         && !string.Equals(sourceCollectionName, targetCollectionName, StringComparison.Ordinal):
 
@@ -375,11 +376,11 @@ public partial class SnapshotService(
             );
 
             var baselineSnapshotKeys = await BuildBaselineSnapshotKeysForCollectionAsync(
-                    collectionName,
-                    nodeUrlsList,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+                collectionName,
+                nodeUrlsList,
+                cancellationToken
+            );
+
             var requestedAt = DateTime.UtcNow;
 
             var results = new Dictionary<string, string?>();
@@ -455,11 +456,13 @@ public partial class SnapshotService(
             // Follow-up job: UI + optional retention after snapshots become visible (important when waitForResult is false).
             if (successCount > 0)
             {
-                var dynamicConfig = await dynamicConfigService.GetConfigAsync(cancellationToken).ConfigureAwait(false);
+                var dynamicConfig = await dynamicConfigService.GetConfigAsync(cancellationToken);
+
                 var timeoutSeconds = Math.Max(1, dynamicConfig.Snapshot.PendingCreateTimeoutSeconds);
                 var pendingTimeout = TimeSpan.FromSeconds(timeoutSeconds);
                 var succeededNodeUrls = results.Where(kv => kv.Value != null).Select(kv => kv.Key).ToList();
                 var requestedNodes = succeededNodeUrls.Select(url => new NodeInfo { Url = url }).ToList();
+
                 var job = new PendingSnapshotCreationJob(
                     serviceProvider,
                     collectionName,
@@ -470,6 +473,7 @@ public partial class SnapshotService(
                     retentionClusterPeerIds,
                     timeout: pendingTimeout
                 );
+
                 var cts = new CancellationTokenSource();
                 if (!jobRegistry.TryAddJob(job, cts))
                 {
@@ -1428,6 +1432,7 @@ public partial class SnapshotService(
                     node.Url,
                     collectionsResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage
                 );
+
                 return ([], null);
             }
 
@@ -1506,7 +1511,8 @@ public partial class SnapshotService(
         var nodes = nodeUrls.Select(u => new NodeInfo { Url = u }).ToList();
         try
         {
-            var list = await GetSnapshotsInfoAsync(cancellationToken, true, nodesToUse: nodes).ConfigureAwait(false);
+            var list = await GetSnapshotsInfoAsync(cancellationToken, true, nodesToUse: nodes);
+
             return list.Where(s => string.Equals(s.CollectionName, collectionName, StringComparison.OrdinalIgnoreCase))
                 .Select(PendingSnapshotCreationJob.BaselineKey)
                 .ToHashSet(StringComparer.Ordinal);

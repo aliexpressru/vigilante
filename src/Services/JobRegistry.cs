@@ -33,8 +33,13 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
     }
 
     public bool HasPendingSnapshotCreationForCollection(string collectionName)
+        => HasJobWithPrefixForCollection(PendingSnapshotCreationJob.KeyPrefix, collectionName);
+
+    public bool HasPendingMultiSnapshotRecoveryForCollection(string collectionName)
+        => HasJobWithPrefixForCollection(RecoverFromMultipleSnapshotsJob.JobKeyPrefix, collectionName);
+
+    private bool HasJobWithPrefixForCollection(string prefix, string collectionName)
     {
-        var prefix = PendingSnapshotCreationJob.KeyPrefix;
         foreach (var key in _jobs.Keys)
         {
             if (key.Length <= prefix.Length || !key.StartsWith(prefix, StringComparison.Ordinal))

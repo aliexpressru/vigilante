@@ -18,6 +18,11 @@ public interface IJobRegistry
     bool HasPendingSnapshotCreationForCollection(string collectionName);
 
     /// <summary>
+    /// Whether a pending multi-snapshot recovery job exists for this collection (case-insensitive).
+    /// </summary>
+    bool HasPendingMultiSnapshotRecoveryForCollection(string collectionName);
+
+    /// <summary>
     /// Returns all pending jobs (for monitor to process each tick).
     /// </summary>
     IReadOnlyList<PendingJob> GetPendingJobs();

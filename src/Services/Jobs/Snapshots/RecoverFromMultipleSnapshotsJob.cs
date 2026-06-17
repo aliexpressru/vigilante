@@ -30,7 +30,9 @@ internal sealed class RecoverFromMultipleSnapshotsJob : IJob
 
     private static readonly TimeSpan _initialReadyGracePeriod = TimeSpan.FromSeconds(20);
 
-    public string Key => $"snapshot-multi-recovery-{_targetCollectionName}";
+    internal const string JobKeyPrefix = "snapshot-multi-recovery-";
+
+    public string Key => $"{JobKeyPrefix}{_targetCollectionName}";
 
     public bool IsWaitingForReady { get; private set; }
 
