@@ -580,6 +580,42 @@ public class SnapshotAutomationJobTests
     }
 
     [Test]
+    public async Task AdvanceAsync_SnapshotRecoveryInProgress_SkipsAutoSnapshot_OnGreenOnce()
+    {
+        var config = ScheduleEnabled(intervalMinutes: null);
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(GreenHnswCollection("col1"));
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns([]);
+        _jobRegistry.HasPendingSnapshotRecoveryForCollection("col1").Returns(true);
+
+        var job = CreateJob(config: config);
+        await job.AdvanceAsync(CancellationToken.None);
+
+        await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
+            Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+            Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>());
+    }
+
+    [Test]
+    public async Task AdvanceAsync_SnapshotRecoveryInProgress_SkipsAutoSnapshot_IntervalBased()
+    {
+        var config = ScheduleEnabled(intervalMinutes: 60);
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(GreenHnswCollection("col1"));
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns([]);
+        _jobRegistry.HasPendingSnapshotRecoveryForCollection("col1").Returns(true);
+
+        var job = CreateJob(config: config);
+        await job.AdvanceAsync(CancellationToken.None);
+
+        await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
+            Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+            Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>());
+    }
+
+    [Test]
     public async Task AdvanceAsync_MultiSnapshotRecoveryForDifferentCollection_DoesNotBlockAutoSnapshot()
     {
         var config = ScheduleEnabled(intervalMinutes: null);

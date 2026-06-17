@@ -1767,6 +1767,28 @@ html[data-theme="dark"] .modal-dialog .form-select,
 html[data-theme="dark"] .modal-dialog .manage-aliases-list,
 html[data-theme="dark"] .modal-dialog .manage-aliases-item,
 html[data-theme="dark"] .modal-dialog .manage-aliases-rename-input,
+html[data-theme="dark"] .modal-dialog .multi-recover-snapshot-table-wrap {
+    border-color: #4b5563;
+}
+
+html[data-theme="dark"] .modal-dialog .multi-recover-snapshot-th {
+    background: #374151;
+    border-color: #4b5563;
+    color: #e5e7eb;
+}
+
+html[data-theme="dark"] .modal-dialog .multi-recover-snapshot-td {
+    border-color: #374151;
+}
+
+html[data-theme="dark"] .modal-dialog .multi-recover-snapshot-td--time {
+    color: #9ca3af;
+}
+
+html[data-theme="dark"] .modal-dialog .multi-recover-snapshot-row:hover .multi-recover-snapshot-td {
+    background: #374151;
+}
+
 html[data-theme="dark"] .modal-dialog .multi-recover-list {
     background: #1f2937;
     border-color: #4b5563;
@@ -4317,6 +4339,62 @@ html[data-theme="dark"] #leaderNode {
 
 .multi-recover-snapshot-list {
     max-height: 220px;
+}
+
+.multi-recover-snapshot-table-wrap {
+    margin: 4px 0 0;
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+}
+
+.multi-recover-snapshot-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.multi-recover-snapshot-th {
+    position: sticky;
+    top: 0;
+    background: #f5f5f5;
+    padding: 5px 10px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.8rem;
+    border-bottom: 1px solid #e0e0e0;
+    white-space: nowrap;
+    z-index: 1;
+}
+
+.multi-recover-snapshot-th--check {
+    width: 32px;
+}
+
+.multi-recover-snapshot-td {
+    padding: 5px 10px;
+    border-bottom: 1px solid #eee;
+    vertical-align: middle;
+}
+
+.multi-recover-snapshot-td--check {
+    width: 32px;
+    text-align: center;
+}
+
+.multi-recover-snapshot-td--time {
+    white-space: nowrap;
+    color: #666;
+    font-size: 0.8rem;
+}
+
+.multi-recover-snapshot-row:last-child .multi-recover-snapshot-td {
+    border-bottom: none;
+}
+
+.multi-recover-snapshot-row:hover .multi-recover-snapshot-td {
+    background: #f5f5f5;
 }
 
 .multi-recover-nodes-list {

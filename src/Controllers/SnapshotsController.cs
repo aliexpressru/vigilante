@@ -43,10 +43,11 @@ public class SnapshotsController(
                     SizeBytes = snapshot.SizeBytes,
                     PrettySize = snapshot.PrettySize,
                     PodNamespace = snapshot.PodNamespace,
-                    Source = snapshot.Source.ToString()
+                    Source = snapshot.Source.ToString(),
+                    CreatedAt = snapshot.CreatedAt
                 })
                 .OrderBy(x => x.CollectionName)
-                .ThenBy(x => x.SnapshotName)
+                .ThenByDescending(x => x.CreatedAt)
                 .ToList();
 
             // Group snapshots by collection name

@@ -93,6 +93,32 @@ public class JobRegistryTests
     }
 
     [Test]
+    public void HasPendingSnapshotRecoveryForCollection_MatchesRecoveryPrefixCaseInsensitive()
+    {
+        var job = CreateFakeJob(RecoverFromSnapshotJob.JobKeyPrefix + "MyCollection");
+        _registry.TryAddJob(job, new CancellationTokenSource());
+
+        _registry.HasPendingSnapshotRecoveryForCollection("mycollection").Should().BeTrue();
+        _registry.HasPendingSnapshotRecoveryForCollection("MyCollection").Should().BeTrue();
+        _registry.HasPendingSnapshotRecoveryForCollection("other").Should().BeFalse();
+    }
+
+    [Test]
+    public void HasPendingSnapshotRecoveryForCollection_WhenNoJobsRegistered_ReturnsFalse()
+    {
+        _registry.HasPendingSnapshotRecoveryForCollection("col1").Should().BeFalse();
+    }
+
+    [Test]
+    public void HasPendingSnapshotRecoveryForCollection_WhenOnlyMultiRecoveryJobExists_ReturnsFalse()
+    {
+        var job = CreateFakeJob(RecoverFromMultipleSnapshotsJob.JobKeyPrefix + "col1");
+        _registry.TryAddJob(job, new CancellationTokenSource());
+
+        _registry.HasPendingSnapshotRecoveryForCollection("col1").Should().BeFalse();
+    }
+
+    [Test]
     public void TryAddJob_DifferentKeys_AllAdded()
     {
         var job1 = CreateFakeJob("job1");

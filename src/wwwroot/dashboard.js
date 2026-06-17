@@ -938,26 +938,30 @@ class VigilanteDashboard {
         const modal = document.createElement('div');
         modal.className = 'modal-dialog modal-dialog--multi-recover';
 
-        const buildSnapshotItem = (snapshot, index) => {
+        const buildSnapshotRow = (snapshot, index) => {
             const sourceBadge = snapshot.source === 'S3Storage'
                 ? '<span class="multi-recover-source-badge multi-recover-source-badge--s3">S3</span>'
                 : snapshot.source === 'KubernetesStorage'
                     ? '<span class="multi-recover-source-badge multi-recover-source-badge--k8s">K8s</span>'
                     : '<span class="multi-recover-source-badge multi-recover-source-badge--api">API</span>';
-            const origin = snapshot.source === 'S3Storage'
-                ? 'S3'
-                : (snapshot.podName && snapshot.podName !== 'unknown' ? snapshot.podName : snapshot.nodeUrl);
+            const collectionPrefix = collection.collectionName + '-';
+            const displaySnapshotName = snapshot.snapshotName.startsWith(collectionPrefix)
+                ? snapshot.snapshotName.slice(collectionPrefix.length)
+                : snapshot.snapshotName;
+            const formattedTime = snapshot.createdAt
+                ? new Date(snapshot.createdAt).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
+                : '—';
             return `
-                <li class="multi-recover-list-item">
-                    <label class="multi-recover-item-label">
+                <tr class="multi-recover-snapshot-row">
+                    <td class="multi-recover-snapshot-td multi-recover-snapshot-td--check">
                         <input type="checkbox" class="multi-recover-snapshot-cb" data-index="${index}" />
-                        <span class="multi-recover-item-text">
-                            ${sourceBadge}
-                            <span class="multi-recover-item-name" title="${this.escapeHtml(snapshot.snapshotName)}">${this.escapeHtml(snapshot.snapshotName)}</span>
-                            <span class="multi-recover-item-origin">${this.escapeHtml(origin)}</span>
-                        </span>
-                    </label>
-                </li>`;
+                    </td>
+                    <td class="multi-recover-snapshot-td">
+                        ${sourceBadge}
+                        <span class="multi-recover-item-name" title="${this.escapeHtml(snapshot.snapshotName)}">${this.escapeHtml(displaySnapshotName)}</span>
+                    </td>
+                    <td class="multi-recover-snapshot-td multi-recover-snapshot-td--time">${formattedTime}</td>
+                </tr>`;
         };
 
         const buildNodeItem = (node, index) => {
@@ -985,6 +989,10 @@ class VigilanteDashboard {
             </div>
             <div class="modal-body">
                 <div class="form-group">
+                    <label>Source collection name:</label>
+                    <input type="text" class="form-input" value="${this.escapeHtml(collection.collectionName)}" readonly />
+                </div>
+                <div class="form-group">
                     <label for="multiRecoverCollectionName">Target collection name:</label>
                     <input type="text" id="multiRecoverCollectionName" class="form-input" value="${this.escapeHtml(collection.collectionName)}" required />
                 </div>
@@ -992,7 +1000,14 @@ class VigilanteDashboard {
                     <label>Select source snapshots (one per target node):</label>
                     ${snapshots.length === 0
                         ? '<p class="multi-recover-empty">No snapshots available for this collection.</p>'
-                        : `<ul class="multi-recover-list multi-recover-snapshot-list">${snapshots.map(buildSnapshotItem).join('')}</ul>`
+                        : `<div class="multi-recover-snapshot-table-wrap"><table class="multi-recover-snapshot-table">
+                            <thead><tr>
+                                <th class="multi-recover-snapshot-th multi-recover-snapshot-th--check"></th>
+                                <th class="multi-recover-snapshot-th">Snapshot</th>
+                                <th class="multi-recover-snapshot-th">Created</th>
+                            </tr></thead>
+                            <tbody>${snapshots.map(buildSnapshotRow).join('')}</tbody>
+                        </table></div>`
                     }
                 </div>
                 <div class="form-group">

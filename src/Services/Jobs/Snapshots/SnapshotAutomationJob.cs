@@ -129,6 +129,15 @@ public sealed class SnapshotAutomationJob : IJob
                     continue;
                 }
 
+                if (jobRegistry.HasPendingSnapshotRecoveryForCollection(collectionName))
+                {
+                    logger.LogInformation(
+                        "Skipping auto-snapshot for {CollectionName}: snapshot recovery is in progress",
+                        collectionName
+                    );
+                    continue;
+                }
+
                 var schedule = snapshotCfg.GetEffectiveSchedule(collectionName);
                 if (!schedule.Enabled)
                 {

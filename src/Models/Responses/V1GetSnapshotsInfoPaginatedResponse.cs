@@ -34,6 +34,11 @@ public class V1GetSnapshotsInfoPaginatedResponse
         /// Source where snapshot was retrieved from: "KubernetesStorage", "QdrantApi", or "S3Storage"
         /// </summary>
         public string Source { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Snapshot creation date parsed from the snapshot name. Null if the name does not match the expected format.
+        /// </summary>
+        public DateTime? CreatedAt { get; set; }
     }
 
     public class SnapshotCollectionGroup

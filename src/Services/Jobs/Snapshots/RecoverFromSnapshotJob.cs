@@ -28,7 +28,9 @@ public sealed class RecoverFromSnapshotJob(
     private bool _baselineCaptured;
     private string? _initialShardsFingerprint;
 
-    public string Key => $"snapshot-recovery-{collectionName}";
+    internal const string JobKeyPrefix = "snapshot-recovery-";
+
+    public string Key => $"{JobKeyPrefix}{collectionName}";
 
     public bool IsWaitingForReady { get; private set; }
 

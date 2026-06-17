@@ -38,6 +38,9 @@ public sealed class JobRegistry(ILogger<JobRegistry> logger) : IJobRegistry
     public bool HasPendingMultiSnapshotRecoveryForCollection(string collectionName)
         => HasJobWithPrefixForCollection(RecoverFromMultipleSnapshotsJob.JobKeyPrefix, collectionName);
 
+    public bool HasPendingSnapshotRecoveryForCollection(string collectionName)
+        => HasJobWithPrefixForCollection(RecoverFromSnapshotJob.JobKeyPrefix, collectionName);
+
     private bool HasJobWithPrefixForCollection(string prefix, string collectionName)
     {
         foreach (var key in _jobs.Keys)
