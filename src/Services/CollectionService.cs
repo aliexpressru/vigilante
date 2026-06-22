@@ -474,6 +474,7 @@ public class CollectionService : ICollectionService
                     }
                     catch (Exception)
                     {
+                        // Ignore exceptions while getting optimization info
                     }
 
                     var collectionInfo = new CollectionInfo
@@ -1119,26 +1120,30 @@ public class CollectionService : ICollectionService
 
                     foreach (var replica in shard.Replicas)
                     {
-                        var info = collections.FirstOrDefault(c =>
+                        var correspondingCollectionInfo = collections.FirstOrDefault(c =>
                             c.CollectionName == collectionName && c.PeerId == replica.PeerId);
-                        if (info == null)
+
+                        if (correspondingCollectionInfo == null)
                         {
                             continue;
                         }
 
-                        if (info.Metrics.Shards is not { } shardDetails)
+                        if (correspondingCollectionInfo.Metrics.Shards is not { } shardDetails)
                         {
                             continue;
                         }
 
-                        var detail = shardDetails.FirstOrDefault(s => s.ShardId == shard.Id);
-                        if (detail == null)
+                        var collectionShardDetails = shardDetails.FirstOrDefault(s => s.ShardId == shard.Id);
+
+                        if (collectionShardDetails == null)
                         {
                             continue;
                         }
 
-                        detail.VectorsSizeBytes = replica.VectorsSizeBytes;
-                        detail.PayloadsSizeBytes = replica.PayloadsSizeBytes;
+                        collectionShardDetails.VectorsSizeBytes = replica.VectorsSizeBytes;
+                        collectionShardDetails.PayloadsSizeBytes = replica.PayloadsSizeBytes;
+
+                        collectionShardDetails.IsEmpty = replica.NumVectors == 0 || (replica.PayloadsSizeBytes == 0 && replica.VectorsSizeBytes == 0);
                     }
                 }
             }

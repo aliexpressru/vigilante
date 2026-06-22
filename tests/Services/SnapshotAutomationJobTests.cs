@@ -79,6 +79,21 @@ public class SnapshotAutomationJobTests
             }
         ];
 
+    private static IReadOnlyList<CollectionInfo> GreenHnswCollectionWithShards(
+        string name,
+        List<ShardDetails> shards,
+        string nodeUrl = "http://node1:6333") =>
+        [
+            new()
+            {
+                CollectionName = name,
+                NodeUrl = nodeUrl,
+                Status = QdrantCollectionStatus.Green,
+                HnswM = 16,
+                Metrics = new CollectionMetrics { Shards = shards }
+            }
+        ];
+
     private static IReadOnlyList<NodeInfo> HealthyNodes(string url = "http://node1:6333", ulong peerId = 1) =>
         [new() { Url = url, IsHealthy = true, PeerId = peerId }];
 
@@ -282,6 +297,95 @@ public class SnapshotAutomationJobTests
         await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
             Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
             Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>());
+    }
+
+    [Test]
+    public async Task AdvanceAsync_GreenCollectionWithEmptyShard_SkipsSnapshot_OnGreenOnce()
+    {
+        var config = ScheduleEnabled(intervalMinutes: null);
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(GreenHnswCollectionWithShards("col1",
+            [
+                new() { ShardId = 0, State = ShardState.Active.ToString(), IsEmpty = false },
+                new() { ShardId = 1, State = ShardState.Active.ToString(), IsEmpty = true }
+            ]));
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns([]);
+
+        var job = CreateJob(config: config);
+        await job.AdvanceAsync(CancellationToken.None);
+
+        await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
+            Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+            Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>());
+    }
+
+    [Test]
+    public async Task AdvanceAsync_GreenCollectionWithEmptyShard_SkipsSnapshot_IntervalBased()
+    {
+        var config = ScheduleEnabled(intervalMinutes: 60);
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(GreenHnswCollectionWithShards("col1",
+            [
+                new() { ShardId = 0, State = ShardState.Active.ToString(), IsEmpty = true }
+            ]));
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns([]);
+
+        var job = CreateJob(config: config);
+        await job.AdvanceAsync(CancellationToken.None);
+
+        await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
+            Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+            Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>());
+    }
+
+    [Test]
+    public async Task AdvanceAsync_GreenCollectionWithInactiveShard_SkipsSnapshot()
+    {
+        var config = ScheduleEnabled(intervalMinutes: null);
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(GreenHnswCollectionWithShards("col1",
+            [
+                new() { ShardId = 0, State = ShardState.Partial.ToString(), IsEmpty = false }
+            ]));
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns([]);
+
+        var job = CreateJob(config: config);
+        await job.AdvanceAsync(CancellationToken.None);
+
+        await _snapshotService.DidNotReceive().CreateCollectionSnapshotAsync(
+            Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+            Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>());
+    }
+
+    [Test]
+    public async Task AdvanceAsync_GreenCollectionWithAllShardsActiveAndNonEmpty_CreatesSnapshot()
+    {
+        var config = ScheduleEnabled(intervalMinutes: null);
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(GreenHnswCollectionWithShards("col1",
+            [
+                new() { ShardId = 0, State = ShardState.Active.ToString(), IsEmpty = false },
+                new() { ShardId = 1, State = ShardState.Active.ToString(), IsEmpty = false }
+            ]));
+        _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
+            .Returns([]);
+        _snapshotService.CreateCollectionSnapshotAsync(
+                Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+                Arg.Any<int?>(), Arg.Any<IReadOnlySet<ulong>>())
+            .Returns(Task.FromResult(new CreateCollectionSnapshotBatchResult
+            {
+                Results = new Dictionary<string, string?> { ["http://node1:6333"] = "snap1" },
+                SkippedDuplicatePending = false
+            }));
+
+        var job = CreateJob(config: config);
+        await job.AdvanceAsync(CancellationToken.None);
+
+        await _snapshotService.Received(1).CreateCollectionSnapshotAsync(
+            "col1", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>(), false, null, Arg.Any<IReadOnlySet<ulong>>());
     }
 
     [Test]
