@@ -2931,10 +2931,10 @@ html[data-theme="dark"] #leaderNode {
 }
 
 .collection-node-info {
-    background: #f8f9fa;
+    background: #e8e9eb;
     border-radius: 8px;
     padding: 16px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
 }
 
 .collection-node-info:hover {
