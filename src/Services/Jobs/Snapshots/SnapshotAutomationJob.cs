@@ -84,11 +84,12 @@ public sealed class SnapshotAutomationJob : IJob
 
             SetCurrentAction(Actions.LoadingSnapshots);
 
-            var byCollection = collections
+            var collectionsByName = collections
                 .GroupBy(c => c.CollectionName)
                 .ToDictionary(g => g.Key, g => (IReadOnlyList<CollectionInfo>)[.. g]);
 
-            var currentNames = byCollection.Keys.ToHashSet();
+            var currentCollectionNames = collectionsByName.Keys.ToHashSet();
+
             var healthyNodeUrls = _nodes.Where(n => n.IsHealthy).Select(n => n.Url).ToList();
 
             var existingSnapshots = await snapshotService.GetSnapshotsInfoAsync(
@@ -96,13 +97,15 @@ public sealed class SnapshotAutomationJob : IJob
                 cancellationToken: cancellationToken,
                 nodesToUse: _nodes
             );
+
             var snapshotsByCollection = existingSnapshots
                 .GroupBy(s => s.CollectionName)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
             var snapshotCreatePrefix = PendingSnapshotCreationJob.KeyPrefix;
             var startedSnapshotForAnyCollection = false;
-            foreach (var (collectionName, infos) in byCollection)
+
+            foreach (var (collectionName, collectionInfos) in collectionsByName)
             {
                 var hasPendingSnapshotCreate = jobRegistry
                     .GetPendingJobs()
@@ -144,19 +147,20 @@ public sealed class SnapshotAutomationJob : IJob
                     continue;
                 }
 
-                var isReadyForSnapshot = IsCollectionReadyForSnapshot(infos);
+                var isReadyForSnapshot = CheckIsCollectionReadyForSnapshot(collectionInfos);
+
                 if (!isReadyForSnapshot)
                 {
-                    var statusSummary = string.Join(", ", infos.Select(i => i.Status?.ToString() ?? "null").Distinct());
-                    var minHnsw = infos.Min(i => i.HnswM ?? 0UL);
+                    var statusSummary = string.Join(", ", collectionInfos.Select(i => i.Status?.ToString() ?? "null").Distinct());
+                    var minHnsw = collectionInfos.Min(i => i.HnswM ?? 0UL);
 
-                    var hasActiveTransfers = infos.Any(c =>
+                    var hasActiveTransfers = collectionInfos.Any(c =>
                         c.Warnings.Any(w =>
                             w.Contains(CollectionWarningConstants.ActiveTransfersWarning, StringComparison.OrdinalIgnoreCase)
                         )
                     );
 
-                    var hasRunningOptimizations = infos.Any(c =>
+                    var hasRunningOptimizations = collectionInfos.Any(c =>
                         c.RunningOptimizations.Count > 0
                         || c.Warnings.Any(w =>
                             w.Contains(CollectionWarningConstants.RunningOptimizationsPrefix, StringComparison.OrdinalIgnoreCase)
@@ -279,7 +283,7 @@ public sealed class SnapshotAutomationJob : IJob
                     orphanedState,
                     logger,
                     automationStatus,
-                    currentNames,
+                    currentCollectionNames,
                     snapshotsByCollection,
                     snapshotCfg.DeleteOrphanedAfterMinutes.Value,
                     cancellationToken
@@ -635,11 +639,12 @@ public sealed class SnapshotAutomationJob : IJob
         );
     }
 
-    private static bool IsCollectionReadyForSnapshot(IReadOnlyList<CollectionInfo> infos)
+    private static bool CheckIsCollectionReadyForSnapshot(IReadOnlyList<CollectionInfo> infos)
     {
         var hasActiveTransfers = infos.Any(c =>
             c.Warnings.Any(w => w.Contains(CollectionWarningConstants.ActiveTransfersWarning, StringComparison.OrdinalIgnoreCase))
         );
+
         var hasRunningOptimizations = infos.Any(c =>
             c.RunningOptimizations.Count > 0
             || c.Warnings.Any(w =>
@@ -647,11 +652,14 @@ public sealed class SnapshotAutomationJob : IJob
             )
         );
 
+        var hasEmptyShards = infos.Any(c => c.Metrics.Shards?.Any(shard => !shard.IsActive || shard.IsEmpty) == true);
+
         return infos.Count > 0
             && infos.All(c => c.Status == QdrantCollectionStatus.Green)
             && infos.All(c => c.HnswM > 0)
             && !hasActiveTransfers
-            && !hasRunningOptimizations;
+            && !hasRunningOptimizations
+            && !hasEmptyShards;
     }
 
     internal static bool IsIntervalSnapshotDue(

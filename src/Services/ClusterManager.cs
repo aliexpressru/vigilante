@@ -44,8 +44,8 @@ public partial class ClusterManager(
     public async Task<ClusterState> GetClusterStateAsync(CancellationToken cancellationToken = default)
     {
         var nodes = await nodesProvider.GetNodesAsync(cancellationToken);
-        var tasks = nodes.Select(node => GetNodeInfoAsync(node, cancellationToken));
-        var nodeStatuses = await Task.WhenAll(tasks);
+        var nodeInfoTasks = nodes.Select(node => GetNodeInfoAsync(node, cancellationToken));
+        var nodeStatuses = await Task.WhenAll(nodeInfoTasks);
         var collectStorageTask = CollectNodesStorageUsageAsync(nodeStatuses, cancellationToken);
         var collectMemoryTask = CollectNodesMemoryUsageAsync(nodeStatuses, cancellationToken);
 
@@ -82,14 +82,17 @@ public partial class ClusterManager(
 
         var storageByNodeUrl = await collectStorageTask;
         var memoryByNodeUrl = await collectMemoryTask;
+
         ApplyStorageUsage(nodeStatuses, storageByNodeUrl);
         ApplyMemoryUsage(nodeStatuses, memoryByNodeUrl);
 
         var dynamicConfig = await dynamicConfigService.GetConfigAsync(cancellationToken);
+
         AddStorageUsageIssuesIfNeeded(state.Nodes, dynamicConfig.DiskUsageAlertThresholdPercent);
         AddMemoryUsageIssuesIfNeeded(state.Nodes, dynamicConfig.RamUsageAlertThresholdPercent);
 
         meterService.UpdateAliveNodes(state.Nodes.Count(n => n.IsHealthy));
+
         await AddKubernetesWarningsIfNeededAsync(state, cancellationToken);
 
         var now = DateTime.UtcNow;
