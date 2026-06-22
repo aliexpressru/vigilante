@@ -1143,7 +1143,7 @@ public class CollectionService : ICollectionService
                         collectionShardDetails.VectorsSizeBytes = replica.VectorsSizeBytes;
                         collectionShardDetails.PayloadsSizeBytes = replica.PayloadsSizeBytes;
 
-                        collectionShardDetails.IsEmpty = replica.NumVectors == 0 || (replica.PayloadsSizeBytes == 0 && replica.VectorsSizeBytes == 0);
+                        collectionShardDetails.IsEmpty = replica.IsEmpty;
                     }
                 }
             }
