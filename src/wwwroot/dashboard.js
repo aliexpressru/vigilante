@@ -1675,7 +1675,9 @@ class VigilanteDashboard {
     async loadCollectionSizes(clearCache = false) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-        
+        const filterWrapper = document.getElementById('collectionNameFilter')?.closest('.filter-input-wrapper');
+        filterWrapper?.classList.add('loading');
+
         try {
             // Build URL with pagination and filter parameters
             const params = new URLSearchParams({
@@ -1725,11 +1727,11 @@ class VigilanteDashboard {
             }
             
             this.updateCollectionSizes(collections);
-            
+
         } catch (error) {
             clearTimeout(timeoutId);
             console.error('Error fetching collection sizes:', error);
-            
+
             // Add error message to collection issues
             let errorMessage;
             if (error.name === 'AbortError') {
@@ -1737,11 +1739,13 @@ class VigilanteDashboard {
             } else {
                 errorMessage = `Error loading collections: ${this.getErrorMessage(error)}`;
             }
-            
+
             if (!this.collectionIssues.includes(errorMessage)) {
                 this.collectionIssues.push(errorMessage);
                 this.updateCombinedIssues();
             }
+        } finally {
+            filterWrapper?.classList.remove('loading');
         }
     }
 

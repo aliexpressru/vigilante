@@ -2310,18 +2310,47 @@ html[data-theme="dark"] #leaderNode {
     min-width: 0;
 }
 
+.filter-input-wrapper {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+}
+
 .filter-input {
     flex: 1;
-    padding: 0.5rem 1rem;
+    padding: 0.5rem 2rem 0.5rem 1rem;
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 0.95rem;
     transition: border-color 0.2s;
+    width: 100%;
 }
 
 .filter-input:focus {
     outline: none;
     border-color: #667eea;
+}
+
+@keyframes filter-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.filter-loading-icon {
+    position: absolute;
+    right: 0.6rem;
+    color: #667eea;
+    font-size: 0.85rem;
+    opacity: 0;
+    pointer-events: none;
+    animation: filter-spin 0.75s linear infinite;
+    transition: opacity 0.15s ease;
+}
+
+.filter-input-wrapper.loading .filter-loading-icon {
+    opacity: 1;
 }
 
 .clear-filter-btn {
