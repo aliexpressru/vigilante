@@ -477,6 +477,21 @@ class VigilanteDashboard {
         const nextPageBtn = document.getElementById('nextPageBtn');
         const pageSizeSelect = document.getElementById('pageSizeSelect');
 
+        document.getElementById('expandAllCollectionsBtn').addEventListener('click', () => {
+            document.querySelectorAll('.collections-overview .collection-details:not(.visible)').forEach(row => {
+                row.classList.add('visible');
+                const nameEl = row.previousElementSibling?.querySelector('.collection-name-text');
+                if (nameEl) this.openCollections.add(nameEl.textContent.trim());
+            });
+        });
+
+        document.getElementById('collapseAllCollectionsBtn').addEventListener('click', () => {
+            document.querySelectorAll('.collections-overview .collection-details.visible').forEach(row => {
+                row.classList.remove('visible');
+            });
+            this.openCollections.clear();
+        });
+
         // Filter input with debounce
         let filterTimeout;
         filterInput.addEventListener('input', (e) => {
@@ -2617,11 +2632,97 @@ class VigilanteDashboard {
                         nodeDetails.innerHTML = `
                             <div class="node-info-header">
                                 <h4 title="${fullNodeTitle}">${displayName}${peerIdDisplay}</h4>
+                                <div class="node-actions-menu-container">
+                                    <button class="node-actions-menu-button" aria-label="Node actions">
+                                        <i class="fas fa-ellipsis-v"></i>
+                                    </button>
+                                    <div class="node-actions-dropdown"></div>
+                                </div>
                             </div>
                             ${shardsHtml}
                             ${otherMetricsHtml ? `<dl class="other-metrics">${otherMetricsHtml}</dl>` : ''}
                             ${transfersHtml ? `<dl class="transfers-metrics">${transfersHtml}</dl>` : ''}
                         `;
+
+                        // Wire up node actions menu
+                        const nodeMenuContainer = nodeDetails.querySelector('.node-actions-menu-container');
+                        const nodeMenuButton = nodeDetails.querySelector('.node-actions-menu-button');
+                        const nodeMenuDropdown = nodeDetails.querySelector('.node-actions-dropdown');
+
+                        // Build Qdrant dashboard link for this node
+                        let dashboardLinkItem = null;
+                        if (nodeInfo.nodeUrl) {
+                            try {
+                                const clusterNode = this.clusterNodes?.find(n => (n.url || n.nodeUrl) === nodeInfo.nodeUrl);
+                                const rawNodeUrl = clusterNode?.browserUrl || clusterNode?.url || nodeInfo.nodeUrl;
+                                const dashboardUrl = new URL(rawNodeUrl);
+                                dashboardUrl.pathname = '/dashboard';
+                                dashboardLinkItem = document.createElement('button');
+                                dashboardLinkItem.className = 'collection-action-item node-action-item';
+                                dashboardLinkItem.innerHTML = '<i class="fas fa-info-circle"></i> Go to Info';
+                                dashboardLinkItem.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    window.open(`${dashboardUrl.toString()}#/collections/${encodeURIComponent(collection.name)}#info`, '_blank');
+                                    nodeMenuDropdown.classList.remove('show');
+                                    nodeMenuButton.classList.remove('active');
+                                });
+                                nodeMenuDropdown.appendChild(dashboardLinkItem);
+
+                                const optimizationsLinkItem = document.createElement('button');
+                                optimizationsLinkItem.className = 'collection-action-item node-action-item';
+                                optimizationsLinkItem.innerHTML = '<i class="fas fa-chart-line"></i> Go to Optimizations';
+                                optimizationsLinkItem.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    window.open(`${dashboardUrl.toString()}#/collections/${encodeURIComponent(collection.name)}#optimizations`, '_blank');
+                                    nodeMenuDropdown.classList.remove('show');
+                                    nodeMenuButton.classList.remove('active');
+                                });
+                                nodeMenuDropdown.appendChild(optimizationsLinkItem);
+
+                                const memoryLinkItem = document.createElement('button');
+                                memoryLinkItem.className = 'collection-action-item node-action-item';
+                                memoryLinkItem.innerHTML = '<i class="fas fa-memory"></i> Go to Memory';
+                                memoryLinkItem.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    window.open(`${dashboardUrl.toString()}#/collections/${encodeURIComponent(collection.name)}#memory`, '_blank');
+                                    nodeMenuDropdown.classList.remove('show');
+                                    nodeMenuButton.classList.remove('active');
+                                });
+                                nodeMenuDropdown.appendChild(memoryLinkItem);
+                            } catch (_) {
+                                // Invalid nodeUrl — skip dashboard link
+                            }
+                        }
+
+                        nodeMenuButton.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            const wasOpen = nodeMenuButton.classList.contains('active');
+                            // Close all open collection and node menus
+                            document.querySelectorAll('.collection-actions-menu-button.active, .node-actions-menu-button.active').forEach(btn => {
+                                btn.classList.remove('active');
+                                const container = btn.parentElement;
+                                const menu = container?.querySelector('.collection-actions-dropdown, .node-actions-dropdown');
+                                if (menu) {
+                                    menu.classList.remove('show');
+                                }
+                            });
+                            if (!wasOpen) {
+                                nodeMenuButton.classList.add('active');
+                                const rect = nodeMenuButton.getBoundingClientRect();
+                                nodeMenuDropdown.style.position = 'fixed';
+                                nodeMenuDropdown.style.top = rect.bottom + 'px';
+                                nodeMenuDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                                nodeMenuDropdown.style.left = 'auto';
+                                nodeMenuDropdown.classList.add('show');
+                            }
+                        });
+
+                        document.addEventListener('click', (e) => {
+                            if (!nodeMenuContainer.contains(e.target)) {
+                                nodeMenuDropdown.classList.remove('show');
+                                nodeMenuButton.classList.remove('active');
+                            }
+                        });
 
                         nodeDetails.setAttribute('data-state-key', stateKey);
                         
