@@ -1364,12 +1364,20 @@ html[data-theme="dark"] .statefulset-info {
 
 html[data-theme="dark"] .collections-table th,
 html[data-theme="dark"] .snapshots-table th,
+html[data-theme="dark"] .nodes-table-wrap {
+    border-color: #4b5563;
+}
+
+html[data-theme="dark"] .collection-details-content--snapshots .nodes-table-wrap {
+    border-color: #4b5563;
+}
+
 html[data-theme="dark"] .nodes-table th,
 html[data-theme="dark"] .snapshot-details td,
 html[data-theme="dark"] .delete-all-row td {
-    background: #1f2937;
-    color: #d1d5db;
-    border-color: #374151;
+    background: #374151;
+    color: #e5e7eb;
+    border-color: #4b5563;
 }
 
 html[data-theme="dark"] .collections-table td,
@@ -1442,7 +1450,6 @@ html[data-theme="dark"] .node-action-item:hover,
 html[data-theme="dark"] .collection-action-item:hover,
 html[data-theme="dark"] .snapshot-collection-action-item:hover,
 html[data-theme="dark"] .snapshot-action-item:hover,
-html[data-theme="dark"] .collections-table tr:hover,
 html[data-theme="dark"] .snapshot-row:hover,
 html[data-theme="dark"] .collection-row:hover,
 html[data-theme="dark"] .issue-item:hover,
@@ -1898,7 +1905,7 @@ html[data-theme="dark"] .nodes-table code {
 }
 
 html[data-theme="dark"] .nodes-table tr:hover {
-    background: #1f2937;
+    background: #374151;
 }
 
 html[data-theme="dark"] .job-status-running {
@@ -2408,7 +2415,7 @@ html[data-theme="dark"] #leaderNode {
 }
 
 .collections-table tr:hover {
-    background: #f8f9fa;
+    background: transparent;
 }
 
 .collections-table td.collection-name {
@@ -4916,6 +4923,27 @@ html[data-theme="dark"] #leaderNode {
 }
 
 /* Nodes table inside snapshot details */
+.nodes-table-wrap {
+    margin: 4px 0 0;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.collection-details-content--snapshots {
+    display: block;
+    padding: 0;
+    gap: 0;
+}
+
+.collection-details-content--snapshots .nodes-table-wrap {
+    margin: 0;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-top: none;
+}
+
 .nodes-table {
     width: 100%;
     margin: 0;
@@ -4923,35 +4951,34 @@ html[data-theme="dark"] #leaderNode {
     border-collapse: collapse;
     background: transparent;
     table-layout: fixed;
+    font-size: 0.875rem;
 }
 
 .nodes-table th {
-    background: #e9ecef;
-    padding: 8px 10px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f5f5f5;
+    padding: 5px 10px;
     text-align: left;
     font-weight: 600;
     color: #495057;
     font-size: 0.8rem;
-    border-bottom: 2px solid #dee2e6;
+    border-bottom: 1px solid #e0e0e0;
     white-space: nowrap;
 }
 
 /* Column widths for better layout */
 .nodes-table th:nth-child(1) { width: 14%; } /* Node URL */
-.nodes-table th:nth-child(2) { width: 9%; }  /* Peer ID */
+.nodes-table th:nth-child(2) { width: 11%; } /* Peer ID */
 .nodes-table th:nth-child(3) { width: 9%; }  /* Pod */
-.nodes-table th:nth-child(4) { width: 38%; } /* Snapshot Name */
-.nodes-table th:nth-child(5) { width: 8%; }  /* Size */
-.nodes-table th:nth-child(6) { width: 22%; } /* Actions - 4 buttons (including debug) */
-
-/* Align Actions header to the right */
-.nodes-table th:nth-child(6) {
-    text-align: right;
-}
+.nodes-table th:nth-child(4) { width: 30%; } /* Snapshot Name */
+.nodes-table th:nth-child(5) { width: 14%; } /* Created */
+.nodes-table th:nth-child(6) { width: 22%; } /* Size (with inline actions) */
 
 .nodes-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #dee2e6;
+    padding: 5px 10px;
+    border-bottom: 1px solid #eee;
     font-size: 0.8rem;
     vertical-align: middle;
     overflow: hidden;
@@ -4971,7 +4998,7 @@ html[data-theme="dark"] #leaderNode {
 }
 
 .nodes-table tr:hover {
-    background: #ffffff;
+    background: #f5f5f5;
 }
 
 /* Ensure dropdown menus are not clipped by table rows */
@@ -4996,8 +5023,15 @@ html[data-theme="dark"] #leaderNode {
     max-width: 0;
 }
 
-/* Size cell with inline menu */
+/* Created cell */
 .nodes-table td:nth-child(5) {
+    white-space: nowrap;
+    color: #666;
+    font-size: 0.8rem;
+}
+
+/* Size cell with inline menu */
+.nodes-table td:nth-child(6) {
     white-space: nowrap;
     position: relative;
     overflow: visible;

@@ -3177,8 +3177,11 @@ class VigilanteDashboard {
             const detailsCell = document.createElement('td');
             detailsCell.colSpan = 1;
             const detailsContent = document.createElement('div');
-            detailsContent.className = 'collection-details-content';
+            detailsContent.className = 'collection-details-content collection-details-content--snapshots';
             
+            const nodesTableWrap = document.createElement('div');
+            nodesTableWrap.className = 'nodes-table-wrap';
+
             const nodesTable = document.createElement('table');
             nodesTable.className = 'nodes-table';
             
@@ -3188,6 +3191,7 @@ class VigilanteDashboard {
                 <th>Peer ID</th>
                 <th>Pod</th>
                 <th>Snapshot Name</th>
+                <th>Created</th>
                 <th>Size</th>
             `;
             nodesTable.appendChild(nodesHeader);
@@ -3211,8 +3215,22 @@ class VigilanteDashboard {
                 cellPod.textContent = snapshot.podName;
                 
                 const cellSnapshot = document.createElement('td');
-                cellSnapshot.textContent = snapshot.snapshotName;
-                
+                const snapshotCollectionPrefix = collection.collectionName + '-';
+                const displaySnapshotName = snapshot.snapshotName.startsWith(snapshotCollectionPrefix)
+                    ? snapshot.snapshotName.slice(snapshotCollectionPrefix.length)
+                    : snapshot.snapshotName;
+                cellSnapshot.textContent = displaySnapshotName;
+                cellSnapshot.title = snapshot.snapshotName;
+
+                const cellCreated = document.createElement('td');
+                if (snapshot.createdAt) {
+                    const d = new Date(snapshot.createdAt);
+                    cellCreated.textContent = d.toLocaleString();
+                    cellCreated.title = d.toISOString();
+                } else {
+                    cellCreated.textContent = '—';
+                }
+
                 const cellSize = document.createElement('td');
                 cellSize.style.position = 'relative';
                 
@@ -3374,13 +3392,15 @@ class VigilanteDashboard {
                 nodeRow.appendChild(cellPeer);
                 nodeRow.appendChild(cellPod);
                 nodeRow.appendChild(cellSnapshot);
+                nodeRow.appendChild(cellCreated);
                 nodeRow.appendChild(cellSize);
                 
                 nodesTable.appendChild(nodeRow);
             });
 
 
-            detailsContent.appendChild(nodesTable);
+            nodesTableWrap.appendChild(nodesTable);
+            detailsContent.appendChild(nodesTableWrap);
             detailsCell.appendChild(detailsContent);
             detailsRow.appendChild(detailsCell);
 
