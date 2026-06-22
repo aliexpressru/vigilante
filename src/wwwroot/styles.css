@@ -2926,6 +2926,7 @@ html[data-theme="dark"] #leaderNode {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
+    align-items: flex-start;
     gap: 20px;
     padding: 20px;
     min-width: 0;
