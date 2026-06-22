@@ -1065,6 +1065,16 @@ class VigilanteDashboard {
         modal.querySelectorAll('.multi-recover-snapshot-cb, .multi-recover-node-cb').forEach(cb => {
             cb.addEventListener('change', updateHint);
         });
+
+        modal.querySelectorAll('.multi-recover-snapshot-row').forEach(row => {
+            row.addEventListener('click', (e) => {
+                if (e.target.type === 'checkbox') return;
+                const cb = row.querySelector('.multi-recover-snapshot-cb');
+                cb.checked = !cb.checked;
+                cb.dispatchEvent(new Event('change'));
+            });
+        });
+
         updateHint();
 
         let isSubmitting = false;
