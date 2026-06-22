@@ -761,8 +761,8 @@ html[data-theme="dark"] {
 
 .node-disk-progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #4caf50 0%, #ffb300 70%, #f44336 100%);
-    transition: width 0.3s ease;
+    background: #4caf50;
+    transition: width 0.3s ease, background 0.3s ease;
 }
 
 .node-disk-usage-capacity {
@@ -806,8 +806,8 @@ html[data-theme="dark"] {
 
 .node-memory-progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #38bdf8 0%, #a78bfa 70%, #ef4444 100%);
-    transition: width 0.3s ease;
+    background: #38bdf8;
+    transition: width 0.3s ease, background 0.3s ease;
 }
 
 .node-memory-usage-capacity {

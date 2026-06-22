@@ -1900,6 +1900,14 @@ class VigilanteDashboard {
         return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
     }
 
+    interpolateColor(percent, fromRgb, toRgb) {
+        const t = Math.max(0, Math.min(100, percent)) / 100;
+        const r = Math.round(fromRgb[0] + (toRgb[0] - fromRgb[0]) * t);
+        const g = Math.round(fromRgb[1] + (toRgb[1] - fromRgb[1]) * t);
+        const b = Math.round(fromRgb[2] + (toRgb[2] - fromRgb[2]) * t);
+        return `rgb(${r},${g},${b})`;
+    }
+
     measureCollectionNameTextWidth(nameText, sizeRem) {
         if (!this._collectionNameMeasureCtx) {
             const canvas = document.createElement('canvas');
@@ -4209,7 +4217,7 @@ class VigilanteDashboard {
                     <span class="node-disk-usage-value">${usagePercent.toFixed(2)}%</span>
                 </div>
                 <div class="node-disk-progress">
-                    <div class="node-disk-progress-fill" style="width: ${usagePercent.toFixed(2)}%"></div>
+                    <div class="node-disk-progress-fill" style="width: ${usagePercent.toFixed(2)}%; background: ${this.interpolateColor(usagePercent, [76, 175, 80], [244, 67, 54])}"></div>
                 </div>
                 <div class="node-disk-usage-capacity">${this.formatSize(usedBytes)} / ${this.formatSize(capacityBytes)}</div>
             `;
@@ -4240,7 +4248,7 @@ class VigilanteDashboard {
                     <span class="node-memory-usage-value">${memoryUsagePercent.toFixed(2)}%</span>
                 </div>
                 <div class="node-memory-progress">
-                    <div class="node-memory-progress-fill" style="width: ${memoryUsagePercent.toFixed(2)}%"></div>
+                    <div class="node-memory-progress-fill" style="width: ${memoryUsagePercent.toFixed(2)}%; background: ${this.interpolateColor(memoryUsagePercent, [56, 189, 248], [239, 68, 68])}"></div>
                 </div>
                 <div class="node-memory-usage-capacity">${memoryCapacityText}</div>
             `;
