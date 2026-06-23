@@ -1753,9 +1753,6 @@ class VigilanteDashboard {
         const vectors = vectorsBytes ?? 0;
         const payloads = payloadsBytes ?? 0;
         const total = vectors + payloads;
-        if (total <= 0) {
-            return '';
-        }
 
         const vectorsPct = Math.round((vectors / total) * 100);
         const payloadPct = 100 - vectorsPct;
@@ -1854,7 +1851,6 @@ class VigilanteDashboard {
             return `
                 <div class="shards-container">
                     <div class="shards-section">
-                        <div class="shards-label">Shards</div>
                         ${shardsSummaryHtml}
                         <label class="select-all-shards-label">
                             <input type="checkbox" class="select-all-shards-checkbox">
