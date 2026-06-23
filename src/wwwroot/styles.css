@@ -4811,6 +4811,36 @@ html[data-theme="dark"] #leaderNode {
     color: #333;
 }
 
+.toast-cancel-btn {
+    background: none;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #666;
+    cursor: pointer;
+    padding: 2px 8px;
+    flex-shrink: 0;
+    align-self: center;
+    white-space: nowrap;
+}
+
+.toast-cancel-btn:hover {
+    border-color: #dc3545;
+    color: #dc3545;
+    background: rgba(220, 53, 69, 0.05);
+}
+
+html[data-theme="dark"] .toast-cancel-btn {
+    border-color: #4b5563;
+    color: #9ca3af;
+}
+
+html[data-theme="dark"] .toast-cancel-btn:hover {
+    border-color: #f87171;
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.08);
+}
+
 @keyframes slideIn {
     from {
         transform: translateX(400px);

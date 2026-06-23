@@ -1380,12 +1380,12 @@ class VigilanteDashboard {
     }
 
     // Toast notification methods
-    showToast(message, type = 'info', title = null, duration = null, isLoading = false) {
+    showToast(message, type = 'info', title = null, duration = null, isLoading = false, onCancel = null) {
         // Set default duration based on type if not specified
         if (duration === null) {
             duration = type === 'error' ? 15000 : 5000;
         }
-        
+
         const container = document.getElementById('toast-container');
         if (!container) return null;
 
@@ -1401,7 +1401,7 @@ class VigilanteDashboard {
             info: '<i class="fas fa-info-circle"></i>'
         };
 
-        const iconHtml = isLoading 
+        const iconHtml = isLoading
             ? '<div class="toast-spinner"></div>'
             : `<div class="toast-icon">${icons[type] || icons.info}</div>`;
 
@@ -1411,8 +1411,13 @@ class VigilanteDashboard {
                 ${title ? `<div class="toast-title">${title}</div>` : ''}
                 <div class="toast-message">${message}</div>
             </div>
-            ${!isLoading ? '<button class="toast-close" aria-label="Close">&times;</button>' : ''}
+            ${onCancel ? '<button class="toast-cancel-btn">Cancel</button>' : (!isLoading ? '<button class="toast-close" aria-label="Close">&times;</button>' : '')}
         `;
+
+        const cancelBtn = toast.querySelector('.toast-cancel-btn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', onCancel);
+        }
 
         const closeBtn = toast.querySelector('.toast-close');
         if (closeBtn) {
@@ -1439,7 +1444,7 @@ class VigilanteDashboard {
         }, 300);
     }
 
-    updateToast(toastId, message, type = 'info', title = null, progress = null, autoRemove = true) {
+    updateToast(toastId, message, type = 'info', title = null, progress = null, autoRemove = true, onCancel = null) {
         const toast = document.getElementById(toastId);
         if (!toast) return;
 
@@ -1469,8 +1474,13 @@ class VigilanteDashboard {
                 <div class="toast-message">${message}</div>
                 ${progressHtml}
             </div>
-            ${!isLoading ? '<button class="toast-close" aria-label="Close">&times;</button>' : ''}
+            ${onCancel ? '<button class="toast-cancel-btn">Cancel</button>' : (!isLoading ? '<button class="toast-close" aria-label="Close">&times;</button>' : '')}
         `;
+
+        const cancelBtn = toast.querySelector('.toast-cancel-btn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', onCancel);
+        }
 
         const closeBtn = toast.querySelector('.toast-close');
         if (closeBtn) {
@@ -5830,12 +5840,16 @@ class VigilanteDashboard {
     }
 
     async downloadSnapshot(collectionName, snapshotName, nodeUrl, podName, podNamespace, source) {
+        const controller = new AbortController();
+        const onCancel = () => controller.abort();
+
         const toastId = this.showToast(
             `Preparing download of '${snapshotName}'...`,
             'info',
             'Downloading',
             0,
-            true
+            true,
+            onCancel
         );
 
         try {
@@ -5863,7 +5877,8 @@ class VigilanteDashboard {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(requestBody)
+                body: JSON.stringify(requestBody),
+                signal: controller.signal
             });
 
             if (!response.ok) {
@@ -5874,7 +5889,7 @@ class VigilanteDashboard {
             // Get total size from Content-Length header
             const contentLength = response.headers.get('Content-Length');
             const total = contentLength ? parseInt(contentLength, 10) : 0;
-            
+
             // Update toast with initial progress
             if (total > 0) {
                 this.updateToast(
@@ -5883,7 +5898,8 @@ class VigilanteDashboard {
                     'info',
                     `Downloading '${snapshotName}'`,
                     0,
-                    false
+                    false,
+                    onCancel
                 );
             } else {
                 this.updateToast(
@@ -5892,12 +5908,15 @@ class VigilanteDashboard {
                     'info',
                     `Downloading '${snapshotName}'`,
                     null,
-                    false
+                    false,
+                    onCancel
                 );
             }
 
             // Read the response stream with progress tracking
             const reader = response.body.getReader();
+            controller.signal.addEventListener('abort', () => reader.cancel('User cancelled'));
+
             const chunks = [];
             let receivedLength = 0;
 
@@ -5918,7 +5937,8 @@ class VigilanteDashboard {
                         'info',
                         `Downloading '${snapshotName}'`,
                         percent,
-                        false
+                        false,
+                        onCancel
                     );
                 } else {
                     this.updateToast(
@@ -5927,14 +5947,20 @@ class VigilanteDashboard {
                         'info',
                         `Downloading '${snapshotName}'`,
                         null,
-                        false
+                        false,
+                        onCancel
                     );
                 }
             }
 
+            if (controller.signal.aborted) {
+                this.removeToast(toastId);
+                return;
+            }
+
             // Combine chunks into a blob
             const blob = new Blob(chunks);
-            
+
             // Trigger download
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -5954,6 +5980,10 @@ class VigilanteDashboard {
                 true
             );
         } catch (error) {
+            if (error.name === 'AbortError') {
+                this.removeToast(toastId);
+                return;
+            }
             this.updateToast(
                 toastId,
                 error.message,
