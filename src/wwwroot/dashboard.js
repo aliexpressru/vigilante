@@ -4317,7 +4317,54 @@ class VigilanteDashboard {
         }
 
         // URL without dashboard button
-        const urlDetail = this.createNodeDetail('URL', node.url);
+        const urlDetail = document.createElement('div');
+        urlDetail.className = 'node-detail';
+        const urlLabel = document.createElement('span');
+        urlLabel.className = 'node-detail-label';
+        urlLabel.textContent = 'URL:';
+        const urlValue = document.createElement('span');
+        urlValue.className = 'node-detail-value';
+        urlValue.textContent = node.url;
+        let urlHostname = null;
+        try { urlHostname = new URL(node.url).hostname; } catch {}
+        if (urlHostname) {
+            urlValue.classList.add('node-id-copyable');
+            urlValue.title = `${urlHostname} — Click to copy`;
+            urlValue.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(urlHostname).then(() => {
+                        this.showToast(`"${urlHostname}" copied to clipboard`, 'success', 'Copied', 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                    });
+                } else {
+                    try {
+                        const textArea = document.createElement('textarea');
+                        textArea.value = urlHostname;
+                        textArea.style.position = 'fixed';
+                        textArea.style.left = '-999999px';
+                        textArea.style.top = '-999999px';
+                        document.body.appendChild(textArea);
+                        textArea.focus();
+                        textArea.select();
+                        const successful = document.execCommand('copy');
+                        document.body.removeChild(textArea);
+                        if (successful) {
+                            this.showToast(`"${urlHostname}" copied to clipboard`, 'success', 'Copied', 2000);
+                        } else {
+                            this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                        }
+                    } catch (err) {
+                        console.error('Fallback: Could not copy text', err);
+                        this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                    }
+                }
+            });
+        }
+        urlDetail.appendChild(urlLabel);
+        urlDetail.appendChild(urlValue);
         details.appendChild(urlDetail);
 
         // Version (if available)
