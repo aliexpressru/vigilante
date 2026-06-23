@@ -6670,6 +6670,19 @@ html[data-theme="dark"] .toast-cancel-btn:hover {
     text-align: center;
 }
 
+.node-action-item.node-action-item-danger {
+    color: #f44336;
+}
+
+.node-action-item.node-action-item-danger:hover {
+    background: linear-gradient(135deg, #ffebee, #ffcdd2);
+    color: #d32f2f;
+}
+
+.node-action-item.node-action-item-danger:active {
+    background: linear-gradient(135deg, #ffcdd2, #ef9a9a);
+}
+
 /* Snapshot Collection Menu (Three Dots in Snapshot Collection Header) */
 .snapshot-collection-menu-container {
     position: relative;
