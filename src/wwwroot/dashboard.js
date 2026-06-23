@@ -1410,8 +1410,9 @@ class VigilanteDashboard {
             <div class="toast-content">
                 ${title ? `<div class="toast-title">${title}</div>` : ''}
                 <div class="toast-message">${message}</div>
+                ${onCancel ? '<button class="toast-cancel-btn">Cancel</button>' : ''}
             </div>
-            ${onCancel ? '<button class="toast-cancel-btn">Cancel</button>' : (!isLoading ? '<button class="toast-close" aria-label="Close">&times;</button>' : '')}
+            ${!onCancel && !isLoading ? '<button class="toast-close" aria-label="Close">&times;</button>' : ''}
         `;
 
         const cancelBtn = toast.querySelector('.toast-cancel-btn');
@@ -1473,8 +1474,9 @@ class VigilanteDashboard {
                 ${title ? `<div class="toast-title">${title}</div>` : ''}
                 <div class="toast-message">${message}</div>
                 ${progressHtml}
+                ${onCancel ? '<button class="toast-cancel-btn">Cancel</button>' : ''}
             </div>
-            ${onCancel ? '<button class="toast-cancel-btn">Cancel</button>' : (!isLoading ? '<button class="toast-close" aria-label="Close">&times;</button>' : '')}
+            ${!onCancel && !isLoading ? '<button class="toast-close" aria-label="Close">&times;</button>' : ''}
         `;
 
         const cancelBtn = toast.querySelector('.toast-cancel-btn');
@@ -5840,8 +5842,16 @@ class VigilanteDashboard {
     }
 
     async downloadSnapshot(collectionName, snapshotName, nodeUrl, podName, podNamespace, source) {
-        const controller = new AbortController();
-        const onCancel = () => controller.abort();
+        let cancelled = false;
+        const readerRef = { current: null };
+        const onCancel = (event) => {
+            if (cancelled) return;
+            cancelled = true;
+            const btn = event.currentTarget;
+            btn.textContent = 'Cancelling...';
+            btn.disabled = true;
+            readerRef.current?.cancel('User cancelled');
+        };
 
         const toastId = this.showToast(
             `Preparing download of '${snapshotName}'...`,
@@ -5872,13 +5882,17 @@ class VigilanteDashboard {
 
             console.log('Download snapshot request:', requestBody);
 
+            if (cancelled) {
+                this.removeToast(toastId);
+                return;
+            }
+
             const response = await apiFetch(this.downloadSnapshotEndpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(requestBody),
-                signal: controller.signal
+                body: JSON.stringify(requestBody)
             });
 
             if (!response.ok) {
@@ -5915,45 +5929,64 @@ class VigilanteDashboard {
 
             // Read the response stream with progress tracking
             const reader = response.body.getReader();
-            controller.signal.addEventListener('abort', () => reader.cancel('User cancelled'));
+            readerRef.current = reader;
+
+            if (cancelled) {
+                reader.cancel('User cancelled');
+                this.removeToast(toastId);
+                return;
+            }
 
             const chunks = [];
             let receivedLength = 0;
+            let lastUiUpdate = 0;
 
             while (true) {
-                const { done, value } = await reader.read();
+                let done, value;
+                try {
+                    ({ done, value } = await reader.read());
+                } catch {
+                    break;
+                }
 
-                if (done) break;
+                if (done || cancelled) break;
 
                 chunks.push(value);
                 receivedLength += value.length;
 
-                // Update progress
-                if (total > 0) {
-                    const percent = Math.round((receivedLength / total) * 100);
-                    this.updateToast(
-                        toastId,
-                        `${percent}% (${this.formatSize(receivedLength)} / ${this.formatSize(total)})`,
-                        'info',
-                        `Downloading '${snapshotName}'`,
-                        percent,
-                        false,
-                        onCancel
-                    );
-                } else {
-                    this.updateToast(
-                        toastId,
-                        `${this.formatSize(receivedLength)} received...`,
-                        'info',
-                        `Downloading '${snapshotName}'`,
-                        null,
-                        false,
-                        onCancel
-                    );
+                // Throttle UI updates and yield to macrotask queue so real
+                // user events (e.g. Cancel click) can fire between iterations.
+                const now = Date.now();
+                if (now - lastUiUpdate >= 100) {
+                    lastUiUpdate = now;
+                    await new Promise(r => setTimeout(r, 0));
+                    if (cancelled) break;
+                    if (total > 0) {
+                        const percent = Math.round((receivedLength / total) * 100);
+                        this.updateToast(
+                            toastId,
+                            `${percent}% (${this.formatSize(receivedLength)} / ${this.formatSize(total)})`,
+                            'info',
+                            `Downloading '${snapshotName}'`,
+                            percent,
+                            false,
+                            onCancel
+                        );
+                    } else {
+                        this.updateToast(
+                            toastId,
+                            `${this.formatSize(receivedLength)} received...`,
+                            'info',
+                            `Downloading '${snapshotName}'`,
+                            null,
+                            false,
+                            onCancel
+                        );
+                    }
                 }
             }
 
-            if (controller.signal.aborted) {
+            if (cancelled) {
                 this.removeToast(toastId);
                 return;
             }
@@ -5980,7 +6013,7 @@ class VigilanteDashboard {
                 true
             );
         } catch (error) {
-            if (error.name === 'AbortError') {
+            if (cancelled) {
                 this.removeToast(toastId);
                 return;
             }

@@ -4779,17 +4779,22 @@ html[data-theme="dark"] #leaderNode {
 
 .toast-content {
     flex: 1;
+    min-width: 0;
 }
 
 .toast-title {
     font-weight: 600;
     margin-bottom: 4px;
     color: #333;
+    overflow-wrap: break-word;
+    word-break: break-all;
 }
 
 .toast-message {
     font-size: 14px;
     color: #666;
+    overflow-wrap: break-word;
+    word-break: break-all;
 }
 
 .toast-close {
@@ -4812,6 +4817,7 @@ html[data-theme="dark"] #leaderNode {
 }
 
 .toast-cancel-btn {
+    display: inline-block;
     background: none;
     border: 1px solid #ccc;
     border-radius: 4px;
@@ -4819,15 +4825,18 @@ html[data-theme="dark"] #leaderNode {
     color: #666;
     cursor: pointer;
     padding: 2px 8px;
-    flex-shrink: 0;
-    align-self: center;
-    white-space: nowrap;
+    margin-top: 6px;
 }
 
-.toast-cancel-btn:hover {
+.toast-cancel-btn:hover:not(:disabled) {
     border-color: #dc3545;
     color: #dc3545;
     background: rgba(220, 53, 69, 0.05);
+}
+
+.toast-cancel-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
 }
 
 html[data-theme="dark"] .toast-cancel-btn {
