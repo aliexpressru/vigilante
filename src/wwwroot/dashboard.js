@@ -807,10 +807,10 @@ class VigilanteDashboard {
                 if (node.podName && node.podName !== 'unknown') {
                     label = node.podName;
                     if (node.peerId) {
-                        label += ` (${node.peerId.substring(0, 12)}...)`;
+                        label += ` (${String(node.peerId).substring(0, 12)}...)`;
                     }
                 } else {
-                    const peerId = node.peerId ? node.peerId.substring(0, 12) + '...' : '';
+                    const peerId = node.peerId ? String(node.peerId).substring(0, 12) + '...' : '';
                     label = peerId ? `${url} (${peerId})` : url;
                 }
                 html += `<option value="${url}">${label}</option>`;
