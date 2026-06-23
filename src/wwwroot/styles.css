@@ -1903,6 +1903,10 @@ html[data-theme="dark"] .nodes-table code {
     padding: 0;
 }
 
+html[data-theme="dark"] .snapshot-copy-badge:hover {
+    background: rgba(147, 197, 253, 0.1);
+}
+
 html[data-theme="dark"] .nodes-table tr:hover {
     background: #374151;
 }
@@ -5092,6 +5096,23 @@ html[data-theme="dark"] #leaderNode {
     color: #495057;
     white-space: nowrap;
 }
+
+/* Copyable badge for Peer ID and Snapshot name cells */
+.snapshot-copy-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 1px 2px;
+}
+
+.snapshot-copy-badge:hover {
+    background: rgba(33, 150, 243, 0.08);
+}
+
 
 /* Snapshot name cell - allow wrapping for long names */
 .nodes-table td:nth-child(4) {

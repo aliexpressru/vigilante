@@ -3101,6 +3101,36 @@ class VigilanteDashboard {
         // Update total size display
         document.getElementById('totalSnapshotsSize').textContent = `Total Size: ${this.formatSize(totalSize)}`;
 
+        const copyToClipboard = (text, toastLabel) => {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    this.showToast(`${toastLabel} copied to clipboard`, 'success', 'Copied', 2000);
+                }).catch(() => {
+                    this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                });
+            } else {
+                try {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = text;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-999999px';
+                    textArea.style.top = '-999999px';
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    if (successful) {
+                        this.showToast(`${toastLabel} copied to clipboard`, 'success', 'Copied', 2000);
+                    } else {
+                        this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                    }
+                } catch {
+                    this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                }
+            }
+        };
+
         // Create table
         const table = document.createElement('table');
         table.className = 'collections-table'; // Use same class as collections for consistent styling
@@ -3352,7 +3382,14 @@ class VigilanteDashboard {
                 cellNode.textContent = snapshot.nodeUrl;
                 
                 const cellPeer = document.createElement('td');
-                cellPeer.innerHTML = `<code>${snapshot.peerId}</code>`;
+                const peerContainer = document.createElement('div');
+                peerContainer.className = 'snapshot-copy-badge';
+                peerContainer.title = `Copy peer ID to clipboard`;
+                const peerCode = document.createElement('code');
+                peerCode.textContent = snapshot.peerId;
+                peerContainer.appendChild(peerCode);
+                peerContainer.addEventListener('click', (e) => { e.stopPropagation(); copyToClipboard(snapshot.peerId, 'Peer ID'); });
+                cellPeer.appendChild(peerContainer);
                 
                 const cellPod = document.createElement('td');
                 cellPod.textContent = snapshot.podName;
@@ -3362,8 +3399,14 @@ class VigilanteDashboard {
                 const displaySnapshotName = snapshot.snapshotName.startsWith(snapshotCollectionPrefix)
                     ? snapshot.snapshotName.slice(snapshotCollectionPrefix.length)
                     : snapshot.snapshotName;
-                cellSnapshot.textContent = displaySnapshotName;
-                cellSnapshot.title = snapshot.snapshotName;
+                const snapshotNameContainer = document.createElement('div');
+                snapshotNameContainer.className = 'snapshot-copy-badge';
+                snapshotNameContainer.title = `Copy snapshot name to clipboard`;
+                const snapshotNameSpan = document.createElement('span');
+                snapshotNameSpan.textContent = displaySnapshotName;
+                snapshotNameContainer.appendChild(snapshotNameSpan);
+                snapshotNameContainer.addEventListener('click', (e) => { e.stopPropagation(); copyToClipboard(snapshot.snapshotName, 'Snapshot name'); });
+                cellSnapshot.appendChild(snapshotNameContainer);
 
                 const cellCreated = document.createElement('td');
                 if (snapshot.createdAt) {
