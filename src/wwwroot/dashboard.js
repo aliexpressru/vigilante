@@ -131,6 +131,30 @@ class VigilanteDashboard {
         
         // Setup recovery modal after DOM is ready
         this.setupRecoveryModal();
+
+        // Reposition fixed dropdowns when page scrolls so they track their button
+        window.addEventListener('scroll', () => {
+            const activeButtonSelectors = [
+                '.collection-actions-menu-button.active',
+                '.node-actions-menu-button.active',
+                '.node-actions-menu-button-header.active',
+                '.snapshot-collection-menu-button.active',
+                '.snapshot-actions-menu-button.active',
+            ];
+            document.querySelectorAll(activeButtonSelectors.join(',')).forEach(btn => {
+                const dropdown = btn.parentElement?.querySelector(
+                    '.collection-actions-dropdown, .node-actions-dropdown, .snapshot-collection-dropdown, .snapshot-actions-dropdown'
+                );
+                if (!dropdown?.classList.contains('show')) return;
+                const rect = btn.getBoundingClientRect();
+                dropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                if (dropdown.classList.contains('opens-above')) {
+                    dropdown.style.bottom = (window.innerHeight - rect.top) + 'px';
+                } else {
+                    dropdown.style.top = rect.bottom + 'px';
+                }
+            });
+        }, { capture: true, passive: true });
     }
 
     setupThemeToggle() {
@@ -3309,7 +3333,7 @@ class VigilanteDashboard {
                 <th>Node</th>
                 <th>Peer ID</th>
                 <th>Pod</th>
-                <th>Snapshot Name</th>
+                <th>Snapshot</th>
                 <th>Created</th>
                 <th>Size</th>
             `;
