@@ -3101,6 +3101,12 @@ class VigilanteDashboard {
         // Update total size display
         document.getElementById('totalSnapshotsSize').textContent = `Total Size: ${this.formatSize(totalSize)}`;
 
+        const peerMap = new Map(
+            (this.clusterNodes || [])
+                .filter(n => n.peerId != null)
+                .map(n => [String(n.peerId), n])
+        );
+
         const copyToClipboard = (text, toastLabel) => {
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text).then(() => {
@@ -3378,9 +3384,13 @@ class VigilanteDashboard {
                 nodeRow.setAttribute('data-snapshot-index', index);
                 
                 // Create cells
+                const matchedNode = snapshot.peerId != null ? peerMap.get(String(snapshot.peerId)) : null;
+                const resolvedNodeUrl = matchedNode ? (matchedNode.nodeUrl || matchedNode.url || null) : null;
+                const resolvedPodName = matchedNode?.podName && matchedNode.podName !== 'unknown' ? matchedNode.podName : null;
+
                 const cellNode = document.createElement('td');
-                cellNode.textContent = snapshot.nodeUrl;
-                
+                cellNode.textContent = resolvedNodeUrl ?? 'N/A';
+
                 const cellPeer = document.createElement('td');
                 const peerContainer = document.createElement('div');
                 peerContainer.className = 'snapshot-copy-badge';
@@ -3392,7 +3402,7 @@ class VigilanteDashboard {
                 cellPeer.appendChild(peerContainer);
                 
                 const cellPod = document.createElement('td');
-                cellPod.textContent = snapshot.podName;
+                cellPod.textContent = resolvedPodName ?? 'N/A';
                 
                 const cellSnapshot = document.createElement('td');
                 const snapshotCollectionPrefix = collection.collectionName + '-';
