@@ -983,10 +983,11 @@ class VigilanteDashboard {
                 : snapshot.source === 'KubernetesStorage'
                     ? '<span class="multi-recover-source-badge multi-recover-source-badge--k8s">K8s</span>'
                     : '<span class="multi-recover-source-badge multi-recover-source-badge--api">API</span>';
+            const decodedSnapshotName = decodeURIComponent(snapshot.snapshotName);
             const collectionPrefix = collection.collectionName + '-';
-            const displaySnapshotName = snapshot.snapshotName.startsWith(collectionPrefix)
-                ? snapshot.snapshotName.slice(collectionPrefix.length)
-                : snapshot.snapshotName;
+            const displaySnapshotName = decodedSnapshotName.startsWith(collectionPrefix)
+                ? decodedSnapshotName.slice(collectionPrefix.length)
+                : decodedSnapshotName;
             const formattedTime = snapshot.createdAt
                 ? new Date(snapshot.createdAt).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
                 : '—';
@@ -997,7 +998,7 @@ class VigilanteDashboard {
                     </td>
                     <td class="multi-recover-snapshot-td">
                         ${sourceBadge}
-                        <span class="multi-recover-item-name" title="${this.escapeHtml(snapshot.snapshotName)}">${this.escapeHtml(displaySnapshotName)}</span>
+                        <span class="multi-recover-item-name" title="${this.escapeHtml(decodedSnapshotName)}">${this.escapeHtml(displaySnapshotName)}</span>
                     </td>
                     <td class="multi-recover-snapshot-td multi-recover-snapshot-td--time">${formattedTime}</td>
                 </tr>`;
@@ -3417,17 +3418,18 @@ class VigilanteDashboard {
                 cellPod.textContent = resolvedPodName ?? 'N/A';
                 
                 const cellSnapshot = document.createElement('td');
+                const decodedSnapshotName = decodeURIComponent(snapshot.snapshotName);
                 const snapshotCollectionPrefix = collection.collectionName + '-';
-                const displaySnapshotName = snapshot.snapshotName.startsWith(snapshotCollectionPrefix)
-                    ? snapshot.snapshotName.slice(snapshotCollectionPrefix.length)
-                    : snapshot.snapshotName;
+                const displaySnapshotName = decodedSnapshotName.startsWith(snapshotCollectionPrefix)
+                    ? decodedSnapshotName.slice(snapshotCollectionPrefix.length)
+                    : decodedSnapshotName;
                 const snapshotNameContainer = document.createElement('div');
                 snapshotNameContainer.className = 'snapshot-copy-badge';
                 snapshotNameContainer.title = `Copy snapshot name to clipboard`;
                 const snapshotNameSpan = document.createElement('span');
                 snapshotNameSpan.textContent = displaySnapshotName;
                 snapshotNameContainer.appendChild(snapshotNameSpan);
-                snapshotNameContainer.addEventListener('click', (e) => { e.stopPropagation(); copyToClipboard(snapshot.snapshotName, 'Snapshot name'); });
+                snapshotNameContainer.addEventListener('click', (e) => { e.stopPropagation(); copyToClipboard(decodedSnapshotName, 'Snapshot name'); });
                 cellSnapshot.appendChild(snapshotNameContainer);
 
                 const cellCreated = document.createElement('td');
