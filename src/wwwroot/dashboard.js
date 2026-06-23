@@ -4239,8 +4239,47 @@ class VigilanteDashboard {
 
         const nodeId = document.createElement('div');
         nodeId.className = 'node-id';
-        nodeId.textContent = node.peerId;
-        nodeId.title = node.peerId; // Show full peer ID on hover
+        nodeId.title = node.peerId ? `${node.peerId} — Click to copy` : '';
+
+        const peerIdText = document.createElement('span');
+        peerIdText.textContent = node.peerId;
+        nodeId.appendChild(peerIdText);
+
+        if (node.peerId) {
+            nodeId.classList.add('node-id-copyable');
+            nodeId.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(node.peerId).then(() => {
+                        this.showToast(`Peer ID "${node.peerId}" copied to clipboard`, 'success', 'Copied', 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                    });
+                } else {
+                    try {
+                        const textArea = document.createElement('textarea');
+                        textArea.value = node.peerId;
+                        textArea.style.position = 'fixed';
+                        textArea.style.left = '-999999px';
+                        textArea.style.top = '-999999px';
+                        document.body.appendChild(textArea);
+                        textArea.focus();
+                        textArea.select();
+                        const successful = document.execCommand('copy');
+                        document.body.removeChild(textArea);
+                        if (successful) {
+                            this.showToast(`Peer ID "${node.peerId}" copied to clipboard`, 'success', 'Copied', 2000);
+                        } else {
+                            this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                        }
+                    } catch (err) {
+                        console.error('Fallback: Could not copy text', err);
+                        this.showToast('Failed to copy to clipboard', 'error', 'Error', 3000);
+                    }
+                }
+            });
+        }
 
         if (node.isLeader) {
             const leaderBadge = document.createElement('span');

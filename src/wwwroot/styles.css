@@ -696,6 +696,21 @@ html[data-theme="dark"] {
     line-height: 1.3;
 }
 
+.node-id-copyable {
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.node-id-copyable:hover {
+    background: rgba(25, 118, 211, 0.08);
+    color: #1976d2;
+}
+
+.node-id-copyable:active {
+    background: rgba(25, 118, 211, 0.18);
+}
+
 /* Node status removed - color of card border indicates health */
 
 .node-peer-id {
@@ -1476,6 +1491,15 @@ html[data-theme="dark"] .node-card.unhealthy {
 html[data-theme="dark"] .node-card .node-id,
 html[data-theme="dark"] .node-card .node-detail-value {
     color: #f9fafb;
+}
+
+html[data-theme="dark"] .node-id-copyable:hover {
+    background: rgba(99, 179, 237, 0.12);
+    color: #63b3ed;
+}
+
+html[data-theme="dark"] .node-id-copyable:active {
+    background: rgba(99, 179, 237, 0.22);
 }
 
 html[data-theme="dark"] .node-card .node-detail-label,
