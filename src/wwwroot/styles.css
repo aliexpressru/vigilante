@@ -146,7 +146,7 @@ html[data-theme="dark"] {
     top: -18px;
     right: 0;
     width: 96px;
-    height: 46px;
+    height: 42px;
     background: inherit;
     border: none;
     border-radius: 10px 0 0 0;
@@ -2227,6 +2227,7 @@ html[data-theme="dark"] #leaderNode {
     gap: 12px;
     margin-bottom: 1rem;
     min-width: 0;
+    padding-top: 7px;
 }
 
 .collections-header-title {
