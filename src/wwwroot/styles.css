@@ -2589,7 +2589,7 @@ html[data-theme="dark"] #leaderNode {
 }
 
 .collection-name-text {
-    flex: 1;
+    flex-shrink: 1;
     min-width: 0;
     font-size: 0.85rem;
     font-weight: 600;

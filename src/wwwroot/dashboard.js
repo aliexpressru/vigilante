@@ -2253,7 +2253,7 @@ class VigilanteDashboard {
                 nameText.textContent = collection.name;
                 nameText.title = collection.name;
                 nameDiv.appendChild(nameText);
-                
+
                 // Copy to clipboard button
                 const copyButton = document.createElement('button');
                 copyButton.className = 'collection-name-copy-btn';
@@ -2295,8 +2295,9 @@ class VigilanteDashboard {
                         }
                     }
                 });
+                nameDiv.appendChild(copyButton);
                 nameContainer.appendChild(nameDiv);
-                
+
                 // Aliases (if any)
                 if (collection.aliases && collection.aliases.length > 0) {
                     const aliasesContainer = document.createElement('div');
@@ -2599,7 +2600,6 @@ class VigilanteDashboard {
                 topRow.appendChild(collectionActionsMenuContainer);
 
                 headerContainer.appendChild(nameContainer);
-                headerContainer.appendChild(copyButton);
                 headerContainer.appendChild(infoContainer);
                 nameCell.appendChild(headerContainer);
                 row.appendChild(nameCell);
