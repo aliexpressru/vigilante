@@ -57,27 +57,27 @@ services:
       - qdrant-snapshots-3:/qdrant/snapshots
     restart: unless-stopped
 
-  vigilante:
-    container_name: vigilante
-    image: aercis/vigilante:latest
-    # Apple Silicon: force native arm64. Without this, Docker may run the amd64 layer via qemu (see "qemu:" in logs → crash).
-    # Linux/Intel: export VIGILANTE_PLATFORM=linux/amd64
-    platform: ${VIGILANTE_PLATFORM:-linux/arm64}
-    environment:
-      VIGILANTE_VERSION: local-docker-compose
-      ASPNETCORE_ENVIRONMENT: Development
-      ASPNETCORE_URLS: http://+:6360
-      Qdrant__ApiKey: test
-      Vigilante__DashboardPassword: test
-      # Overrides appsettings Nodes; inside the container localhost is wrong — use host machine (macOS/Win Docker Desktop).
-      QDRANT_NODES: "qdrant-1:6333;qdrant-2:6333;qdrant-3:6333"
-    ports:
-      - "6360:6360"
-    restart: unless-stopped
-    depends_on:
-      - qdrant-1
-      - qdrant-2
-      - qdrant-3
+  # vigilante:
+  #   container_name: vigilante
+  #   image: aercis/vigilante:latest
+  #   # Apple Silicon: force native arm64. Without this, Docker may run the amd64 layer via qemu (see "qemu:" in logs → crash).
+  #   # Linux/Intel: export VIGILANTE_PLATFORM=linux/amd64
+  #   platform: ${VIGILANTE_PLATFORM:-linux/arm64}
+  #   environment:
+  #     VIGILANTE_VERSION: local-docker-compose
+  #     ASPNETCORE_ENVIRONMENT: Development
+  #     ASPNETCORE_URLS: http://+:6360
+  #     Qdrant__ApiKey: test
+  #     Vigilante__DashboardPassword: test
+  #     # Overrides appsettings Nodes; inside the container localhost is wrong — use host machine (macOS/Win Docker Desktop).
+  #     QDRANT_NODES: "qdrant-1:6333;qdrant-2:6333;qdrant-3:6333"
+  #   ports:
+  #     - "6360:6360"
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - qdrant-1
+  #     - qdrant-2
+  #     - qdrant-3
 
 volumes:
   qdrant-storage-1:

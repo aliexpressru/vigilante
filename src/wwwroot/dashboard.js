@@ -2097,6 +2097,24 @@ class VigilanteDashboard {
         });
     }
 
+    _closeAllDropdownMenus() {
+        document.querySelectorAll(
+            '.collection-actions-menu-button.active, .node-actions-menu-button.active, .node-actions-menu-button-header.active, .snapshot-collection-menu-button.active, .snapshot-actions-menu-button.active'
+        ).forEach(btn => {
+            btn.classList.remove('active');
+            const dropdown = btn.parentElement?.querySelector(
+                '.collection-actions-dropdown, .node-actions-dropdown, .snapshot-collection-dropdown, .snapshot-actions-dropdown'
+            );
+            if (dropdown) {
+                dropdown.classList.remove('show');
+            }
+        });
+        this.openCollectionMenus.clear();
+        this.openNodeMenus.clear();
+        this.openSnapshotCollectionMenus.clear();
+        this.openSnapshotMenus.clear();
+    }
+
     updateCollectionSizes(collections) {
         if (!Array.isArray(collections)) {
             console.warn('Received non-array collections data:', collections);
@@ -2539,27 +2557,7 @@ class VigilanteDashboard {
                 collectionActionsMenuButton.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const wasOpen = collectionActionsMenuButton.classList.contains('active');
-                    // Close all other open collection menus
-                    document.querySelectorAll('.collection-actions-menu-button.active').forEach(btn => {
-                        btn.classList.remove('active');
-                        const container = btn.parentElement;
-                        const menu = container?.querySelector('.collection-actions-dropdown');
-                        if (menu) {
-                            menu.classList.remove('show');
-                        }
-                        // Update state for closed menus
-                        const row = btn.closest('.collection-row');
-                        if (row) {
-                            const nameEl = row.querySelector('.collection-name-text');
-                            if (nameEl) {
-                                const collectionName = nameEl.textContent?.trim();
-                                if (collectionName) {
-                                    this.openCollectionMenus.delete(collectionName);
-                                }
-                            }
-                        }
-                    });
-                    
+                    this._closeAllDropdownMenus();
                     if (!wasOpen) {
                         collectionActionsMenuButton.classList.add('active');
                         const rect = collectionActionsMenuButton.getBoundingClientRect();
@@ -2742,15 +2740,7 @@ class VigilanteDashboard {
                         nodeMenuButton.addEventListener('click', (e) => {
                             e.stopPropagation();
                             const wasOpen = nodeMenuButton.classList.contains('active');
-                            // Close all open collection and node menus
-                            document.querySelectorAll('.collection-actions-menu-button.active, .node-actions-menu-button.active').forEach(btn => {
-                                btn.classList.remove('active');
-                                const container = btn.parentElement;
-                                const menu = container?.querySelector('.collection-actions-dropdown, .node-actions-dropdown');
-                                if (menu) {
-                                    menu.classList.remove('show');
-                                }
-                            });
+                            this._closeAllDropdownMenus();
                             if (!wasOpen) {
                                 nodeMenuButton.classList.add('active');
                                 const rect = nodeMenuButton.getBoundingClientRect();
@@ -3309,34 +3299,12 @@ class VigilanteDashboard {
             snapshotCollectionMenuButton.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const wasOpen = snapshotCollectionMenuButton.classList.contains('active');
-                // Close all other open snapshot collection menus
-                document.querySelectorAll('.snapshot-collection-menu-button.active').forEach(btn => {
-                    btn.classList.remove('active');
-                    const container = btn.parentElement;
-                    const menu = container?.querySelector('.snapshot-collection-dropdown');
-                    if (menu) {
-                        menu.classList.remove('show');
-                    }
-                    // Remove from tracking when closing other menus
-                    const parentRow = btn.closest('tr');
-                    if (parentRow) {
-                        const collectionNameEl = parentRow.querySelector('.collection-name-text');
-                        if (collectionNameEl) {
-                            const collectionName = collectionNameEl.textContent?.trim();
-                            if (collectionName) {
-                                this.openSnapshotCollectionMenus.delete(collectionName);
-                            }
-                        }
-                    }
-                });
-
+                this._closeAllDropdownMenus();
                 if (!wasOpen) {
                     snapshotCollectionMenuButton.classList.add('active');
                     positionCollectionDropdown(snapshotCollectionMenuButton, snapshotCollectionDropdown);
                     snapshotCollectionDropdown.classList.add('show');
                     this.openSnapshotCollectionMenus.add(collection.collectionName);
-                } else {
-                    this.openSnapshotCollectionMenus.delete(collection.collectionName);
                 }
             });
 
@@ -3558,19 +3526,7 @@ class VigilanteDashboard {
                 snapshotActionsMenuButton.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const wasOpen = snapshotActionsMenuButton.classList.contains('active');
-                    // Close all other open snapshot action menus
-                    document.querySelectorAll('.snapshot-actions-menu-button.active').forEach(btn => {
-                        btn.classList.remove('active');
-                        const container = btn.parentElement;
-                        const menu = container?.querySelector('.snapshot-actions-dropdown');
-                        if (menu) {
-                            menu.classList.remove('show');
-                        }
-                    });
-
-                    // Clear all tracked open menus when closing others
-                    this.openSnapshotMenus.clear();
-
+                    this._closeAllDropdownMenus();
                     if (!wasOpen) {
                         snapshotActionsMenuButton.classList.add('active');
                         positionSnapshotDropdown(snapshotActionsMenuButton, snapshotActionsDropdown);
@@ -4571,24 +4527,7 @@ class VigilanteDashboard {
         actionsMenuButton.addEventListener('click', (e) => {
             e.stopPropagation();
             const wasOpen = actionsMenuButton.classList.contains('active');
-            // Close all other open menus
-            document.querySelectorAll('.node-actions-menu-button-header.active').forEach(btn => {
-                btn.classList.remove('active');
-                const container = btn.parentElement;
-                const menu = container?.querySelector('.node-actions-dropdown');
-                if (menu) {
-                    menu.classList.remove('show');
-                }
-                // Update state for closed menus
-                const card = btn.closest('.node-card');
-                if (card) {
-                    const peerId = card.querySelector('.node-id')?.textContent?.split('\n')[0]?.trim();
-                    if (peerId) {
-                        this.openNodeMenus.delete(peerId);
-                    }
-                }
-            });
-            
+            this._closeAllDropdownMenus();
             if (!wasOpen) {
                 actionsMenuButton.classList.add('active');
                 const rect = actionsMenuButton.getBoundingClientRect();

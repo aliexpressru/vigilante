@@ -25,6 +25,8 @@ Web service and dashboard for monitoring and operating Qdrant clusters: health, 
 
 ## Quick Start
 
+When using `docker-compose.yml` in the root of this repo - uncomment the `vigilante` section.
+
 ### Option A: Full local stack via docker-compose (Vigilante + Qdrant cluster)
 
 This starts:
@@ -39,10 +41,12 @@ docker compose up -d
 ```
 
 Open:
+
 - Dashboard: `http://localhost:6360`
 - Swagger: `http://localhost:6360/swagger`
 
 Qdrant ports on host:
+
 - `6343` -> `qdrant-1:6333`
 - `6353` -> `qdrant-2:6333`
 - `6363` -> `qdrant-3:6333`
