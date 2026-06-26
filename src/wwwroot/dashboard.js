@@ -23,6 +23,7 @@ class VigilanteDashboard {
         this.removePeerEndpoint = '/api/v1/cluster/remove-peer';
         this.manageStatefulSetEndpoint = '/api/v1/kubernetes/manage-statefulset';
         this.restoreReplicationFactorEndpoint = '/api/v1/collections/restore-replication-factor';
+        this.triggerOptimizersEndpoint = '/api/v1/collections/trigger-optimizers';
         this.jobsStatusEndpoint = '/api/v1/jobs/status';
         this.jobsCancelEndpoint = '/api/v1/jobs/cancel';
         this.qdrantLogsEndpoint = '/api/v1/logs/qdrant';
@@ -2547,6 +2548,20 @@ class VigilanteDashboard {
                     await this.startRestoreReplicationFactor(collection.name);
                 });
                 collectionActionsDropdown.appendChild(restoreRfAction);
+
+                // Trigger Optimizers action
+                const triggerOptimizersAction = document.createElement('button');
+                triggerOptimizersAction.className = 'collection-action-item';
+                triggerOptimizersAction.innerHTML = '<i class="fas fa-bolt"></i> Trigger Optimizers';
+                triggerOptimizersAction.title = 'Trigger collection optimizers on a healthy node';
+                triggerOptimizersAction.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    collectionActionsDropdown.classList.remove('show');
+                    collectionActionsMenuButton.classList.remove('active');
+                    this.openCollectionMenus.delete(collection.name);
+                    await this.triggerCollectionOptimizers(collection.name);
+                });
+                collectionActionsDropdown.appendChild(triggerOptimizersAction);
 
                 // Delete actions should go last in menu
                 collectionActionsDropdown.appendChild(deleteApiAction);
@@ -5782,6 +5797,26 @@ class VigilanteDashboard {
         } catch (error) {
             this.removeToast(toastId);
             this.showToast(`Error: ${this.getErrorMessage(error)}`, 'error', 'Restore Replication Factor', 10000);
+        }
+    }
+
+    async triggerCollectionOptimizers(collectionName) {
+        const toastId = this.showToast(`Triggering optimizers for '${collectionName}'...`, 'info', 'Trigger Optimizers', 0, true);
+        try {
+            const response = await apiFetch(this.triggerOptimizersEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ collectionName })
+            });
+            const result = await response.json();
+            if (response.ok && result.success) {
+                this.updateToast(toastId, result.message || 'Optimizers triggered successfully.', 'success', 'Trigger Optimizers');
+            } else {
+                this.updateToast(toastId, result.message || result.error || `HTTP ${response.status}`, 'error', 'Trigger Optimizers');
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`Error: ${this.getErrorMessage(error)}`, 'error', 'Trigger Optimizers', 10000);
         }
     }
 

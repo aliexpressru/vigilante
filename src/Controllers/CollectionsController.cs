@@ -394,4 +394,43 @@ public class CollectionsController(
             });
         }
     }
+
+    [HttpPost("trigger-optimizers")]
+    [ProducesResponseType(typeof(V1TriggerCollectionOptimizersResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1TriggerCollectionOptimizersResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1TriggerCollectionOptimizersResponse>> TriggerCollectionOptimizers(
+        [FromBody] V1TriggerCollectionOptimizersRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var success = await clusterManager.TriggerCollectionOptimizersAsync(request.CollectionName, cancellationToken);
+
+            if (success)
+            {
+                return Ok(new V1TriggerCollectionOptimizersResponse
+                {
+                    Success = true,
+                    Message = $"Optimizers triggered for collection '{request.CollectionName}'"
+                });
+            }
+
+            return StatusCode(500, new V1TriggerCollectionOptimizersResponse
+            {
+                Success = false,
+                Message = "Failed to trigger optimizers (no healthy node or Qdrant API error)"
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error triggering optimizers for collection {CollectionName}", request.CollectionName);
+            return StatusCode(500, new V1TriggerCollectionOptimizersResponse
+            {
+                Success = false,
+                Message = "Internal server error during trigger optimizers",
+                Error = ex.Message
+            });
+        }
+    }
 }

@@ -889,6 +889,37 @@ public class CollectionService : ICollectionService
         }
     }
 
+    public async Task<bool> TriggerOptimizersAsync(string nodeUrl, string collectionName, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
+            var result = await qdrantClient.TriggerOptimizers(collectionName, cancellationToken);
+
+            if (result?.Status?.IsSuccess == true)
+            {
+                _logger.LogInformation(
+                    "Optimizers triggered for collection {CollectionName} on node {NodeUrl}",
+                    collectionName,
+                    nodeUrl
+                );
+                return true;
+            }
+
+            _logger.LogError(
+                "Failed to trigger optimizers for collection {CollectionName}: {Error}",
+                collectionName,
+                result?.Status?.Error ?? MetricConstants.UnknownErrorMessage
+            );
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to trigger optimizers for collection {CollectionName} on node {NodeUrl}", collectionName, nodeUrl);
+            return false;
+        }
+    }
+
     /// <summary>
     /// Gets the number of unique collections from a list of CollectionInfo instances
     /// </summary>

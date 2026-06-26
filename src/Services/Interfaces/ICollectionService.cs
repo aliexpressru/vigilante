@@ -139,5 +139,13 @@ public interface ICollectionService
         string aliasName,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Triggers optimizers for the collection on the given node.
+    /// </summary>
+    Task<bool> TriggerOptimizersAsync(
+        string nodeUrl,
+        string collectionName,
+        CancellationToken cancellationToken);
+
 }
 

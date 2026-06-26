@@ -109,6 +109,11 @@ public interface IClusterManager
     Task<bool> DeleteCollectionAliasAsync(string aliasName, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Triggers optimizers for a collection. Uses one healthy node.
+    /// </summary>
+    Task<bool> TriggerCollectionOptimizersAsync(string collectionName, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reports an external issue to surface in cluster health, identified by key.
     /// The issue expires after a TTL if not explicitly cleared.
     /// </summary>

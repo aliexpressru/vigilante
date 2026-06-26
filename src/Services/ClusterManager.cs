@@ -510,6 +510,19 @@ public partial class ClusterManager(
         return await collectionService.DeleteCollectionAliasAsync(healthyNode.Url, aliasName, cancellationToken);
     }
 
+    public async Task<bool> TriggerCollectionOptimizersAsync(string collectionName, CancellationToken cancellationToken = default)
+    {
+        var state = await GetClusterStateAsync(cancellationToken);
+        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
+        if (healthyNode == null)
+        {
+            logger.LogWarning("No healthy node available to trigger optimizers for collection {CollectionName}", collectionName);
+            return false;
+        }
+
+        return await collectionService.TriggerOptimizersAsync(healthyNode.Url, collectionName, cancellationToken);
+    }
+
     public async Task<bool> DropShardsFromPeerAsync(
         string collectionName,
         ulong peerId,
