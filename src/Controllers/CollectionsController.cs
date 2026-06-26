@@ -25,14 +25,14 @@ public class CollectionsController(
     {
         try
         {
-            var result = await clusterManager.GetCollectionsInfoAsync(request.ClearCache, cancellationToken);
+            var allCollectionInfos = await clusterManager.GetCollectionsInfoAsync(request.ClearCache, cancellationToken);
 
             // Collect all issues from collections into a general issues array
             var allIssues = new List<string>();
 
             // Group by collection name first
             // Note: result is already sorted by node (PodName/PeerId) from the service layer
-            var collectionGroups = result
+            var collectionGroups = allCollectionInfos
                 .GroupBy(size => size.CollectionName, (key, group) => new
                 {
                     CollectionName = key,

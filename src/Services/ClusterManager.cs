@@ -155,7 +155,7 @@ public partial class ClusterManager(
             }
             catch (Exception)
             {
-                return (NodeUrl: node.Url, Storage: (NodeStorageInfo?)null);
+                return (NodeUrl: node.Url, Storage: null);
             }
         });
 
@@ -209,7 +209,7 @@ public partial class ClusterManager(
 
                 if (usage == null)
                 {
-                    return (NodeUrl: node.Url, Memory: (NodeMemoryInfo?)null);
+                    return (NodeUrl: node.Url, Memory: null);
                 }
 
                 return (
@@ -225,7 +225,7 @@ public partial class ClusterManager(
             }
             catch (Exception)
             {
-                return (NodeUrl: node.Url, Memory: (NodeMemoryInfo?)null);
+                return (NodeUrl: node.Url, Memory: null);
             }
         });
 

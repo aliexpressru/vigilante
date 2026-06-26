@@ -1831,6 +1831,7 @@ class VigilanteDashboard {
                 }
                 return acc;
             }, { vectors: 0, payloads: 0 });
+
             const shardsSummaryHtml = this.renderShardsMemoryBar(
                 shardTotals.vectors,
                 shardTotals.payloads,

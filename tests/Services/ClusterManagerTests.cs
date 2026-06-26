@@ -75,7 +75,7 @@ public class ClusterManagerTests
                 Arg.Any<IEnumerable<(string, ulong, string?, string?)>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<bool>())
-            .Returns(([], true, (string?)null));
+            .Returns(([], true, null));
 
         // Setup client factory to return mocked clients
         _clientFactory

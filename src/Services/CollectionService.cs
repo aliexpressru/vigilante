@@ -280,7 +280,7 @@ public class CollectionService : ICollectionService
                             return (IsHealthy: false, CollectionName: collectionName, Error: errorDetails);
                         }
 
-                        return (IsHealthy: true, CollectionName: collectionName, Error: (string?)null);
+                        return (IsHealthy: true, CollectionName: collectionName, Error: null);
                     })
                     .ToArray();
 
@@ -1103,7 +1103,7 @@ public class CollectionService : ICollectionService
 
         foreach (var shard in clusteringResult.LocalShards)
         {
-            shardDetails.Add(new ShardDetails { ShardId = (uint)shard.ShardId, State = shard.State.ToString() });
+            shardDetails.Add(new ShardDetails { ShardId = shard.ShardId, State = shard.State.ToString() });
             shardStates[shard.ShardId.ToString()] = shard.State.ToString();
         }
 
@@ -1175,7 +1175,7 @@ public class CollectionService : ICollectionService
                             collectionName,
                             response?.Status?.GetErrorMessage() ?? MetricConstants.UnknownErrorMessage
                         );
-                        return (collectionName, (CollectionMemoryReportInfo?)null);
+                        return (collectionName, null);
                     }
 
                     return (collectionName, (CollectionMemoryReportInfo?)response.Result.ToInfo());
@@ -1183,7 +1183,7 @@ public class CollectionService : ICollectionService
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to get memory report for collection {CollectionName}", collectionName);
-                    return (collectionName, (CollectionMemoryReportInfo?)null);
+                    return (collectionName, null);
                 }
             });
 

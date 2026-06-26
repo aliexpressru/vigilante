@@ -2772,6 +2772,23 @@ html[data-theme="dark"] #leaderNode {
     transition-delay: 0s;
 }
 
+/* Right-anchor tooltips inside collection-info-block to prevent edge clipping */
+.collection-info-block .collection-status[data-tooltip]::after,
+.collection-info-block .collection-metric-hint[data-tooltip]::after,
+.collection-info-block .collection-status-warning-icon[data-tooltip]::after {
+    left: auto;
+    right: 0;
+    transform: translateY(-4px);
+}
+
+.collection-info-block .collection-status[data-tooltip]::before,
+.collection-info-block .collection-metric-hint[data-tooltip]::before,
+.collection-info-block .collection-status-warning-icon[data-tooltip]::before {
+    left: auto;
+    right: 5px;
+    transform: translateY(1px);
+}
+
 /* Green Status - Healthy */
 .collection-status-green {
     color: #2e7d32;

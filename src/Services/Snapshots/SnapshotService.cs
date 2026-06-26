@@ -410,7 +410,7 @@ public partial class SnapshotService(
                             nodeUrl,
                             result?.Status?.Error ?? MetricConstants.UnknownErrorMessage
                         );
-                        return (NodeUrl: nodeUrl, SnapshotName: (string?)null);
+                        return (NodeUrl: nodeUrl, SnapshotName: null);
                     }
 
                     var snapshotName = result.Result?.Name ?? $"{collectionName}-snapshot-{DateTime.UtcNow:yyyyMMddHHmmss}";
@@ -434,7 +434,7 @@ public partial class SnapshotService(
                         collectionName,
                         nodeUrl
                     );
-                    return (NodeUrl: nodeUrl, SnapshotName: (string?)null);
+                    return (NodeUrl: nodeUrl, SnapshotName: null);
                 }
             });
 
