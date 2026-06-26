@@ -2173,28 +2173,17 @@ class VigilanteDashboard {
                 return acc;
             }
 
-            // We are saving status based on the first node collection info.
-            // This results in the issue when one node returns collection status different from other nodes it might or might not be displayed
-            // We should change this logic
-
             if (!acc[info.collectionName]) {
                 acc[info.collectionName] = {
                     name: info.collectionName,
                     aliases: info.aliases || [],
-                    status: info.status, // Save collection status (Green/Yellow/Red)
+                    statusCounts: info.status ? { [info.status]: 1 } : {},
                     warnings: [],
                     nodes: [] // Use array to preserve backend order
                 };
             } else {
-                // The possible statuses from the best to worst are `Green`, `Yellow`, `Red`, `Grey`.
-                // Keep the worst seen status
-                const priority = { Red: 3, Yellow: 2, Grey: 1, Green: 0 };
-
-                const currentStatusPriority = priority[acc[info.collectionName].status] ?? 0;
-                const incomingStatusPriority = priority[info.status] ?? 0;
-
-                if (incomingStatusPriority > currentStatusPriority) {
-                    acc[info.collectionName].status = info.status;
+                if (info.status) {
+                    acc[info.collectionName].statusCounts[info.status] = (acc[info.collectionName].statusCounts[info.status] || 0) + 1;
                 }
             }
 
@@ -2431,39 +2420,29 @@ class VigilanteDashboard {
                 }
                 
                 // Collection Status (if available)
-                if (collection.status) {
-                    const statusSpan = document.createElement('span');
-                    statusSpan.className = `collection-status collection-status-${collection.status.toLowerCase()}`;
-                    
-                    // Add icon and tooltip based on status
-                    let icon = '';
-                    let tooltipText = '';
-                    switch (collection.status) {
-                        case 'Green':
-                            icon = '<i class="fas fa-check-circle"></i>';
-                            tooltipText = 'All the points are processed and indexing is done, collection is ready';
-                            break;
-                        case 'Yellow':
-                            icon = '<i class="fas fa-exclamation-triangle"></i>';
-                            tooltipText = 'Optimization process is still running';
-                            break;
-                        case 'Red':
-                            icon = '<i class="fas fa-times-circle"></i>';
-                            tooltipText = 'An error occurred which the engine could not recover from';
-                            break;
-                        case 'Grey':
-                            icon = '<i class="fas fa-pause-circle"></i>';
-                            tooltipText = 'Optimizations are pending after restart';
-                            break;
-                        default:
-                            icon = '';
-                            tooltipText = `Status: ${collection.status}`;
+                const statusEntries = Object.entries(collection.statusCounts || {});
+                if (statusEntries.length > 0) {
+                    const statusMeta = {
+                        Green: { icon: '<i class="fas fa-check-circle"></i>', tooltip: 'All the points are processed and indexing is done, collection is ready' },
+                        Yellow: { icon: '<i class="fas fa-exclamation-triangle"></i>', tooltip: 'Optimization process is still running' },
+                        Red: { icon: '<i class="fas fa-times-circle"></i>', tooltip: 'An error occurred which the engine could not recover from' },
+                        Grey: { icon: '<i class="fas fa-pause-circle"></i>', tooltip: 'Optimizations are pending after restart' },
+                    };
+                    const statusPriority = ['Red', 'Yellow', 'Grey', 'Green'];
+                    const allSame = statusEntries.length === 1;
+                    const orderedEntries = statusEntries.sort(([a], [b]) => statusPriority.indexOf(a) - statusPriority.indexOf(b));
+
+                    for (const [status, count] of orderedEntries) {
+                        const statusSpan = document.createElement('span');
+                        statusSpan.className = `collection-status collection-status-${status.toLowerCase()}`;
+                        const meta = statusMeta[status] ?? { icon: '', tooltip: `Status: ${status}` };
+                        const label = allSame ? status : `${status} ×${count}`;
+                        const tooltip = allSame ? meta.tooltip : `${meta.tooltip} (${count} node${count !== 1 ? 's' : ''})`;
+                        statusSpan.innerHTML = `${meta.icon} ${label}`;
+                        statusSpan.setAttribute('data-tooltip', tooltip);
+                        topRow.appendChild(statusSpan);
+                        this.fitCollectionHeaderBadge(statusSpan);
                     }
-                    
-                    statusSpan.innerHTML = `${icon} ${collection.status}`;
-                    statusSpan.setAttribute('data-tooltip', tooltipText);
-                    topRow.appendChild(statusSpan);
-                    this.fitCollectionHeaderBadge(statusSpan);
                 }
                 
                 if (collectionDiskBytes != null && collectionDiskBytes > 0) {
