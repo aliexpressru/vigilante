@@ -31,7 +31,8 @@ public class CollectionService : ICollectionService
         IQdrantClientFactory clientFactory,
         IOptions<QdrantOptions> options,
         ILogger<PodCommandExecutor> commandExecutorLogger,
-        IKubernetes? kubernetes = null)
+        IKubernetes? kubernetes = null
+    )
     {
         _logger = logger;
         _meterService = meterService;
@@ -58,20 +59,26 @@ public class CollectionService : ICollectionService
         uint[] shardIds,
         bool isMove,
         ShardTransferMethod? shardTransferMethod,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         try
         {
             var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodeUrl, _options.ApiKey);
 
             // Use provided transfer method or default to Snapshot
-            var transferMethod =
-                shardTransferMethod ?? ShardTransferMethod.Snapshot;
+            var transferMethod = shardTransferMethod ?? ShardTransferMethod.Snapshot;
 
             _logger.LogInformation(
-                "Initiating shard replication via Qdrant client: Collection={Collection}, Source={SourcePeerId}, Target={TargetPeerId}, " +
-                "Shards=[{ShardIds}], Move={IsMove}, TransferMethod={TransferMethod}",
-                collectionName, sourcePeerId, targetPeerId, string.Join(", ", shardIds), isMove, transferMethod);
+                "Initiating shard replication via Qdrant client: Collection={Collection}, Source={SourcePeerId}, Target={TargetPeerId}, "
+                    + "Shards=[{ShardIds}], Move={IsMove}, TransferMethod={TransferMethod}",
+                collectionName,
+                sourcePeerId,
+                targetPeerId,
+                string.Join(", ", shardIds),
+                isMove,
+                transferMethod
+            );
 
             var result = await qdrantClient.ReplicateShards(
                 sourcePeerId: sourcePeerId,
@@ -80,19 +87,27 @@ public class CollectionService : ICollectionService
                 shardIdsToReplicate: shardIds,
                 isMoveShards: isMove,
                 shardTransferMethod: transferMethod,
-                cancellationToken: cancellationToken);
+                cancellationToken: cancellationToken
+            );
 
             if (result?.Status?.IsSuccess == true)
             {
                 _logger.LogInformation(
                     "Shard replication initiated: {Collection} [{SourcePeer}→{TargetPeer}] using {TransferMethod}",
-                    collectionName, sourcePeerId, targetPeerId, transferMethod);
+                    collectionName,
+                    sourcePeerId,
+                    targetPeerId,
+                    transferMethod
+                );
 
                 return true;
             }
 
-            _logger.LogError("Failed to replicate shards for {Collection}: {Error}",
-                collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+            _logger.LogError(
+                "Failed to replicate shards for {Collection}: {Error}",
+                collectionName,
+                result?.Status?.Error ?? MetricConstants.UnknownErrorMessage
+            );
 
             return false;
         }
@@ -110,39 +125,45 @@ public class CollectionService : ICollectionService
         ulong targetPeerId,
         string collectionName,
         uint shardId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         try
         {
             var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodeUrl, _options.ApiKey);
 
             _logger.LogInformation(
-                "Aborting shard transfer via Qdrant client: Collection={Collection}, Source={SourcePeerId}, Target={TargetPeerId}, " +
-                "ShardId={ShardId}",
-                collectionName, sourcePeerId, targetPeerId, shardId);
+                "Aborting shard transfer via Qdrant client: Collection={Collection}, Source={SourcePeerId}, Target={TargetPeerId}, "
+                    + "ShardId={ShardId}",
+                collectionName,
+                sourcePeerId,
+                targetPeerId,
+                shardId
+            );
 
             var request = UpdateCollectionClusteringSetupRequest.CreateAbortShardTransferRequest(
                 shardId,
                 sourcePeerId,
-                targetPeerId);
+                targetPeerId
+            );
 
-            var result = await qdrantClient.UpdateCollectionClusteringSetup(
-                collectionName,
-                request,
-                cancellationToken);
+            var result = await qdrantClient.UpdateCollectionClusteringSetup(collectionName, request, cancellationToken);
 
             if (result?.Status?.IsSuccess == true)
             {
                 _logger.LogInformation(
                     "Shard transfer aborted: {Collection} [Shard {ShardId}: {SourcePeer}→{TargetPeer}]",
-                    collectionName, shardId, sourcePeerId, targetPeerId);
+                    collectionName,
+                    shardId,
+                    sourcePeerId,
+                    targetPeerId
+                );
 
                 return true;
             }
 
             var errorMessage = result?.Status?.Error ?? MetricConstants.UnknownErrorMessage;
-            _logger.LogError("Failed to abort shard transfer for {Collection}: {Error}",
-                collectionName, errorMessage);
+            _logger.LogError("Failed to abort shard transfer for {Collection}: {Error}", collectionName, errorMessage);
 
             return false;
         }
@@ -159,7 +180,8 @@ public class CollectionService : ICollectionService
         string podNamespace,
         string nodeUrl,
         ulong peerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         if (_commandExecutor == null)
         {
@@ -174,7 +196,8 @@ public class CollectionService : ICollectionService
                 podName,
                 podNamespace,
                 QdrantConstants.StoragePath,
-                cancellationToken);
+                cancellationToken
+            );
 
             foreach (var collection in collections)
             {
@@ -183,7 +206,8 @@ public class CollectionService : ICollectionService
                     podNamespace,
                     QdrantConstants.StoragePath,
                     collection,
-                    cancellationToken);
+                    cancellationToken
+                );
 
                 if (sizeBytes.HasValue)
                 {
@@ -193,7 +217,7 @@ public class CollectionService : ICollectionService
                         NodeUrl = nodeUrl,
                         PeerId = peerId,
                         CollectionName = collection,
-                        SizeBytes = sizeBytes.Value
+                        SizeBytes = sizeBytes.Value,
                     };
 
                     sizes.Add(collectionSize);
@@ -209,8 +233,10 @@ public class CollectionService : ICollectionService
         return sizes;
     }
 
-    public async Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(IQdrantHttpClient client,
-        CancellationToken cancellationToken = default)
+    public async Task<(bool IsHealthy, string? ErrorMessage)> CheckCollectionsHealthAsync(
+        IQdrantHttpClient client,
+        CancellationToken cancellationToken = default
+    )
     {
         // This method is kept for backward compatibility with old code that passes IQdrantHttpClient
         // It performs a simple health check without caching
@@ -234,24 +260,29 @@ public class CollectionService : ICollectionService
                 var collections = collectionsResponse.Result.Collections;
 
                 // Create tasks for all collection health checks
-                var checkTasks = collections.Select(async collection =>
-                {
-                    var collectionName = collection.Name;
-
-                    var collectionInfo = await client.GetCollectionInfo(collectionName, cancellationToken);
-
-                    if (!collectionInfo.Status.IsSuccess)
+                var checkTasks = collections
+                    .Select(async collection =>
                     {
-                        var errorDetails = collectionInfo.Status?.Error ?? MetricConstants.UnknownErrorMessage;
+                        var collectionName = collection.Name;
 
-                        _logger.LogWarning("Collections health check failed for {CollectionName}: {Error}",
-                            collectionName, errorDetails);
+                        var collectionInfo = await client.GetCollectionInfo(collectionName, cancellationToken);
 
-                        return (IsHealthy: false, CollectionName: collectionName, Error: errorDetails);
-                    }
+                        if (!collectionInfo.Status.IsSuccess)
+                        {
+                            var errorDetails = collectionInfo.Status?.Error ?? MetricConstants.UnknownErrorMessage;
 
-                    return (IsHealthy: true, CollectionName: collectionName, Error: (string?)null);
-                }).ToArray();
+                            _logger.LogWarning(
+                                "Collections health check failed for {CollectionName}: {Error}",
+                                collectionName,
+                                errorDetails
+                            );
+
+                            return (IsHealthy: false, CollectionName: collectionName, Error: errorDetails);
+                        }
+
+                        return (IsHealthy: true, CollectionName: collectionName, Error: (string?)null);
+                    })
+                    .ToArray();
 
                 // Wait for all checks to complete
                 var results = await Task.WhenAll(checkTasks);
@@ -260,8 +291,7 @@ public class CollectionService : ICollectionService
                 var (IsHealthy, CollectionName, Error) = results.FirstOrDefault(r => !r.IsHealthy);
                 if (CollectionName != null)
                 {
-                    return (false,
-                        $"Failed to get info for collection '{CollectionName}': {Error}");
+                    return (false, $"Failed to get info for collection '{CollectionName}': {Error}");
                 }
             }
 
@@ -278,12 +308,12 @@ public class CollectionService : ICollectionService
     public async Task<bool> DeleteCollectionViaApiAsync(
         string nodeUrl,
         string collectionName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         try
         {
-            _logger.LogInformation("Deleting collection {CollectionName} via API on node {NodeUrl}",
-                collectionName, nodeUrl);
+            _logger.LogInformation("Deleting collection {CollectionName} via API on node {NodeUrl}", collectionName, nodeUrl);
 
             var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
 
@@ -291,21 +321,31 @@ public class CollectionService : ICollectionService
 
             if (result?.Status?.IsSuccess == true)
             {
-                _logger.LogInformation("Collection {CollectionName} deleted successfully via API on node {NodeUrl}",
-                    collectionName, nodeUrl);
+                _logger.LogInformation(
+                    "Collection {CollectionName} deleted successfully via API on node {NodeUrl}",
+                    collectionName,
+                    nodeUrl
+                );
 
                 return true;
             }
 
-            _logger.LogError("Failed to delete collection {CollectionName} via API: {Error}",
-                collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+            _logger.LogError(
+                "Failed to delete collection {CollectionName} via API: {Error}",
+                collectionName,
+                result?.Status?.Error ?? MetricConstants.UnknownErrorMessage
+            );
 
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete collection {CollectionName} via API on node {NodeUrl}",
-                collectionName, nodeUrl);
+            _logger.LogError(
+                ex,
+                "Failed to delete collection {CollectionName} via API on node {NodeUrl}",
+                collectionName,
+                nodeUrl
+            );
 
             return false;
         }
@@ -315,11 +355,15 @@ public class CollectionService : ICollectionService
         string podName,
         string podNamespace,
         string collectionName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         _logger.LogInformation(
             "Deleting collection {CollectionName} from disk on pod {PodName} in namespace {Namespace}",
-            collectionName, podName, podNamespace);
+            collectionName,
+            podName,
+            podNamespace
+        );
 
         if (_commandExecutor == null)
         {
@@ -334,13 +378,15 @@ public class CollectionService : ICollectionService
             $"{QdrantConstants.StoragePath}/{collectionName}",
             isDirectory: true,
             $"Collection {collectionName}",
-            cancellationToken);
+            cancellationToken
+        );
     }
 
     public async Task<(List<CollectionInfo> Collections, bool IsHealthy, string? ErrorMessage)> GetCollectionsFromQdrantAsync(
         IEnumerable<(string Url, ulong PeerId, string? Namespace, string? PodName)> nodes,
         CancellationToken cancellationToken,
-        bool clearCache = false)
+        bool clearCache = false
+    )
     {
         var nodesList = nodes.ToList();
 
@@ -379,7 +425,8 @@ public class CollectionService : ICollectionService
         }
 
         var nodeResults = await Task.WhenAll(
-            nodesList.Select(node => GetCollectionsFromSingleNodeAsync(node, cancellationToken)));
+            nodesList.Select(node => GetCollectionsFromSingleNodeAsync(node, cancellationToken))
+        );
 
         var result = new List<CollectionInfo>();
         var overallHealthy = true;
@@ -408,7 +455,8 @@ public class CollectionService : ICollectionService
 
     private async Task<(List<CollectionInfo> Collections, bool IsHealthy)> GetCollectionsFromSingleNodeAsync(
         (string Url, ulong PeerId, string? Namespace, string? PodName) node,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         try
         {
@@ -434,8 +482,8 @@ public class CollectionService : ICollectionService
                 var aliasesResponse = await qdrantClient.ListAllAliases(cancellationToken);
                 if (aliasesResponse?.Status?.IsSuccess == true && aliasesResponse.Result?.Aliases != null)
                 {
-                    collectionAliases = aliasesResponse.Result.Aliases
-                        .GroupBy(a => a.CollectionName)
+                    collectionAliases = aliasesResponse
+                        .Result.Aliases.GroupBy(a => a.CollectionName)
                         .ToDictionary(g => g.Key, g => g.Select(a => a.AliasName).ToList());
                 }
             }
@@ -451,21 +499,24 @@ public class CollectionService : ICollectionService
                     var collectionInfoResponse = await qdrantClient.GetCollectionInfo(collection.Name, cancellationToken);
                     if (!collectionInfoResponse.Status.IsSuccess)
                     {
-                        _logger.LogWarning("Failed to get info for collection {CollectionName} from node {NodeUrl}: {Error}",
-                            collection.Name, node.Url, collectionInfoResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+                        _logger.LogWarning(
+                            "Failed to get info for collection {CollectionName} from node {NodeUrl}: {Error}",
+                            collection.Name,
+                            node.Url,
+                            collectionInfoResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage
+                        );
                         return null;
                     }
 
-                    var aliases = collectionAliases.TryGetValue(collection.Name, out var aliasList)
-                        ? aliasList
-                        : [];
+                    var aliases = collectionAliases.TryGetValue(collection.Name, out var aliasList) ? aliasList : [];
 
                     List<CollectionOptimizationInfo> runningOptimizations = [];
                     try
                     {
                         var optimizationProgressResponse = await qdrantClient.GetCollectionOptimizationProgress(
                             collection.Name,
-                            cancellationToken);
+                            cancellationToken
+                        );
 
                         if (optimizationProgressResponse?.Status?.IsSuccess == true)
                         {
@@ -484,22 +535,23 @@ public class CollectionService : ICollectionService
                         PodName = node.PodName ?? MetricConstants.UnknownPodName,
                         PeerId = node.PeerId,
                         PodNamespace = node.Namespace ?? string.Empty,
-                        Metrics = new CollectionMetrics
-                        {
-                            [MetricConstants.PrettySizeKey] = MetricConstants.NotAvailableValue
-                        },
+                        Metrics = new CollectionMetrics { [MetricConstants.PrettySizeKey] = MetricConstants.NotAvailableValue },
                         Aliases = aliases,
                         Status = collectionInfoResponse.Result?.Status,
                         HnswM = collectionInfoResponse.Result?.Config?.HnswConfig?.M,
-                        RunningOptimizations = runningOptimizations
+                        RunningOptimizations = runningOptimizations,
                     };
 
                     return collectionInfo;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to get info for collection {CollectionName} from node {NodeUrl}",
-                        collection.Name, node.Url);
+                    _logger.LogWarning(
+                        ex,
+                        "Failed to get info for collection {CollectionName} from node {NodeUrl}",
+                        collection.Name,
+                        node.Url
+                    );
                     return null;
                 }
             });
@@ -519,7 +571,8 @@ public class CollectionService : ICollectionService
         IReadOnlyList<NodeInfo> nodes,
         Dictionary<ulong, string> peerToPodMap,
         CancellationToken cancellationToken,
-        bool clearCache = false)
+        bool clearCache = false
+    )
     {
         // Get collections from Qdrant API (only from healthy nodes)
         var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
@@ -534,7 +587,8 @@ public class CollectionService : ICollectionService
         var (collections, _, _) = await GetCollectionsFromQdrantAsync(
             healthyNodes.Select(n => (n.Url, n.PeerId, n.Namespace, n.PodName)),
             cancellationToken,
-            clearCache);
+            clearCache
+        );
 
         if (collections.Count == 0)
         {
@@ -555,9 +609,12 @@ public class CollectionService : ICollectionService
 
         // Sort collection shards by node within each collection:
         // Group by collection name, sort nodes within each group, then flatten back
-        collections = [.. collections
-            .GroupBy(c => c.CollectionName)
-            .SelectMany(group => group.OrderBy(c => NodeSortingExtensions.GetNodeSortKey(c.PodName, c.PeerId)))];
+        collections =
+        [
+            .. collections
+                .GroupBy(c => c.CollectionName)
+                .SelectMany(group => group.OrderBy(c => NodeSortingExtensions.GetNodeSortKey(c.PodName, c.PeerId))),
+        ];
 
         // Log summary with unique collection names
         return collections;
@@ -569,7 +626,8 @@ public class CollectionService : ICollectionService
         ulong peerId,
         uint[] shardIds,
         bool isDryRun,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         try
         {
@@ -581,28 +639,34 @@ public class CollectionService : ICollectionService
                 shardIds: shardIds,
                 cancellationToken: cancellationToken,
                 logger: _logger,
-                isDryRun: isDryRun);
+                isDryRun: isDryRun
+            );
 
             if (result?.Status?.IsSuccess == true)
             {
-                _logger.LogInformation("Shards drop {Mode} for {Collection} from peer {PeerId}: {ShardIds}",
+                _logger.LogInformation(
+                    "Shards drop {Mode} for {Collection} from peer {PeerId}: {ShardIds}",
                     isDryRun ? "simulated" : "completed",
                     collectionName,
                     peerId,
-                    string.Join(", ", shardIds));
+                    string.Join(", ", shardIds)
+                );
 
                 return true;
             }
 
-            _logger.LogError("Failed to drop shards for {Collection} from peer {PeerId}: {Error}",
-                collectionName, peerId, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+            _logger.LogError(
+                "Failed to drop shards for {Collection} from peer {PeerId}: {Error}",
+                collectionName,
+                peerId,
+                result?.Status?.Error ?? MetricConstants.UnknownErrorMessage
+            );
 
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to drop shards for collection {Collection} from peer {PeerId}",
-                collectionName, peerId);
+            _logger.LogError(ex, "Failed to drop shards for collection {Collection} from peer {PeerId}", collectionName, peerId);
 
             return false;
         }
@@ -613,41 +677,47 @@ public class CollectionService : ICollectionService
         string collectionName,
         ReshardingOperationDirection direction,
         ulong? peerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         try
         {
             var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodeUrl, _options.ApiKey);
 
-            var request = UpdateCollectionClusteringSetupRequest.CreateStartReshardingRequest(
-                direction,
-                peerId);
+            var request = UpdateCollectionClusteringSetupRequest.CreateStartReshardingRequest(direction, peerId);
 
-            var result = await qdrantClient.UpdateCollectionClusteringSetup(
-                collectionName,
-                request,
-                cancellationToken);
+            var result = await qdrantClient.UpdateCollectionClusteringSetup(collectionName, request, cancellationToken);
 
             if (result?.Status?.IsSuccess == true)
             {
                 var peerInfo = peerId.HasValue ? $" on peer {peerId.Value}" : " on all peers";
-                _logger.LogInformation("Resharding operation started for {Collection} (direction: {Direction}){PeerInfo}",
+                _logger.LogInformation(
+                    "Resharding operation started for {Collection} (direction: {Direction}){PeerInfo}",
                     collectionName,
                     direction.ToString(),
-                    peerInfo);
+                    peerInfo
+                );
 
                 return true;
             }
 
-            _logger.LogError("Failed to start resharding for {Collection} (direction: {Direction}): {Error}",
-                collectionName, direction.ToString(), result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+            _logger.LogError(
+                "Failed to start resharding for {Collection} (direction: {Direction}): {Error}",
+                collectionName,
+                direction.ToString(),
+                result?.Status?.Error ?? MetricConstants.UnknownErrorMessage
+            );
 
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to start resharding for collection {Collection} (direction: {Direction})",
-                collectionName, direction.ToString());
+            _logger.LogError(
+                ex,
+                "Failed to start resharding for collection {Collection} (direction: {Direction})",
+                collectionName,
+                direction.ToString()
+            );
 
             return false;
         }
@@ -657,7 +727,8 @@ public class CollectionService : ICollectionService
         string nodeUrl,
         string collectionName,
         string aliasName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         try
         {
@@ -666,28 +737,41 @@ public class CollectionService : ICollectionService
             var allAliasesResponse = await qdrantClient.ListAllAliases(cancellationToken);
             if (allAliasesResponse?.Status?.IsSuccess != true || allAliasesResponse.Result?.Aliases == null)
             {
-                _logger.LogWarning("Failed to get aliases from node {NodeUrl}: {Error}",
-                    nodeUrl, allAliasesResponse?.Status?.Error ?? "Unknown");
+                _logger.LogWarning(
+                    "Failed to get aliases from node {NodeUrl}: {Error}",
+                    nodeUrl,
+                    allAliasesResponse?.Status?.Error ?? "Unknown"
+                );
                 return false;
             }
 
-            var currentForCollection = allAliasesResponse.Result.Aliases
-                .Where(a => string.Equals(a.CollectionName, collectionName, StringComparison.Ordinal))
+            var currentForCollection = allAliasesResponse
+                .Result.Aliases.Where(a => string.Equals(a.CollectionName, collectionName, StringComparison.Ordinal))
                 .Select(a => a.AliasName)
                 .ToList();
             if (currentForCollection.Contains(aliasName, StringComparer.Ordinal))
             {
-                _logger.LogInformation("Alias {AliasName} already exists for collection {CollectionName} on node {NodeUrl}",
-                    aliasName, collectionName, nodeUrl);
+                _logger.LogInformation(
+                    "Alias {AliasName} already exists for collection {CollectionName} on node {NodeUrl}",
+                    aliasName,
+                    collectionName,
+                    nodeUrl
+                );
                 return true;
             }
 
-            var aliasUsedByOther = allAliasesResponse.Result.Aliases
-                .FirstOrDefault(a => string.Equals(a.AliasName, aliasName, StringComparison.Ordinal) && !string.Equals(a.CollectionName, collectionName, StringComparison.Ordinal));
+            var aliasUsedByOther = allAliasesResponse.Result.Aliases.FirstOrDefault(a =>
+                string.Equals(a.AliasName, aliasName, StringComparison.Ordinal)
+                && !string.Equals(a.CollectionName, collectionName, StringComparison.Ordinal)
+            );
             if (aliasUsedByOther != null)
             {
-                _logger.LogWarning("Alias {AliasName} is already used by collection {OtherCollection}, cannot add to {CollectionName}",
-                    aliasName, aliasUsedByOther.CollectionName, collectionName);
+                _logger.LogWarning(
+                    "Alias {AliasName} is already used by collection {OtherCollection}, cannot add to {CollectionName}",
+                    aliasName,
+                    aliasUsedByOther.CollectionName,
+                    collectionName
+                );
                 return false;
             }
 
@@ -696,19 +780,32 @@ public class CollectionService : ICollectionService
 
             if (result?.Status?.IsSuccess == true)
             {
-                _logger.LogInformation("Alias {AliasName} set for collection {CollectionName} on node {NodeUrl}",
-                    aliasName, collectionName, nodeUrl);
+                _logger.LogInformation(
+                    "Alias {AliasName} set for collection {CollectionName} on node {NodeUrl}",
+                    aliasName,
+                    collectionName,
+                    nodeUrl
+                );
                 return true;
             }
 
-            _logger.LogError("Failed to set alias {AliasName} for collection {CollectionName}: {Error}",
-                aliasName, collectionName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+            _logger.LogError(
+                "Failed to set alias {AliasName} for collection {CollectionName}: {Error}",
+                aliasName,
+                collectionName,
+                result?.Status?.Error ?? MetricConstants.UnknownErrorMessage
+            );
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to set alias {AliasName} for collection {CollectionName} on node {NodeUrl}",
-                aliasName, collectionName, nodeUrl);
+            _logger.LogError(
+                ex,
+                "Failed to set alias {AliasName} for collection {CollectionName} on node {NodeUrl}",
+                aliasName,
+                collectionName,
+                nodeUrl
+            );
             return false;
         }
     }
@@ -717,7 +814,8 @@ public class CollectionService : ICollectionService
         string nodeUrl,
         string oldAliasName,
         string newAliasName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         if (string.Equals(oldAliasName, newAliasName, StringComparison.Ordinal))
         {
@@ -733,27 +831,37 @@ public class CollectionService : ICollectionService
 
             if (result?.Status?.IsSuccess == true)
             {
-                _logger.LogInformation("Alias renamed from {OldAliasName} to {NewAliasName} on node {NodeUrl}",
-                    oldAliasName, newAliasName, nodeUrl);
+                _logger.LogInformation(
+                    "Alias renamed from {OldAliasName} to {NewAliasName} on node {NodeUrl}",
+                    oldAliasName,
+                    newAliasName,
+                    nodeUrl
+                );
                 return true;
             }
 
-            _logger.LogError("Failed to rename alias {OldAliasName} to {NewAliasName}: {Error}",
-                oldAliasName, newAliasName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+            _logger.LogError(
+                "Failed to rename alias {OldAliasName} to {NewAliasName}: {Error}",
+                oldAliasName,
+                newAliasName,
+                result?.Status?.Error ?? MetricConstants.UnknownErrorMessage
+            );
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to rename alias {OldAliasName} to {NewAliasName} on node {NodeUrl}",
-                oldAliasName, newAliasName, nodeUrl);
+            _logger.LogError(
+                ex,
+                "Failed to rename alias {OldAliasName} to {NewAliasName} on node {NodeUrl}",
+                oldAliasName,
+                newAliasName,
+                nodeUrl
+            );
             return false;
         }
     }
 
-    public async Task<bool> DeleteCollectionAliasAsync(
-        string nodeUrl,
-        string aliasName,
-        CancellationToken cancellationToken)
+    public async Task<bool> DeleteCollectionAliasAsync(string nodeUrl, string aliasName, CancellationToken cancellationToken)
     {
         try
         {
@@ -767,8 +875,11 @@ public class CollectionService : ICollectionService
                 return true;
             }
 
-            _logger.LogError("Failed to delete alias {AliasName}: {Error}",
-                aliasName, result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+            _logger.LogError(
+                "Failed to delete alias {AliasName}: {Error}",
+                aliasName,
+                result?.Status?.Error ?? MetricConstants.UnknownErrorMessage
+            );
             return false;
         }
         catch (Exception ex)
@@ -794,17 +905,19 @@ public class CollectionService : ICollectionService
             return [];
         }
 
-        return [.. running
-            .Select(r =>
+        return
+        [
+            .. running.Select(r =>
             {
                 return new CollectionOptimizationInfo
                 {
                     Optimizer = r.Optimizer,
                     SegmentsCount = r.Segments?.Length ?? 0,
                     Done = r.Progress?.Done,
-                    Total = r.Progress?.Total
+                    Total = r.Progress?.Total,
                 };
-            })];
+            }),
+        ];
     }
 
     private static void PopulateCollectionWarnings(List<CollectionInfo> collections)
@@ -814,16 +927,15 @@ public class CollectionService : ICollectionService
             var warnings = new List<string>();
 
             var hasNonActiveShards = collectionGroup.Any(nodeCollection =>
-                nodeCollection.Metrics.Shards?.Any(shard =>
-                    !shard.IsActive) == true);
+                nodeCollection.Metrics.Shards?.Any(shard => !shard.IsActive) == true
+            );
 
             if (hasNonActiveShards)
             {
                 warnings.Add(CollectionWarningConstants.NonActiveShardsWarning);
             }
 
-            var hasActiveTransfers = collectionGroup.Any(nodeCollection =>
-                nodeCollection.Metrics.OutgoingTransfers?.Count > 0);
+            var hasActiveTransfers = collectionGroup.Any(nodeCollection => nodeCollection.Metrics.OutgoingTransfers?.Count > 0);
 
             if (hasActiveTransfers)
             {
@@ -833,7 +945,8 @@ public class CollectionService : ICollectionService
             var runningOptimizations = collectionGroup
                 .SelectMany(nodeCollection => nodeCollection.RunningOptimizations)
                 .DistinctBy(optimization =>
-                    $"{optimization.Optimizer}|{optimization.SegmentsCount}|{optimization.Done}|{optimization.Total}")
+                    $"{optimization.Optimizer}|{optimization.SegmentsCount}|{optimization.Done}|{optimization.Total}"
+                )
                 .ToList();
 
             if (runningOptimizations.Count != 0)
@@ -848,24 +961,25 @@ public class CollectionService : ICollectionService
                                 optimization.Optimizer,
                                 optimization.SegmentsCount,
                                 optimization.Done.Value,
-                                optimization.Total.Value);
+                                optimization.Total.Value
+                            );
                         }
 
                         return string.Format(
                             CollectionWarningConstants.OptimizerWithSegmentsFormat,
                             optimization.Optimizer,
-                            optimization.SegmentsCount);
+                            optimization.SegmentsCount
+                        );
                     })
                     .ToList();
 
                 warnings.Add(
-                    $"{CollectionWarningConstants.RunningOptimizationsPrefix} ({runningOptimizations.Count}): " +
-                    string.Join("; ", formattedOptimizations));
+                    $"{CollectionWarningConstants.RunningOptimizationsPrefix} ({runningOptimizations.Count}): "
+                        + string.Join("; ", formattedOptimizations)
+                );
             }
 
-            List<string> finalWarnings = warnings.Count == 0
-                ? []
-                : [string.Join("; ", warnings)];
+            List<string> finalWarnings = warnings.Count == 0 ? [] : [string.Join("; ", warnings)];
 
             foreach (var nodeCollection in collectionGroup)
             {
@@ -878,14 +992,14 @@ public class CollectionService : ICollectionService
         string healthyNodeUrl,
         IList<CollectionInfo> collectionInfos,
         Dictionary<ulong, string> peerToPodMap,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         try
         {
             var qdrantClient = _clientFactory.CreateClientFromUrl(healthyNodeUrl, _options.ApiKey);
 
-            var healthyNodePeerId = collectionInfos
-                .FirstOrDefault(c => c.NodeUrl == healthyNodeUrl)?.PeerId;
+            var healthyNodePeerId = collectionInfos.FirstOrDefault(c => c.NodeUrl == healthyNodeUrl)?.PeerId;
 
             if (healthyNodePeerId == 0)
             {
@@ -903,14 +1017,17 @@ public class CollectionService : ICollectionService
             {
                 try
                 {
-                    var clusteringInfo =
-                        await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
+                    var clusteringInfo = await qdrantClient.GetCollectionClusteringInfo(collectionName, cancellationToken);
                     return (collectionName, clusteringInfo);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to get clustering info for collection {Collection} on node {NodeUrl}",
-                        collectionName, healthyNodeUrl);
+                    _logger.LogError(
+                        ex,
+                        "Failed to get clustering info for collection {Collection} on node {NodeUrl}",
+                        collectionName,
+                        healthyNodeUrl
+                    );
                     return (collectionName, (GetCollectionClusteringInfoResponse?)null);
                 }
             });
@@ -923,8 +1040,7 @@ public class CollectionService : ICollectionService
                     continue;
                 }
 
-                var info = collectionInfos.FirstOrDefault(c =>
-                    c.CollectionName == collectionName && c.NodeUrl == healthyNodeUrl);
+                var info = collectionInfos.FirstOrDefault(c => c.CollectionName == collectionName && c.NodeUrl == healthyNodeUrl);
 
                 if (info == null)
                 {
@@ -941,9 +1057,10 @@ public class CollectionService : ICollectionService
         }
     }
 
-    private static void UpdateShardMetrics(CollectionInfo info,
-        GetCollectionClusteringInfoResponse.CollectionClusteringInfo
-            clusteringResult)
+    private static void UpdateShardMetrics(
+        CollectionInfo info,
+        GetCollectionClusteringInfoResponse.CollectionClusteringInfo clusteringResult
+    )
     {
         if (clusteringResult.LocalShards == null)
         {
@@ -955,11 +1072,7 @@ public class CollectionService : ICollectionService
 
         foreach (var shard in clusteringResult.LocalShards)
         {
-            shardDetails.Add(new ShardDetails
-            {
-                ShardId = (uint)shard.ShardId,
-                State = shard.State.ToString()
-            });
+            shardDetails.Add(new ShardDetails { ShardId = (uint)shard.ShardId, State = shard.State.ToString() });
             shardStates[shard.ShardId.ToString()] = shard.State.ToString();
         }
 
@@ -972,24 +1085,24 @@ public class CollectionService : ICollectionService
 
     private static void UpdateTransferMetrics(
         CollectionInfo info,
-        GetCollectionClusteringInfoResponse.CollectionClusteringInfo
-            clusteringResult,
-        Dictionary<ulong, string> peerToPodMap)
+        GetCollectionClusteringInfoResponse.CollectionClusteringInfo clusteringResult,
+        Dictionary<ulong, string> peerToPodMap
+    )
     {
         if (clusteringResult.ShardTransfers == null)
         {
             return;
         }
 
-        var outgoingTransfers = clusteringResult.ShardTransfers
-            .Where(t => t.From == info.PeerId)
+        var outgoingTransfers = clusteringResult
+            .ShardTransfers.Where(t => t.From == info.PeerId)
             .Select(t => new OutgoingTransferInfo
             {
                 ShardId = t.ShardId,
                 To = peerToPodMap.TryGetValue(t.To, out var podName) ? podName : t.To.ToString(),
                 ToPeerId = t.To.ToString(),
                 IsSync = t.Sync,
-                Method = t.Method.ToString()
+                Method = t.Method.ToString(),
             })
             .ToList();
 
@@ -1006,7 +1119,8 @@ public class CollectionService : ICollectionService
     private async Task EnrichCollectionsWithMemoryReportAsync(
         List<NodeInfo> nodes,
         List<CollectionInfo> collections,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         if (collections.Count == 0)
         {
@@ -1028,7 +1142,8 @@ public class CollectionService : ICollectionService
                         _logger.LogWarning(
                             "Failed to get memory report for collection {CollectionName}: {Error}",
                             collectionName,
-                            response?.Status?.GetErrorMessage() ?? MetricConstants.UnknownErrorMessage);
+                            response?.Status?.GetErrorMessage() ?? MetricConstants.UnknownErrorMessage
+                        );
                         return (collectionName, (CollectionMemoryReportInfo?)null);
                     }
 
@@ -1052,8 +1167,11 @@ public class CollectionService : ICollectionService
                 var diskBytes = (long)report.Total.DiskBytes;
                 var ramBytes = (long)report.Total.RamBytes;
 
-                foreach (var collection in collections.Where(c =>
-                             string.Equals(c.CollectionName, collectionName, StringComparison.Ordinal)))
+                foreach (
+                    var collection in collections.Where(c =>
+                        string.Equals(c.CollectionName, collectionName, StringComparison.Ordinal)
+                    )
+                )
                 {
                     collection.Metrics.SizeBytes = diskBytes;
                     collection.Metrics.PrettySize = diskBytes.ToPrettySize();
@@ -1061,14 +1179,16 @@ public class CollectionService : ICollectionService
                     collection.Metrics.PrettyRamSize = ramBytes.ToPrettySize();
                     collection.Metrics.MemoryReport = report;
 
-                    _meterService.UpdateCollectionSize(new CollectionSize
-                    {
-                        CollectionName = collectionName,
-                        NodeUrl = collection.NodeUrl,
-                        PeerId = collection.PeerId,
-                        PodName = collection.PodName,
-                        SizeBytes = diskBytes
-                    });
+                    _meterService.UpdateCollectionSize(
+                        new CollectionSize
+                        {
+                            CollectionName = collectionName,
+                            NodeUrl = collection.NodeUrl,
+                            PeerId = collection.PeerId,
+                            PodName = collection.PodName,
+                            SizeBytes = diskBytes,
+                        }
+                    );
                 }
             }
         }
@@ -1086,7 +1206,8 @@ public class CollectionService : ICollectionService
     private async Task EnrichCollectionsWithTelemetryAsync(
         IReadOnlyList<NodeInfo> nodes,
         List<CollectionInfo> collections,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
         if (healthyNodes.Count == 0)
@@ -1121,7 +1242,8 @@ public class CollectionService : ICollectionService
                     foreach (var replica in shard.Replicas)
                     {
                         var correspondingCollectionInfo = collections.FirstOrDefault(c =>
-                            c.CollectionName == collectionName && c.PeerId == replica.PeerId);
+                            c.CollectionName == collectionName && c.PeerId == replica.PeerId
+                        );
 
                         if (correspondingCollectionInfo == null)
                         {
@@ -1160,7 +1282,8 @@ public class CollectionService : ICollectionService
         string nodeUrl,
         string peerId,
         string collectionName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         if (_commandExecutor == null)
         {
@@ -1177,7 +1300,8 @@ public class CollectionService : ICollectionService
                 podName,
                 podNamespace,
                 collectionPath,
-                cancellationToken);
+                cancellationToken
+            );
 
             foreach (var shardDir in shardDirectories)
             {
@@ -1188,7 +1312,8 @@ public class CollectionService : ICollectionService
                         podNamespace,
                         collectionPath,
                         shardDir,
-                        cancellationToken);
+                        cancellationToken
+                    );
 
                     if (sizeBytes.HasValue)
                     {
@@ -1199,7 +1324,7 @@ public class CollectionService : ICollectionService
                             PeerId = peerId,
                             CollectionName = collectionName,
                             ShardId = shardId,
-                            SizeBytes = sizeBytes.Value
+                            SizeBytes = sizeBytes.Value,
                         };
 
                         shardSizes.Add(shardSize);
@@ -1209,15 +1334,21 @@ public class CollectionService : ICollectionService
                 {
                     _logger.LogWarning(
                         "Found non-numeric directory '{ShardDir}' in collection '{Collection}' on pod '{PodName}'",
-                        shardDir, collectionName, podName);
+                        shardDir,
+                        collectionName,
+                        podName
+                    );
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
+            _logger.LogError(
+                ex,
                 "Failed to get shard sizes for collection {Collection} on pod {PodName}",
-                collectionName, podName);
+                collectionName,
+                podName
+            );
         }
 
         return shardSizes;
@@ -1228,7 +1359,8 @@ public class CollectionService : ICollectionService
         string podNamespace,
         string nodeUrl,
         string peerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         if (_commandExecutor == null)
         {
@@ -1243,11 +1375,14 @@ public class CollectionService : ICollectionService
                 podName,
                 podNamespace,
                 QdrantConstants.StoragePath,
-                cancellationToken);
+                cancellationToken
+            );
 
             _logger.LogInformation(
                 "Found {CollectionCount} collections on pod {PodName}, getting shard sizes...",
-                collections.Count, podName);
+                collections.Count,
+                podName
+            );
 
             foreach (var collection in collections)
             {
@@ -1257,14 +1392,18 @@ public class CollectionService : ICollectionService
                     nodeUrl,
                     peerId,
                     collection,
-                    cancellationToken);
+                    cancellationToken
+                );
 
                 allShardSizes.AddRange(shardSizes);
             }
 
             _logger.LogInformation(
                 "Retrieved {ShardCount} shard sizes across {CollectionCount} collections on pod {PodName}",
-                allShardSizes.Count, collections.Count, podName);
+                allShardSizes.Count,
+                collections.Count,
+                podName
+            );
         }
         catch (Exception ex)
         {
@@ -1278,7 +1417,8 @@ public class CollectionService : ICollectionService
         IReadOnlyList<NodeInfo> nodes,
         List<CollectionInfo> collections,
         Dictionary<ulong, string> peerToPodMap,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         // Get clustering info from each healthy node to get their local shards
         var healthyNodes = nodes.Where(n => n.IsHealthy).ToList();
@@ -1291,6 +1431,7 @@ public class CollectionService : ICollectionService
         }
 
         await Task.WhenAll(
-            healthyNodes.Select(node => EnrichWithClusteringInfoAsync(node.Url, collections, peerToPodMap, cancellationToken)));
+            healthyNodes.Select(node => EnrichWithClusteringInfoAsync(node.Url, collections, peerToPodMap, cancellationToken))
+        );
     }
 }

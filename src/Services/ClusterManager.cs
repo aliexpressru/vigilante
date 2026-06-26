@@ -1,19 +1,19 @@
 using Aer.QdrantClient.Http.Abstractions;
+using Aer.QdrantClient.Http.Models.Shared;
 using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Vigilante.Configuration;
 using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Models.Enums;
 using Vigilante.Services.Interfaces;
-using System.Collections.Concurrent;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using Aer.QdrantClient.Http.Models.Shared;
-using System.Globalization;
+using Vigilante.Services.Jobs.Snapshots;
 using ClusterInfoResult = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.ClusterInfo;
 using MessageSendFailureUnit = Aer.QdrantClient.Http.Models.Responses.GetClusterInfoResponse.MessageSendFailureUnit;
-using Vigilante.Services.Jobs.Snapshots;
 
 namespace Vigilante.Services;
 
@@ -28,10 +28,10 @@ public partial class ClusterManager(
     IJobRegistry jobRegistry,
     ILogger<ClusterManager> logger,
     IMeterService meterService,
-    IKubernetesManager? kubernetesManager) : IClusterManager
+    IKubernetesManager? kubernetesManager
+) : IClusterManager
 {
-    private static readonly Regex _localDockerQdrantHostRegex =
-        LocalDockerQdrantHostRegex();
+    private static readonly Regex _localDockerQdrantHostRegex = LocalDockerQdrantHostRegex();
 
     private static readonly TimeSpan _externalIssueTtl = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan _jobErrorTtl = TimeSpan.FromMinutes(30);
@@ -59,25 +59,21 @@ public partial class ClusterManager(
         // Mark nodes with MessageSendFailures as unhealthy if they weren't identified as part of a cluster split
         foreach (var node in visibleNodes)
         {
-            if (node.IsHealthy &&
-                node.ErrorType == NodeErrorType.MessageSendFailures)
+            if (node.IsHealthy && node.ErrorType == NodeErrorType.MessageSendFailures)
             {
                 node.IsHealthy = false;
-                logger.LogInformation(ClusterConstants.MarkingNodeUnhealthyMessage,
-                    node.Url);
+                logger.LogInformation(ClusterConstants.MarkingNodeUnhealthyMessage, node.Url);
             }
         }
 
         // Sort nodes: by PodName if available and not 'unknown', otherwise by PeerId
-        var sortedNodes = visibleNodes
-            .OrderBy(n => NodeSortingExtensions.GetNodeSortKey(n.PodName, n.PeerId))
-            .ToList();
+        var sortedNodes = visibleNodes.OrderBy(n => NodeSortingExtensions.GetNodeSortKey(n.PodName, n.PeerId)).ToList();
 
         var state = new ClusterState
         {
             Nodes = sortedNodes,
             LastUpdated = DateTime.UtcNow,
-            StatefulSetName = await nodesProvider.GetStatefulSetNameAsync(cancellationToken)
+            StatefulSetName = await nodesProvider.GetStatefulSetNameAsync(cancellationToken),
         };
 
         var storageByNodeUrl = await collectStorageTask;
@@ -120,7 +116,8 @@ public partial class ClusterManager(
 
     private async Task<Dictionary<string, NodeStorageInfo>> CollectNodesStorageUsageAsync(
         IReadOnlyList<NodeInfo> nodes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var storageByNodeUrl = new Dictionary<string, NodeStorageInfo>(StringComparer.Ordinal);
 
@@ -129,37 +126,38 @@ public partial class ClusterManager(
             return storageByNodeUrl;
         }
 
-        var tasks = nodes
-            .Select(async node =>
+        var tasks = nodes.Select(async node =>
+        {
+            try
             {
-                try
-                {
-                    var usage = await kubernetesManager.GetQdrantStorageUsageAsync(
-                        podName: node.PodName,
-                        namespaceParameter: node.Namespace,
-                        storagePath: QdrantConstants.StorageRootPath,
-                        nodeUrl: node.Url,
-                        cancellationToken: cancellationToken);
+                var usage = await kubernetesManager.GetQdrantStorageUsageAsync(
+                    podName: node.PodName,
+                    namespaceParameter: node.Namespace,
+                    storagePath: QdrantConstants.StorageRootPath,
+                    nodeUrl: node.Url,
+                    cancellationToken: cancellationToken
+                );
 
-                    if (usage == null)
+                if (usage == null)
+                {
+                    return (NodeUrl: node.Url, Storage: null);
+                }
+
+                return (
+                    NodeUrl: node.Url,
+                    Storage: new NodeStorageInfo
                     {
-                        return (NodeUrl: node.Url, Storage: null);
+                        UsedBytes = usage.UsedBytes,
+                        CapacityBytes = usage.PvcCapacityBytes,
+                        UsagePercent = usage.UsagePercent,
                     }
-
-                    return (
-                        NodeUrl: node.Url,
-                        Storage: new NodeStorageInfo
-                        {
-                            UsedBytes = usage.UsedBytes,
-                            CapacityBytes = usage.PvcCapacityBytes,
-                            UsagePercent = usage.UsagePercent
-                        });
-                }
-                catch (Exception)
-                {
-                    return (NodeUrl: node.Url, Storage: (NodeStorageInfo?)null);
-                }
-            });
+                );
+            }
+            catch (Exception)
+            {
+                return (NodeUrl: node.Url, Storage: (NodeStorageInfo?)null);
+            }
+        });
 
         var collected = await Task.WhenAll(tasks);
         foreach (var (NodeUrl, Storage) in collected)
@@ -173,9 +171,7 @@ public partial class ClusterManager(
         return storageByNodeUrl;
     }
 
-    private static void ApplyStorageUsage(
-        IEnumerable<NodeInfo> nodes,
-        Dictionary<string, NodeStorageInfo> storageByNodeUrl)
+    private static void ApplyStorageUsage(IEnumerable<NodeInfo> nodes, Dictionary<string, NodeStorageInfo> storageByNodeUrl)
     {
         foreach (var node in nodes)
         {
@@ -190,7 +186,8 @@ public partial class ClusterManager(
 
     private async Task<Dictionary<string, NodeMemoryInfo>> CollectNodesMemoryUsageAsync(
         IReadOnlyList<NodeInfo> nodes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var memoryByNodeUrl = new Dictionary<string, NodeMemoryInfo>(StringComparer.Ordinal);
 
@@ -199,37 +196,38 @@ public partial class ClusterManager(
             return memoryByNodeUrl;
         }
 
-        var tasks = nodes
-            .Select(async node =>
+        var tasks = nodes.Select(async node =>
+        {
+            try
             {
-                try
-                {
-                    var usage = await kubernetesManager.GetQdrantMemoryUsageAsync(
-                        podName: node.PodName,
-                        namespaceParameter: node.Namespace,
-                        nodeUrl: node.Url,
-                        cancellationToken: cancellationToken);
+                var usage = await kubernetesManager.GetQdrantMemoryUsageAsync(
+                    podName: node.PodName,
+                    namespaceParameter: node.Namespace,
+                    nodeUrl: node.Url,
+                    cancellationToken: cancellationToken
+                );
 
-                    if (usage == null)
-                    {
-                        return (NodeUrl: node.Url, Memory: (NodeMemoryInfo?)null);
-                    }
-
-                    return (
-                        NodeUrl: node.Url,
-                        Memory: new NodeMemoryInfo
-                        {
-                            UsedBytes = usage.UsedBytes,
-                            RequestBytes = usage.RequestBytes,
-                            LimitBytes = usage.LimitBytes,
-                            UsagePercent = usage.UsagePercent
-                        });
-                }
-                catch (Exception)
+                if (usage == null)
                 {
                     return (NodeUrl: node.Url, Memory: (NodeMemoryInfo?)null);
                 }
-            });
+
+                return (
+                    NodeUrl: node.Url,
+                    Memory: new NodeMemoryInfo
+                    {
+                        UsedBytes = usage.UsedBytes,
+                        RequestBytes = usage.RequestBytes,
+                        LimitBytes = usage.LimitBytes,
+                        UsagePercent = usage.UsagePercent,
+                    }
+                );
+            }
+            catch (Exception)
+            {
+                return (NodeUrl: node.Url, Memory: (NodeMemoryInfo?)null);
+            }
+        });
 
         var collected = await Task.WhenAll(tasks);
         foreach (var item in collected)
@@ -243,9 +241,7 @@ public partial class ClusterManager(
         return memoryByNodeUrl;
     }
 
-    private static void ApplyMemoryUsage(
-        IEnumerable<NodeInfo> nodes,
-        Dictionary<string, NodeMemoryInfo> memoryByNodeUrl)
+    private static void ApplyMemoryUsage(IEnumerable<NodeInfo> nodes, Dictionary<string, NodeMemoryInfo> memoryByNodeUrl)
     {
         foreach (var node in nodes)
         {
@@ -258,13 +254,15 @@ public partial class ClusterManager(
         }
     }
 
-    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(bool clearCache = false,
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(
+        bool clearCache = false,
+        CancellationToken cancellationToken = default
+    )
     {
         var state = await GetClusterStateAsync(cancellationToken);
 
-        var peerToPodMap = state.Nodes
-            .Where(n => n.PeerId != 0 && !string.IsNullOrEmpty(n.PodName))
+        var peerToPodMap = state
+            .Nodes.Where(n => n.PeerId != 0 && !string.IsNullOrEmpty(n.PodName))
             .ToDictionary(n => n.PeerId, n => n.PodName!);
 
         // Get enriched collections info from CollectionService
@@ -273,16 +271,19 @@ public partial class ClusterManager(
             state.Nodes,
             peerToPodMap,
             cancellationToken,
-            clearCache);
+            clearCache
+        );
 
         // Fallback to test data if no collections found
         if (result.Count == 0)
         {
-            logger.LogWarning("No collections found from API. This might be because: " +
-                "1) No healthy nodes available, " +
-                "2) Nodes have no collections, " +
-                "3) API connection failed. " +
-                "Returning test data (only available in Development)");
+            logger.LogWarning(
+                "No collections found from API. This might be because: "
+                    + "1) No healthy nodes available, "
+                    + "2) Nodes have no collections, "
+                    + "3) API connection failed. "
+                    + "Returning test data (only available in Development)"
+            );
 
             return testDataProvider.GenerateTestCollectionData();
         }
@@ -297,13 +298,19 @@ public partial class ClusterManager(
         uint[] shardIds,
         bool isMove,
         Aer.QdrantClient.Http.Models.Shared.ShardTransferMethod? shardTransferMethod,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         logger.LogInformation(
-            "Starting shard replication. Source: {SourcePeerId}, Target: {TargetPeerId}, Collection: {Collection}, " +
-            "Shards: {ShardIds}, Move: {IsMove}, TransferMethod: {TransferMethod}",
-            sourcePeerId, targetPeerId, collectionName, string.Join(", ", shardIds), isMove,
-            shardTransferMethod?.ToString() ?? "Snapshot (default)");
+            "Starting shard replication. Source: {SourcePeerId}, Target: {TargetPeerId}, Collection: {Collection}, "
+                + "Shards: {ShardIds}, Move: {IsMove}, TransferMethod: {TransferMethod}",
+            sourcePeerId,
+            targetPeerId,
+            collectionName,
+            string.Join(", ", shardIds),
+            isMove,
+            shardTransferMethod?.ToString() ?? "Snapshot (default)"
+        );
 
         var state = await GetClusterStateAsync(cancellationToken);
         var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
@@ -323,7 +330,8 @@ public partial class ClusterManager(
             shardIds,
             isMove,
             shardTransferMethod,
-            cancellationToken);
+            cancellationToken
+        );
     }
 
     public async Task<bool> AbortShardTransferAsync(
@@ -331,11 +339,16 @@ public partial class ClusterManager(
         ulong targetPeerId,
         string collectionName,
         uint shardId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         logger.LogInformation(
             "Aborting shard transfer. Source: {SourcePeerId}, Target: {TargetPeerId}, Collection: {Collection}, ShardId: {ShardId}",
-            sourcePeerId, targetPeerId, collectionName, shardId);
+            sourcePeerId,
+            targetPeerId,
+            collectionName,
+            shardId
+        );
 
         var state = await GetClusterStateAsync(cancellationToken);
         var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
@@ -353,27 +366,27 @@ public partial class ClusterManager(
             targetPeerId,
             collectionName,
             shardId,
-            cancellationToken);
+            cancellationToken
+        );
     }
 
     public async Task<Dictionary<string, bool>> DeleteCollectionViaApiAsync(
         string collectionName,
         IEnumerable<string> nodeUrls,
         bool? deleteSnapshots = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var nodeUrlsList = nodeUrls.ToList();
         logger.LogInformation(
             "Deleting collection {CollectionName} via API on {NodeCount} specified nodes",
             collectionName,
-            nodeUrlsList.Count);
+            nodeUrlsList.Count
+        );
 
         var deleteTasks = nodeUrlsList.Select(async nodeUrl =>
         {
-            var success = await collectionService.DeleteCollectionViaApiAsync(
-                nodeUrl,
-                collectionName,
-                cancellationToken);
+            var success = await collectionService.DeleteCollectionViaApiAsync(nodeUrl, collectionName, cancellationToken);
 
             return (NodeUrl: nodeUrl, Success: success);
         });
@@ -384,7 +397,10 @@ public partial class ClusterManager(
         var successCount = results.Values.Count(s => s);
         logger.LogInformation(
             "Collection {CollectionName} deleted via API: {SuccessCount}/{TotalCount} nodes",
-            collectionName, successCount, results.Count);
+            collectionName,
+            successCount,
+            results.Count
+        );
 
         if (successCount > 0)
         {
@@ -398,13 +414,15 @@ public partial class ClusterManager(
         string collectionName,
         IEnumerable<(string PodName, string PodNamespace)> pods,
         bool? deleteSnapshots = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var podsList = pods.ToList();
         logger.LogInformation(
             "Deleting collection {CollectionName} from disk on {PodCount} specified pods",
             collectionName,
-            podsList.Count);
+            podsList.Count
+        );
 
         var deleteTasks = podsList.Select(async pod =>
         {
@@ -412,7 +430,8 @@ public partial class ClusterManager(
                 pod.PodName,
                 pod.PodNamespace,
                 collectionName,
-                cancellationToken);
+                cancellationToken
+            );
 
             return (PodName: pod.PodName, Success: success);
         });
@@ -423,7 +442,10 @@ public partial class ClusterManager(
         var successCount = results.Values.Count(s => s);
         logger.LogInformation(
             "Collection {CollectionName} deleted from disk: {SuccessCount}/{TotalCount} pods",
-            collectionName, successCount, results.Count);
+            collectionName,
+            successCount,
+            results.Count
+        );
 
         if (successCount > 0)
         {
@@ -433,26 +455,42 @@ public partial class ClusterManager(
         return results;
     }
 
-    public async Task<bool> SetCollectionAliasAsync(string collectionName, string aliasName, CancellationToken cancellationToken = default)
+    public async Task<bool> SetCollectionAliasAsync(
+        string collectionName,
+        string aliasName,
+        CancellationToken cancellationToken = default
+    )
     {
         var state = await GetClusterStateAsync(cancellationToken);
         var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
         if (healthyNode == null)
         {
-            logger.LogWarning("No healthy node available to set alias {AliasName} for collection {CollectionName}", aliasName, collectionName);
+            logger.LogWarning(
+                "No healthy node available to set alias {AliasName} for collection {CollectionName}",
+                aliasName,
+                collectionName
+            );
             return false;
         }
 
         return await collectionService.SetCollectionAliasAsync(healthyNode.Url, collectionName, aliasName, cancellationToken);
     }
 
-    public async Task<bool> RenameCollectionAliasAsync(string oldAliasName, string newAliasName, CancellationToken cancellationToken = default)
+    public async Task<bool> RenameCollectionAliasAsync(
+        string oldAliasName,
+        string newAliasName,
+        CancellationToken cancellationToken = default
+    )
     {
         var state = await GetClusterStateAsync(cancellationToken);
         var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
         if (healthyNode == null)
         {
-            logger.LogWarning("No healthy node available to rename alias {OldAliasName} to {NewAliasName}", oldAliasName, newAliasName);
+            logger.LogWarning(
+                "No healthy node available to rename alias {OldAliasName} to {NewAliasName}",
+                oldAliasName,
+                newAliasName
+            );
             return false;
         }
 
@@ -477,12 +515,17 @@ public partial class ClusterManager(
         ulong peerId,
         uint[] shardIds,
         bool isDryRun,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         logger.LogInformation(
-            "Starting drop shards operation. Collection: {Collection}, PeerId: {PeerId}, " +
-            "Shards: {ShardIds}, DryRun: {IsDryRun}",
-            collectionName, peerId, string.Join(", ", shardIds), isDryRun);
+            "Starting drop shards operation. Collection: {Collection}, PeerId: {PeerId}, "
+                + "Shards: {ShardIds}, DryRun: {IsDryRun}",
+            collectionName,
+            peerId,
+            string.Join(", ", shardIds),
+            isDryRun
+        );
 
         var state = await GetClusterStateAsync(cancellationToken);
         var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
@@ -499,19 +542,24 @@ public partial class ClusterManager(
             peerId,
             shardIds,
             isDryRun,
-            cancellationToken);
+            cancellationToken
+        );
     }
 
     public async Task<bool> StartReshardingAsync(
         string collectionName,
         ReshardingOperationDirection direction,
         ulong? peerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var peerInfo = peerId.HasValue ? $", PeerId: {peerId.Value}" : ", All peers";
         logger.LogInformation(
             "Starting resharding operation. Collection: {Collection}, Direction: {Direction}{PeerInfo}",
-            collectionName, direction, peerInfo);
+            collectionName,
+            direction,
+            peerInfo
+        );
 
         var state = await GetClusterStateAsync(cancellationToken);
         var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
@@ -527,18 +575,23 @@ public partial class ClusterManager(
             collectionName,
             direction,
             peerId,
-            cancellationToken);
+            cancellationToken
+        );
     }
 
     public async Task<bool> RemovePeerAsync(
         ulong peerId,
         bool isForceDropOperation = false,
         TimeSpan? timeout = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         logger.LogInformation(
             "Removing peer {PeerId} from cluster. ForceDrop: {IsForceDrop}, Timeout: {Timeout}",
-            peerId, isForceDropOperation, timeout?.ToString() ?? "default");
+            peerId,
+            isForceDropOperation,
+            timeout?.ToString() ?? "default"
+        );
 
         var state = await GetClusterStateAsync(cancellationToken);
         var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
@@ -552,12 +605,7 @@ public partial class ClusterManager(
         try
         {
             var client = clientFactory.CreateClientFromUrl(healthyNode.Url, _options.ApiKey);
-            var response = await client.RemovePeer(
-                peerId,
-                cancellationToken,
-                isForceDropOperation,
-                timeout,
-                clusterName: null);
+            var response = await client.RemovePeer(peerId, cancellationToken, isForceDropOperation, timeout, clusterName: null);
 
             if (response?.Status?.IsSuccess == true)
             {
@@ -566,8 +614,7 @@ public partial class ClusterManager(
                 return true;
             }
 
-            logger.LogError("Failed to remove peer {PeerId}: {Error}",
-                peerId, response?.Status?.Error ?? "Unknown error");
+            logger.LogError("Failed to remove peer {PeerId}: {Error}", peerId, response?.Status?.Error ?? "Unknown error");
             return false;
         }
         catch (Exception ex)
@@ -599,8 +646,13 @@ public partial class ClusterManager(
             }
             else
             {
-                HandleNodeError(nodeInfo, node, NodeErrorType.InvalidResponse,
-                    $"Failed to get cluster info: {clusterInfo.Status?.Error ?? "Invalid response"}", cancellationToken);
+                HandleNodeError(
+                    nodeInfo,
+                    node,
+                    NodeErrorType.InvalidResponse,
+                    $"Failed to get cluster info: {clusterInfo.Status?.Error ?? "Invalid response"}",
+                    cancellationToken
+                );
             }
         }
         catch (OperationCanceledException ex)
@@ -634,11 +686,7 @@ public partial class ClusterManager(
             return rawNodeUrl;
         }
 
-        var builder = new UriBuilder(uri)
-        {
-            Host = "localhost",
-            Port = 6333 + (nodeNumber * 10)
-        };
+        var builder = new UriBuilder(uri) { Host = "localhost", Port = 6333 + (nodeNumber * 10) };
 
         return builder.Uri.ToString();
     }
@@ -648,7 +696,8 @@ public partial class ClusterManager(
         ClusterInfoResult clusterInfoResult,
         IQdrantHttpClient client,
         CancellationToken linkedToken,
-        CancellationToken originalCancellationToken)
+        CancellationToken originalCancellationToken
+    )
     {
         // PeerId is already set by GetBasicNodeInfoAsync, but verify it matches
         var expectedPeerId = clusterInfoResult.PeerId;
@@ -657,15 +706,19 @@ public partial class ClusterManager(
         {
             nodeInfo.PeerId = expectedPeerId;
         }
-
         else if (nodeInfo.PeerId != expectedPeerId)
         {
-            logger.LogWarning("PeerId mismatch for node {NodeUrl}: expected {Expected}, got {Actual}",
-                nodeInfo.Url, nodeInfo.PeerId, expectedPeerId);
+            logger.LogWarning(
+                "PeerId mismatch for node {NodeUrl}: expected {Expected}, got {Actual}",
+                nodeInfo.Url,
+                nodeInfo.PeerId,
+                expectedPeerId
+            );
         }
 
-        nodeInfo.IsLeader = clusterInfoResult.RaftInfo?.Leader != null &&
-                            clusterInfoResult.RaftInfo.Leader.ToString() == clusterInfoResult.PeerId.ToString();
+        nodeInfo.IsLeader =
+            clusterInfoResult.RaftInfo?.Leader != null
+            && clusterInfoResult.RaftInfo.Leader.ToString() == clusterInfoResult.PeerId.ToString();
 
         await FetchQdrantVersionAsync(nodeInfo, client, linkedToken);
         CheckConsensusErrors(nodeInfo, clusterInfoResult);
@@ -682,8 +735,7 @@ public partial class ClusterManager(
         {
             nodeInfo.IsHealthy = false;
         }
-        else if (nodeInfo.ErrorType is NodeErrorType.None or
-                 NodeErrorType.MessageSendFailures)
+        else if (nodeInfo.ErrorType is NodeErrorType.None or NodeErrorType.MessageSendFailures)
         {
             // Healthy for now - MessageSendFailures will be handled by split detection
             nodeInfo.IsHealthy = true;
@@ -695,8 +747,7 @@ public partial class ClusterManager(
         }
     }
 
-    private async Task FetchQdrantVersionAsync(NodeInfo nodeInfo, IQdrantHttpClient client,
-        CancellationToken cancellationToken)
+    private async Task FetchQdrantVersionAsync(NodeInfo nodeInfo, IQdrantHttpClient client, CancellationToken cancellationToken)
     {
         try
         {
@@ -755,8 +806,7 @@ public partial class ClusterManager(
         // Process active failures
         if (activeFailures.Count > 0)
         {
-            var failuresStr = string.Join(", ", activeFailures.Select(f =>
-                $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
+            var failuresStr = string.Join(", ", activeFailures.Select(f => $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
             nodeInfo.Issues.Add(ClusterConstants.MessageSendFailuresPrefix + failuresStr);
 
             if (nodeInfo.ErrorType == NodeErrorType.None)
@@ -772,11 +822,12 @@ public partial class ClusterManager(
         // Process stale failures
         if (staleFailures.Count > 0)
         {
-            var staleFailuresStr = string.Join(", ", staleFailures.Select(f =>
-                $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}"));
+            var staleFailuresStr = string.Join(
+                ", ",
+                staleFailures.Select(f => $"{f.PeerId}: {FormatMessageSendFailure(f.Failure)}")
+            );
             nodeInfo.Warnings.Add(ClusterConstants.StaleMessageSendFailuresPrefix + staleFailuresStr);
-            logger.LogInformation("Node {NodeUrl} has stale message send failures: {Failures}", nodeInfo.Url,
-                staleFailuresStr);
+            logger.LogInformation("Node {NodeUrl} has stale message send failures: {Failures}", nodeInfo.Url, staleFailuresStr);
         }
     }
 
@@ -784,18 +835,15 @@ public partial class ClusterManager(
     {
         if (clusterInfoResult.Peers != null)
         {
-            nodeInfo.CurrentPeerIds =
-            [
-                ..clusterInfoResult.ParsedPeers.Keys,
-                clusterInfoResult.PeerId
-            ];
+            nodeInfo.CurrentPeerIds = [.. clusterInfoResult.ParsedPeers.Keys, clusterInfoResult.PeerId];
         }
     }
 
     private async Task CheckCollectionsHealthAsync(
         NodeInfo nodeInfo,
         CancellationToken linkedToken,
-        CancellationToken originalCancellationToken)
+        CancellationToken originalCancellationToken
+    )
     {
         try
         {
@@ -803,7 +851,8 @@ public partial class ClusterManager(
             var (_, isHealthy, errorMessage) = await collectionService.GetCollectionsFromQdrantAsync(
                 [(nodeInfo.Url, nodeInfo.PeerId, nodeInfo.Namespace, nodeInfo.PodName)],
                 linkedToken,
-                clearCache: false); // Use cache for health checks
+                clearCache: false
+            ); // Use cache for health checks
 
             if (!isHealthy)
             {
@@ -851,10 +900,7 @@ public partial class ClusterManager(
         }
     }
 
-    private async Task FetchQdrantIssuesAsync(
-        NodeInfo nodeInfo,
-        IQdrantHttpClient client,
-        CancellationToken cancellationToken)
+    private async Task FetchQdrantIssuesAsync(NodeInfo nodeInfo, IQdrantHttpClient client, CancellationToken cancellationToken)
     {
         try
         {
@@ -862,9 +908,7 @@ public partial class ClusterManager(
             var issuesResponse = await client.ReportIssues(cancellationToken);
 #pragma warning restore QD0001
 
-            if (issuesResponse != null
-                && issuesResponse.Status.IsSuccess
-                && issuesResponse.Result?.Issues != null)
+            if (issuesResponse != null && issuesResponse.Status.IsSuccess && issuesResponse.Result?.Issues != null)
             {
                 var qdrantIssues = issuesResponse.Result.Issues;
 
@@ -920,7 +964,8 @@ public partial class ClusterManager(
         NodeErrorType errorType,
         string errorMessage,
         CancellationToken cancellationToken,
-        Exception? exception = null)
+        Exception? exception = null
+    )
     {
         // Re-throw if the original cancellation token was requested (user cancelled)
         // Don't re-throw if it was just a timeout (internal cancellation)
@@ -939,11 +984,23 @@ public partial class ClusterManager(
         // Log the error
         if (exception != null)
         {
-            logger.LogWarning(exception, "Failed to get status for node {NodeUrl}, Host : {Host}, Port: {Port}", nodeInfo.Url, node.Host, node.Port);
+            logger.LogWarning(
+                exception,
+                "Failed to get status for node {NodeUrl}, Host : {Host}, Port: {Port}",
+                nodeInfo.Url,
+                node.Host,
+                node.Port
+            );
         }
         else
         {
-            logger.LogWarning("Node {NodeUrl}, Host : {Host}, Port: {Port} error: {ErrorMessage}", node.Host, node.Port, nodeInfo.Url, errorMessage);
+            logger.LogWarning(
+                "Node {NodeUrl}, Host : {Host}, Port: {Port} error: {ErrorMessage}",
+                node.Host,
+                node.Port,
+                nodeInfo.Url,
+                errorMessage
+            );
         }
     }
 
@@ -987,9 +1044,7 @@ public partial class ClusterManager(
         }
     }
 
-    private static void AddStorageUsageIssuesIfNeeded(
-        IEnumerable<NodeInfo> nodes,
-        decimal thresholdPercent)
+    private static void AddStorageUsageIssuesIfNeeded(IEnumerable<NodeInfo> nodes, decimal thresholdPercent)
     {
         foreach (var node in nodes)
         {
@@ -1001,14 +1056,11 @@ public partial class ClusterManager(
 
             var usageText = usagePercent.Value.ToString("F2", CultureInfo.InvariantCulture);
             var thresholdText = thresholdPercent.ToString("F2", CultureInfo.InvariantCulture);
-            node.Issues.Add(
-                $"Disk usage is {usageText}% (threshold: {thresholdText}%)");
+            node.Issues.Add($"Disk usage is {usageText}% (threshold: {thresholdText}%)");
         }
     }
 
-    private static void AddMemoryUsageIssuesIfNeeded(
-        IEnumerable<NodeInfo> nodes,
-        decimal thresholdPercent)
+    private static void AddMemoryUsageIssuesIfNeeded(IEnumerable<NodeInfo> nodes, decimal thresholdPercent)
     {
         foreach (var node in nodes)
         {
@@ -1020,8 +1072,7 @@ public partial class ClusterManager(
 
             var usageText = usagePercent.Value.ToString("F2", CultureInfo.InvariantCulture);
             var thresholdText = thresholdPercent.ToString("F2", CultureInfo.InvariantCulture);
-            node.Issues.Add(
-                $"RAM usage is {usageText}% (threshold: {thresholdText}%)");
+            node.Issues.Add($"RAM usage is {usageText}% (threshold: {thresholdText}%)");
         }
     }
 
@@ -1033,30 +1084,32 @@ public partial class ClusterManager(
     {
         var majorityPeerIds = _clusterState.MajorityPeerIds;
 
-        var filtered = nodeStatuses.Where(n =>
-        {
-            if (_excludedPeerIds.ContainsKey(n.PeerId))
+        var filtered = nodeStatuses
+            .Where(n =>
             {
-                return false;
-            }
+                if (_excludedPeerIds.ContainsKey(n.PeerId))
+                {
+                    return false;
+                }
 
-            // Only filter by majority when PeerId is 0 (node never responded). Nodes with numeric PeerId
-            // (responded at least once) stay visible so we can show them as unhealthy (e.g. cluster split minority).
-            if (majorityPeerIds.Count > 0
-                && n.PeerId == 0
-                && !majorityPeerIds.Contains(n.PeerId))
-            {
-                return false;
-            }
+                // Only filter by majority when PeerId is 0 (node never responded). Nodes with numeric PeerId
+                // (responded at least once) stay visible so we can show them as unhealthy (e.g. cluster split minority).
+                if (majorityPeerIds.Count > 0 && n.PeerId == 0 && !majorityPeerIds.Contains(n.PeerId))
+                {
+                    return false;
+                }
 
-            return true;
-        }).ToArray();
+                return true;
+            })
+            .ToArray();
 
         if (filtered.Length < nodeStatuses.Length)
         {
             logger.LogInformation(
                 "Filtered cluster state: {Visible} of {Total} nodes (excluded removed/out-of-cluster peers)",
-                filtered.Length, nodeStatuses.Length);
+                filtered.Length,
+                nodeStatuses.Length
+            );
         }
 
         return filtered;
@@ -1083,8 +1136,10 @@ public partial class ClusterManager(
     {
         if (!_clusterState.TryUpdateMajorityState(healthyNodes))
         {
-            logger.LogWarning("Could not establish majority cluster state from {HealthyNodeCount} healthy nodes",
-                healthyNodes.Count);
+            logger.LogWarning(
+                "Could not establish majority cluster state from {HealthyNodeCount} healthy nodes",
+                healthyNodes.Count
+            );
 
             return false;
         }
@@ -1112,13 +1167,17 @@ public partial class ClusterManager(
 
         logger.LogWarning(
             "Node {NodeUrl} (PeerId={PeerId}) is inconsistent with majority cluster state. Reason: {Reason}",
-            node.Url, node.PeerId, inconsistencyReason);
+            node.Url,
+            node.PeerId,
+            inconsistencyReason
+        );
     }
 
     private async Task DeleteSnapshotsIfRequestedAsync(
         string collectionName,
         bool? deleteSnapshots,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var config = await dynamicConfigService.GetConfigAsync(cancellationToken);
         if (!(deleteSnapshots ?? config.Snapshot.DeleteWithCollection))
@@ -1148,7 +1207,8 @@ public partial class ClusterManager(
                     nodeUrl: snapshot.NodeUrl,
                     podName: snapshot.PodName,
                     podNamespace: snapshot.PodNamespace,
-                    cancellationToken: cancellationToken);
+                    cancellationToken: cancellationToken
+                );
 
                 if (success)
                 {
@@ -1158,27 +1218,33 @@ public partial class ClusterManager(
 
             logger.LogInformation(
                 "Deleted {DeletedCount}/{TotalCount} snapshots for collection {CollectionName} after collection deletion",
-                deletedCount, collectionSnapshots.Count, collectionName);
+                deletedCount,
+                collectionSnapshots.Count,
+                collectionName
+            );
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex,
+            logger.LogWarning(
+                ex,
                 "Failed to delete snapshots for collection {CollectionName} after collection deletion",
-                collectionName);
+                collectionName
+            );
         }
     }
 
-    private static string GetShortErrorMessage(NodeErrorType errorType) => errorType switch
-    {
-        NodeErrorType.Timeout => ClusterConstants.TimeoutError,
-        NodeErrorType.ConnectionError => ClusterConstants.ConnectionError,
-        NodeErrorType.InvalidResponse => ClusterConstants.InvalidResponseError,
-        NodeErrorType.ClusterSplit => ClusterConstants.ClusterSplitError,
-        NodeErrorType.CollectionsFetchError => ClusterConstants.CollectionsError,
-        NodeErrorType.ConsensusThreadError => ClusterConstants.ConsensusError,
-        NodeErrorType.MessageSendFailures => ClusterConstants.MessageSendFailuresError,
-        _ => ClusterConstants.UnknownError
-    };
+    private static string GetShortErrorMessage(NodeErrorType errorType) =>
+        errorType switch
+        {
+            NodeErrorType.Timeout => ClusterConstants.TimeoutError,
+            NodeErrorType.ConnectionError => ClusterConstants.ConnectionError,
+            NodeErrorType.InvalidResponse => ClusterConstants.InvalidResponseError,
+            NodeErrorType.ClusterSplit => ClusterConstants.ClusterSplitError,
+            NodeErrorType.CollectionsFetchError => ClusterConstants.CollectionsError,
+            NodeErrorType.ConsensusThreadError => ClusterConstants.ConsensusError,
+            NodeErrorType.MessageSendFailures => ClusterConstants.MessageSendFailuresError,
+            _ => ClusterConstants.UnknownError,
+        };
 
     private static string FormatMessageSendFailure(object? failure)
     {
@@ -1203,9 +1269,7 @@ public partial class ClusterManager(
                 // If it's a simple string (doesn't contain structured data), return it directly
                 if (!latestError.Contains(ClusterConstants.MessagePrefix) && !latestError.Contains(ClusterConstants.StatusPrefix))
                 {
-                    return count > 1
-                        ? string.Format(ClusterConstants.FailureWithCountFormat, latestError, count)
-                        : latestError;
+                    return count > 1 ? string.Format(ClusterConstants.FailureWithCountFormat, latestError, count) : latestError;
                 }
 
                 // Try to extract the main error message (e.g., "Can't send Raft message over channel")
@@ -1220,9 +1284,7 @@ public partial class ClusterManager(
                         // Unescape common escape sequences
                         message = message.Replace("\\u0027", "'").Replace("\\\"", "\"");
 
-                        return count > 1
-                            ? string.Format(ClusterConstants.FailureWithCountFormat, message, count)
-                            : message;
+                        return count > 1 ? string.Format(ClusterConstants.FailureWithCountFormat, message, count) : message;
                     }
                 }
 
@@ -1244,9 +1306,7 @@ public partial class ClusterManager(
             }
 
             // If we can't parse it nicely, just show count
-            return count > 0
-                ? string.Format(ClusterConstants.SendFailuresFormat, count)
-                : ClusterConstants.SendFailureMessage;
+            return count > 0 ? string.Format(ClusterConstants.SendFailuresFormat, count) : ClusterConstants.SendFailureMessage;
         }
         catch
         {
@@ -1268,4 +1328,3 @@ public partial class ClusterManager(
     [GeneratedRegex("^qdrant-(\\d+)$", RegexOptions.IgnoreCase)]
     private static partial Regex LocalDockerQdrantHostRegex();
 }
-

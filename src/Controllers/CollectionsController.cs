@@ -1,9 +1,9 @@
+using Aer.QdrantClient.Http.Models.Shared;
 using Microsoft.AspNetCore.Mvc;
 using Vigilante.Extensions;
 using Vigilante.Models.Requests;
 using Vigilante.Models.Responses;
 using Vigilante.Services.Interfaces;
-using Aer.QdrantClient.Http.Models.Shared;
 
 namespace Vigilante.Controllers;
 
@@ -37,30 +37,30 @@ public class CollectionsController(
                 {
                     CollectionName = key,
                     // Preserve the original order from service (sorted by PodName/PeerId)
-                    Infos = group.Select(size =>
+                    Infos = group.Select(ci =>
                     {
                         // Add formatted issues for collections with problems
-                        if (size.Issues.Count > 0)
+                        if (ci.Issues.Count > 0)
                         {
-                            foreach (var issue in size.Issues)
+                            foreach (var issue in ci.Issues)
                             {
-                                allIssues.Add($"[{size.CollectionName}@{size.PodName}] {issue}");
+                                allIssues.Add($"[{ci.CollectionName}@{ci.PodName}] {issue}");
                             }
                         }
 
                         return new V1GetCollectionsInfoPaginatedResponse.CollectionInfo
                         {
-                            PodName = size.PodName,
-                            NodeUrl = size.NodeUrl,
-                            PeerId = size.PeerId.ToString(),
-                            CollectionName = size.CollectionName,
-                            PodNamespace = size.PodNamespace,
-                            Metrics = size.Metrics,
-                            Issues = size.Issues,
-                            Warnings = size.Warnings,
-                            RunningOptimizations = size.RunningOptimizations,
-                            Aliases = size.Aliases,
-                            Status = size.Status?.ToString()
+                            PodName = ci.PodName,
+                            NodeUrl = ci.NodeUrl,
+                            PeerId = ci.PeerId.ToString(),
+                            CollectionName = ci.CollectionName,
+                            PodNamespace = ci.PodNamespace,
+                            Metrics = ci.Metrics,
+                            Issues = ci.Issues,
+                            Warnings = ci.Warnings,
+                            RunningOptimizations = ci.RunningOptimizations,
+                            Aliases = ci.Aliases,
+                            Status = ci.Status?.ToString()
                         };
                     }).ToList()
                 })

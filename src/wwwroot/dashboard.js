@@ -1763,7 +1763,7 @@ class VigilanteDashboard {
                 totalCountElement.textContent = `Collections: ${pagination.totalItems || 0}`;
             }
             
-            this.updateCollectionSizes(collections);
+            this.updateCollectionHeaders(collections);
 
         } catch (error) {
             clearTimeout(timeoutId);
@@ -2115,7 +2115,7 @@ class VigilanteDashboard {
         this.openSnapshotMenus.clear();
     }
 
-    updateCollectionSizes(collections) {
+    updateCollectionHeaders(collections) {
         if (!Array.isArray(collections)) {
             console.warn('Received non-array collections data:', collections);
             collections = [];
@@ -2141,9 +2141,13 @@ class VigilanteDashboard {
         const seenCollectionsForTotals = new Set();
         let totalDiskBytes = 0;
         let totalRamBytes = 0;
+
+        // Each colleciton in collections comes in n instances, once for each node info was obtained from
         collections.forEach(info => {
             if (!info?.collectionName || seenCollectionsForTotals.has(info.collectionName)) return;
+
             seenCollectionsForTotals.add(info.collectionName);
+
             if (info.metrics?.sizeBytes) totalDiskBytes += info.metrics.sizeBytes;
             if (info.metrics?.ramBytes) totalRamBytes += info.metrics.ramBytes;
         });
@@ -2169,6 +2173,10 @@ class VigilanteDashboard {
                 return acc;
             }
 
+            // We are saving status based on the first node collection info.
+            // This results in the issue when one node returns collection status different from other nodes it might or might not be displayed
+            // We should change this logic
+
             if (!acc[info.collectionName]) {
                 acc[info.collectionName] = {
                     name: info.collectionName,
@@ -2177,6 +2185,17 @@ class VigilanteDashboard {
                     warnings: [],
                     nodes: [] // Use array to preserve backend order
                 };
+            } else {
+                // The possible statuses from the best to worst are `Green`, `Yellow`, `Red`, `Grey`.
+                // Keep the worst seen status
+                const priority = { Red: 3, Yellow: 2, Grey: 1, Green: 0 };
+
+                const currentStatusPriority = priority[acc[info.collectionName].status] ?? 0;
+                const incomingStatusPriority = priority[info.status] ?? 0;
+
+                if (incomingStatusPriority > currentStatusPriority) {
+                    acc[info.collectionName].status = info.status;
+                }
             }
 
             if (Array.isArray(info.warnings) && info.warnings.length > 0) {
