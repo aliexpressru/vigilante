@@ -2116,6 +2116,9 @@ class VigilanteDashboard {
     }
 
     updateCollectionHeaders(collections) {
+
+        // Each colleciton in collections comes in n instances, once for each node info was obtained from
+
         if (!Array.isArray(collections)) {
             console.warn('Received non-array collections data:', collections);
             collections = [];
@@ -2142,7 +2145,6 @@ class VigilanteDashboard {
         let totalDiskBytes = 0;
         let totalRamBytes = 0;
 
-        // Each colleciton in collections comes in n instances, once for each node info was obtained from
         collections.forEach(info => {
             if (!info?.collectionName || seenCollectionsForTotals.has(info.collectionName)) return;
 
@@ -2177,7 +2179,8 @@ class VigilanteDashboard {
                 acc[info.collectionName] = {
                     name: info.collectionName,
                     aliases: info.aliases || [],
-                    statusCounts: info.status ? { [info.status]: 1 } : {},
+                    // We should consider status on each collection node since they might be different
+                    statusCounts: info.status ? { [info.status]: 1 } : {}, 
                     warnings: [],
                     nodes: [] // Use array to preserve backend order
                 };

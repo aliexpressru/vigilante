@@ -2235,6 +2235,7 @@ html[data-theme="dark"] #leaderNode {
 .collections-overview .collections-table {
     max-width: 100%;
     overflow-x: clip;
+    overflow-y: visible;
 }
 
 .collections-overview h3 {
@@ -2520,7 +2521,7 @@ html[data-theme="dark"] #leaderNode {
     padding: 12px;
     font-size: 0.95rem;
     color: #333;
-    overflow: hidden;
+    overflow: visible;
     max-width: 0;
 }
 
