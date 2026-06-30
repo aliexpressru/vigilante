@@ -6185,11 +6185,11 @@ class VigilanteDashboard {
     }
 
     showRemovePeerModal(node) {
-        const peerIdNum = parseInt(node.peerId, 10);
-        if (isNaN(peerIdNum) || node.peerId !== String(peerIdNum)) {
-            this.showToast('Remove Peer is only available for nodes with a numeric Peer ID (node must have responded to cluster).', 'error', 'Cannot remove', 8000);
-            return;
-        }
+        //const peerIdNum = parseInt(node.peerId, 10);
+        // if (isNaN(peerIdNum) || node.peerId !== String(peerIdNum)) {
+        //     this.showToast('Remove Peer is only available for nodes with a numeric Peer ID (node must have responded to cluster).', 'error', 'Cannot remove', 8000);
+        //     return;
+        // }
         const nodeDisplay = node.podName ? `${node.podName} (Peer ${node.peerId})` : `Peer ${node.peerId}`;
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
@@ -6201,16 +6201,19 @@ class VigilanteDashboard {
                 <button class="modal-close" type="button" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body">
-                <p>You are about to remove the following node from the Qdrant cluster:</p>
+                <p>You are about to remove the following peer from the Qdrant cluster:</p>
+                </br>
                 <p class="remove-peer-node-name"><strong>${this.escapeHtml(nodeDisplay)}</strong></p>
+                </br>
                 <p>The node will no longer participate in the cluster. Ensure shards are migrated or use <strong>Force</strong> to remove even if the peer has shards/replicas.</p>
+                </br>
                 <label class="modal-checkbox-label">
                     <input type="checkbox" id="removePeerForce" class="modal-checkbox">
                     <span><strong>Force</strong> — remove peer even if it has shards/replicas on it (may cause data unavailability)</span>
                 </label>
                 <div class="modal-confirm-input-group">
-                    <label for="removePeerConfirm">Type peer ID <strong>${this.escapeHtml(node.peerId)}</strong> to confirm:</label>
-                    <input type="text" id="removePeerConfirm" class="modal-confirm-input" placeholder="${this.escapeHtml(node.peerId)}" autocomplete="off">
+                    <label for="removePeerConfirm">Type peer ID <strong>${node.peerId}</strong> to confirm:</label>
+                    <input type="text" id="removePeerConfirm" class="modal-confirm-input" placeholder="${node.peerId}" autocomplete="off">
                 </div>
             </div>
             <div class="modal-footer">
@@ -6240,11 +6243,11 @@ class VigilanteDashboard {
         const submitButton = overlay.querySelector('.modal-submit');
         const confirmInput = overlay.querySelector('#removePeerConfirm');
         confirmInput.addEventListener('input', () => {
-            submitButton.disabled = confirmInput.value !== node.peerId;
+            submitButton.disabled = confirmInput.value !== node.peerId.toString();
         });
 
         submitButton.addEventListener('click', async () => {
-            if (confirmInput.value !== node.peerId) return;
+            if (confirmInput.value !== node.peerId.toString()) return;
             const force = overlay.querySelector('#removePeerForce').checked;
             closeModal();
             const toastId = this.showToast(`Removing peer ${node.peerId} from cluster...`, 'info', 'Remove Peer', 0, true);
@@ -6252,7 +6255,7 @@ class VigilanteDashboard {
                 const response = await apiFetch(this.removePeerEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ peerId: peerIdNum, isForceDropOperation: force })
+                    body: JSON.stringify({ peerId: node.peerId, isForceDropOperation: force })
                 });
                 const data = await response.json().catch(() => ({}));
                 this.removeToast(toastId);
