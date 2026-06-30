@@ -190,7 +190,10 @@
                 </div>
                 <div class="snapshots-controls">
                     <div class="filter-controls">
-                        <input type="text" id="snapshotNameFilter" class="filter-input" placeholder="Filter by collection name...">
+                        <div class="filter-input-wrapper">
+                            <input type="text" id="snapshotNameFilter" class="filter-input" placeholder="Filter by collection name...">
+                            <i class="fas fa-circle-notch filter-loading-icon"></i>
+                        </div>
                         <button id="clearSnapshotFilterBtn" class="clear-filter-btn" title="Clear filter">
                             <i class="fas fa-times"></i>
                         </button>

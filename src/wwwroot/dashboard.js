@@ -3055,7 +3055,9 @@ class VigilanteDashboard {
     async loadSnapshots(clearCache = false) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-        
+        const filterWrapper = document.getElementById('snapshotNameFilter')?.closest('.filter-input-wrapper');
+        filterWrapper?.classList.add('loading');
+
         try {
             const params = new URLSearchParams({
                 page: this.snapshotCurrentPage.toString(),
@@ -3104,6 +3106,8 @@ class VigilanteDashboard {
                 errorMessage = this.getErrorMessage(error);
             }
             this.showToast(`Error loading snapshots: ${errorMessage}`, 'error', 'Snapshot Load Error', 15000);
+        } finally {
+            filterWrapper?.classList.remove('loading');
         }
     }
 
