@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrEmpty($env:OWNER_LABEL_NAME))  { $env:OWNER_LABEL_NAME  = "owner" }
 if ([string]::IsNullOrEmpty($env:OWNER_LABEL_VALUE)) { $env:OWNER_LABEL_VALUE = "YOUR_NAME_HERE" }
 if ([string]::IsNullOrEmpty($env:CLUSTER_DOMAIN))    { $env:CLUSTER_DOMAIN    = "your-cluster-domain.com" }
+if ([string]::IsNullOrEmpty($env:IMAGE_TAG))         { $env:IMAGE_TAG         = "latest" }
 # =======================================================
 
 Write-Host "🚀 Starting Vigilante deployment..."
@@ -88,7 +89,7 @@ if (-not (Test-Path "../service-monitor.yaml")) {
 
 # Use IMAGE_NAME from environment or default
 if ([string]::IsNullOrEmpty($env:IMAGE_NAME)) {
-    $IMAGE_NAME = "aercis/vigilante:latest"
+    $IMAGE_NAME = "aercis/vigilante:$($env:IMAGE_TAG)"
 } else {
     $IMAGE_NAME = $env:IMAGE_NAME
 }

@@ -5,12 +5,12 @@
 
 set -e
 
-# Set custom label for resource ownership/team tracking
-export OWNER_LABEL_NAME="owner"  # Label name (e.g., "owner", "team", "managed-by")
-export OWNER_LABEL_VALUE="YOUR_NAME_HERE"  # Replace with actual owner/team name
-
-# Set cluster domain for ingress access
-export CLUSTER_DOMAIN="your-cluster-domain.com"  # Replace with actual cluster domain
+# Env variables can be pre-set by per-environment deploy_{env}.sh wrappers.
+# Fallback defaults are used when running deploy.sh directly.
+OWNER_LABEL_NAME="${OWNER_LABEL_NAME:-owner}"
+OWNER_LABEL_VALUE="${OWNER_LABEL_VALUE:-YOUR_NAME_HERE}"
+CLUSTER_DOMAIN="${CLUSTER_DOMAIN:-your-cluster-domain.com}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
 # =======================================================
 
 echo "🚀 Starting Vigilante deployment..."
@@ -86,7 +86,7 @@ if [ ! -f "../service-monitor.yaml" ]; then
 fi
 
 # Use IMAGE_NAME from environment or default
-IMAGE_NAME="${IMAGE_NAME:-aercis/vigilante:latest}"
+IMAGE_NAME="${IMAGE_NAME:-aercis/vigilante:${IMAGE_TAG}}"
 echo "📝 Using image: $IMAGE_NAME"
 echo "💡 Make sure the image is already built and pushed via GitHub Actions"
 echo ""
