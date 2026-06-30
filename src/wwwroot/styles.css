@@ -4711,6 +4711,41 @@ html[data-theme="dark"] #leaderNode {
     box-shadow: 0 2px 8px rgba(211, 47, 47, 0.3);
 }
 
+.modal-submit.modal-submit-danger:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.6;
+    box-shadow: none;
+    transform: none;
+}
+
+.modal-confirm-input-group {
+    margin-top: 16px;
+}
+
+.modal-confirm-input-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.9em;
+}
+
+.modal-confirm-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #d32f2f;
+    border-radius: 4px;
+    background: var(--modal-bg, #1e1e2e);
+    color: var(--text-primary, #cdd6f4);
+    font-size: 0.95em;
+    box-sizing: border-box;
+    outline: none;
+}
+
+.modal-confirm-input:focus {
+    border-color: #ef5350;
+    box-shadow: 0 0 0 2px rgba(211, 47, 47, 0.25);
+}
+
 .modal-cancel {
     background: #6c757d;
     color: white;

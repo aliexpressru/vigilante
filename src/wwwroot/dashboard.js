@@ -6208,10 +6208,14 @@ class VigilanteDashboard {
                     <input type="checkbox" id="removePeerForce" class="modal-checkbox">
                     <span><strong>Force</strong> — remove peer even if it has shards/replicas on it (may cause data unavailability)</span>
                 </label>
+                <div class="modal-confirm-input-group">
+                    <label for="removePeerConfirm">Type peer ID <strong>${this.escapeHtml(node.peerId)}</strong> to confirm:</label>
+                    <input type="text" id="removePeerConfirm" class="modal-confirm-input" placeholder="${this.escapeHtml(node.peerId)}" autocomplete="off">
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn-secondary modal-cancel">Cancel</button>
-                <button type="button" class="btn-primary modal-submit modal-submit-danger"><i class="fas fa-user-minus"></i> Remove Peer</button>
+                <button type="button" class="btn-primary modal-submit modal-submit-danger" disabled><i class="fas fa-user-minus"></i> Remove Peer</button>
             </div>
         `;
         overlay.appendChild(modal);
@@ -6234,7 +6238,13 @@ class VigilanteDashboard {
         overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
 
         const submitButton = overlay.querySelector('.modal-submit');
+        const confirmInput = overlay.querySelector('#removePeerConfirm');
+        confirmInput.addEventListener('input', () => {
+            submitButton.disabled = confirmInput.value !== node.peerId;
+        });
+
         submitButton.addEventListener('click', async () => {
+            if (confirmInput.value !== node.peerId) return;
             const force = overlay.querySelector('#removePeerForce').checked;
             closeModal();
             const toastId = this.showToast(`Removing peer ${node.peerId} from cluster...`, 'info', 'Remove Peer', 0, true);
