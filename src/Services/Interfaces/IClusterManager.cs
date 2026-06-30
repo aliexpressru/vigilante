@@ -114,6 +114,14 @@ public interface IClusterManager
     Task<bool> TriggerCollectionOptimizersAsync(string collectionName, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Drains all specified collections from the peer by directing a different healthy node to move their shards.
+    /// </summary>
+    Task<bool> DrainPeerAsync(
+        ulong peerId,
+        string[] collectionNames,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reports an external issue to surface in cluster health, identified by key.
     /// The issue expires after a TTL if not explicitly cleared.
     /// </summary>

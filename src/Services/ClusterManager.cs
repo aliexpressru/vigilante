@@ -523,6 +523,25 @@ public partial class ClusterManager(
         return await collectionService.TriggerOptimizersAsync(healthyNode.Url, collectionName, cancellationToken);
     }
 
+    public async Task<bool> DrainPeerAsync(
+        ulong peerId,
+        string[] collectionNames,
+        CancellationToken cancellationToken = default)
+    {
+        var state = await GetClusterStateAsync(cancellationToken);
+        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy && n.PeerId != peerId);
+
+        if (healthyNode == null)
+        {
+            logger.LogWarning(
+                "No healthy node (other than peer {PeerId}) available to perform drain peer operation",
+                peerId);
+            return false;
+        }
+
+        return await collectionService.DrainPeerAsync(healthyNode.Url, peerId, collectionNames, cancellationToken);
+    }
+
     public async Task<bool> DropShardsFromPeerAsync(
         string collectionName,
         ulong peerId,

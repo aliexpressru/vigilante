@@ -920,6 +920,40 @@ public class CollectionService : ICollectionService
         }
     }
 
+    public async Task<bool> DrainPeerAsync(
+        string nodeUrl,
+        ulong peerId,
+        string[] collectionNames,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var qdrantClient = _clientFactory.CreateClientFromUrl(nodeUrl, _options.ApiKey);
+            var result = await qdrantClient.DrainPeer(peerId, cancellationToken, collectionNamesToMove: collectionNames);
+
+            if (result?.Status?.IsSuccess == true)
+            {
+                _logger.LogInformation(
+                    "Drain peer {PeerId} initiated on node {NodeUrl} for collections [{Collections}]",
+                    peerId,
+                    nodeUrl,
+                    string.Join(", ", collectionNames));
+                return true;
+            }
+
+            _logger.LogError(
+                "Failed to drain peer {PeerId}: {Error}",
+                peerId,
+                result?.Status?.Error ?? MetricConstants.UnknownErrorMessage);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to drain peer {PeerId} on node {NodeUrl}", peerId, nodeUrl);
+            return false;
+        }
+    }
+
     /// <summary>
     /// Gets the number of unique collections from a list of CollectionInfo instances
     /// </summary>

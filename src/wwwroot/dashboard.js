@@ -24,6 +24,7 @@ class VigilanteDashboard {
         this.manageStatefulSetEndpoint = '/api/v1/kubernetes/manage-statefulset';
         this.restoreReplicationFactorEndpoint = '/api/v1/collections/restore-replication-factor';
         this.triggerOptimizersEndpoint = '/api/v1/collections/trigger-optimizers';
+        this.drainPeerEndpoint = '/api/v1/collections/drain-peer';
         this.jobsStatusEndpoint = '/api/v1/jobs/status';
         this.jobsCancelEndpoint = '/api/v1/jobs/cancel';
         this.qdrantLogsEndpoint = '/api/v1/logs/qdrant';
@@ -43,6 +44,7 @@ class VigilanteDashboard {
         this.clusterIssues = []; // Issues from cluster/status
         this.collectionIssues = []; // Issues from collections-info
         this.clusterNodes = []; // Store cluster nodes for StatefulSet management
+        this.loadedCollectionNames = []; // Store collection names for drain peer modal
         this.environment = 'Loading...'; // Current environment name
         this.namespace = 'Loading...'; // Current namespace
         this.version = 'Loading...'; // Current app version
@@ -1748,7 +1750,8 @@ class VigilanteDashboard {
             
             // Extract collections
             const collections = data.collections || [];
-            
+            this.loadedCollectionNames = [...new Set(collections.map(c => c.collectionName).filter(Boolean))];
+
             // Extract collection issues if present
             this.collectionIssues = data.issues || [];
             
@@ -4466,6 +4469,20 @@ class VigilanteDashboard {
         });
         actionsDropdown.appendChild(recoverFromUrlAction);
 
+        // Drain Peer action
+        const drainPeerAction = document.createElement('button');
+        drainPeerAction.className = 'node-action-item node-action-item-danger';
+        drainPeerAction.innerHTML = '<i class="fas fa-water"></i> Drain Peer';
+        drainPeerAction.title = 'Move selected collections\' shards off this peer to other nodes';
+        drainPeerAction.addEventListener('click', (e) => {
+            e.stopPropagation();
+            actionsDropdown.classList.remove('show');
+            actionsMenuButton.classList.remove('active');
+            this.openNodeMenus.delete(node.peerId);
+            this.showDrainPeerModal(node);
+        });
+        actionsDropdown.appendChild(drainPeerAction);
+
         // Remove Peer action (before Delete Pod)
         const removePeerAction = document.createElement('button');
         removePeerAction.className = 'node-action-item node-action-item-danger';
@@ -6181,6 +6198,225 @@ class VigilanteDashboard {
         } catch (error) {
             this.removeToast(toastId);
             this.showToast(`Error deleting pod: ${error.message}`, 'error', 'Error', 15000);
+        }
+    }
+
+    showDrainPeerModal(node) {
+        const collections = this.loadedCollectionNames;
+        const nodeDisplay = node.podName || node.url || String(node.peerId);
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'modal-dialog';
+
+        const buildCollectionRow = (name) => `
+            <tr class="multi-recover-snapshot-row drain-peer-collection-row">
+                <td class="multi-recover-snapshot-td multi-recover-snapshot-td--check">
+                    <input type="checkbox" class="drain-peer-collection-cb" data-name="${this.escapeHtml(name)}" checked />
+                </td>
+                <td class="multi-recover-snapshot-td">
+                    <span class="multi-recover-item-name">${this.escapeHtml(name)}</span>
+                </td>
+            </tr>`;
+
+        modal.innerHTML = `
+            <div class="modal-header">
+                <h3><i class="fas fa-water"></i> Drain Peer</h3>
+                <button class="modal-close" type="button" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Move shards off peer <strong>${this.escapeHtml(nodeDisplay)}</strong> (ID: <strong>${node.peerId}</strong>) to other nodes.</p>
+                <div class="form-group">
+                    <label>Select collections to drain:</label>
+                    ${collections.length === 0
+                        ? '<p class="multi-recover-empty">No collections available.</p>'
+                        : `<div class="multi-recover-snapshot-table-wrap"><table class="multi-recover-snapshot-table">
+                            <thead><tr>
+                                <th class="multi-recover-snapshot-th multi-recover-snapshot-th--check">
+                                    <input type="checkbox" id="drainPeerSelectAll" checked title="Select all" />
+                                </th>
+                                <th class="multi-recover-snapshot-th">Collection</th>
+                            </tr></thead>
+                            <tbody>${collections.map(buildCollectionRow).join('')}</tbody>
+                        </table></div>`
+                    }
+                </div>
+                <p class="multi-recover-count-hint" id="drainPeerHint"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary modal-cancel">Cancel</button>
+                <button type="button" class="btn-primary modal-submit modal-submit-danger" ${collections.length === 0 ? 'disabled' : ''}><i class="fas fa-water"></i> Drain Peer</button>
+            </div>
+        `;
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        const closeModal = () => {
+            overlay.removeEventListener('keydown', escHandler);
+            overlay.classList.add('closing');
+            setTimeout(() => overlay.remove(), 300);
+        };
+        const escHandler = (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeModal();
+            }
+        };
+        overlay.addEventListener('keydown', escHandler);
+        modal.querySelector('.modal-close').addEventListener('click', closeModal);
+        modal.querySelector('.modal-cancel').addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay)
+            {
+                closeModal();
+            }
+        });
+
+        const selectAll = modal.querySelector('#drainPeerSelectAll');
+        const submitButton = modal.querySelector('.modal-submit');
+
+        const updateHint = () => {
+            const total = modal.querySelectorAll('.drain-peer-collection-cb').length;
+            const checked = modal.querySelectorAll('.drain-peer-collection-cb:checked').length;
+            const hint = modal.querySelector('#drainPeerHint');
+            hint.textContent = `${checked} of ${total} collections selected`;
+            hint.className = `multi-recover-count-hint${checked > 0 ? ' multi-recover-count-hint--ok' : ' multi-recover-count-hint--error'}`;
+            submitButton.disabled = checked === 0;
+            if (selectAll) {
+                selectAll.checked = checked === total;
+            }
+        };
+
+        if (selectAll) {
+            selectAll.addEventListener('change', () => {
+                modal.querySelectorAll('.drain-peer-collection-cb').forEach(cb => { cb.checked = selectAll.checked; });
+                updateHint();
+            });
+        }
+
+        modal.querySelectorAll('.drain-peer-collection-row').forEach(row => {
+            row.addEventListener('click', (e) => {
+                if (e.target.type === 'checkbox') {
+                    return;
+                }
+
+                const cb = row.querySelector('.drain-peer-collection-cb');
+                cb.checked = !cb.checked;
+                updateHint();
+            });
+        });
+
+        modal.querySelectorAll('.drain-peer-collection-cb').forEach(cb => {
+            cb.addEventListener('change', updateHint);
+        });
+
+        if (collections.length > 0) {
+            updateHint();
+        }
+
+        submitButton.addEventListener('click', () => {
+            const selected = [...modal.querySelectorAll('.drain-peer-collection-cb:checked')]
+                .map(cb => cb.dataset.name);
+            if (selected.length === 0) {
+                return;
+            }
+
+            closeModal();
+            this.showDrainPeerConfirmModal(node, selected);
+        });
+    }
+
+    showDrainPeerConfirmModal(node, collectionNames) {
+        const nodeDisplay = node.podName || node.url || String(node.peerId);
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'modal-dialog';
+        modal.innerHTML = `
+            <div class="modal-header">
+                <h3><i class="fas fa-water"></i> Confirm Drain Peer</h3>
+                <button class="modal-close" type="button" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>You are about to drain the following peer from the Qdrant cluster:</p>
+                </br>
+                <p class="remove-peer-node-name"><strong>${this.escapeHtml(nodeDisplay)}</strong></p>
+                </br>
+                <p>Shards from <strong>${collectionNames.length} collection${collectionNames.length !== 1 ? 's' : ''}</strong> will be moved to other nodes. This may take a significant amount of time.</p>
+                </br>
+                <div class="modal-confirm-input-group">
+                    <label for="drainPeerConfirm">Type peer ID <strong>${node.peerId}</strong> to confirm:</label>
+                    <input type="text" id="drainPeerConfirm" class="modal-confirm-input" placeholder="${node.peerId}" autocomplete="off">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary modal-cancel">Cancel</button>
+                <button type="button" class="btn-primary modal-submit modal-submit-danger" disabled><i class="fas fa-water"></i> Drain Peer</button>
+            </div>
+        `;
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        const closeModal = () => {
+            overlay.removeEventListener('keydown', escHandler);
+            overlay.classList.add('closing');
+            setTimeout(() => overlay.remove(), 300);
+        };
+        const escHandler = (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeModal();
+            }
+        };
+        overlay.addEventListener('keydown', escHandler);
+        modal.querySelector('.modal-close').addEventListener('click', closeModal);
+        modal.querySelector('.modal-cancel').addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                closeModal();
+            }
+        });
+
+        const submitButton = modal.querySelector('.modal-submit');
+        const confirmInput = modal.querySelector('#drainPeerConfirm');
+        confirmInput.addEventListener('input', () => {
+            submitButton.disabled = confirmInput.value !== node.peerId.toString();
+        });
+
+        submitButton.addEventListener('click', async () => {
+            if (confirmInput.value !== node.peerId.toString()) {
+                return;
+            }
+
+            closeModal();
+            await this.drainPeer(node, collectionNames);
+        });
+
+        setTimeout(() => confirmInput.focus(), 50);
+    }
+
+    async drainPeer(node, collectionNames) {
+        const toastId = this.showToast(
+            `Draining peer ${node.peerId} (${collectionNames.length} collection${collectionNames.length !== 1 ? 's' : ''})...`,
+            'info', 'Drain Peer', 0, true);
+        try {
+            const response = await apiFetch(this.drainPeerEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ peerId: node.peerId, collectionNames })
+            });
+            const result = await response.json();
+            if (response.ok && result.success) {
+                this.updateToast(toastId, result.message || 'Peer drain initiated successfully.', 'success', 'Drain Peer');
+            } else {
+                this.updateToast(toastId, result.message || result.error || `HTTP ${response.status}`, 'error', 'Drain Peer');
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`Error: ${this.getErrorMessage(error)}`, 'error', 'Drain Peer', 10000);
         }
     }
 

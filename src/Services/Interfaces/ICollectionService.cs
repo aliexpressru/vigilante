@@ -147,5 +147,14 @@ public interface ICollectionService
         string collectionName,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Drains all specified collections from the peer, moving their shards to other nodes.
+    /// </summary>
+    Task<bool> DrainPeerAsync(
+        string nodeUrl,
+        ulong peerId,
+        string[] collectionNames,
+        CancellationToken cancellationToken);
+
 }
 

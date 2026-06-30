@@ -433,4 +433,43 @@ public class CollectionsController(
             });
         }
     }
+
+    [HttpPost("drain-peer")]
+    [ProducesResponseType(typeof(V1DrainPeerResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(V1DrainPeerResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<V1DrainPeerResponse>> DrainPeer(
+        [FromBody] V1DrainPeerRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var success = await clusterManager.DrainPeerAsync(request.PeerId, request.CollectionNames, cancellationToken);
+
+            if (success)
+            {
+                return Ok(new V1DrainPeerResponse
+                {
+                    Success = true,
+                    Message = $"Drain initiated for peer '{request.PeerId}'"
+                });
+            }
+
+            return StatusCode(500, new V1DrainPeerResponse
+            {
+                Success = false,
+                Message = "Failed to drain peer (no healthy node available or Qdrant API error)"
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error draining peer {PeerId}", request.PeerId);
+            return StatusCode(500, new V1DrainPeerResponse
+            {
+                Success = false,
+                Message = "Internal server error during drain peer",
+                Error = ex.Message
+            });
+        }
+    }
 }
