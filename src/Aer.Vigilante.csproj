@@ -15,7 +15,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Aerx.QdrantClient.Http" Version="1.18.9" />
+        <PackageReference Include="Aerx.QdrantClient.Http" Version="1.19.0" />
         
         <PackageReference Include="AWSSDK.S3" Version="4.0.24.2" />
         <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
