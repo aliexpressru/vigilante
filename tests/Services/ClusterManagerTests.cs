@@ -1129,7 +1129,7 @@ public class ClusterManagerTests
             .Returns(apiCollections);
 
         // Act
-        var result = await _clusterManager.GetCollectionsInfoAsync();
+        var (result, _) = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert
         await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
@@ -1204,7 +1204,7 @@ public class ClusterManagerTests
             .Returns([]);
 
         // Act
-        var result = await _clusterManager.GetCollectionsInfoAsync();
+        var (result, _) = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert
         result.Should().HaveCount(1);
@@ -1287,7 +1287,7 @@ public class ClusterManagerTests
             .Returns(storageCollections);
 
         // Act
-        var result = await _clusterManager.GetCollectionsInfoAsync();
+        var (result, _) = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert
         result.Should().HaveCount(1);
@@ -1402,7 +1402,7 @@ public class ClusterManagerTests
             .Returns(storageCollections);
 
         // Act
-        var result = await _clusterManager.GetCollectionsInfoAsync();
+        var (result, _) = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert
         result.Should().HaveCount(3);
@@ -1457,7 +1457,7 @@ public class ClusterManagerTests
             .Returns([]);
 
         // Act
-        var result = await _clusterManager.GetCollectionsInfoAsync();
+        var (result, _) = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert - should return test data
         result.Should().HaveCountGreaterThan(0, "Should return test data when no collections from API");
@@ -1577,7 +1577,7 @@ public class ClusterManagerTests
             .Returns([]);
 
         // Act
-        var result = await _clusterManager.GetCollectionsInfoAsync();
+        var (result, _) = await _clusterManager.GetCollectionsInfoAsync();
 
         // Assert
         result.Should().HaveCount(2);
@@ -1641,10 +1641,10 @@ public class ClusterManagerTests
             .Returns(apiCollections);
 
         // Act - First call
-        var result1 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
+        var (result1, _) = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
 
         // Act - Second call (ClusterManager will call CollectionService again, but CollectionService handles caching internally)
-        var result2 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
+        var (result2, _) = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
 
         // Assert - ClusterManager calls CollectionService twice (caching is now handled inside CollectionService)
         await _collectionService.Received(2).GetEnrichedCollectionsInfoAsync(
@@ -1717,10 +1717,10 @@ public class ClusterManagerTests
             .Returns(firstCollections, secondCollections);
 
         // Act - First call
-        var result1 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
+        var (result1, _) = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
 
         // Act - Second call with clearCache=true
-        var result2 = await _clusterManager.GetCollectionsInfoAsync(clearCache: true);
+        var (result2, _) = await _clusterManager.GetCollectionsInfoAsync(clearCache: true);
 
         // Assert - First call should have clearCache=false
         await _collectionService.Received(1).GetEnrichedCollectionsInfoAsync(
@@ -1789,13 +1789,13 @@ public class ClusterManagerTests
 
         // Act
         // First call - gets real collections and caches them
-        var result1 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
+        var (result1, _) = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
 
         // Second call - clearCache=true but gets empty result, should clear cache and return test data
-        var result2 = await _clusterManager.GetCollectionsInfoAsync(clearCache: true);
+        var (result2, _) = await _clusterManager.GetCollectionsInfoAsync(clearCache: true);
 
         // Third call - clearCache=false, should NOT return stale cache (it was cleared), should fetch again
-        var result3 = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
+        var (result3, _) = await _clusterManager.GetCollectionsInfoAsync(clearCache: false);
 
         // Assert
         result1[0].CollectionName.Should().Be("collection1", "First call should return real collection");

@@ -10,6 +10,8 @@ public class V1GetCollectionsInfoPaginatedResponse
     
     public PaginationInfo Pagination { get; set; } = new();
 
+    public bool IsTestData { get; set; } = false;
+
     public class CollectionInfo
     {
         public string PodName { get; set; } = string.Empty;

@@ -1722,6 +1722,7 @@ class VigilanteDashboard {
         const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
         const filterWrapper = document.getElementById('collectionNameFilter')?.closest('.filter-input-wrapper');
         filterWrapper?.classList.add('loading');
+        const alertBanner = document.getElementById('alert-test-mode-banner');
 
         try {
             // Build URL with pagination and filter parameters
@@ -1773,7 +1774,12 @@ class VigilanteDashboard {
             }
             
             this.updateCollectionHeaders(collections);
-
+            
+            if (data.isTestData) {
+                alertBanner.classList.remove('u-hidden');
+            } else {
+                alertBanner.classList.add('u-hidden');
+            }
         } catch (error) {
             clearTimeout(timeoutId);
             console.error('Error fetching collection sizes:', error);

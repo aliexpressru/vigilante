@@ -25,7 +25,7 @@ public class CollectionsController(
     {
         try
         {
-            var allCollectionInfos = await clusterManager.GetCollectionsInfoAsync(request.ClearCache, cancellationToken);
+            var (allCollectionInfos, isTestData) = await clusterManager.GetCollectionsInfoAsync(request.ClearCache, cancellationToken);
 
             // Collect all issues from collections into a general issues array
             var allIssues = new List<string>();
@@ -89,6 +89,7 @@ public class CollectionsController(
             {
                 Collections = pagedCollections,
                 Issues = [.. allIssues],
+                IsTestData = isTestData,
                 Pagination = new V1GetCollectionsInfoPaginatedResponse.PaginationInfo
                 {
                     CurrentPage = request.Page,

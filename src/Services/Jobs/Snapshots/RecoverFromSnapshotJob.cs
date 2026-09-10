@@ -49,7 +49,7 @@ public sealed class RecoverFromSnapshotJob(
         }
 
         var clusterManager = serviceProvider.GetRequiredService<IClusterManager>();
-        var collections = await clusterManager.GetCollectionsInfoAsync(clearCache: true, cancellationToken);
+        var (collections, _) = await clusterManager.GetCollectionsInfoAsync(clearCache: true, cancellationToken);
         var nodeCollection = collections.FirstOrDefault(c =>
             string.Equals(c.CollectionName, collectionName, StringComparison.OrdinalIgnoreCase)
             && string.Equals(c.NodeUrl, targetNodeUrl, StringComparison.OrdinalIgnoreCase)

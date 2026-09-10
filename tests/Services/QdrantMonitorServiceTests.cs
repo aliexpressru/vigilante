@@ -497,7 +497,7 @@ public class QdrantMonitorServiceTests
         _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())
             .Returns(healthyState);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns([]);
+            .Returns(([], false));
         _dynamicConfigService.GetConfigAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new DynamicConfig { MonitoringIntervalSeconds = 60 }));
 

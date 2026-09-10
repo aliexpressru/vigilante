@@ -117,7 +117,7 @@ public class SnapshotAutomationJobTests
     {
         var config = new DynamicConfig(); // Schedule.Enabled = false
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _s3SnapshotService
@@ -142,7 +142,7 @@ public class SnapshotAutomationJobTests
             }
         };
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns([]);
+            .Returns(([], false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _s3SnapshotService
@@ -163,7 +163,7 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: null);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -202,10 +202,10 @@ public class SnapshotAutomationJobTests
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(
-            [
+            ([
                 new() { CollectionName = "col1", NodeUrl = "http://node1:6333", Status = QdrantCollectionStatus.Green, HnswM = 16 },
                 new() { CollectionName = "col2", NodeUrl = "http://node1:6333", Status = QdrantCollectionStatus.Green, HnswM = 16 }
-            ]);
+            ], false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -231,7 +231,7 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: null);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns(
             [
@@ -255,12 +255,12 @@ public class SnapshotAutomationJobTests
             .Returns([]);
 
         var yellowCollection = new List<CollectionInfo> { new() { CollectionName = "col1", Status = QdrantCollectionStatus.Yellow, HnswM = 16 } };
-        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(yellowCollection);
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns((yellowCollection, false));
         var job1 = CreateJob(config: config);
         await job1.AdvanceAsync(CancellationToken.None);
 
         var noHnswCollection = new List<CollectionInfo> { new() { CollectionName = "col1", Status = QdrantCollectionStatus.Green, HnswM = 0 } };
-        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(noHnswCollection);
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns((noHnswCollection, false));
         var job2 = CreateJob(config: config);
         await job2.AdvanceAsync(CancellationToken.None);
 
@@ -289,7 +289,7 @@ public class SnapshotAutomationJobTests
                 ]
             }
         };
-        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(optimizingCollection);
+        _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns((optimizingCollection, false));
 
         var job = CreateJob(config: config);
         await job.AdvanceAsync(CancellationToken.None);
@@ -304,11 +304,11 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: null);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollectionWithShards("col1",
+            .Returns((GreenHnswCollectionWithShards("col1",
             [
                 new() { ShardId = 0, State = ShardState.Active.ToString(), IsEmpty = false },
                 new() { ShardId = 1, State = ShardState.Active.ToString(), IsEmpty = true }
-            ]));
+            ]), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
 
@@ -325,10 +325,10 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: 60);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollectionWithShards("col1",
+            .Returns((GreenHnswCollectionWithShards("col1",
             [
                 new() { ShardId = 0, State = ShardState.Active.ToString(), IsEmpty = true }
-            ]));
+            ]), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
 
@@ -345,10 +345,10 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: null);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollectionWithShards("col1",
+            .Returns((GreenHnswCollectionWithShards("col1",
             [
                 new() { ShardId = 0, State = ShardState.Partial.ToString(), IsEmpty = false }
-            ]));
+            ]), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
 
@@ -365,11 +365,11 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: null);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollectionWithShards("col1",
+            .Returns((GreenHnswCollectionWithShards("col1",
             [
                 new() { ShardId = 0, State = ShardState.Active.ToString(), IsEmpty = false },
                 new() { ShardId = 1, State = ShardState.Active.ToString(), IsEmpty = false }
-            ]));
+            ]), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -393,7 +393,7 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: 60);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -418,7 +418,7 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: null);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -442,7 +442,7 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: 60);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -508,7 +508,7 @@ public class SnapshotAutomationJobTests
             .BuildServiceProvider();
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("live_col"));
+            .Returns((GreenHnswCollection("live_col"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -568,7 +568,7 @@ public class SnapshotAutomationJobTests
             .BuildServiceProvider();
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns([]);
+            .Returns(([], false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
 
@@ -600,7 +600,7 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: 60, retainLastN: 1);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -633,7 +633,7 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: null);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _snapshotService.CreateCollectionSnapshotAsync(
@@ -652,7 +652,7 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: null);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _jobRegistry.HasPendingMultiSnapshotRecoveryForCollection("col1").Returns(true);
@@ -670,7 +670,7 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: 60);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _jobRegistry.HasPendingMultiSnapshotRecoveryForCollection("col1").Returns(true);
@@ -688,7 +688,7 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: null);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _jobRegistry.HasPendingSnapshotRecoveryForCollection("col1").Returns(true);
@@ -706,7 +706,7 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: 60);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _jobRegistry.HasPendingSnapshotRecoveryForCollection("col1").Returns(true);
@@ -724,7 +724,7 @@ public class SnapshotAutomationJobTests
     {
         var config = ScheduleEnabled(intervalMinutes: null);
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(GreenHnswCollection("col1"));
+            .Returns((GreenHnswCollection("col1"), false));
         _snapshotService.GetSnapshotsInfoAsync(Arg.Any<CancellationToken>(), Arg.Any<bool>(), Arg.Any<IReadOnlyList<NodeInfo>?>())
             .Returns([]);
         _jobRegistry.HasPendingMultiSnapshotRecoveryForCollection("col1").Returns(false);

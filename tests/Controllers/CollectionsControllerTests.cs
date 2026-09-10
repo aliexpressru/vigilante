@@ -72,7 +72,7 @@ public class CollectionsControllerTests
         };
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(collections);
+            .Returns((collections, false));
 
         var request = new V1GetCollectionsInfoRequest
         {
@@ -115,7 +115,7 @@ public class CollectionsControllerTests
         }
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(collections);
+            .Returns((collections, false));
 
         var request = new V1GetCollectionsInfoRequest
         {
@@ -179,7 +179,7 @@ public class CollectionsControllerTests
         };
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(collections);
+            .Returns((collections, false));
 
         var request = new V1GetCollectionsInfoRequest
         {
@@ -217,7 +217,7 @@ public class CollectionsControllerTests
         };
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(collections);
+            .Returns((collections, false));
 
         var request = new V1GetCollectionsInfoRequest();
 
@@ -250,7 +250,7 @@ public class CollectionsControllerTests
         };
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(collections);
+            .Returns((collections, false));
 
         var request = new V1GetCollectionsInfoRequest
         {
@@ -303,7 +303,7 @@ public class CollectionsControllerTests
         };
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(collections);
+            .Returns((collections, false));
 
         var request = new V1GetCollectionsInfoRequest
         {
@@ -332,7 +332,7 @@ public class CollectionsControllerTests
         var collections = new List<CollectionInfo>();
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(collections);
+            .Returns((collections, false));
 
         var request = new V1GetCollectionsInfoRequest();
 
@@ -352,7 +352,7 @@ public class CollectionsControllerTests
     {
         // Arrange
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<IReadOnlyList<CollectionInfo>>(new Exception("Test error")));
+            .Returns(Task.FromException<(IReadOnlyList<CollectionInfo>, bool)>(new Exception("Test error")));
 
         var request = new V1GetCollectionsInfoRequest();
 
@@ -577,7 +577,7 @@ public class CollectionsControllerTests
         };
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(collections);
+            .Returns((collections, false));
 
         var request = new V1GetCollectionsInfoRequest
         {
@@ -611,7 +611,7 @@ public class CollectionsControllerTests
         };
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(collections);
+            .Returns((collections, false));
 
         var request = new V1GetCollectionsInfoRequest
         {
@@ -645,7 +645,7 @@ public class CollectionsControllerTests
         };
 
         _clusterManager.GetCollectionsInfoAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(collections);
+            .Returns((collections, false));
 
         var request = new V1GetCollectionsInfoRequest
         {
