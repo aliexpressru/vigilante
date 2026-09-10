@@ -23,6 +23,7 @@ class VigilanteDashboard {
         this.removePeerEndpoint = '/api/v1/cluster/remove-peer';
         this.manageStatefulSetEndpoint = '/api/v1/kubernetes/manage-statefulset';
         this.restoreReplicationFactorEndpoint = '/api/v1/collections/restore-replication-factor';
+        this.restoreReplicationFactorForAllCollectionsEndpoint = '/api/v1/collections/restore-replication-factor-for-all-collections';
         this.triggerOptimizersEndpoint = '/api/v1/collections/trigger-optimizers';
         this.drainPeerEndpoint = '/api/v1/collections/drain-peer';
         this.jobsStatusEndpoint = '/api/v1/jobs/status';
@@ -517,6 +518,10 @@ class VigilanteDashboard {
                 row.classList.remove('visible');
             });
             this.openCollections.clear();
+        });
+
+        document.getElementById('distributeAllCollectionsBtn').addEventListener('click', async () => {
+            await this.startRestoreReplicationFactorForAllCollections();
         });
 
         // Filter input with debounce
@@ -5805,6 +5810,36 @@ class VigilanteDashboard {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ collectionName })
+            });
+            const result = await response.json();
+            if (response.ok && (response.status === 202 || response.status === 200)) {
+                this.updateToast(toastId, result.message || 'Restore replication factor started.', 'success', 'Restore Replication Factor');
+                this.loadJobs();
+            } else if (response.status === 409) {
+                this.updateToast(toastId, result.message || 'Already in progress.', 'warning', 'Restore Replication Factor');
+                this.loadJobs();
+            } else {
+                this.updateToast(toastId, result.message || `HTTP ${response.status}`, 'error', 'Restore Replication Factor');
+            }
+        } catch (error) {
+            this.removeToast(toastId);
+            this.showToast(`Error: ${this.getErrorMessage(error)}`, 'error', 'Restore Replication Factor', 10000);
+        }
+    }
+
+    async startRestoreReplicationFactorForAllCollections() {
+        const toastId = this.showToast(
+            `Starting restore replication factor for collections...`,
+            'info',
+            'Restore Replication Factor',
+            0,
+            true
+        );
+        try {
+            const response = await apiFetch(this.restoreReplicationFactorForAllCollectionsEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
             });
             const result = await response.json();
             if (response.ok && (response.status === 202 || response.status === 200)) {

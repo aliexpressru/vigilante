@@ -2,6 +2,7 @@ using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Shared;
 using Microsoft.Extensions.Options;
 using Vigilante.Configuration;
+using Vigilante.Constants;
 using Vigilante.Extensions;
 using Vigilante.Models;
 using Vigilante.Services.Interfaces;
@@ -26,10 +27,12 @@ public sealed class RestoreReplicationFactorJobService(
         string collectionName,
         ShardTransferMethod? shardTransferMethod,
         TimeSpan? timeout,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IQdrantHttpClient? qdrantHttpClient = null,
+        NodeInfo? node = null)
     {
-        var state = await clusterManager.GetClusterStateAsync(cancellationToken);
-        var healthyNode = state.Nodes.FirstOrDefault(n => n.IsHealthy);
+        var healthyNode = node ?? await GetHealthyNode(cancellationToken);
+        
         if (healthyNode == null)
         {
             return new RestoreReplicationFactorStartResult(
@@ -37,9 +40,9 @@ public sealed class RestoreReplicationFactorJobService(
                 AlreadyInProgress: false,
                 Message: "No healthy node available");
         }
-
+        
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var client = clientFactory.CreateClientFromUrl(healthyNode.Url, _options.ApiKey);
+        var client = qdrantHttpClient ?? clientFactory.CreateClientFromUrl(healthyNode.Url, _options.ApiKey);
         var transferMethod = shardTransferMethod ?? ShardTransferMethod.Snapshot;
         var (job, initialFailureMessage) = await RestoreReplicationFactorJob.CreateAsync(serviceProvider, client, collectionName, transferMethod, timeout, cts.Token);
 
@@ -77,5 +80,72 @@ public sealed class RestoreReplicationFactorJobService(
             ApiError: false,
             AlreadyInProgress: false,
             Message: $"Restore replication factor process started for collection {collectionName}");
+    }
+
+    private async Task<NodeInfo?> GetHealthyNode(CancellationToken cancellationToken)
+    {
+        var state = await clusterManager.GetClusterStateAsync(cancellationToken);
+        return state.Nodes.FirstOrDefault(n => n.IsHealthy);
+    }
+
+    public async Task<RestoreReplicationFactorStartResult> RequestRestoreReplicationFactorForAllCollectionsAsync(
+        ShardTransferMethod? shardTransferMethod, TimeSpan? timeout, CancellationToken cancellationToken = default)
+    {
+        var healthyNode = await GetHealthyNode(cancellationToken);
+
+        if (healthyNode == null)
+        {
+            return new RestoreReplicationFactorStartResult(
+                ApiError: true,
+                AlreadyInProgress: false,
+                Message: "No healthy node available");
+        }
+        
+        var client = clientFactory.CreateClientFromUrl(healthyNode.Url, _options.ApiKey);
+        
+        var collectionsResponse = await client.ListCollections(cancellationToken);
+
+        if (!collectionsResponse.Status.IsSuccess)
+        {
+            var errorDetails = collectionsResponse.Status?.Error ?? MetricConstants.UnknownErrorMessage;
+
+            return new RestoreReplicationFactorStartResult(
+                ApiError: true,
+                AlreadyInProgress: false,
+                Message: $"Failed to list collections: {errorDetails}");
+        }
+
+        if (collectionsResponse.Result?.Collections is {Length: > 0})
+        {
+            var collections = collectionsResponse.Result.Collections;
+
+            foreach (var collection in collections)
+            {
+                var result = await RequestRestoreReplicationFactorAsync(
+                    collection.Name, 
+                    shardTransferMethod, 
+                    timeout, 
+                    cancellationToken,
+                    client,
+                    healthyNode);
+
+                if (result.AlreadyInProgress || result.ApiError)
+                {
+                    return result;
+                }
+            }
+        }
+        else
+        {
+            return new RestoreReplicationFactorStartResult(
+                ApiError: true,
+                AlreadyInProgress: false,
+                Message: "No collections available");
+        }
+        
+        return new RestoreReplicationFactorStartResult(
+            ApiError: false,
+            AlreadyInProgress: false,
+            Message: $"Restore replication factor process started for collections: {string.Join(",",  collectionsResponse.Result.Collections.Select(c => c.Name))}");
     }
 }

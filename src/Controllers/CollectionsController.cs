@@ -394,6 +394,59 @@ public class CollectionsController(
             });
         }
     }
+    
+    [HttpPost("restore-replication-factor-for-all-collections")]
+    [ProducesResponseType(typeof(V1RestoreReplicationFactorResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(V1RestoreReplicationFactorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(V1RestoreReplicationFactorResponse), StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<V1RestoreReplicationFactorResponse>> RestoreReplicationFactorForAllCollections(
+        [FromBody] V1RestoreReplicationFactorForAllCollectionsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var transferMethod = request.ShardTransferMethod.TryParseEnum<ShardTransferMethod>();
+            var result = await restoreReplicationFactorJobService.RequestRestoreReplicationFactorForAllCollectionsAsync(
+                transferMethod,
+                timeout: null,
+                cancellationToken);
+
+            if (result.AlreadyInProgress)
+            {
+                return Conflict(new V1RestoreReplicationFactorResponse
+                {
+                    Status = "AlreadyInProgress",
+                    Message = result.Message
+                });
+            }
+
+            if (result.ApiError)
+            {
+                return StatusCode(500, new V1RestoreReplicationFactorResponse
+                {
+                    Status = "Error",
+                    Message = result.Message
+                });
+            }
+
+            return Accepted(new V1RestoreReplicationFactorResponse
+            {
+                Status = "Started",
+                Message = result.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error starting restore replication factor for collections");
+            return StatusCode(500, new V1RestoreReplicationFactorResponse
+            {
+                Status = "Error",
+                Message = "Internal server error",
+                RemainingSteps = null
+            });
+        }
+    }
 
     [HttpPost("trigger-optimizers")]
     [ProducesResponseType(typeof(V1TriggerCollectionOptimizersResponse), StatusCodes.Status200OK)]
