@@ -63,4 +63,32 @@ public class RestoreReplicationFactorJobServiceTests
         result.AlreadyInProgress.Should().BeFalse();
         result.Message.Should().Contain("No healthy node");
     }
+    
+    [Test]
+    public async Task RequestRestoreReplicationFactorForAllCollectionsAsync_NoHealthyNode_ReturnsApiError()
+    {
+        _clusterManager.GetClusterStateAsync(Arg.Any<CancellationToken>())
+            .Returns(new ClusterState
+            {
+                Nodes = [new() { IsHealthy = false, Url = "http://node1:6333" }]
+            });
+
+        var options = Substitute.For<IOptions<QdrantOptions>>();
+        options.Value.Returns(new QdrantOptions());
+        var clientFactory = Substitute.For<Aer.QdrantClient.Http.Abstractions.IQdrantClientFactory>();
+
+        var service = new RestoreReplicationFactorJobService(
+            _clusterManager,
+            _jobRegistry,
+            clientFactory,
+            options,
+            _serviceProvider,
+            _logger);
+
+        var result = await service.RequestRestoreReplicationFactorForAllCollectionsAsync( null, null, CancellationToken.None);
+
+        result.ApiError.Should().BeTrue();
+        result.AlreadyInProgress.Should().BeFalse();
+        result.Message.Should().Contain("No healthy node");
+    }
 }

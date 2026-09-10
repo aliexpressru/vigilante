@@ -1,3 +1,4 @@
+using Aer.QdrantClient.Http.Abstractions;
 using Aer.QdrantClient.Http.Models.Shared;
 using Vigilante.Models;
 
@@ -16,6 +17,15 @@ public interface IRestoreReplicationFactorJobService
         string collectionName,
         ShardTransferMethod? shardTransferMethod,
         TimeSpan? timeout,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IQdrantHttpClient? qdrantHttpClient = null,
+        NodeInfo? node = null);
 
+    /// <summary>
+    /// Requests to start restore replication factor for all collections. Resolves healthy node, creates jobs, adds to registry.
+    /// </summary>
+    Task<RestoreReplicationFactorStartResult> RequestRestoreReplicationFactorForAllCollectionsAsync(
+        ShardTransferMethod? shardTransferMethod,
+        TimeSpan? timeout,
+        CancellationToken cancellationToken = default);
 }

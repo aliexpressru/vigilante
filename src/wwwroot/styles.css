@@ -65,6 +65,11 @@ body {
 
 :root {
     color-scheme: light;
+    --color-warn-primary: #d97706;      /* Amber 600 - Maintenance Base */
+    --color-warn-hover: #b45309;        /* Amber 700 - Hover State */
+    --color-warn-bg-light: #fef3c7;     /* Amber 100 - Focus Outline */
+    --btn-text-color: #ffffff;
+    --transition-speed: 0.25s;
 }
 
 html[data-theme="dark"] {
@@ -6924,6 +6929,46 @@ html[data-theme="dark"] .toast-cancel-btn:hover {
 
 .snapshot-action-item-danger:active {
     background: linear-gradient(135deg, #ffcdd2, #ef9a9a);
+}
+
+.distribute-collections-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    
+    width: 28px;
+    height: 28px;
+    padding: 0;
+
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: 1px solid transparent;
+    border-radius: 50%;               
+
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    transition: background-color var(--transition-speed) ease,
+    box-shadow var(--transition-speed) ease,
+    transform var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.distribute-collections-btn:hover {
+    background-color: var(--color-warn-hover);
+    box-shadow: 0 4px 12px rgba(180, 83, 9, 0.3);
+}
+
+.distribute-collections-btn:active {
+    transform: scale(0.94);           
+}
+
+.distribute-collections-btn .icon-sync {
+    font-size: 16px;                  
+    transform: rotate(0deg);
+    transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.distribute-collections-btn:hover .icon-sync {
+    transform: rotate(-180deg);        
 }
 
 /* Responsive styles */
