@@ -98,7 +98,7 @@ public class RecoverFromSnapshotJobTests
 
         clusterManager.GetCollectionsInfoAsync(true, Arg.Any<CancellationToken>())
             .Returns(
-            [
+            ([
                 new CollectionInfo
                 {
                     CollectionName = "col1",
@@ -116,8 +116,7 @@ public class RecoverFromSnapshotJobTests
                         ]
                     }
                 }
-            ],
-            [
+            ,
                 new CollectionInfo
                 {
                     CollectionName = "col1",
@@ -132,8 +131,7 @@ public class RecoverFromSnapshotJobTests
                         ]
                     }
                 }
-            ],
-            [
+            ,
                 new CollectionInfo
                 {
                     CollectionName = "col1",
@@ -148,7 +146,7 @@ public class RecoverFromSnapshotJobTests
                         ]
                     }
                 }
-            ]);
+            ], false));
 
         var firstCheck = await job.CheckReadyAsync(CancellationToken.None);
         var secondCheck = await job.CheckReadyAsync(CancellationToken.None);
@@ -174,7 +172,7 @@ public class RecoverFromSnapshotJobTests
 
         clusterManager.GetCollectionsInfoAsync(true, Arg.Any<CancellationToken>())
             .Returns(
-            [
+            ([
                 new CollectionInfo
                 {
                     CollectionName = "col1",
@@ -188,7 +186,7 @@ public class RecoverFromSnapshotJobTests
                         Shards = [new ShardDetails { ShardId = 1, State = ShardState.Active.ToString() }]
                     }
                 }
-            ]);
+            ], false));
 
         var firstCheck = await job.CheckReadyAsync(CancellationToken.None);
         var secondCheck = await job.CheckReadyAsync(CancellationToken.None);
@@ -213,38 +211,38 @@ public class RecoverFromSnapshotJobTests
 
         clusterManager.GetCollectionsInfoAsync(true, Arg.Any<CancellationToken>())
             .Returns(
-            [
-                new CollectionInfo
-                {
-                    CollectionName = "col1",
-                    NodeUrl = "http://node1:6333",
-                    Metrics = new CollectionMetrics
+                ([
+                    new CollectionInfo
                     {
-                        OutgoingTransfers = [],
-                        Shards =
-                        [
-                            new ShardDetails { ShardId = 1, State = ShardState.Active.ToString(), VectorsSizeBytes = 100 },
-                            new ShardDetails { ShardId = 2, State = ShardState.Active.ToString(), VectorsSizeBytes = 200 }
-                        ]
+                        CollectionName = "col1",
+                        NodeUrl = "http://node1:6333",
+                        Metrics = new CollectionMetrics
+                        {
+                            OutgoingTransfers = [],
+                            Shards =
+                            [
+                                new ShardDetails { ShardId = 1, State = ShardState.Active.ToString(), VectorsSizeBytes = 100 },
+                                new ShardDetails { ShardId = 2, State = ShardState.Active.ToString(), VectorsSizeBytes = 200 }
+                            ]
+                        }
                     }
-                }
-            ],
-            [
-                new CollectionInfo
-                {
-                    CollectionName = "col1",
-                    NodeUrl = "http://node1:6333",
-                    Metrics = new CollectionMetrics
+                    ,
+            
+                    new CollectionInfo
                     {
-                        OutgoingTransfers = [],
-                        Shards =
-                        [
-                            new ShardDetails { ShardId = 1, State = ShardState.Active.ToString(), VectorsSizeBytes = 150 },
-                            new ShardDetails { ShardId = 2, State = ShardState.Active.ToString(), VectorsSizeBytes = 250 }
-                        ]
+                        CollectionName = "col1",
+                        NodeUrl = "http://node1:6333",
+                        Metrics = new CollectionMetrics
+                        {
+                            OutgoingTransfers = [],
+                            Shards =
+                            [
+                                new ShardDetails { ShardId = 1, State = ShardState.Active.ToString(), VectorsSizeBytes = 150 },
+                                new ShardDetails { ShardId = 2, State = ShardState.Active.ToString(), VectorsSizeBytes = 250 }
+                            ]
+                        }
                     }
-                }
-            ]);
+                ], false));
 
         var firstCheck = await job.CheckReadyAsync(CancellationToken.None);
         var secondCheck = await job.CheckReadyAsync(CancellationToken.None);
@@ -306,14 +304,14 @@ public class RecoverFromSnapshotJobTests
 
         clusterManager.GetCollectionsInfoAsync(true, Arg.Any<CancellationToken>())
             .Returns(
-            [
+            ([
                 new CollectionInfo
                 {
                     CollectionName = "col1",
                     NodeUrl = "http://node1:6333",
                     Metrics = collectionMetrics
                 }
-            ]);
+            ], false));
 
         var job = new RecoverFromSnapshotJob(
             serviceProvider,

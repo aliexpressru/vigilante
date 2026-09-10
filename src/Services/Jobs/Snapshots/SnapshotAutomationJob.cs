@@ -78,7 +78,7 @@ public sealed class SnapshotAutomationJob : IJob
         {
             SetCurrentAction(Actions.LoadingCollections);
 
-            var collections = await clusterManager.GetCollectionsInfoAsync(clearCache: true, cancellationToken);
+            var (collections, _) = await clusterManager.GetCollectionsInfoAsync(clearCache: true, cancellationToken);
 
             await PruneStaleCollectionOverridesIfNeededAsync(automationStatus, logger, cancellationToken);
 

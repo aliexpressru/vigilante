@@ -254,7 +254,7 @@ public partial class ClusterManager(
         }
     }
 
-    public async Task<IReadOnlyList<CollectionInfo>> GetCollectionsInfoAsync(
+    public async Task<(IReadOnlyList<CollectionInfo> CollectionInfos, bool IsTestData)> GetCollectionsInfoAsync(
         bool clearCache = false,
         CancellationToken cancellationToken = default
     )
@@ -285,10 +285,10 @@ public partial class ClusterManager(
                     + "Returning test data (only available in Development)"
             );
 
-            return testDataProvider.GenerateTestCollectionData();
+            return (testDataProvider.GenerateTestCollectionData(), true);
         }
 
-        return result;
+        return (result, false);
     }
 
     public async Task<bool> ReplicateShardsAsync(

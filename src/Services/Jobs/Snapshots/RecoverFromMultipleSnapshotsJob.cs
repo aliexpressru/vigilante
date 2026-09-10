@@ -136,7 +136,7 @@ internal sealed class RecoverFromMultipleSnapshotsJob : IJob
 
         var targetNodeUrl = _targetNodeUrls[_currentStepIndex];
         var clusterManager = _serviceProvider.GetRequiredService<IClusterManager>();
-        var collections = await clusterManager.GetCollectionsInfoAsync(clearCache: true, cancellationToken);
+        var (collections, _) = await clusterManager.GetCollectionsInfoAsync(clearCache: true, cancellationToken);
 
         var nodeCollection = collections.FirstOrDefault(c =>
             string.Equals(c.CollectionName, _targetCollectionName, StringComparison.OrdinalIgnoreCase)
